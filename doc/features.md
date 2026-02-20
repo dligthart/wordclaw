@@ -18,6 +18,7 @@ A built-in SvelteKit control plane served under `/ui` providing robust human ove
 - **Audit Log Viewer** — Searchable, paginated history of all agent mutations with raw payload inspection.
 - **Content Browser** — Read-only oversight of all content models and items, featuring a 1-click **Rollback** mechanism.
 - **Schema Manager** — Visual JSON schema editor with a live dry-run Validation Sandbox for content types.
+- **Agent Sandbox** — Interactive API testing environment tailored for exploring WordClaw's structured AI-friendly responses, including `remediation` metadata.
 - **Agent Keys** — Provision, rotate, and securely revoke API keys for individual LLM agents.
 - **Approval Queue** — Review pending or drafted content payloads and approve (publish) or reject them.
 
