@@ -5,6 +5,7 @@ import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
+import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 
@@ -13,8 +14,22 @@ type ResolverContext = {
     authPrincipal?: { keyId: number | string; scopes: Set<string>; source: string };
 };
 
-function toActorId(context: ResolverContext): number | undefined {
-    return typeof context.authPrincipal?.keyId === 'number' ? context.authPrincipal.keyId : undefined;
+function contextView(context: unknown): ResolverContext {
+    if (!context || typeof context !== 'object') {
+        return {};
+    }
+
+    return context as ResolverContext;
+}
+
+function toActorId(context: unknown): number | undefined {
+    const view = contextView(context);
+    return typeof view.authPrincipal?.keyId === 'number' ? view.authPrincipal.keyId : undefined;
+}
+
+function toRequestId(context: unknown): string | undefined {
+    const view = contextView(context);
+    return typeof view.requestId === 'string' ? view.requestId : undefined;
 }
 
 type IdValue = string | number;
@@ -79,6 +94,22 @@ type RollbackContentItemArgs = {
     id: IdValue;
     version: number;
     dryRun?: boolean;
+};
+type CreateWebhookArgs = {
+    url: string;
+    events: string[];
+    secret: string;
+    active?: boolean;
+};
+type UpdateWebhookArgs = {
+    id: IdValue;
+    url?: string;
+    events?: string[];
+    secret?: string;
+    active?: boolean;
+};
+type DeleteWebhookArgs = {
+    id: IdValue;
 };
 
 type BatchCreateContentItemsArgs = {
@@ -231,6 +262,16 @@ function parseDateArg(value: string | undefined, fieldName: string): Date | null
     }
 
     return parsed;
+}
+
+function isValidUrl(url: string): boolean {
+    try {
+        // eslint-disable-next-line no-new
+        new URL(url);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function notFoundContentTypeError(id: number): GraphQLError {
@@ -430,11 +471,38 @@ export const resolvers = {
                 .where(conditions.length > 0 ? and(...conditions) : undefined)
                 .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
                 .limit(limit);
+        },
+
+        webhooks: async () => {
+            const hooks = await listWebhooks();
+            return hooks.map((hook) => ({
+                id: hook.id,
+                url: hook.url,
+                events: parseWebhookEvents(hook.events),
+                active: hook.active,
+                createdAt: hook.createdAt
+            }));
+        },
+
+        webhook: async (_parent: unknown, { id }: IdArg) => {
+            const numericId = parseId(id);
+            const hook = await getWebhookById(numericId);
+            if (!hook) {
+                return null;
+            }
+
+            return {
+                id: hook.id,
+                url: hook.url,
+                events: parseWebhookEvents(hook.events),
+                active: hook.active,
+                createdAt: hook.createdAt
+            };
         }
     },
 
     Mutation: {
-        createContentType: async (_parent: unknown, args: CreateContentTypeArgs, context: ResolverContext) => {
+        createContentType: async (_parent: unknown, args: CreateContentTypeArgs, context?: unknown) => {
             const now = new Date();
             const schemaFailure = validateContentTypeSchema(args.schema);
             if (schemaFailure) {
@@ -460,11 +528,11 @@ export const resolvers = {
                 schema: args.schema
             }).returning();
 
-            await logAudit('create', 'content_type', newItem.id, newItem, toActorId(context), context.requestId);
+            await logAudit('create', 'content_type', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
         },
 
-        updateContentType: async (_parent: unknown, args: UpdateContentTypeArgs, context: ResolverContext) => {
+        updateContentType: async (_parent: unknown, args: UpdateContentTypeArgs, context?: unknown) => {
             const id = parseId(args.id);
             const updateData = stripUndefined({
                 name: args.name,
@@ -502,11 +570,11 @@ export const resolvers = {
                 throw notFoundContentTypeError(id);
             }
 
-            await logAudit('update', 'content_type', updated.id, updateData, toActorId(context), context.requestId);
+            await logAudit('update', 'content_type', updated.id, updateData, toActorId(context), toRequestId(context));
             return updated;
         },
 
-        deleteContentType: async (_parent: unknown, args: DeleteContentTypeArgs, context: ResolverContext) => {
+        deleteContentType: async (_parent: unknown, args: DeleteContentTypeArgs, context?: unknown) => {
             const id = parseId(args.id);
 
             if (args.dryRun) {
@@ -529,7 +597,7 @@ export const resolvers = {
                 throw notFoundContentTypeError(id);
             }
 
-            await logAudit('delete', 'content_type', deleted.id, deleted, toActorId(context), context.requestId);
+            await logAudit('delete', 'content_type', deleted.id, deleted, toActorId(context), toRequestId(context));
 
             return {
                 id: deleted.id,
@@ -537,7 +605,7 @@ export const resolvers = {
             };
         },
 
-        createContentItem: async (_parent: unknown, args: CreateContentItemArgs, context: ResolverContext) => {
+        createContentItem: async (_parent: unknown, args: CreateContentItemArgs, context?: unknown) => {
             const contentTypeId = parseId(args.contentTypeId, 'contentTypeId');
             const status = args.status || 'draft';
             const now = new Date();
@@ -569,11 +637,11 @@ export const resolvers = {
                 status
             }).returning();
 
-            await logAudit('create', 'content_item', newItem.id, newItem, toActorId(context), context.requestId);
+            await logAudit('create', 'content_item', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
         },
 
-        createContentItemsBatch: async (_parent: unknown, args: BatchCreateContentItemsArgs, context: ResolverContext) => {
+        createContentItemsBatch: async (_parent: unknown, args: BatchCreateContentItemsArgs, context?: unknown) => {
             const isAtomic = args.atomic === true;
             if (args.items.length === 0) {
                 throw toError(
@@ -652,7 +720,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('create', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), context.requestId);
+                            await logAudit('create', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -700,7 +768,7 @@ export const resolvers = {
                         status: item.status || 'draft'
                     }).returning();
 
-                    await logAudit('create', 'content_item', created.id, { batch: true, mode: 'partial' }, toActorId(context), context.requestId);
+                    await logAudit('create', 'content_item', created.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
 
                     results.push({
                         index,
@@ -719,7 +787,7 @@ export const resolvers = {
             };
         },
 
-        updateContentItem: async (_parent: unknown, args: UpdateContentItemArgs, context: ResolverContext) => {
+        updateContentItem: async (_parent: unknown, args: UpdateContentItemArgs, context?: unknown) => {
             const id = parseId(args.id);
             const contentTypeId = parseOptionalId(args.contentTypeId, 'contentTypeId');
             const updateData = stripUndefined({
@@ -785,11 +853,11 @@ export const resolvers = {
                 throw notFoundContentItemError(id);
             }
 
-            await logAudit('update', 'content_item', result.id, updateData, toActorId(context), context.requestId);
+            await logAudit('update', 'content_item', result.id, updateData, toActorId(context), toRequestId(context));
             return result;
         },
 
-        updateContentItemsBatch: async (_parent: unknown, args: BatchUpdateContentItemsArgs, context: ResolverContext) => {
+        updateContentItemsBatch: async (_parent: unknown, args: BatchUpdateContentItemsArgs, context?: unknown) => {
             const isAtomic = args.atomic === true;
             if (args.items.length === 0) {
                 throw toError(
@@ -891,7 +959,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('update', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), context.requestId);
+                            await logAudit('update', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -947,7 +1015,7 @@ export const resolvers = {
                     return updated;
                 });
 
-                await logAudit('update', 'content_item', result.id, { batch: true, mode: 'partial' }, toActorId(context), context.requestId);
+                await logAudit('update', 'content_item', result.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
 
                 results.push({
                     index,
@@ -963,7 +1031,7 @@ export const resolvers = {
             };
         },
 
-        deleteContentItem: async (_parent: unknown, args: DeleteContentItemArgs, context: ResolverContext) => {
+        deleteContentItem: async (_parent: unknown, args: DeleteContentItemArgs, context?: unknown) => {
             const id = parseId(args.id);
 
             if (args.dryRun) {
@@ -986,7 +1054,7 @@ export const resolvers = {
                 throw notFoundContentItemError(id);
             }
 
-            await logAudit('delete', 'content_item', deleted.id, deleted, toActorId(context), context.requestId);
+            await logAudit('delete', 'content_item', deleted.id, deleted, toActorId(context), toRequestId(context));
 
             return {
                 id: deleted.id,
@@ -994,7 +1062,7 @@ export const resolvers = {
             };
         },
 
-        deleteContentItemsBatch: async (_parent: unknown, args: BatchDeleteContentItemsArgs, context: ResolverContext) => {
+        deleteContentItemsBatch: async (_parent: unknown, args: BatchDeleteContentItemsArgs, context?: unknown) => {
             const isAtomic = args.atomic === true;
             if (args.ids.length === 0) {
                 throw toError(
@@ -1050,7 +1118,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('delete', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), context.requestId);
+                            await logAudit('delete', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -1085,7 +1153,7 @@ export const resolvers = {
                     continue;
                 }
 
-                await logAudit('delete', 'content_item', deleted.id, { batch: true, mode: 'partial' }, toActorId(context), context.requestId);
+                await logAudit('delete', 'content_item', deleted.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
                 results.push({
                     index,
                     ok: true,
@@ -1099,7 +1167,146 @@ export const resolvers = {
             };
         },
 
-        rollbackContentItem: async (_parent: unknown, args: RollbackContentItemArgs, context: ResolverContext) => {
+        createWebhook: async (_parent: unknown, args: CreateWebhookArgs, context?: unknown) => {
+            if (!isValidUrl(args.url)) {
+                throw toError(
+                    'Invalid webhook URL',
+                    'INVALID_WEBHOOK_URL',
+                    'Provide a valid absolute URL such as https://example.com/hooks/wordclaw.'
+                );
+            }
+
+            let events: string[];
+            try {
+                events = normalizeWebhookEvents(args.events);
+            } catch (error) {
+                throw toError(
+                    'Invalid webhook events',
+                    'INVALID_WEBHOOK_EVENTS',
+                    (error as Error).message
+                );
+            }
+
+            const created = await createWebhook({
+                url: args.url,
+                events,
+                secret: args.secret,
+                active: args.active
+            });
+
+            await logAudit(
+                'create',
+                'webhook',
+                created.id,
+                { url: created.url, events, active: created.active },
+                toActorId(context),
+                toRequestId(context)
+            );
+
+            return {
+                id: created.id,
+                url: created.url,
+                events: parseWebhookEvents(created.events),
+                active: created.active,
+                createdAt: created.createdAt
+            };
+        },
+
+        updateWebhook: async (_parent: unknown, args: UpdateWebhookArgs, context?: unknown) => {
+            const id = parseId(args.id);
+            const updateData = stripUndefined({
+                url: args.url,
+                events: args.events,
+                secret: args.secret,
+                active: args.active
+            });
+
+            if (!hasDefinedValues(updateData)) {
+                throw emptyUpdateBodyError('url, events, secret, active');
+            }
+
+            if (typeof args.url === 'string' && !isValidUrl(args.url)) {
+                throw toError(
+                    'Invalid webhook URL',
+                    'INVALID_WEBHOOK_URL',
+                    'Provide a valid absolute URL such as https://example.com/hooks/wordclaw.'
+                );
+            }
+
+            let normalizedEvents: string[] | undefined;
+            if (args.events !== undefined) {
+                try {
+                    normalizedEvents = normalizeWebhookEvents(args.events);
+                } catch (error) {
+                    throw toError(
+                        'Invalid webhook events',
+                        'INVALID_WEBHOOK_EVENTS',
+                        (error as Error).message
+                    );
+                }
+            }
+
+            const updated = await updateWebhook(id, {
+                url: args.url,
+                events: normalizedEvents,
+                secret: args.secret,
+                active: args.active
+            });
+
+            if (!updated) {
+                throw toError(
+                    'Webhook not found',
+                    'WEBHOOK_NOT_FOUND',
+                    `No webhook exists with ID ${id}.`
+                );
+            }
+
+            await logAudit(
+                'update',
+                'webhook',
+                updated.id,
+                { url: updated.url, events: parseWebhookEvents(updated.events), active: updated.active },
+                toActorId(context),
+                toRequestId(context)
+            );
+
+            return {
+                id: updated.id,
+                url: updated.url,
+                events: parseWebhookEvents(updated.events),
+                active: updated.active,
+                createdAt: updated.createdAt
+            };
+        },
+
+        deleteWebhook: async (_parent: unknown, args: DeleteWebhookArgs, context?: unknown) => {
+            const id = parseId(args.id);
+            const existing = await getWebhookById(id);
+            if (!existing) {
+                throw toError(
+                    'Webhook not found',
+                    'WEBHOOK_NOT_FOUND',
+                    `No webhook exists with ID ${id}.`
+                );
+            }
+
+            await deleteWebhook(id);
+            await logAudit(
+                'delete',
+                'webhook',
+                existing.id,
+                { url: existing.url, events: parseWebhookEvents(existing.events) },
+                toActorId(context),
+                toRequestId(context)
+            );
+
+            return {
+                id: existing.id,
+                message: `Webhook ${id} deleted successfully`
+            };
+        },
+
+        rollbackContentItem: async (_parent: unknown, args: RollbackContentItemArgs, context?: unknown) => {
             const id = parseId(args.id);
             const targetVersion = args.version;
             const [currentItem] = await db.select().from(contentItems).where(eq(contentItems.id, id));
@@ -1176,7 +1383,7 @@ export const resolvers = {
                 await logAudit('rollback', 'content_item', result.id, {
                     fromVersion: result.version - 1,
                     toVersion: targetVersion
-                }, toActorId(context), context.requestId);
+                }, toActorId(context), toRequestId(context));
 
                 return {
                     id: result.id,

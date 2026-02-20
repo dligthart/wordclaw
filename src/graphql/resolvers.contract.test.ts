@@ -161,7 +161,9 @@ describe('GraphQL Resolver Contracts', () => {
             {
                 data: '{"title":"v2"}',
                 status: 'published'
-            }
+            },
+            undefined,
+            undefined
         );
     });
 

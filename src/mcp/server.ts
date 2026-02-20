@@ -8,6 +8,7 @@ import { auditLogs, contentItemVersions, contentItems, contentTypes } from '../d
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
+import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
 
 const server = new McpServer({
     name: 'WordClaw CMS',
@@ -80,6 +81,16 @@ function parseDateArg(value: string | undefined, fieldName: string): Date | null
     }
 
     return parsed;
+}
+
+function isValidUrl(url: string): boolean {
+    try {
+        // eslint-disable-next-line no-new
+        new URL(url);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function encodeCursor(createdAt: Date, id: number): string {
@@ -364,6 +375,188 @@ server.tool(
         });
 
         return ok(`Revoked API key ${revoked.id}`);
+    }
+);
+
+server.tool(
+    'create_webhook',
+    'Register a webhook endpoint for audit events',
+    {
+        url: z.string().describe('Absolute callback URL'),
+        events: z.array(z.string()).describe('Subscribed event patterns, e.g. content_item.create'),
+        secret: z.string().describe('Shared secret for HMAC signing'),
+        active: z.boolean().optional().describe('Whether webhook is active immediately')
+    },
+    async ({ url, events, secret, active }) => {
+        try {
+            if (!isValidUrl(url)) {
+                return err('INVALID_WEBHOOK_URL: Provide a valid absolute URL.');
+            }
+
+            let normalizedEvents: string[];
+            try {
+                normalizedEvents = normalizeWebhookEvents(events);
+            } catch (error) {
+                return err(`INVALID_WEBHOOK_EVENTS: ${(error as Error).message}`);
+            }
+
+            const created = await createWebhook({
+                url,
+                events: normalizedEvents,
+                secret,
+                active
+            });
+
+            await logAudit('create', 'webhook', created.id, {
+                mcpTool: 'create_webhook',
+                url: created.url,
+                events: normalizedEvents,
+                active: created.active
+            });
+
+            return okJson({
+                id: created.id,
+                url: created.url,
+                events: parseWebhookEvents(created.events),
+                active: created.active,
+                createdAt: created.createdAt
+            });
+        } catch (error) {
+            return err(`Error creating webhook: ${(error as Error).message}`);
+        }
+    }
+);
+
+server.tool(
+    'list_webhooks',
+    'List registered webhooks',
+    {},
+    async () => {
+        try {
+            const hooks = await listWebhooks();
+            return okJson(hooks.map((hook) => ({
+                id: hook.id,
+                url: hook.url,
+                events: parseWebhookEvents(hook.events),
+                active: hook.active,
+                createdAt: hook.createdAt
+            })));
+        } catch (error) {
+            return err(`Error listing webhooks: ${(error as Error).message}`);
+        }
+    }
+);
+
+server.tool(
+    'get_webhook',
+    'Get webhook by ID',
+    {
+        id: z.number().describe('Webhook ID')
+    },
+    async ({ id }) => {
+        try {
+            const hook = await getWebhookById(id);
+            if (!hook) {
+                return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
+            }
+
+            return okJson({
+                id: hook.id,
+                url: hook.url,
+                events: parseWebhookEvents(hook.events),
+                active: hook.active,
+                createdAt: hook.createdAt
+            });
+        } catch (error) {
+            return err(`Error reading webhook: ${(error as Error).message}`);
+        }
+    }
+);
+
+server.tool(
+    'update_webhook',
+    'Update webhook URL, events, secret, or active state',
+    {
+        id: z.number().describe('Webhook ID'),
+        url: z.string().optional(),
+        events: z.array(z.string()).optional(),
+        secret: z.string().optional(),
+        active: z.boolean().optional()
+    },
+    async ({ id, url, events, secret, active }) => {
+        try {
+            if (url !== undefined && !isValidUrl(url)) {
+                return err('INVALID_WEBHOOK_URL: Provide a valid absolute URL.');
+            }
+
+            let normalizedEvents: string[] | undefined;
+            if (events !== undefined) {
+                try {
+                    normalizedEvents = normalizeWebhookEvents(events);
+                } catch (error) {
+                    return err(`INVALID_WEBHOOK_EVENTS: ${(error as Error).message}`);
+                }
+            }
+
+            if (url === undefined && normalizedEvents === undefined && secret === undefined && active === undefined) {
+                return err('EMPTY_UPDATE_BODY: Provide at least one update field.');
+            }
+
+            const updated = await updateWebhook(id, {
+                url,
+                events: normalizedEvents,
+                secret,
+                active
+            });
+
+            if (!updated) {
+                return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
+            }
+
+            await logAudit('update', 'webhook', updated.id, {
+                mcpTool: 'update_webhook',
+                url: updated.url,
+                events: parseWebhookEvents(updated.events),
+                active: updated.active
+            });
+
+            return okJson({
+                id: updated.id,
+                url: updated.url,
+                events: parseWebhookEvents(updated.events),
+                active: updated.active,
+                createdAt: updated.createdAt
+            });
+        } catch (error) {
+            return err(`Error updating webhook: ${(error as Error).message}`);
+        }
+    }
+);
+
+server.tool(
+    'delete_webhook',
+    'Delete a webhook registration',
+    {
+        id: z.number().describe('Webhook ID')
+    },
+    async ({ id }) => {
+        try {
+            const existing = await getWebhookById(id);
+            if (!existing) {
+                return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
+            }
+
+            await deleteWebhook(id);
+            await logAudit('delete', 'webhook', existing.id, {
+                mcpTool: 'delete_webhook',
+                url: existing.url,
+                events: parseWebhookEvents(existing.events)
+            });
+
+            return ok(`Deleted webhook ${id}`);
+        } catch (error) {
+            return err(`Error deleting webhook: ${(error as Error).message}`);
+        }
     }
 );
 

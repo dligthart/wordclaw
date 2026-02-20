@@ -67,6 +67,20 @@ export const schema = `
     createdAt: String
   }
 
+  """A webhook registration for audit/event delivery."""
+  type Webhook {
+    """Stable numeric identifier."""
+    id: ID!
+    """Callback destination URL."""
+    url: String!
+    """Subscribed event patterns."""
+    events: [String!]!
+    """Whether delivery is currently enabled."""
+    active: Boolean!
+    """Creation timestamp (ISO-8601)."""
+    createdAt: String
+  }
+
   """Result envelope for delete mutations."""
   type DeleteResult {
     """Target identifier."""
@@ -151,6 +165,10 @@ export const schema = `
     contentItemVersions(id: ID!): [ContentItemVersion!]!
     """List audit logs with optional filters and cursor pagination input."""
     auditLogs(entityType: String, entityId: ID, action: String, limit: Int = 50, cursor: String): [AuditLog!]!
+    """List registered webhook endpoints."""
+    webhooks: [Webhook!]!
+    """Get one webhook registration by id."""
+    webhook(id: ID!): Webhook
   }
 
   type Mutation {
@@ -204,6 +222,23 @@ export const schema = `
     deleteContentItem(id: ID!, dryRun: Boolean = false): DeleteResult!
     """Delete multiple content items in one operation."""
     deleteContentItemsBatch(ids: [ID!]!, atomic: Boolean = false, dryRun: Boolean = false): BatchMutationResult!
+    """Create a webhook registration."""
+    createWebhook(
+      url: String!,
+      events: [String!]!,
+      secret: String!,
+      active: Boolean = true
+    ): Webhook!
+    """Update a webhook registration."""
+    updateWebhook(
+      id: ID!,
+      url: String,
+      events: [String!],
+      secret: String,
+      active: Boolean
+    ): Webhook!
+    """Delete a webhook registration."""
+    deleteWebhook(id: ID!): DeleteResult!
     """Rollback a content item to a previous version."""
     rollbackContentItem(id: ID!, version: Int!, dryRun: Boolean = false): RollbackResult!
   }
