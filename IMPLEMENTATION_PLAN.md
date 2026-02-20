@@ -260,6 +260,61 @@ Build a **policy and approvals layer** on top of the parity baseline:
 
 Objective: remove friction for autonomous agents operating at scale — batch throughput, reliable retries, real-time event integration, and improved discoverability.
 
+### 7.0 Agent Identity & Authentication (High Priority — Prerequisite)
+
+**Problem**: Authentication is static environment-variable-only (`API_KEYS=key=scope|scope`). There is no database-backed agent identity, no runtime key management, and `audit_logs.userId` is always `null` — meaning no operation is traceable to a specific agent. All downstream governance, quota, and billing features (Phases 6–7) are blocked without a real identity layer.
+
+**Current state**:
+- `src/api/auth.ts`: parses keys from `process.env.API_KEYS` at request time — no DB involvement
+- `src/db/schema.ts`: has a `users` table but no `api_keys` table; `audit_logs.userId` is nullable and never populated
+- Principal `keyId` is truncated to 6 chars (`key.slice(0, 6) + '...'`) — not a stable identity
+
+**Deliverables**:
+
+**Schema** — new `api_keys` table:
+```sql
+api_keys (
+  id          serial PRIMARY KEY,
+  name        text NOT NULL,               -- human label e.g. "picoclaw-prod"
+  key_prefix  text NOT NULL,               -- first 8 chars, shown in UI
+  key_hash    text NOT NULL UNIQUE,        -- bcrypt/sha256 hash of full key
+  scopes      text NOT NULL,               -- pipe-separated scope list
+  created_by  integer REFERENCES users(id),
+  created_at  timestamp DEFAULT now(),
+  expires_at  timestamp,                   -- null = no expiry
+  revoked_at  timestamp,                   -- null = active
+  last_used_at timestamp
+)
+```
+
+**API endpoints** (scoped to `admin`):
+- `POST /api/auth/keys` — create key, returns full key once (never stored plain)
+- `GET /api/auth/keys` — list keys with prefix, scopes, created_at, last_used_at, status
+- `DELETE /api/auth/keys/:id` — revoke key (sets `revoked_at`, key rejected immediately)
+- `PUT /api/auth/keys/:id` — rotate key (revoke + issue replacement atomically)
+
+**Auth middleware update**:
+- Validate key against DB (`key_hash`) instead of env var
+- Reject if `revoked_at` is set or `expires_at` is past
+- Update `last_used_at` on every successful auth
+- Return stable `keyId` (DB `id`) — not truncated key prefix
+
+**Audit log wiring**:
+- Populate `audit_logs.userId` with the authenticated `api_keys.id` on every write operation
+- All audit events become traceable to a specific agent key
+
+**MCP + GraphQL parity**:
+- Expose key management as MCP tools: `create_api_key`, `list_api_keys`, `revoke_api_key`
+- Add to capability matrix
+
+Exit Criteria:
+- Key creation, listing, revocation all functional via REST + MCP
+- `audit_logs.userId` populated on all authenticated write operations
+- Revoked keys rejected within one request (no caching window)
+- Expired keys rejected at middleware level
+- Env-var fallback (`API_KEYS`) retained for local dev with `AUTH_REQUIRED=false`
+- Migration included for `api_keys` table
+
 ### 7.1 Batch Operations (High Priority)
 
 **Problem**: Agents must issue one HTTP round-trip per item. At volume this saturates the rate limiter (100 req/min) and accumulates latency.
