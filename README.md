@@ -73,79 +73,20 @@ npm run dev
 
 The server will start at `http://localhost:4000`.
 
-### Supervisor Web Interface (Frontend)
+## 📚 Documentation
 
-WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, agent API keys, and reviewing audit logs/content approvals.
+For detailed guides on setting up the Supervisor UI, authentication, testing, and system architecture, please refer to the `doc/` directory:
 
-To run the frontend locally:
-1. Ensure the WordClaw backend is running (`npm run dev` in the root folder).
-2. Start the SvelteKit development server:
-   ```bash
-   cd ui
-   npm run dev
-   ```
-3. Navigate to `http://localhost:5173` to access the Supervisor UI.
-
-> **Note:** In production, the SvelteKit app is compiled statically (`cd ui && npm run build`) and natively served by the Fastify backend at `http://localhost:4000/ui`.
-
-**Initial Login (Bootstrapping):**
-Because WordClaw does not ship with default credentials, you must create your first supervisor account via the API. Send a POST request to your local server once it is running:
-
-```bash
-curl -X POST http://localhost:4000/api/supervisors/setup-initial \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@wordclaw.local", "password":"password123"}'
-```
-
-You can then log in to the UI using those credentials. *Note: this endpoint will only work if zero supervisor accounts exist.*
-
-### API Authentication (Optional but recommended)
-
-When `AUTH_REQUIRED=true`, include an API key on `/api` requests:
-
-```bash
-curl -H "x-api-key: writer" http://localhost:4000/api/content-types
-```
-
-You can also use bearer auth:
-
-```bash
-curl -H "Authorization: Bearer writer" http://localhost:4000/api/content-types
-```
+- [Getting Started Guide](doc/getting-started.md) — Frontend UI setup, API authentication, testing, and environment setup.
+- [Architecture Overview](doc/architecture.md) — System layer breakdown and data models.
+- [Features Outline](doc/features.md) — Content API and Human Supervisor Web Interface capabilities.
+- [MCP Integration](doc/mcp-integration.md) — Model Context Protocol implementation details.
 
 ### API Documentation
 
-Interactive Swagger/OpenAPI documentation is available at:
+Interactive Swagger/OpenAPI documentation is natively available while running the dev server:
 
 [http://localhost:4000/documentation](http://localhost:4000/documentation)
-
-## ✅ Verification & Testing
-
-We include utility scripts to verify the API functionality and safety features.
-
-### Run Full API Verification
-Tests all CRUD operations against the live database.
-
-```bash
-npx tsx verify-api.ts
-```
-
-### Run Dry-run Verification
-Tests that `?mode=dry_run` returns successful simulations without modifying the database.
-
-```bash
-npx tsx verify-dry-run.ts
-```
-
-### Run Integration Smoke Tests
-By default, `npm test` skips integration smoke tests unless explicitly enabled.
-
-```bash
-RUN_INTEGRATION=1 npm test
-```
-
-### Capability Parity Contract
-Cross-protocol capability parity is documented in `CAPABILITY_PARITY.md` and validated in the default test run.
 
 ## 🤝 Contributing
 

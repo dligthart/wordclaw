@@ -73,13 +73,64 @@ For AI agent integration over stdio:
 npm run mcp:start
 ```
 
-## Explore the Interfaces
+## Supervisor Web Interface
 
-- **Supervisor UI**: http://localhost:4000/ui (Default port)
-- **Swagger UI**: http://localhost:4000/documentation
-- **GraphiQL**: http://localhost:4000/graphql
+WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, agent API keys, and reviewing audit logs/content approvals.
 
-## Running Tests
+To run the frontend locally:
+1. Ensure the WordClaw backend is running (`npm run dev` in the root folder).
+2. Start the SvelteKit development server:
+   ```bash
+   cd ui
+   npm run dev
+   ```
+3. Navigate to `http://localhost:5173` to access the Supervisor UI.
+
+> **Note:** In production, the SvelteKit app is compiled statically (`cd ui && npm run build`) and natively served by the Fastify backend at `http://localhost:4000/ui`.
+
+**Initial Login (Bootstrapping):**
+Because WordClaw does not ship with default credentials, you must create your first supervisor account via the API. Send a POST request to your local server once it is running:
+
+```bash
+curl -X POST http://localhost:4000/api/supervisors/setup-initial \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@wordclaw.local", "password":"password123"}'
+```
+
+*(Note: this endpoint will only work if zero supervisor accounts exist.)*
+
+## API Authentication
+
+When `AUTH_REQUIRED=true` (in your `.env`), include an API key on `/api` requests:
+
+```bash
+# via custom header
+curl -H "x-api-key: writer" http://localhost:4000/api/content-types
+
+# or via Bearer auth
+curl -H "Authorization: Bearer writer" http://localhost:4000/api/content-types
+```
+
+## Running Tests & Verification
+
+We include utility scripts to verify the API functionality and safety features natively within the environment.
+
+### Run Full API Verification
+Tests all CRUD operations against the live database using standard `fetch`.
+
+```bash
+npx tsx verify-api.ts
+```
+
+### Run Dry-run Verification
+Tests that `?mode=dry_run` returns successful simulations without modifying the database whatsoever.
+
+```bash
+npx tsx verify-dry-run.ts
+```
+
+### Unit & Contract Tests
+Use Vitest to run the unit and contract testing suite.
 
 ```bash
 # Unit and contract tests
@@ -88,3 +139,6 @@ npm test
 # Integration tests (requires running server)
 RUN_INTEGRATION=1 npm test
 ```
+
+### Capability Parity Contract
+Cross-protocol capability parity is documented in [mcp-integration.md](mcp-integration.md) and validated in the default `npm test` run to ensure REST, GraphQL, and MCP tools remain synced.
