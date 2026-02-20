@@ -178,6 +178,38 @@ Exit Criteria:
 - protected endpoints enforce payment flow deterministically
 - payment-failure states return machine-actionable remediation
 
+#### Detailed Implementation Plan for Phase 6
+
+**1. Research & Architecture Design**
+- The L402 protocol combines HTTP 402 Payment Required with Macaroons (bearer tokens) and Lightning Network invoices.
+- **Flow:**
+  1. Agent requests a protected API route.
+  2. Server responds with `402 Payment Required`, returning a Macaroon and a Lightning Invoice in the `WWW-Authenticate` header.
+  3. Agent pays the invoice via the Lightning Network.
+  4. Agent obtains the payment preimage.
+  5. Agent replays the request with the Macaroon and preimage in the `Authorization: L402 <macaroon>:<preimage>` header.
+  6. Server verifies the Macaroon and preimage, then serves the request.
+
+**2. Middleware Implementation (Fastify)**
+- Create an `l402Middleware` for Fastify.
+- **Dependencies:** `macaroon` library for token generation and verification.
+- **Logic:**
+  - Check for the `Authorization: L402 ...` header.
+  - If missing or invalid, generate a Macaroon (tied to the request/resource) and fetch a Lightning invoice from the payment provider.
+  - Return `402 Payment Required` with `WWW-Authenticate: L402 macaroon="...", invoice="..."`.
+  - If present, parse the Macaroon and preimage, verify the Macaroon signature and the preimage against the invoice hash (or query the payment provider to confirm settlement).
+  - If valid, allow the request to proceed.
+
+**3. Payment Provider Integration**
+- Integrate with a Lightning infrastructure provider (e.g., LND, Alby, Lightspark, or Strike API) to generate invoices and check payment status.
+- Abstract the provider behind a `PaymentProvider` interface to allow swapping backends.
+- **Interface methods:** `createInvoice(amount, memo) -> { invoice, hash }`, `verifyPayment(hash, preimage) -> boolean`.
+
+**4. Testing & Verification**
+- Write unit tests for the `l402Middleware` simulating the 402 challenge-response flow.
+- Write integration tests using a mock payment provider.
+- Update agent SDK/documentation to demonstrate how an agent should handle the 402 response, pay the invoice, and retry the request.
+
 ## Quality and Reliability Strategy
 
 - Contract tests for critical route behavior and error mapping
