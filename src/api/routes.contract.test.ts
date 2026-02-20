@@ -102,13 +102,18 @@ describe('API Route Contracts', () => {
     it('returns EMPTY_UPDATE_BODY for content-item update with empty body', async () => {
         const app = await buildServer();
 
+        mocks.dbMock.select.mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([])
+            })
+        });
+
         try {
             const response = await app.inject({
                 method: 'PUT',
                 url: '/api/content-items/1',
                 payload: {}
             });
-
             expect(response.statusCode).toBe(400);
 
             const body = response.json() as ApiErrorBody;

@@ -13,6 +13,7 @@ export interface L402Options {
   secretKey: string; // Used to sign the macaroon/token
   onInvoiceCreated?: (invoice: any, request: FastifyRequest, requiredPrice: number) => Promise<void>;
   onPaymentVerified?: (paymentHash: string, request: FastifyRequest) => Promise<void>;
+  isPaymentConsumed?: (paymentHash: string, request: FastifyRequest) => Promise<boolean>;
 }
 
 /**
@@ -26,7 +27,7 @@ function generateToken(hash: string, secret: string): string {
 }
 
 /**
- * Verifies the HMRC-based token and returns the embedded payment hash if valid.
+ * Verifies the HMAC-based token and returns the embedded payment hash if valid.
  */
 function verifyToken(token: string, secret: string): string | null {
   const parts = token.split('.');
@@ -72,15 +73,22 @@ export function l402Middleware(options: L402Options) {
         const paymentHash = verifyToken(token, options.secretKey);
 
         if (paymentHash) {
-          // Verify the payment with the provider
-          const isPaid = await options.provider.verifyPayment(paymentHash, preimage);
+          let consumed = false;
+          if (options.isPaymentConsumed) {
+            consumed = await options.isPaymentConsumed(paymentHash, request);
+          }
 
-          if (isPaid) {
-            if (options.onPaymentVerified) {
-              await options.onPaymentVerified(paymentHash, request);
+          if (!consumed) {
+            // Verify the payment with the provider
+            const isPaid = await options.provider.verifyPayment(paymentHash, preimage);
+
+            if (isPaid) {
+              if (options.onPaymentVerified) {
+                await options.onPaymentVerified(paymentHash, request);
+              }
+              // Payment is valid, allow the request to proceed
+              return;
             }
-            // Payment is valid, allow the request to proceed
-            return;
           }
         }
       }

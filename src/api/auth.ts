@@ -91,7 +91,7 @@ function requiredScope(method: string, routePath: string): Scope {
         return 'audit:read';
     }
 
-    if (routePath.startsWith('/api/audit-logs')) {
+    if (routePath.startsWith('/api/audit-logs') || routePath.startsWith('/api/payments')) {
         return 'audit:read';
     }
 

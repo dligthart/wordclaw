@@ -1119,59 +1119,88 @@ export default async function apiRoutes(server: FastifyInstance) {
             )
         };
     });
-    const mockPaymentProvider = new MockPaymentProvider();
+    let mockPaymentProvider: MockPaymentProvider;
+    if (process.env.NODE_ENV === 'production' && process.env.PAYMENT_PROVIDER !== 'mock') {
+        throw new Error("A real PaymentProvider is required in production. Set PAYMENT_PROVIDER='mock' to override.");
+    } else {
+        mockPaymentProvider = new MockPaymentProvider();
+    }
+
+    const globalL402Middleware = l402Middleware({
+        provider: mockPaymentProvider, // In production, this would be a real node instead of mock.
+        secretKey: process.env.L402_SECRET || 'dev-macaroon-secret',
+        getPrice: async (req) => {
+            let totalBasePrice = 0;
+
+            if (Array.isArray(req.body)) {
+                for (const item of req.body) {
+                    if (item.contentTypeId) {
+                        const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                        if (contentType && contentType.basePrice) totalBasePrice += contentType.basePrice;
+                    }
+                }
+            } else if (req.body && typeof req.body === 'object') {
+                const body = req.body as any;
+                let cType = body.contentTypeId;
+                if (!cType && req.params && (req.params as any).id) {
+                    const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, Number((req.params as any).id)));
+                    if (existing) cType = existing.contentTypeId;
+                }
+                if (cType) {
+                    const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, cType));
+                    if (contentType && contentType.basePrice) totalBasePrice += contentType.basePrice;
+                }
+            }
+
+            if (totalBasePrice <= 0) return 0;
+
+            const proposedPriceHeader = req.headers['x-proposed-price'];
+            let proposedPrice = 0;
+            if (typeof proposedPriceHeader === 'string') {
+                proposedPrice = parseInt(proposedPriceHeader, 10);
+            }
+
+            const maxCap = totalBasePrice * 10;
+            if (Number.isFinite(proposedPrice) && proposedPrice > totalBasePrice && proposedPrice <= maxCap) {
+                return proposedPrice;
+            } else if (Number.isFinite(proposedPrice) && proposedPrice > maxCap) {
+                return maxCap;
+            }
+
+            return totalBasePrice;
+        },
+        onInvoiceCreated: async (invoice, req, amountSatoshis) => {
+            const principal = (req as any).authPrincipal;
+            const actorId = principal ? String(principal.keyId) : null;
+            const { authorization, cookie, 'x-api-key': _, ...safeHeaders } = req.headers as any;
+            const details = {
+                body: req.body,
+                headers: safeHeaders
+            };
+
+            await db.insert(payments).values({
+                paymentHash: invoice.hash,
+                paymentRequest: invoice.paymentRequest,
+                amountSatoshis,
+                status: 'pending',
+                resourcePath: req.url,
+                actorId,
+                details
+            });
+        },
+        onPaymentVerified: async (paymentHash, req) => {
+            await db.update(payments)
+                .set({ status: 'paid', updatedAt: new Date() })
+                .where(eq(payments.paymentHash, paymentHash));
+        },
+        isPaymentConsumed: async (paymentHash, req) => {
+            const [payment] = await db.select().from(payments).where(eq(payments.paymentHash, paymentHash));
+            return payment ? payment.status === 'paid' : false;
+        }
+    });
 
     server.post('/content-items', {
-        preHandler: l402Middleware({
-            provider: mockPaymentProvider, // In production, this would be a real node
-            secretKey: process.env.L402_SECRET || 'dev-macaroon-secret',
-            getPrice: async (req) => {
-                const body = req.body as typeof contentItems.$inferInsert;
-                if (!body || !body.contentTypeId) return 0;
-
-                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, body.contentTypeId));
-
-                if (!contentType || contentType.basePrice === null || contentType.basePrice <= 0) {
-                    return 0; // Not a paid content type
-                }
-
-                const proposedPriceHeader = req.headers['x-proposed-price'];
-                let proposedPrice = 0;
-                if (typeof proposedPriceHeader === 'string') {
-                    proposedPrice = parseInt(proposedPriceHeader, 10);
-                }
-
-                // Agent must pay at least the base price, but can voluntarily pay more
-                if (proposedPrice > contentType.basePrice) {
-                    return proposedPrice;
-                }
-
-                return contentType.basePrice;
-            },
-            onInvoiceCreated: async (invoice, req, amountSatoshis) => {
-                const principal = (req as any).authPrincipal;
-                const actorId = principal ? String(principal.keyId) : null;
-                const details = {
-                    body: req.body,
-                    headers: req.headers
-                };
-
-                await db.insert(payments).values({
-                    paymentHash: invoice.hash,
-                    paymentRequest: invoice.paymentRequest,
-                    amountSatoshis,
-                    status: 'pending',
-                    resourcePath: req.url,
-                    actorId,
-                    details
-                });
-            },
-            onPaymentVerified: async (paymentHash, req) => {
-                await db.update(payments)
-                    .set({ status: 'paid', updatedAt: new Date() })
-                    .where(eq(payments.paymentHash, paymentHash));
-            }
-        }),
+        preHandler: globalL402Middleware,
         schema: {
             querystring: DryRunQuery,
             body: Type.Object({
@@ -1365,6 +1394,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     });
 
     server.put('/content-items/:id', {
+        preHandler: globalL402Middleware,
         schema: {
             querystring: DryRunQuery,
             params: Type.Object({
@@ -1734,6 +1764,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     });
 
     server.post('/content-items/batch', {
+        preHandler: globalL402Middleware,
         schema: {
             querystring: Type.Object({
                 mode: Type.Optional(Type.Literal('dry_run')),
@@ -1934,6 +1965,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     });
 
     server.put('/content-items/batch', {
+        preHandler: globalL402Middleware,
         schema: {
             querystring: Type.Object({
                 mode: Type.Optional(Type.Literal('dry_run')),
@@ -2190,6 +2222,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     });
 
     server.delete('/content-items/batch', {
+        preHandler: globalL402Middleware,
         schema: {
             querystring: Type.Object({
                 mode: Type.Optional(Type.Literal('dry_run')),
@@ -2497,6 +2530,37 @@ export default async function apiRoutes(server: FastifyInstance) {
                 false,
                 { total, offset, limit, hasMore }
             )
+        };
+    });
+
+    server.get('/payments/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    paymentHash: Type.String(),
+                    amountSatoshis: Type.Number(),
+                    status: Type.String(),
+                    resourcePath: Type.String(),
+                    actorId: Type.Union([Type.String(), Type.Null()]),
+                    details: Type.Any(),
+                    createdAt: Type.String()
+                })),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+        if (!payment) {
+            return reply.status(404).send(toErrorPayload('Payment not found', 'PAYMENT_NOT_FOUND', 'Check the payment ID.'));
+        }
+        return {
+            data: payment,
+            meta: buildMeta('Get a specific payment', ['GET /api/payments/:id'], 'low', 1, false)
         };
     });
 }

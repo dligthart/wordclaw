@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, boolean, jsonb, index } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
     id: serial('id').primaryKey(),
@@ -88,4 +88,9 @@ export const payments = pgTable('payments', {
     details: jsonb('details'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        paymentStatusIdx: index('payment_status_idx').on(table.status),
+        paymentCreatedAtIdx: index('payment_created_at_idx').on(table.createdAt)
+    };
 });

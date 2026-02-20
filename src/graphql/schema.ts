@@ -67,6 +67,26 @@ export const schema = `
     createdAt: String
   }
 
+  """A record of an L402 payment flow."""
+  type Payment {
+    """Stable numeric identifier."""
+    id: ID!
+    """The Lightning payment hash."""
+    paymentHash: String!
+    """Amount in satoshis."""
+    amountSatoshis: Int!
+    """Status: 'pending' or 'paid'."""
+    status: String!
+    """Resource path being accessed."""
+    resourcePath: String!
+    """The actor UUID/ID if authenticated."""
+    actorId: String
+    """JSON details of the request."""
+    details: String
+    """Creation timestamp (ISO-8601)."""
+    createdAt: String
+  }
+
   """A webhook registration for audit/event delivery."""
   type Webhook {
     """Stable numeric identifier."""
@@ -165,6 +185,10 @@ export const schema = `
     contentItemVersions(id: ID!): [ContentItemVersion!]!
     """List audit logs with optional filters and cursor pagination input."""
     auditLogs(entityType: String, entityId: ID, action: String, limit: Int = 50, cursor: String): [AuditLog!]!
+    """List payments with limit/offset pagination."""
+    payments(limit: Int = 50, offset: Int = 0): [Payment!]!
+    """Get one payment by id."""
+    payment(id: ID!): Payment
     """List registered webhook endpoints."""
     webhooks: [Webhook!]!
     """Get one webhook registration by id."""

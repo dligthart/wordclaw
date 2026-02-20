@@ -4,7 +4,7 @@ import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
@@ -1402,6 +1402,54 @@ server.tool(
             });
         } catch (error) {
             return err(`Error listing audit logs: ${(error as Error).message}`);
+        }
+    }
+);
+
+server.tool(
+    'list_payments',
+    'List all payments with optional pagination',
+    {
+        limit: z.number().min(1).max(500).default(50).describe('Maximum number of items to return'),
+        offset: z.number().min(0).default(0).describe('Number of items to skip for pagination')
+    },
+    async ({ limit, offset }) => {
+        try {
+            const results = await db.select().from(payments)
+                .orderBy(desc(payments.createdAt))
+                .limit(limit)
+                .offset(offset);
+
+            return ok(JSON.stringify({
+                message: `Found ${results.length} payments.`,
+                payments: results
+            }, null, 2));
+        } catch (error) {
+            return err(`Error listing payments: ${(error as Error).message}`);
+        }
+    }
+);
+
+server.tool(
+    'get_payment',
+    'Get a single payment by its numeric ID',
+    {
+        id: z.number().describe('The numeric ID of the payment to retrieve')
+    },
+    async ({ id }) => {
+        try {
+            const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+
+            if (!payment) {
+                return err(`Payment with ID ${id} not found.`);
+            }
+
+            return ok(JSON.stringify({
+                message: `Payment ${id} retrieved successfully.`,
+                payment
+            }, null, 2));
+        } catch (error) {
+            return err(`Error retrieving payment: ${(error as Error).message}`);
         }
     }
 );

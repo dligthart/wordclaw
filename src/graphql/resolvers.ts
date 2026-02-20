@@ -2,7 +2,7 @@ import { and, desc, eq, gte, lt, lte, or } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
@@ -471,6 +471,32 @@ export const resolvers = {
                 .where(conditions.length > 0 ? and(...conditions) : undefined)
                 .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
                 .limit(limit);
+        },
+
+        payments: async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: { limit?: number; offset?: number }) => {
+            const limit = clampLimit(rawLimit);
+            const offset = clampOffset(rawOffset);
+            const results = await db.select().from(payments)
+                .orderBy(desc(payments.createdAt))
+                .limit(limit)
+                .offset(offset);
+
+            return results.map(row => ({
+                ...row,
+                createdAt: row.createdAt.toISOString(),
+                details: row.details ? JSON.stringify(row.details) : null
+            }));
+        },
+
+        payment: async (_parent: unknown, { id }: IdArg) => {
+            const numericId = parseId(id);
+            const [payment] = await db.select().from(payments).where(eq(payments.id, numericId));
+            if (!payment) return null;
+            return {
+                ...payment,
+                createdAt: payment.createdAt.toISOString(),
+                details: payment.details ? JSON.stringify(payment.details) : null
+            };
         },
 
         webhooks: async () => {

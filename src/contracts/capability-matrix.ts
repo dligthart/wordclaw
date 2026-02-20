@@ -164,6 +164,20 @@ export const capabilityMatrix: Capability[] = [
         rest: { method: 'DELETE', path: '/webhooks/:id' },
         graphql: { operation: 'Mutation', field: 'deleteWebhook' },
         mcp: { tool: 'delete_webhook' }
+    },
+    {
+        id: 'list_payments',
+        description: 'List L402 payments',
+        rest: { method: 'GET', path: '/payments' },
+        graphql: { operation: 'Query', field: 'payments' },
+        mcp: { tool: 'list_payments' }
+    },
+    {
+        id: 'get_payment',
+        description: 'Get payment by ID',
+        rest: { method: 'GET', path: '/payments/:id' },
+        graphql: { operation: 'Query', field: 'payment' },
+        mcp: { tool: 'get_payment' }
     }
 ];
 

@@ -57,6 +57,13 @@
       "when": 1771613183070,
       "tag": "0007_fat_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1771616082457,
+      "tag": "0008_solid_pretty_boy",
+      "breakpoints": true
     }
   ]
 }
