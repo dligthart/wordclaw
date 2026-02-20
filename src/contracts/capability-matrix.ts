@@ -61,6 +61,13 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'create_content_item' }
     },
     {
+        id: 'create_content_items_batch',
+        description: 'Create multiple content items',
+        rest: { method: 'POST', path: '/content-items/batch' },
+        graphql: { operation: 'Mutation', field: 'createContentItemsBatch' },
+        mcp: { tool: 'create_content_items_batch' }
+    },
+    {
         id: 'list_content_items',
         description: 'List content items',
         rest: { method: 'GET', path: '/content-items' },
@@ -82,11 +89,25 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'update_content_item' }
     },
     {
+        id: 'update_content_items_batch',
+        description: 'Update multiple content items',
+        rest: { method: 'PUT', path: '/content-items/batch' },
+        graphql: { operation: 'Mutation', field: 'updateContentItemsBatch' },
+        mcp: { tool: 'update_content_items_batch' }
+    },
+    {
         id: 'delete_content_item',
         description: 'Delete content item',
         rest: { method: 'DELETE', path: '/content-items/:id' },
         graphql: { operation: 'Mutation', field: 'deleteContentItem' },
         mcp: { tool: 'delete_content_item' }
+    },
+    {
+        id: 'delete_content_items_batch',
+        description: 'Delete multiple content items',
+        rest: { method: 'DELETE', path: '/content-items/batch' },
+        graphql: { operation: 'Mutation', field: 'deleteContentItemsBatch' },
+        mcp: { tool: 'delete_content_items_batch' }
     },
     {
         id: 'list_content_item_versions',
@@ -116,7 +137,10 @@ export const dryRunCapabilities = new Set<string>([
     'update_content_type',
     'delete_content_type',
     'create_content_item',
+    'create_content_items_batch',
     'update_content_item',
+    'update_content_items_batch',
     'delete_content_item',
+    'delete_content_items_batch',
     'rollback_content_item'
 ]);

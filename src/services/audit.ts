@@ -1,11 +1,13 @@
 import { db } from '../db/index.js';
 import { auditLogs } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
+import { auditEventBus } from './event-bus.js';
+import { emitAuditWebhookEvents } from './webhook.js';
 
 // --- Typed enums ---
 
 export type AuditAction = 'create' | 'update' | 'delete' | 'rollback';
-export type EntityType = 'content_type' | 'content_item';
+export type EntityType = 'content_type' | 'content_item' | 'api_key' | 'webhook';
 
 // --- Write ---
 
@@ -14,16 +16,35 @@ export async function logAudit(
     entityType: EntityType,
     entityId: number,
     details?: Record<string, unknown>,
-    userId?: number
+    userId?: number,
+    requestId?: string
 ) {
     try {
-        await db.insert(auditLogs).values({
+        const detailsWithContext = {
+            ...(details || {}),
+            ...(requestId ? { requestId } : {})
+        };
+
+        const [entry] = await db.insert(auditLogs).values({
             action,
             entityType,
             entityId,
             userId: userId ?? null,
-            details: details ? JSON.stringify(details) : null,
-        });
+            details: Object.keys(detailsWithContext).length > 0 ? JSON.stringify(detailsWithContext) : null,
+        }).returning();
+
+        const eventPayload = {
+            id: entry.id,
+            action: entry.action,
+            entityType: entry.entityType,
+            entityId: entry.entityId,
+            userId: entry.userId ?? null,
+            details: entry.details ?? null,
+            createdAt: entry.createdAt
+        };
+
+        auditEventBus.emit('audit', eventPayload);
+        await emitAuditWebhookEvents(eventPayload);
     } catch (error) {
         console.error('Failed to log audit:', error);
         // Audit failure should not break the main operation

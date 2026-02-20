@@ -14,8 +14,11 @@ const REQUIRED_MUTATIONS = [
     'updateContentType',
     'deleteContentType',
     'createContentItem',
+    'createContentItemsBatch',
     'updateContentItem',
+    'updateContentItemsBatch',
     'deleteContentItem',
+    'deleteContentItemsBatch',
     'rollbackContentItem'
 ];
 
@@ -24,8 +27,11 @@ const REQUIRED_DRY_RUN_MUTATIONS = new Set([
     'updateContentType',
     'deleteContentType',
     'createContentItem',
+    'createContentItemsBatch',
     'updateContentItem',
+    'updateContentItemsBatch',
     'deleteContentItem',
+    'deleteContentItemsBatch',
     'rollbackContentItem'
 ]);
 

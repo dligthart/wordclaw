@@ -363,181 +363,122 @@ Build a **policy and approvals layer** on top of the parity baseline:
 
 Objective: remove friction for autonomous agents operating at scale — batch throughput, reliable retries, real-time event integration, and improved discoverability.
 
-### 7.0 Agent Identity & Authentication (High Priority — Prerequisite)
+### 7.0 Agent Identity & Authentication
+Status: ✅ Implemented
 
-**Problem**: Authentication is static environment-variable-only (`API_KEYS=key=scope|scope`). There is no database-backed agent identity, no runtime key management, and `audit_logs.userId` is always `null` — meaning no operation is traceable to a specific agent. All downstream governance, quota, and billing features (Phases 6–7) are blocked without a real identity layer.
+Completed:
+- Added DB-backed `api_keys` model + migration (`drizzle/0004_agent_hardening.sql`)
+- Reworked auth to validate hashed keys from DB, enforce scope/expiry/revocation, and touch `last_used_at`
+- Retained env-key fallback for local/dev flows
+- Added admin key-management routes:
+  - `POST /api/auth/keys`
+  - `GET /api/auth/keys`
+  - `DELETE /api/auth/keys/:id`
+  - `PUT /api/auth/keys/:id`
+- Added MCP key tools:
+  - `create_api_key`
+  - `list_api_keys`
+  - `revoke_api_key`
+- Audit writes now pass authenticated key identity when available
 
-**Current state**:
-- `src/api/auth.ts`: parses keys from `process.env.API_KEYS` at request time — no DB involvement
-- `src/db/schema.ts`: has a `users` table but no `api_keys` table; `audit_logs.userId` is nullable and never populated
-- Principal `keyId` is truncated to 6 chars (`key.slice(0, 6) + '...'`) — not a stable identity
+### 7.1 Batch Operations
+Status: ✅ Implemented
 
-**Deliverables**:
+Completed across REST + GraphQL + MCP:
+- Create batch:
+  - `POST /api/content-items/batch`
+  - `createContentItemsBatch`
+  - `create_content_items_batch`
+- Update batch:
+  - `PUT /api/content-items/batch`
+  - `updateContentItemsBatch`
+  - `update_content_items_batch`
+- Delete batch:
+  - `DELETE /api/content-items/batch`
+  - `deleteContentItemsBatch`
+  - `delete_content_items_batch`
+- Dry-run and atomic transaction modes implemented
+- Partial-success envelopes implemented in non-atomic mode
 
-**Schema** — new `api_keys` table:
-```sql
-api_keys (
-  id          serial PRIMARY KEY,
-  name        text NOT NULL,               -- human label e.g. "picoclaw-prod"
-  key_prefix  text NOT NULL,               -- first 8 chars, shown in UI
-  key_hash    text NOT NULL UNIQUE,        -- bcrypt/sha256 hash of full key
-  scopes      text NOT NULL,               -- pipe-separated scope list
-  created_by  integer REFERENCES users(id),
-  created_at  timestamp DEFAULT now(),
-  expires_at  timestamp,                   -- null = no expiry
-  revoked_at  timestamp,                   -- null = active
-  last_used_at timestamp
-)
-```
+### 7.2 Pagination on List Endpoints
+Status: ✅ Implemented
 
-**API endpoints** (scoped to `admin`):
-- `POST /api/auth/keys` — create key, returns full key once (never stored plain)
-- `GET /api/auth/keys` — list keys with prefix, scopes, created_at, last_used_at, status
-- `DELETE /api/auth/keys/:id` — revoke key (sets `revoked_at`, key rejected immediately)
-- `PUT /api/auth/keys/:id` — rotate key (revoke + issue replacement atomically)
+Completed:
+- REST:
+  - `GET /api/content-types` supports `limit`, `offset` + meta `{ total, limit, offset, hasMore }`
+  - `GET /api/content-items` supports `limit`, `offset` + same meta
+  - `GET /api/audit-logs` supports cursor pagination + `{ total, hasMore, nextCursor }`
+- GraphQL:
+  - `contentTypes(limit, offset)`
+  - `contentItems(..., limit, offset)`
+  - `auditLogs(..., limit, cursor)`
+- MCP:
+  - `list_content_types(limit, offset)`
+  - `get_content_items(..., limit, offset)`
+  - `get_audit_logs(limit, cursor)`
 
-**Auth middleware update**:
-- Validate key against DB (`key_hash`) instead of env var
-- Reject if `revoked_at` is set or `expires_at` is past
-- Update `last_used_at` on every successful auth
-- Return stable `keyId` (DB `id`) — not truncated key prefix
+### 7.3 Idempotency Keys
+Status: ✅ Implemented
 
-**Audit log wiring**:
-- Populate `audit_logs.userId` with the authenticated `api_keys.id` on every write operation
-- All audit events become traceable to a specific agent key
+Completed:
+- Added `src/middleware/idempotency.ts`
+- Accepts `Idempotency-Key` on POST/PUT/DELETE
+- Caches first response by `method:path:key` for 5 minutes
+- Replays cached response on duplicate request
+- Sets `X-Idempotent-Replayed: true` on replay
+- Added middleware tests in `src/middleware/__tests__/idempotency.test.ts`
 
-**MCP + GraphQL parity**:
-- Expose key management as MCP tools: `create_api_key`, `list_api_keys`, `revoke_api_key`
-- Add to capability matrix
+### 7.4 Request ID Tracing
+Status: ✅ Implemented
 
-Exit Criteria:
-- Key creation, listing, revocation all functional via REST + MCP
-- `audit_logs.userId` populated on all authenticated write operations
-- Revoked keys rejected within one request (no caching window)
-- Expired keys rejected at middleware level
-- Env-var fallback (`API_KEYS`) retained for local dev with `AUTH_REQUIRED=false`
-- Migration included for `api_keys` table
+Completed:
+- Added request ID generation (`X-Request-ID` passthrough or generated UUID)
+- Echoes `X-Request-ID` in all responses
+- Error payloads include `context.requestId`
+- Audit service accepts and persists requestId context in `details`
 
-### 7.1 Batch Operations (High Priority)
+### 7.5 Enhanced Health Endpoint
+Status: ✅ Implemented
 
-**Problem**: Agents must issue one HTTP round-trip per item. At volume this saturates the rate limiter (100 req/min) and accumulates latency.
+Completed:
+- `/health` now executes DB ping (`SELECT 1`)
+- Returns:
+  - `200` with `{ status: "ok", services: { database: "ok" }, timestamp }`
+  - `503` with `{ status: "degraded", services: { database: "down" }, timestamp }`
 
-Deliverables:
-- `POST /content-items/batch` — array payload, per-item success/failure envelope
-- `PUT /content-items/batch` — array of `{ id, updates }`, partial-success semantics
-- `DELETE /content-items/batch` — array of IDs
-- Dry-run support on all batch endpoints (`?mode=dry_run`)
-- Transactional option: `"atomic": true` flag rolls back all on any failure
+### 7.6 GraphQL Schema Descriptions
+Status: ✅ Implemented
 
-Exit Criteria:
-- Batch endpoints covered by parity matrix (REST + GraphQL + MCP)
-- Per-item error reporting with same error envelope as single-item operations
-- Dry-run batch returns projected results without writes
+Completed:
+- Added SDL descriptions for all major types, fields, queries, mutations, and batch inputs in `src/graphql/schema.ts`
 
-### 7.2 Pagination on List Endpoints (High Priority)
+### 7.7 Advanced List Filtering
+Status: ✅ Implemented
 
-**Problem**: `GET /content-items` and `GET /content-types` return full result sets with no limit/offset. Agents parsing large datasets face memory and parsing overhead.
+Completed:
+- REST filtering on `GET /api/content-items`:
+  - `contentTypeId`, `status`, `createdAfter`, `createdBefore`
+- GraphQL filtering on `contentItems(...)` with matching args
+- MCP filtering on `get_content_items(...)` with matching args
+- Deterministic invalid-date error handling
 
-Deliverables:
-- Add `limit` and `offset` query params to all list endpoints
-- Cursor-based pagination on `GET /audit-logs` (append-only, cursor is stable)
-- Response metadata: `{ total, offset, limit, hasMore, nextCursor }`
-- Document default limit (50) and maximum limit (500)
+### 7.8 Webhook / Event Stream Support
+Status: ✅ Implemented
 
-Exit Criteria:
-- All list endpoints paginate consistently
-- GraphQL equivalents updated with `limit`/`offset`/`cursor` args
-- MCP tools updated to expose pagination params
-
-### 7.3 Idempotency Keys (Medium Priority)
-
-**Problem**: Network failures on create/update force agents to retry blind. Without idempotency, retries produce duplicate content items and duplicate audit events.
-
-Deliverables:
-- Accept optional `Idempotency-Key: <uuid>` header on all POST/PUT/DELETE
-- Cache successful response keyed by method + path + idempotency key for 5 minutes
-- Return `409 Conflict` with cached result on duplicate key within window
-- Error code `IDEMPOTENCY_KEY_CONFLICT` with remediation text
-
-Exit Criteria:
-- Idempotency tested: duplicate request with same key returns identical response
-- Duplicate request without key creates duplicate (expected behaviour documented)
-
-### 7.4 Request ID Tracing (Medium Priority)
-
-**Problem**: Agents issue concurrent requests. Without correlation IDs, log debugging across parallel operations is infeasible.
-
-Deliverables:
-- Fastify middleware: generate `X-Request-ID` (UUIDv4) if not supplied by caller
-- Echo `X-Request-ID` in response headers
-- Include `requestId` in all error `context` objects
-- Include `requestId` in audit log entries
-
-Exit Criteria:
-- Every request has a traceable ID end-to-end in logs and response headers
-- Error responses include `requestId` in context field
-
-### 7.5 Enhanced Health Endpoint (Medium Priority)
-
-**Problem**: `GET /health` returns `{ status: 'ok' }` without checking database connectivity. Agents cannot distinguish server-up from service-ready.
-
-Deliverables:
-- Extend `/health` to perform a lightweight DB ping
-- Response:
-  ```json
-  {
-    "status": "healthy|degraded|unhealthy",
-    "services": { "database": "healthy|unhealthy" },
-    "timestamp": "<ISO8601>"
-  }
-  ```
-- Return `503` if any dependency is unhealthy
-
-Exit Criteria:
-- Health endpoint correctly reports degraded state when DB is unavailable
-- Agents can gate workflows on readiness check
-
-### 7.6 GraphQL Schema Descriptions (Medium Priority)
-
-**Problem**: GraphQL queries and mutations lack descriptions. Agent LLMs cannot reliably discover intent or constraints from schema introspection alone.
-
-Deliverables:
-- Add `description` strings to all Query fields, Mutation fields, and input types
-- Document required vs optional fields, enum values, and side effects
-- Add usage examples to MCP tool descriptions
-
-Exit Criteria:
-- GraphQL introspection returns descriptions for all operations
-- MCP tool list includes full parameter descriptions with examples
-
-### 7.7 Advanced List Filtering (Medium Priority)
-
-**Problem**: `GET /content-items` supports only `contentTypeId` filter. Agents cannot efficiently find items by status, date range, or content field values.
-
-Deliverables:
-- Add filter query params: `?status=draft&createdAfter=ISO8601&createdBefore=ISO8601`
-- Add to GraphQL and MCP for parity
-- Document filter combinations and precedence
-
-Exit Criteria:
-- Filters covered by parity matrix
-- Invalid filter params return deterministic error code `INVALID_FILTER_PARAM`
-
-### 7.8 Webhook / Event Stream Support (Lower Priority)
-
-**Problem**: Agents must poll audit logs to detect changes. No push mechanism exists for event-driven multi-agent orchestration.
-
-Deliverables:
-- `POST /webhooks` — register callback URL with event type filters (`create`, `update`, `delete`, `rollback`)
-- `GET /webhooks` — list registered webhooks
-- `DELETE /webhooks/:id` — deregister
-- Server sends signed POST to registered URL on matching events
-- WebSocket endpoint `WS /events` for real-time audit stream (authenticated)
-
-Exit Criteria:
-- Webhook delivery verified with test endpoint
-- Failed deliveries retried with exponential backoff (max 3 attempts)
-- `X-Wordclaw-Signature` header for payload verification
+Completed:
+- Added `webhooks` model + migration
+- Added webhook service with HMAC signatures and retries
+- Added webhook REST management:
+  - `POST /api/webhooks`
+  - `GET /api/webhooks`
+  - `GET /api/webhooks/:id`
+  - `PUT /api/webhooks/:id`
+  - `DELETE /api/webhooks/:id`
+- Audit events now emit through event bus and deliver to active webhooks
+- Added authenticated websocket stream endpoint:
+  - `GET /ws/events` (websocket upgrade)
+- Signature header on webhook delivery:
+  - `x-wordclaw-signature`
 
 ---
 

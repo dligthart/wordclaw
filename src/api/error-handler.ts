@@ -22,6 +22,9 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
         error: error.message || 'Unknown Error',
         code: error.code || 'INTERNAL_SERVER_ERROR',
         remediation,
-        context: error.validation // Include validation errors if present
+        context: {
+            ...(error.validation ? { validation: error.validation } : {}),
+            requestId: request.id
+        }
     });
 }

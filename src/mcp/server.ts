@@ -1,12 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
+import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
 
 const server = new McpServer({
     name: 'WordClaw CMS',
@@ -52,6 +53,64 @@ function hasDefinedValues<T extends Record<string, unknown>>(value: T): boolean 
     return Object.keys(stripUndefined(value)).length > 0;
 }
 
+function clampLimit(limit: number | undefined, fallback = 50, max = 500): number {
+    if (limit === undefined) {
+        return fallback;
+    }
+
+    return Math.max(1, Math.min(limit, max));
+}
+
+function clampOffset(offset: number | undefined): number {
+    if (offset === undefined) {
+        return 0;
+    }
+
+    return Math.max(0, offset);
+}
+
+function parseDateArg(value: string | undefined, fieldName: string): Date | null {
+    if (!value) {
+        return null;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        throw new Error(`Invalid ${fieldName}: expected ISO-8601 date-time string`);
+    }
+
+    return parsed;
+}
+
+function encodeCursor(createdAt: Date, id: number): string {
+    return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id }), 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor: string): { createdAt: Date; id: number } | null {
+    try {
+        const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
+            createdAt?: string;
+            id?: number;
+        };
+
+        if (!decoded.createdAt || typeof decoded.id !== 'number') {
+            return null;
+        }
+
+        const createdAt = new Date(decoded.createdAt);
+        if (Number.isNaN(createdAt.getTime())) {
+            return null;
+        }
+
+        return {
+            createdAt,
+            id: decoded.id
+        };
+    } catch {
+        return null;
+    }
+}
+
 server.tool(
     'create_content_type',
     'Create a new content type schema',
@@ -92,10 +151,26 @@ server.tool(
 server.tool(
     'list_content_types',
     'List all available content types',
-    {},
-    async () => {
-        const types = await db.select().from(contentTypes);
-        return okJson(types);
+    {
+        limit: z.number().optional().describe('Page size (default 50, max 500)'),
+        offset: z.number().optional().describe('Row offset (default 0)')
+    },
+    async ({ limit: rawLimit, offset: rawOffset }) => {
+        const limit = clampLimit(rawLimit);
+        const offset = clampOffset(rawOffset);
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes);
+        const types = await db.select()
+            .from(contentTypes)
+            .limit(limit)
+            .offset(offset);
+
+        return okJson({
+            items: types,
+            total,
+            limit,
+            offset,
+            hasMore: offset + types.length < total
+        });
     }
 );
 
@@ -201,6 +276,98 @@ server.tool(
 );
 
 server.tool(
+    'create_api_key',
+    'Create a new API key for agent authentication',
+    {
+        name: z.string().describe('Human-readable name'),
+        scopes: z.array(z.string()).describe('Scopes such as content:read|content:write|audit:read|admin'),
+        expiresAt: z.string().optional().describe('Optional ISO expiry timestamp')
+    },
+    async ({ name, scopes, expiresAt }) => {
+        try {
+            let normalizedScopes: string[];
+            try {
+                normalizedScopes = normalizeScopes(scopes);
+            } catch (error) {
+                return err(`Invalid scopes: ${(error as Error).message}`);
+            }
+
+            let parsedExpiry: Date | null = null;
+            if (expiresAt) {
+                parsedExpiry = new Date(expiresAt);
+                if (Number.isNaN(parsedExpiry.getTime())) {
+                    return err('Invalid expiresAt: must be ISO date-time string');
+                }
+            }
+
+            const { key, plaintext } = await createApiKey({
+                name,
+                scopes: normalizedScopes,
+                expiresAt: parsedExpiry
+            });
+
+            await logAudit('create', 'api_key', key.id, {
+                mcpTool: 'create_api_key',
+                name: key.name,
+                scopes: normalizedScopes
+            });
+
+            return okJson({
+                id: key.id,
+                name: key.name,
+                keyPrefix: key.keyPrefix,
+                scopes: normalizedScopes,
+                expiresAt: key.expiresAt,
+                apiKey: plaintext
+            });
+        } catch (error) {
+            return err(`Error creating API key: ${(error as Error).message}`);
+        }
+    }
+);
+
+server.tool(
+    'list_api_keys',
+    'List API keys and their status',
+    {},
+    async () => {
+        const keys = await listApiKeys();
+        return okJson(keys.map((key) => ({
+            id: key.id,
+            name: key.name,
+            keyPrefix: key.keyPrefix,
+            scopes: key.scopes.split('|').filter(Boolean),
+            createdBy: key.createdBy,
+            createdAt: key.createdAt,
+            expiresAt: key.expiresAt,
+            revokedAt: key.revokedAt,
+            lastUsedAt: key.lastUsedAt
+        })));
+    }
+);
+
+server.tool(
+    'revoke_api_key',
+    'Revoke an active API key',
+    {
+        id: z.number().describe('API key id to revoke')
+    },
+    async ({ id }) => {
+        const revoked = await revokeApiKey(id);
+        if (!revoked) {
+            return err(`API key ${id} not found or already revoked`);
+        }
+
+        await logAudit('delete', 'api_key', revoked.id, {
+            mcpTool: 'revoke_api_key',
+            keyPrefix: revoked.keyPrefix
+        });
+
+        return ok(`Revoked API key ${revoked.id}`);
+    }
+);
+
+server.tool(
     'create_content_item',
     'Create a new content item',
     {
@@ -241,17 +408,189 @@ server.tool(
 );
 
 server.tool(
-    'get_content_items',
-    'Get content items, optionally filtering by type',
+    'create_content_items_batch',
+    'Create multiple content items in one operation',
     {
-        contentTypeId: z.number().optional().describe('Filter by content type ID')
+        items: z.array(z.object({
+            contentTypeId: z.number(),
+            data: z.string(),
+            status: z.string().optional()
+        })),
+        atomic: z.boolean().optional(),
+        dryRun: z.boolean().optional()
     },
-    async ({ contentTypeId }) => {
-        const items = contentTypeId === undefined
-            ? await db.select().from(contentItems)
-            : await db.select().from(contentItems).where(eq(contentItems.contentTypeId, contentTypeId));
+    async ({ items, atomic, dryRun }) => {
+        if (items.length === 0) {
+            return err('EMPTY_BATCH: Provide at least one item.');
+        }
 
-        return okJson(items);
+        const buildItemError = (index: number, code: string, errorText: string) => ({ index, ok: false, code, error: errorText });
+        const isAtomic = atomic === true;
+
+        if (dryRun) {
+            const results = await Promise.all(items.map(async (item, index) => {
+                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                if (!contentType) {
+                    return buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`);
+                }
+
+                const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                if (validation) {
+                    return buildItemError(index, validation.code, validation.error);
+                }
+
+                return {
+                    index,
+                    ok: true,
+                    id: 0,
+                    version: 1
+                };
+            }));
+
+            return okJson({ atomic: isAtomic, results });
+        }
+
+        if (isAtomic) {
+            try {
+                const results = await db.transaction(async (tx) => {
+                    const output: Array<Record<string, unknown>> = [];
+
+                    for (const [index, item] of items.entries()) {
+                        const [contentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                        if (!contentType) {
+                            throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`)));
+                        }
+
+                        const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                        if (validation) {
+                            throw new Error(JSON.stringify(buildItemError(index, validation.code, validation.error)));
+                        }
+
+                        const [created] = await tx.insert(contentItems).values({
+                            contentTypeId: item.contentTypeId,
+                            data: item.data,
+                            status: item.status || 'draft'
+                        }).returning();
+
+                        output.push({
+                            index,
+                            ok: true,
+                            id: created.id,
+                            version: created.version
+                        });
+                    }
+
+                    return output;
+                });
+
+                for (const row of results) {
+                    const id = row.id;
+                    if (typeof id === 'number') {
+                        await logAudit('create', 'content_item', id, { batch: true, mode: 'atomic' });
+                    }
+                }
+
+                return okJson({
+                    atomic: true,
+                    results
+                });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                try {
+                    return err(`BATCH_ATOMIC_FAILED: ${JSON.stringify(JSON.parse(message))}`);
+                } catch {
+                    return err(`BATCH_ATOMIC_FAILED: ${message}`);
+                }
+            }
+        }
+
+        const results: Array<Record<string, unknown>> = [];
+        for (const [index, item] of items.entries()) {
+            try {
+                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                if (!contentType) {
+                    results.push(buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`));
+                    continue;
+                }
+
+                const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                if (validation) {
+                    results.push(buildItemError(index, validation.code, validation.error));
+                    continue;
+                }
+
+                const [created] = await db.insert(contentItems).values({
+                    contentTypeId: item.contentTypeId,
+                    data: item.data,
+                    status: item.status || 'draft'
+                }).returning();
+
+                await logAudit('create', 'content_item', created.id, { batch: true, mode: 'partial' });
+
+                results.push({
+                    index,
+                    ok: true,
+                    id: created.id,
+                    version: created.version
+                });
+            } catch (error) {
+                results.push(buildItemError(index, 'BATCH_ITEM_FAILED', error instanceof Error ? error.message : String(error)));
+            }
+        }
+
+        return okJson({
+            atomic: false,
+            results
+        });
+    }
+);
+
+server.tool(
+    'get_content_items',
+    'Get content items with optional filters and pagination',
+    {
+        contentTypeId: z.number().optional().describe('Filter by content type ID'),
+        status: z.string().optional().describe('Filter by status'),
+        createdAfter: z.string().optional().describe('ISO-8601 created-at lower bound'),
+        createdBefore: z.string().optional().describe('ISO-8601 created-at upper bound'),
+        limit: z.number().optional().describe('Page size (default 50, max 500)'),
+        offset: z.number().optional().describe('Row offset (default 0)')
+    },
+    async ({ contentTypeId, status, createdAfter, createdBefore, limit: rawLimit, offset: rawOffset }) => {
+        try {
+            const limit = clampLimit(rawLimit);
+            const offset = clampOffset(rawOffset);
+            const afterDate = parseDateArg(createdAfter, 'createdAfter');
+            const beforeDate = parseDateArg(createdBefore, 'createdBefore');
+
+            const conditions = [
+                contentTypeId !== undefined ? eq(contentItems.contentTypeId, contentTypeId) : undefined,
+                status ? eq(contentItems.status, status) : undefined,
+                afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
+                beforeDate ? lte(contentItems.createdAt, beforeDate) : undefined,
+            ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+            const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+            const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
+                .from(contentItems)
+                .where(whereClause);
+
+            const items = await db.select()
+                .from(contentItems)
+                .where(whereClause)
+                .limit(limit)
+                .offset(offset);
+
+            return okJson({
+                items,
+                total,
+                limit,
+                offset,
+                hasMore: offset + items.length < total
+            });
+        } catch (error) {
+            return err(`Error listing content items: ${(error as Error).message}`);
+        }
     }
 );
 
@@ -346,6 +685,228 @@ server.tool(
 );
 
 server.tool(
+    'update_content_items_batch',
+    'Update multiple content items in one operation',
+    {
+        items: z.array(z.object({
+            id: z.number(),
+            contentTypeId: z.number().optional(),
+            data: z.string().optional(),
+            status: z.string().optional()
+        })),
+        atomic: z.boolean().optional(),
+        dryRun: z.boolean().optional()
+    },
+    async ({ items, atomic, dryRun }) => {
+        if (items.length === 0) {
+            return err('EMPTY_BATCH: Provide at least one item.');
+        }
+
+        const buildItemError = (index: number, code: string, errorText: string) => ({ index, ok: false, code, error: errorText });
+        const isAtomic = atomic === true;
+
+        const validateInput = async (
+            item: { id: number; contentTypeId?: number; data?: string; status?: string },
+            index: number
+        ) => {
+            const updateData = stripUndefined({
+                contentTypeId: item.contentTypeId,
+                data: item.data,
+                status: item.status
+            });
+
+            if (!hasDefinedValues(updateData)) {
+                return {
+                    ok: false,
+                    error: buildItemError(index, 'EMPTY_UPDATE_BODY', `No update fields provided for item ${item.id}`)
+                } as const;
+            }
+
+            const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
+            if (!existing) {
+                return {
+                    ok: false,
+                    error: buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${item.id} not found`)
+                } as const;
+            }
+
+            const targetContentTypeId = item.contentTypeId ?? existing.contentTypeId;
+            const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+            if (!contentType) {
+                return {
+                    ok: false,
+                    error: buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${targetContentTypeId} not found`)
+                } as const;
+            }
+
+            const targetData = item.data ?? existing.data;
+            const validation = validateContentDataAgainstSchema(contentType.schema, targetData);
+            if (validation) {
+                return {
+                    ok: false,
+                    error: buildItemError(index, validation.code, validation.error)
+                } as const;
+            }
+
+            return {
+                ok: true,
+                existing,
+                updateData
+            } as const;
+        };
+
+        if (dryRun) {
+            const results: Array<Record<string, unknown>> = [];
+            for (const [index, item] of items.entries()) {
+                const validated = await validateInput(item, index);
+                if (!validated.ok) {
+                    results.push(validated.error);
+                    continue;
+                }
+
+                results.push({
+                    index,
+                    ok: true,
+                    id: item.id,
+                    version: validated.existing.version + 1
+                });
+            }
+
+            return okJson({
+                atomic: isAtomic,
+                results
+            });
+        }
+
+        if (isAtomic) {
+            try {
+                const results = await db.transaction(async (tx) => {
+                    const output: Array<Record<string, unknown>> = [];
+
+                    for (const [index, item] of items.entries()) {
+                        const updateData = stripUndefined({
+                            contentTypeId: item.contentTypeId,
+                            data: item.data,
+                            status: item.status
+                        });
+
+                        if (!hasDefinedValues(updateData)) {
+                            throw new Error(JSON.stringify(buildItemError(index, 'EMPTY_UPDATE_BODY', `No update fields provided for item ${item.id}`)));
+                        }
+
+                        const [existing] = await tx.select().from(contentItems).where(eq(contentItems.id, item.id));
+                        if (!existing) {
+                            throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${item.id} not found`)));
+                        }
+
+                        const targetContentTypeId = item.contentTypeId ?? existing.contentTypeId;
+                        const [contentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+                        if (!contentType) {
+                            throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${targetContentTypeId} not found`)));
+                        }
+
+                        const targetData = item.data ?? existing.data;
+                        const validation = validateContentDataAgainstSchema(contentType.schema, targetData);
+                        if (validation) {
+                            throw new Error(JSON.stringify(buildItemError(index, validation.code, validation.error)));
+                        }
+
+                        await tx.insert(contentItemVersions).values({
+                            contentItemId: existing.id,
+                            version: existing.version,
+                            data: existing.data,
+                            status: existing.status,
+                            createdAt: existing.updatedAt
+                        });
+
+                        const [updated] = await tx.update(contentItems)
+                            .set({
+                                ...updateData,
+                                version: existing.version + 1,
+                                updatedAt: new Date()
+                            })
+                            .where(eq(contentItems.id, item.id))
+                            .returning();
+
+                        output.push({
+                            index,
+                            ok: true,
+                            id: updated.id,
+                            version: updated.version
+                        });
+                    }
+
+                    return output;
+                });
+
+                for (const row of results) {
+                    const id = row.id;
+                    if (typeof id === 'number') {
+                        await logAudit('update', 'content_item', id, { batch: true, mode: 'atomic' });
+                    }
+                }
+
+                return okJson({
+                    atomic: true,
+                    results
+                });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                try {
+                    return err(`BATCH_ATOMIC_FAILED: ${JSON.stringify(JSON.parse(message))}`);
+                } catch {
+                    return err(`BATCH_ATOMIC_FAILED: ${message}`);
+                }
+            }
+        }
+
+        const results: Array<Record<string, unknown>> = [];
+        for (const [index, item] of items.entries()) {
+            const validated = await validateInput(item, index);
+            if (!validated.ok) {
+                results.push(validated.error);
+                continue;
+            }
+
+            const result = await db.transaction(async (tx) => {
+                await tx.insert(contentItemVersions).values({
+                    contentItemId: validated.existing.id,
+                    version: validated.existing.version,
+                    data: validated.existing.data,
+                    status: validated.existing.status,
+                    createdAt: validated.existing.updatedAt
+                });
+
+                const [updated] = await tx.update(contentItems)
+                    .set({
+                        ...validated.updateData,
+                        version: validated.existing.version + 1,
+                        updatedAt: new Date()
+                    })
+                    .where(eq(contentItems.id, validated.existing.id))
+                    .returning();
+
+                return updated;
+            });
+
+            await logAudit('update', 'content_item', result.id, { batch: true, mode: 'partial' });
+
+            results.push({
+                index,
+                ok: true,
+                id: result.id,
+                version: result.version
+            });
+        }
+
+        return okJson({
+            atomic: false,
+            results
+        });
+    }
+);
+
+server.tool(
     'delete_content_item',
     'Delete a content item',
     {
@@ -372,6 +933,105 @@ server.tool(
         } catch (error) {
             return err(`Error deleting content item: ${(error as Error).message}`);
         }
+    }
+);
+
+server.tool(
+    'delete_content_items_batch',
+    'Delete multiple content items in one operation',
+    {
+        ids: z.array(z.number()),
+        atomic: z.boolean().optional(),
+        dryRun: z.boolean().optional()
+    },
+    async ({ ids, atomic, dryRun }) => {
+        if (ids.length === 0) {
+            return err('EMPTY_BATCH: Provide at least one id.');
+        }
+
+        const buildItemError = (index: number, code: string, errorText: string) => ({ index, ok: false, code, error: errorText });
+        const isAtomic = atomic === true;
+
+        if (dryRun) {
+            const results = await Promise.all(ids.map(async (id, index) => {
+                const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+                if (!existing) {
+                    return buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`);
+                }
+
+                return {
+                    index,
+                    ok: true,
+                    id
+                };
+            }));
+
+            return okJson({
+                atomic: isAtomic,
+                results
+            });
+        }
+
+        if (isAtomic) {
+            try {
+                const results = await db.transaction(async (tx) => {
+                    const rows: Array<Record<string, unknown>> = [];
+                    for (const [index, id] of ids.entries()) {
+                        const [deleted] = await tx.delete(contentItems).where(eq(contentItems.id, id)).returning();
+                        if (!deleted) {
+                            throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`)));
+                        }
+
+                        rows.push({
+                            index,
+                            ok: true,
+                            id: deleted.id
+                        });
+                    }
+                    return rows;
+                });
+
+                for (const row of results) {
+                    const id = row.id;
+                    if (typeof id === 'number') {
+                        await logAudit('delete', 'content_item', id, { batch: true, mode: 'atomic' });
+                    }
+                }
+
+                return okJson({
+                    atomic: true,
+                    results
+                });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                try {
+                    return err(`BATCH_ATOMIC_FAILED: ${JSON.stringify(JSON.parse(message))}`);
+                } catch {
+                    return err(`BATCH_ATOMIC_FAILED: ${message}`);
+                }
+            }
+        }
+
+        const results: Array<Record<string, unknown>> = [];
+        for (const [index, id] of ids.entries()) {
+            const [deleted] = await db.delete(contentItems).where(eq(contentItems.id, id)).returning();
+            if (!deleted) {
+                results.push(buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`));
+                continue;
+            }
+
+            await logAudit('delete', 'content_item', deleted.id, { batch: true, mode: 'partial' });
+            results.push({
+                index,
+                ok: true,
+                id: deleted.id
+            });
+        }
+
+        return okJson({
+            atomic: false,
+            results
+        });
     }
 );
 
@@ -488,29 +1148,68 @@ server.tool(
         limit: z.number().optional().default(50),
         entityType: z.string().optional(),
         entityId: z.number().optional(),
-        action: z.string().optional()
+        action: z.string().optional(),
+        cursor: z.string().optional().describe('Opaque cursor from previous call')
     },
-    async ({ limit, entityType, entityId, action }) => {
-        const conditions = [
-            entityType ? eq(auditLogs.entityType, entityType) : undefined,
-            entityId !== undefined ? eq(auditLogs.entityId, entityId) : undefined,
-            action ? eq(auditLogs.action, action) : undefined,
-        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+    async ({ limit: rawLimit, entityType, entityId, action, cursor }) => {
+        try {
+            const limit = clampLimit(rawLimit);
+            const decodedCursor = cursor ? decodeCursor(cursor) : null;
+            if (cursor && !decodedCursor) {
+                return err('INVALID_AUDIT_CURSOR: Provide cursor returned by previous get_audit_logs call.');
+            }
 
-        const logs = await db.select({
-            id: auditLogs.id,
-            action: auditLogs.action,
-            entityType: auditLogs.entityType,
-            entityId: auditLogs.entityId,
-            details: auditLogs.details,
-            createdAt: auditLogs.createdAt
-        })
-            .from(auditLogs)
-            .where(conditions.length > 0 ? and(...conditions) : undefined)
-            .orderBy(desc(auditLogs.createdAt))
-            .limit(limit);
+            const baseConditions = [
+                entityType ? eq(auditLogs.entityType, entityType) : undefined,
+                entityId !== undefined ? eq(auditLogs.entityId, entityId) : undefined,
+                action ? eq(auditLogs.action, action) : undefined,
+            ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
-        return okJson(logs);
+            const cursorCondition = decodedCursor
+                ? or(
+                    lt(auditLogs.createdAt, decodedCursor.createdAt),
+                    and(eq(auditLogs.createdAt, decodedCursor.createdAt), lt(auditLogs.id, decodedCursor.id))
+                )
+                : undefined;
+
+            const whereConditions = [
+                ...baseConditions,
+                cursorCondition
+            ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+            const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
+            const baseWhereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
+
+            const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
+                .from(auditLogs)
+                .where(baseWhereClause);
+
+            const logs = await db.select({
+                id: auditLogs.id,
+                action: auditLogs.action,
+                entityType: auditLogs.entityType,
+                entityId: auditLogs.entityId,
+                details: auditLogs.details,
+                createdAt: auditLogs.createdAt
+            })
+                .from(auditLogs)
+                .where(whereClause)
+                .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+                .limit(limit + 1);
+
+            const hasMore = logs.length > limit;
+            const page = hasMore ? logs.slice(0, limit) : logs;
+            const last = page[page.length - 1];
+
+            return okJson({
+                items: page,
+                total,
+                hasMore,
+                nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null
+            });
+        } catch (error) {
+            return err(`Error listing audit logs: ${(error as Error).message}`);
+        }
     }
 );
 

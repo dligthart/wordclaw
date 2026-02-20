@@ -134,7 +134,8 @@ async function main() {
 
         const expectedTools = [
             'create_content_type', 'list_content_types', 'get_content_type', 'update_content_type', 'delete_content_type',
-            'create_content_item', 'get_content_items', 'get_content_item', 'update_content_item', 'delete_content_item',
+            'create_content_item', 'create_content_items_batch', 'get_content_items', 'get_content_item',
+            'update_content_item', 'update_content_items_batch', 'delete_content_item', 'delete_content_items_batch',
             'get_content_item_versions', 'rollback_content_item', 'get_audit_logs'
         ];
 
@@ -232,7 +233,8 @@ async function main() {
             arguments: { limit: 5 }
         }), 'get_audit_logs');
 
-        const logs = JSON.parse(logsText) as unknown[];
+        const logsPayload = JSON.parse(logsText) as { items?: unknown[] };
+        const logs = Array.isArray(logsPayload.items) ? logsPayload.items : [];
         if (logs.length < 3) {
             throw new Error('Not enough logs found');
         }

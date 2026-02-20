@@ -164,4 +164,40 @@ describe('GraphQL Resolver Contracts', () => {
             }
         );
     });
+
+    it('createContentItemsBatch supports dry-run without writes', async () => {
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 4,
+                    schema: '{"type":"object"}'
+                }]),
+            }),
+        }));
+
+        const result = await resolvers.Mutation.createContentItemsBatch({}, {
+            atomic: true,
+            dryRun: true,
+            items: [{
+                contentTypeId: 4,
+                data: '{"title":"ok"}',
+                status: 'draft'
+            }]
+        });
+
+        expect(result.atomic).toBe(true);
+        expect(result.results[0].ok).toBe(true);
+        expect(result.results[0].id).toBe(0);
+        expect(mocks.dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('contentItems rejects invalid createdAfter filter with deterministic code', async () => {
+        await expect(
+            resolvers.Query.contentItems({}, { createdAfter: 'not-a-date' })
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'INVALID_CREATED_AFTER'
+            }
+        } satisfies GraphQLErrorLike);
+    });
 });

@@ -159,6 +159,91 @@
     - `INVALID_CONTENT_DATA_JSON`
     - `CONTENT_SCHEMA_VALIDATION_FAILED`
 
+## Phase 7 Agent Hardening
+
+### ✅ Identity, Auth, and Key Management
+- Added DB-backed API key model (`api_keys`) and migration (`drizzle/0004_agent_hardening.sql`).
+- Reworked auth (`src/api/auth.ts`) to:
+  - validate DB-backed key hash,
+  - enforce revocation/expiry,
+  - update `last_used_at`,
+  - keep env-key fallback for local flows.
+- Added key management endpoints:
+  - `POST /api/auth/keys`
+  - `GET /api/auth/keys`
+  - `DELETE /api/auth/keys/:id`
+  - `PUT /api/auth/keys/:id`
+- Added MCP key tools:
+  - `create_api_key`
+  - `list_api_keys`
+  - `revoke_api_key`
+
+### ✅ Batch Operations (REST + GraphQL + MCP)
+- Implemented REST batch endpoints:
+  - `POST /api/content-items/batch`
+  - `PUT /api/content-items/batch`
+  - `DELETE /api/content-items/batch`
+- Implemented GraphQL batch mutations:
+  - `createContentItemsBatch`
+  - `updateContentItemsBatch`
+  - `deleteContentItemsBatch`
+- Implemented MCP batch tools:
+  - `create_content_items_batch`
+  - `update_content_items_batch`
+  - `delete_content_items_batch`
+- Added support for:
+  - partial-success mode,
+  - atomic transaction mode,
+  - dry-run simulation mode.
+
+### ✅ Pagination, Cursoring, and Filters
+- Added limit/offset pagination to REST list endpoints for content types/items.
+- Added cursor pagination to REST audit logs.
+- Added equivalent GraphQL and MCP parameters for pagination.
+- Extended filtering parity (`contentTypeId`, `status`, `createdAfter`, `createdBefore`) across REST, GraphQL, and MCP.
+
+### ✅ Idempotency + Request Tracing
+- Added idempotency middleware (`src/middleware/idempotency.ts`) for POST/PUT/DELETE:
+  - key format: `method:path:idempotency-key`,
+  - TTL: 5 minutes,
+  - replay header: `X-Idempotent-Replayed: true`.
+- Added request-ID tracing:
+  - honors inbound `X-Request-ID` or generates UUID,
+  - returns `X-Request-ID` on all responses,
+  - injects `context.requestId` into error payloads.
+- Extended audit logging to persist request ID context.
+
+### ✅ Health + Events + Webhooks
+- Upgraded `/health` to run DB readiness check (`SELECT 1`) with 200/503 behavior.
+- Added event bus and webhook delivery service:
+  - signed payloads (`x-wordclaw-signature`),
+  - retry backoff strategy.
+- Added webhook management REST endpoints:
+  - `POST /api/webhooks`
+  - `GET /api/webhooks`
+  - `GET /api/webhooks/:id`
+  - `PUT /api/webhooks/:id`
+  - `DELETE /api/webhooks/:id`
+- Added authenticated websocket audit stream endpoint:
+  - `GET /ws/events` (websocket).
+
+### ✅ GraphQL Discoverability
+- Added full GraphQL SDL descriptions for types, fields, queries, mutations, and batch input objects.
+- Preserved existing operation names while extending arguments for pagination/filter/cursor use.
+
+### ✅ Coverage & Contract Updates
+- Added idempotency middleware tests:
+  - `src/middleware/__tests__/idempotency.test.ts`
+- Expanded API route contract tests for:
+  - invalid date filters,
+  - webhook validation/update guards,
+  - batch dry-run semantics.
+- Expanded GraphQL resolver contract tests for:
+  - batch dry-run behavior,
+  - deterministic invalid filter error code.
+- Updated capability matrix and parity tests for new batch operations and filter/cursor argument parity.
+- Updated verification scripts (`verify-graphql.ts`, `verify-mcp-advanced.ts`) to include batch capabilities.
+
 ## Verification
 
 ### Database Connection

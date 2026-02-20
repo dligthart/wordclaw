@@ -367,4 +367,98 @@ describe('API Route Contracts', () => {
             await app.close();
         }
     });
+
+    it('returns INVALID_CREATED_AFTER for malformed content-item filter date', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?createdAfter=not-a-date'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('INVALID_CREATED_AFTER');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns INVALID_WEBHOOK_EVENTS when webhook registration has empty events', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/webhooks',
+                payload: {
+                    url: 'https://example.com/hooks/wordclaw',
+                    events: [],
+                    secret: 'test-secret'
+                }
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('INVALID_WEBHOOK_EVENTS');
+            expect(mocks.dbMock.insert).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns EMPTY_UPDATE_BODY for webhook update with empty body', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/webhooks/1',
+                payload: {}
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('EMPTY_UPDATE_BODY');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('supports dry-run batch create without executing a transaction', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 4,
+                    schema: '{"type":"object"}'
+                }]),
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-items/batch?mode=dry_run&atomic=true',
+                payload: {
+                    items: [{
+                        contentTypeId: 4,
+                        data: '{"title":"ok"}',
+                        status: 'draft'
+                    }]
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as { data?: { atomic?: boolean; results?: Array<{ ok?: boolean }> }; meta?: { dryRun?: boolean } };
+            expect(body.data?.atomic).toBe(true);
+            expect(body.data?.results?.[0]?.ok).toBe(true);
+            expect(body.meta?.dryRun).toBe(true);
+            expect(mocks.dbMock.transaction).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
 });

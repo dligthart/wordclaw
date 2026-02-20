@@ -14,6 +14,8 @@ export const AIResponseMeta = Type.Object({
     cost: Type.Optional(Type.Number({ description: 'Estimated complexity/cost of the operation' })),
     documentationUrl: Type.Optional(Type.String({ format: 'uri' })),
     dryRun: Type.Optional(Type.Boolean({ description: 'Indicates if the operation was simulated' }))
+}, {
+    additionalProperties: true
 });
 
 export const DryRunQuery = Type.Object({

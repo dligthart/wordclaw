@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, boolean } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
     id: serial('id').primaryKey(),
@@ -45,4 +45,26 @@ export const auditLogs = pgTable('audit_logs', {
     userId: integer('user_id'), // Nullable for now
     details: text('details'), // JSON string or simple text desc
     createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const apiKeys = pgTable('api_keys', {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    keyPrefix: text('key_prefix').notNull(),
+    keyHash: text('key_hash').notNull().unique(),
+    scopes: text('scopes').notNull(),
+    createdBy: integer('created_by').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at'),
+    revokedAt: timestamp('revoked_at'),
+    lastUsedAt: timestamp('last_used_at'),
+});
+
+export const webhooks = pgTable('webhooks', {
+    id: serial('id').primaryKey(),
+    url: text('url').notNull(),
+    events: text('events').notNull(),
+    secret: text('secret').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    active: boolean('active').notNull().default(true),
 });

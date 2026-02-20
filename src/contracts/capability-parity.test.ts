@@ -162,7 +162,8 @@ describe('Capability Parity Matrix', () => {
             const routeBlock = getRestRouteBlock(routesSource, capability.rest.method, capability.rest.path);
             expect(routeBlock, `Missing route block for ${capability.id}`).not.toBeNull();
             expect(
-                routeBlock?.includes('querystring: DryRunQuery'),
+                routeBlock?.includes('querystring: DryRunQuery')
+                || routeBlock?.includes(`mode: Type.Optional(Type.Literal('dry_run'))`),
                 `REST dry-run missing for ${capability.id}`
             ).toBe(true);
 
@@ -190,11 +191,37 @@ describe('Capability Parity Matrix', () => {
     it('keeps content item filtering contract aligned', () => {
         const contentItemsRouteBlock = getRestRouteBlock(routesSource, 'GET', '/content-items');
         expect(contentItemsRouteBlock?.includes('contentTypeId: Type.Optional(Type.Number())')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('status: Type.Optional(Type.String())')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('createdAfter: Type.Optional(Type.String())')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('createdBefore: Type.Optional(Type.String())')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 }))')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('offset: Type.Optional(Type.Number({ minimum: 0 }))')).toBe(true);
 
         const contentItemsToolBlock = getMcpToolBlock(mcpSource, 'get_content_items');
         expect(contentItemsToolBlock?.includes('contentTypeId: z.number().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('status: z.string().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('createdAfter: z.string().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('createdBefore: z.string().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('limit: z.number().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('offset: z.number().optional()')).toBe(true);
 
         const queryArgNames = graphqlSurface.queryArgs.get('contentItems');
         expect(queryArgNames?.has('contentTypeId')).toBe(true);
+        expect(queryArgNames?.has('status')).toBe(true);
+        expect(queryArgNames?.has('createdAfter')).toBe(true);
+        expect(queryArgNames?.has('createdBefore')).toBe(true);
+        expect(queryArgNames?.has('limit')).toBe(true);
+        expect(queryArgNames?.has('offset')).toBe(true);
+    });
+
+    it('keeps audit cursor pagination contract aligned', () => {
+        const auditRouteBlock = getRestRouteBlock(routesSource, 'GET', '/audit-logs');
+        expect(auditRouteBlock?.includes('cursor: Type.Optional(Type.String())')).toBe(true);
+
+        const auditToolBlock = getMcpToolBlock(mcpSource, 'get_audit_logs');
+        expect(auditToolBlock?.includes('cursor: z.string().optional()')).toBe(true);
+
+        const queryArgNames = graphqlSurface.queryArgs.get('auditLogs');
+        expect(queryArgNames?.has('cursor')).toBe(true);
     });
 });

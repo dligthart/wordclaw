@@ -20,13 +20,16 @@ Automated guardrail:
 | Update content type | `PUT /api/content-types/:id` | `updateContentType` | `update_content_type` | Yes |
 | Delete content type | `DELETE /api/content-types/:id` | `deleteContentType` | `delete_content_type` | Yes |
 | Create content item | `POST /api/content-items` | `createContentItem` | `create_content_item` | Yes |
-| List content items | `GET /api/content-items` (`contentTypeId` filter) | `contentItems(contentTypeId)` | `get_content_items(contentTypeId)` | N/A |
+| Create content items batch | `POST /api/content-items/batch` | `createContentItemsBatch` | `create_content_items_batch` | Yes |
+| List content items | `GET /api/content-items` (`contentTypeId`, `status`, `createdAfter`, `createdBefore`, `limit`, `offset`) | `contentItems(contentTypeId, status, createdAfter, createdBefore, limit, offset)` | `get_content_items(contentTypeId, status, createdAfter, createdBefore, limit, offset)` | N/A |
 | Get content item | `GET /api/content-items/:id` | `contentItem` | `get_content_item` | N/A |
 | Update content item | `PUT /api/content-items/:id` | `updateContentItem` | `update_content_item` | Yes |
+| Update content items batch | `PUT /api/content-items/batch` | `updateContentItemsBatch` | `update_content_items_batch` | Yes |
 | Delete content item | `DELETE /api/content-items/:id` | `deleteContentItem` | `delete_content_item` | Yes |
+| Delete content items batch | `DELETE /api/content-items/batch` | `deleteContentItemsBatch` | `delete_content_items_batch` | Yes |
 | List item versions | `GET /api/content-items/:id/versions` | `contentItemVersions` | `get_content_item_versions` | N/A |
 | Rollback content item | `POST /api/content-items/:id/rollback` | `rollbackContentItem` | `rollback_content_item` | Yes |
-| List audit logs | `GET /api/audit-logs` | `auditLogs` | `get_audit_logs` | N/A |
+| List audit logs | `GET /api/audit-logs` (`cursor`, `limit`) | `auditLogs(cursor, limit)` | `get_audit_logs(cursor, limit)` | N/A |
 
 ## Enforcement Rule
 

@@ -1,10 +1,13 @@
 import { IncomingHttpHeaders } from 'node:http';
 
-type Scope = 'content:read' | 'content:write' | 'audit:read' | 'admin';
+import { getApiKeyByHash, hashApiKey, isKeyExpired, parseScopes, touchApiKeyUsage, ApiScope } from '../services/api-key.js';
+
+type Scope = ApiScope;
 
 type AuthPrincipal = {
-    keyId: string;
+    keyId: number | string;
     scopes: Set<string>;
+    source: 'db' | 'env' | 'anonymous';
 };
 
 type AuthSuccess = {
@@ -80,6 +83,14 @@ function getApiKey(headers: IncomingHttpHeaders): string | null {
 function requiredScope(method: string, routePath: string): Scope {
     const upperMethod = method.toUpperCase();
 
+    if (routePath.startsWith('/api/auth/keys') || routePath.startsWith('/api/webhooks')) {
+        return 'admin';
+    }
+
+    if (routePath.startsWith('/ws/events')) {
+        return 'audit:read';
+    }
+
     if (routePath.startsWith('/api/audit-logs')) {
         return 'audit:read';
     }
@@ -105,42 +116,26 @@ function authError(
     };
 }
 
-export function authorizeApiRequest(method: string, routePath: string, headers: IncomingHttpHeaders): AuthResult {
-    const required = requiredScope(method, routePath);
-    const configuredKeys = parseApiKeyConfig(process.env[ENV_API_KEYS]);
-    const key = getApiKey(headers);
-    const mustAuthenticate = isAuthRequired();
+function hasScope(scopes: Set<string>, required: Scope): boolean {
+    return scopes.has('admin') || scopes.has(required);
+}
 
-    if (mustAuthenticate && configuredKeys.size === 0) {
-        return authError(
-            500,
-            'API authentication is enabled but no API keys are configured',
-            'AUTH_CONFIGURATION_INVALID',
-            `Set ${ENV_API_KEYS} with key-to-scope mappings such as 'writer=content:read|content:write|audit:read'.`
-        );
-    }
+function isAuthFailure(value: AuthPrincipal | AuthFailure): value is AuthFailure {
+    return (value as AuthFailure).ok === false;
+}
 
-    if (!mustAuthenticate && configuredKeys.size === 0) {
+async function resolvePrincipalFromKey(rawKey: string, envKeys: Map<string, Set<string>>): Promise<AuthPrincipal | AuthFailure> {
+    const envScopes = envKeys.get(rawKey);
+    if (envScopes) {
         return {
-            ok: true,
-            principal: {
-                keyId: 'anonymous',
-                scopes: new Set(['admin'])
-            }
+            keyId: rawKey.slice(0, 6) + '...',
+            scopes: envScopes,
+            source: 'env'
         };
     }
 
-    if (!key) {
-        return authError(
-            401,
-            'Missing API key',
-            'AUTH_MISSING_API_KEY',
-            `Provide ${HEADER_API_KEY} header or Authorization: Bearer <key>. Required scope: ${required}.`
-        );
-    }
-
-    const scopes = configuredKeys.get(key);
-    if (!scopes) {
+    const dbKey = await getApiKeyByHash(hashApiKey(rawKey));
+    if (!dbKey) {
         return authError(
             401,
             'Invalid API key',
@@ -149,7 +144,59 @@ export function authorizeApiRequest(method: string, routePath: string, headers: 
         );
     }
 
-    if (!scopes.has('admin') && !scopes.has(required)) {
+    if (isKeyExpired(dbKey)) {
+        return authError(
+            401,
+            'Expired API key',
+            'AUTH_KEY_EXPIRED',
+            'Rotate the API key and retry with a non-expired key.',
+            {
+                keyId: dbKey.id
+            }
+        );
+    }
+
+    await touchApiKeyUsage(dbKey.id);
+
+    return {
+        keyId: dbKey.id,
+        scopes: parseScopes(dbKey.scopes),
+        source: 'db'
+    };
+}
+
+export async function authorizeApiRequest(method: string, routePath: string, headers: IncomingHttpHeaders): Promise<AuthResult> {
+    const required = requiredScope(method, routePath);
+    const configuredKeys = parseApiKeyConfig(process.env[ENV_API_KEYS]);
+    const key = getApiKey(headers);
+    const mustAuthenticate = isAuthRequired();
+
+    if (!key) {
+        if (mustAuthenticate) {
+            return authError(
+                401,
+                'Missing API key',
+                'AUTH_MISSING_API_KEY',
+                `Provide ${HEADER_API_KEY} header or Authorization: Bearer <key>. Required scope: ${required}.`
+            );
+        }
+
+        return {
+            ok: true,
+            principal: {
+                keyId: 'anonymous',
+                scopes: new Set(['admin']),
+                source: 'anonymous'
+            }
+        };
+    }
+
+    const resolved = await resolvePrincipalFromKey(key, configuredKeys);
+    if (isAuthFailure(resolved)) {
+        return resolved;
+    }
+
+    if (!hasScope(resolved.scopes, required)) {
         return authError(
             403,
             'Insufficient API key scope',
@@ -157,16 +204,13 @@ export function authorizeApiRequest(method: string, routePath: string, headers: 
             `Use an API key with scope '${required}' or 'admin'.`,
             {
                 requiredScope: required,
-                keyId: key.slice(0, 6) + '...'
+                keyId: resolved.keyId
             }
         );
     }
 
     return {
         ok: true,
-        principal: {
-            keyId: key.slice(0, 6) + '...',
-            scopes
-        }
+        principal: resolved
     };
 }

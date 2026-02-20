@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes } from '../db/schema.js';
@@ -8,6 +8,8 @@ import { logAudit } from '../services/audit.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authorizeApiRequest } from './auth.js';
+import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
+import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -15,12 +17,26 @@ type ContentTypeUpdate = Partial<typeof contentTypes.$inferInsert>;
 type ContentItemUpdate = Partial<typeof contentItems.$inferInsert>;
 type ContentItemsQuery = {
     contentTypeId?: number;
+    status?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+    limit?: number;
+    offset?: number;
+};
+type PaginationQuery = {
+    limit?: number;
+    offset?: number;
 };
 type AuditLogQuery = {
     entityType?: string;
     entityId?: number;
     action?: string;
-    limit: number;
+    limit?: number;
+    cursor?: string;
+};
+type BatchModeQuery = {
+    mode?: 'dry_run';
+    atomic?: boolean;
 };
 
 type AIErrorPayload = {
@@ -50,7 +66,8 @@ function buildMeta(
     availableActions: string[],
     actionPriority: 'low' | 'medium' | 'high' | 'critical',
     cost: number,
-    dryRun = false
+    dryRun = false,
+    extraMeta: Record<string, unknown> = {}
 ) {
     return {
         recommendedNextAction,
@@ -58,6 +75,8 @@ function buildMeta(
         actionPriority,
         cost,
         ...(dryRun ? { dryRun: true } : {})
+        ,
+        ...extraMeta
     };
 }
 
@@ -91,15 +110,681 @@ function notFoundContentItem(id: number): AIErrorPayload {
     );
 }
 
+function toAuditActorId(request: { authPrincipal?: { keyId: number | string } }): number | undefined {
+    return typeof request.authPrincipal?.keyId === 'number' ? request.authPrincipal.keyId : undefined;
+}
+
+function clampLimit(limit: number | undefined, fallback = 50, max = 500): number {
+    if (limit === undefined) {
+        return fallback;
+    }
+
+    return Math.max(1, Math.min(limit, max));
+}
+
+function clampOffset(offset: number | undefined): number {
+    if (offset === undefined) {
+        return 0;
+    }
+
+    return Math.max(0, offset);
+}
+
+function encodeCursor(createdAt: Date, id: number): string {
+    return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id }), 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor: string): { createdAt: Date; id: number } | null {
+    try {
+        const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
+            createdAt?: string;
+            id?: number;
+        };
+
+        if (!decoded.createdAt || typeof decoded.id !== 'number') {
+            return null;
+        }
+
+        const date = new Date(decoded.createdAt);
+        if (Number.isNaN(date.getTime())) {
+            return null;
+        }
+
+        return {
+            createdAt: date,
+            id: decoded.id
+        };
+    } catch {
+        return null;
+    }
+}
+
+function isValidUrl(url: string): boolean {
+    try {
+        // eslint-disable-next-line no-new
+        new URL(url);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 export default async function apiRoutes(server: FastifyInstance) {
     server.addHook('preHandler', async (request, reply) => {
         const path = request.url.split('?')[0];
-        const auth = authorizeApiRequest(request.method, path, request.headers);
+        const auth = await authorizeApiRequest(request.method, path, request.headers);
         if (!auth.ok) {
             return reply.status(auth.statusCode).send(auth.payload);
         }
 
+        (request as { authPrincipal?: { keyId: number | string; scopes: Set<string>; source: string } }).authPrincipal = auth.principal;
+
         return undefined;
+    });
+
+    server.post('/auth/keys', {
+        schema: {
+            body: Type.Object({
+                name: Type.String(),
+                scopes: Type.Array(Type.String()),
+                expiresAt: Type.Optional(Type.String({ format: 'date-time' }))
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    name: Type.String(),
+                    keyPrefix: Type.String(),
+                    scopes: Type.Array(Type.String()),
+                    expiresAt: Type.Optional(Type.String()),
+                    apiKey: Type.String()
+                })),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as { name: string; scopes: string[]; expiresAt?: string };
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+
+        let scopes: string[];
+        try {
+            scopes = normalizeScopes(body.scopes);
+        } catch (error) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid scopes',
+                'INVALID_KEY_SCOPES',
+                `Use only supported scopes: content:read, content:write, audit:read, admin. Details: ${(error as Error).message}`
+            ));
+        }
+
+        let expiresAt: Date | null = null;
+        if (body.expiresAt) {
+            expiresAt = new Date(body.expiresAt);
+            if (Number.isNaN(expiresAt.getTime())) {
+                return reply.status(400).send(toErrorPayload(
+                    'Invalid expiresAt timestamp',
+                    'INVALID_EXPIRES_AT',
+                    'Provide expiresAt as an ISO-8601 date-time string.'
+                ));
+            }
+        }
+
+        const { key, plaintext } = await createApiKey({
+            name: body.name,
+            scopes,
+            createdBy: actorId ?? null,
+            expiresAt
+        });
+
+        await logAudit(
+            'create',
+            'api_key',
+            key.id,
+            { authKeyCreated: true, scopes, name: key.name },
+            actorId,
+            request.id
+        );
+
+        return reply.status(201).send({
+            data: {
+                id: key.id,
+                name: key.name,
+                keyPrefix: key.keyPrefix,
+                scopes,
+                ...(key.expiresAt ? { expiresAt: key.expiresAt.toISOString() } : {}),
+                apiKey: plaintext
+            },
+            meta: buildMeta(
+                'Store this API key securely; plaintext is shown only once',
+                ['GET /api/auth/keys', 'PUT /api/auth/keys/:id', 'DELETE /api/auth/keys/:id'],
+                'high',
+                1
+            )
+        });
+    });
+
+    server.get('/auth/keys', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    name: Type.String(),
+                    keyPrefix: Type.String(),
+                    scopes: Type.Array(Type.String()),
+                    createdBy: Type.Union([Type.Number(), Type.Null()]),
+                    createdAt: Type.String(),
+                    expiresAt: Type.Union([Type.String(), Type.Null()]),
+                    revokedAt: Type.Union([Type.String(), Type.Null()]),
+                    lastUsedAt: Type.Union([Type.String(), Type.Null()])
+                })))
+            }
+        }
+    }, async () => {
+        const keys = await listApiKeys();
+
+        return {
+            data: keys.map((key) => ({
+                id: key.id,
+                name: key.name,
+                keyPrefix: key.keyPrefix,
+                scopes: key.scopes.split('|').filter(Boolean),
+                createdBy: key.createdBy,
+                createdAt: key.createdAt.toISOString(),
+                expiresAt: key.expiresAt ? key.expiresAt.toISOString() : null,
+                revokedAt: key.revokedAt ? key.revokedAt.toISOString() : null,
+                lastUsedAt: key.lastUsedAt ? key.lastUsedAt.toISOString() : null
+            })),
+            meta: buildMeta(
+                'Review key health and rotate stale credentials',
+                ['POST /api/auth/keys', 'PUT /api/auth/keys/:id', 'DELETE /api/auth/keys/:id'],
+                'medium',
+                1
+            )
+        };
+    });
+
+    server.delete('/auth/keys/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    message: Type.String()
+                })),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const { id } = request.params as IdParams;
+        const revoked = await revokeApiKey(id);
+        if (!revoked) {
+            return reply.status(404).send(toErrorPayload(
+                'API key not found',
+                'API_KEY_NOT_FOUND',
+                `The API key with ID ${id} does not exist or is already revoked.`
+            ));
+        }
+
+        await logAudit(
+            'delete',
+            'api_key',
+            revoked.id,
+            { apiKeyRevoked: true, keyPrefix: revoked.keyPrefix },
+            actorId,
+            request.id
+        );
+
+        return {
+            data: {
+                id: revoked.id,
+                message: 'API key revoked successfully'
+            },
+            meta: buildMeta(
+                'Create or rotate replacement credentials if needed',
+                ['POST /api/auth/keys', 'GET /api/auth/keys'],
+                'high',
+                1
+            )
+        };
+    });
+
+    server.put('/auth/keys/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    oldId: Type.Number(),
+                    newId: Type.Number(),
+                    keyPrefix: Type.String(),
+                    apiKey: Type.String()
+                })),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const { id } = request.params as IdParams;
+
+        const rotated = await rotateApiKey(id, actorId ?? null);
+        if (!rotated) {
+            return reply.status(404).send(toErrorPayload(
+                'API key not found',
+                'API_KEY_NOT_FOUND',
+                `The API key with ID ${id} does not exist or is already revoked.`
+            ));
+        }
+
+        await logAudit(
+            'update',
+            'api_key',
+            rotated.newKey.id,
+            { apiKeyRotated: true, oldId: rotated.oldKey.id, newId: rotated.newKey.id },
+            actorId,
+            request.id
+        );
+
+        return {
+            data: {
+                oldId: rotated.oldKey.id,
+                newId: rotated.newKey.id,
+                keyPrefix: rotated.newKey.keyPrefix,
+                apiKey: rotated.plaintext
+            },
+            meta: buildMeta(
+                'Update clients to use the new key immediately',
+                ['GET /api/auth/keys'],
+                'critical',
+                1
+            )
+        };
+    });
+
+    server.post('/webhooks', {
+        schema: {
+            querystring: DryRunQuery,
+            body: Type.Object({
+                url: Type.String({ format: 'uri' }),
+                events: Type.Array(Type.String()),
+                secret: Type.String(),
+                active: Type.Optional(Type.Boolean())
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    url: Type.String(),
+                    events: Type.Array(Type.String()),
+                    active: Type.Boolean(),
+                    createdAt: Type.String()
+                })),
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    url: Type.String(),
+                    events: Type.Array(Type.String()),
+                    active: Type.Boolean(),
+                    createdAt: Type.String()
+                })),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const { mode } = request.query as DryRunQueryType;
+        const body = request.body as { url: string; events: string[]; secret: string; active?: boolean };
+
+        if (!isValidUrl(body.url)) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid webhook URL',
+                'INVALID_WEBHOOK_URL',
+                'Provide a valid absolute URL such as https://example.com/hooks/wordclaw.'
+            ));
+        }
+
+        let events: string[];
+        try {
+            events = normalizeWebhookEvents(body.events);
+        } catch (error) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid webhook events',
+                'INVALID_WEBHOOK_EVENTS',
+                (error as Error).message
+            ));
+        }
+
+        if (isDryRun(mode)) {
+            return reply.status(200).send({
+                data: {
+                    id: 0,
+                    url: body.url,
+                    events,
+                    active: body.active ?? true,
+                    createdAt: new Date().toISOString()
+                },
+                meta: buildMeta(
+                    'Create webhook registration',
+                    ['POST /api/webhooks'],
+                    'medium',
+                    0,
+                    true
+                )
+            });
+        }
+
+        const created = await createWebhook({
+            url: body.url,
+            events,
+            secret: body.secret,
+            active: body.active
+        });
+
+        await logAudit(
+            'create',
+            'webhook',
+            created.id,
+            { url: created.url, events, active: created.active },
+            actorId,
+            request.id
+        );
+
+        return reply.status(201).send({
+            data: {
+                id: created.id,
+                url: created.url,
+                events: parseWebhookEvents(created.events),
+                active: created.active,
+                createdAt: created.createdAt.toISOString()
+            },
+            meta: buildMeta(
+                'Verify webhook delivery and active status',
+                ['GET /api/webhooks', 'PUT /api/webhooks/:id', 'DELETE /api/webhooks/:id'],
+                'medium',
+                1
+            )
+        });
+    });
+
+    server.get('/webhooks', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    url: Type.String(),
+                    events: Type.Array(Type.String()),
+                    active: Type.Boolean(),
+                    createdAt: Type.String()
+                })))
+            }
+        }
+    }, async () => {
+        const hooks = await listWebhooks();
+        return {
+            data: hooks.map((hook) => ({
+                id: hook.id,
+                url: hook.url,
+                events: parseWebhookEvents(hook.events),
+                active: hook.active,
+                createdAt: hook.createdAt.toISOString()
+            })),
+            meta: buildMeta(
+                'Inspect or update a webhook registration',
+                ['POST /api/webhooks', 'PUT /api/webhooks/:id', 'DELETE /api/webhooks/:id'],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.get('/webhooks/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    url: Type.String(),
+                    events: Type.Array(Type.String()),
+                    active: Type.Boolean(),
+                    createdAt: Type.String()
+                })),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const hook = await getWebhookById(id);
+        if (!hook) {
+            return reply.status(404).send(toErrorPayload(
+                'Webhook not found',
+                'WEBHOOK_NOT_FOUND',
+                `No webhook exists with ID ${id}.`
+            ));
+        }
+
+        return {
+            data: {
+                id: hook.id,
+                url: hook.url,
+                events: parseWebhookEvents(hook.events),
+                active: hook.active,
+                createdAt: hook.createdAt.toISOString()
+            },
+            meta: buildMeta(
+                'Update or remove this webhook',
+                ['PUT /api/webhooks/:id', 'DELETE /api/webhooks/:id'],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.put('/webhooks/:id', {
+        schema: {
+            querystring: DryRunQuery,
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                url: Type.Optional(Type.String({ format: 'uri' })),
+                events: Type.Optional(Type.Array(Type.String())),
+                secret: Type.Optional(Type.String()),
+                active: Type.Optional(Type.Boolean())
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    url: Type.String(),
+                    events: Type.Array(Type.String()),
+                    active: Type.Boolean(),
+                    createdAt: Type.String()
+                })),
+                400: AIErrorResponse,
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const { id } = request.params as IdParams;
+        const { mode } = request.query as DryRunQueryType;
+        const body = request.body as {
+            url?: string;
+            events?: string[];
+            secret?: string;
+            active?: boolean;
+        };
+
+        if (!hasDefinedValues(body)) {
+            return reply.status(400).send(toErrorPayload(
+                'Empty update payload',
+                'EMPTY_UPDATE_BODY',
+                'Provide at least one of url, events, secret, or active.'
+            ));
+        }
+
+        if (body.url !== undefined && !isValidUrl(body.url)) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid webhook URL',
+                'INVALID_WEBHOOK_URL',
+                'Provide a valid absolute URL such as https://example.com/hooks/wordclaw.'
+            ));
+        }
+
+        let normalizedEvents: string[] | undefined;
+        if (body.events !== undefined) {
+            try {
+                normalizedEvents = normalizeWebhookEvents(body.events);
+            } catch (error) {
+                return reply.status(400).send(toErrorPayload(
+                    'Invalid webhook events',
+                    'INVALID_WEBHOOK_EVENTS',
+                    (error as Error).message
+                ));
+            }
+        }
+
+        const existing = await getWebhookById(id);
+        if (!existing) {
+            return reply.status(404).send(toErrorPayload(
+                'Webhook not found',
+                'WEBHOOK_NOT_FOUND',
+                `No webhook exists with ID ${id}.`
+            ));
+        }
+
+        if (isDryRun(mode)) {
+            return {
+                data: {
+                    id: existing.id,
+                    url: body.url ?? existing.url,
+                    events: normalizedEvents ?? parseWebhookEvents(existing.events),
+                    active: body.active ?? existing.active,
+                    createdAt: existing.createdAt.toISOString()
+                },
+                meta: buildMeta(
+                    `Execute webhook update for ID ${id}`,
+                    ['PUT /api/webhooks/:id'],
+                    'low',
+                    0,
+                    true
+                )
+            };
+        }
+
+        const updated = await updateWebhook(id, {
+            url: body.url,
+            events: normalizedEvents,
+            secret: body.secret,
+            active: body.active
+        });
+
+        if (!updated) {
+            return reply.status(404).send(toErrorPayload(
+                'Webhook not found',
+                'WEBHOOK_NOT_FOUND',
+                `No webhook exists with ID ${id}.`
+            ));
+        }
+
+        await logAudit(
+            'update',
+            'webhook',
+            updated.id,
+            {
+                url: updated.url,
+                events: parseWebhookEvents(updated.events),
+                active: updated.active
+            },
+            actorId,
+            request.id
+        );
+
+        return {
+            data: {
+                id: updated.id,
+                url: updated.url,
+                events: parseWebhookEvents(updated.events),
+                active: updated.active,
+                createdAt: updated.createdAt.toISOString()
+            },
+            meta: buildMeta(
+                'Verify webhook behavior after update',
+                ['GET /api/webhooks/:id'],
+                'medium',
+                1
+            )
+        };
+    });
+
+    server.delete('/webhooks/:id', {
+        schema: {
+            querystring: DryRunQuery,
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    message: Type.String()
+                })),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const { mode } = request.query as DryRunQueryType;
+        const { id } = request.params as IdParams;
+
+        const existing = await getWebhookById(id);
+        if (!existing) {
+            return reply.status(404).send(toErrorPayload(
+                'Webhook not found',
+                'WEBHOOK_NOT_FOUND',
+                `No webhook exists with ID ${id}.`
+            ));
+        }
+
+        if (isDryRun(mode)) {
+            return {
+                data: {
+                    id,
+                    message: `[Dry Run] Webhook ${id} would be deleted`
+                },
+                meta: buildMeta(
+                    'Execute webhook deletion if confirmed',
+                    ['DELETE /api/webhooks/:id'],
+                    'high',
+                    0,
+                    true
+                )
+            };
+        }
+
+        await deleteWebhook(id);
+
+        await logAudit(
+            'delete',
+            'webhook',
+            existing.id,
+            { url: existing.url, events: parseWebhookEvents(existing.events) },
+            actorId,
+            request.id
+        );
+
+        return {
+            data: {
+                id,
+                message: `Webhook ${id} deleted successfully`
+            },
+            meta: buildMeta(
+                'Review remaining webhook registrations',
+                ['GET /api/webhooks', 'POST /api/webhooks'],
+                'medium',
+                1
+            )
+        };
     });
 
     server.post('/content-types', {
@@ -148,7 +833,14 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentTypes).values(data).returning();
-        await logAudit('create', 'content_type', newItem.id, newItem);
+        await logAudit(
+            'create',
+            'content_type',
+            newItem.id,
+            newItem,
+            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            request.id
+        );
 
         return reply.status(201).send({
             data: newItem,
@@ -163,6 +855,10 @@ export default async function apiRoutes(server: FastifyInstance) {
 
     server.get('/content-types', {
         schema: {
+            querystring: Type.Object({
+                limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+                offset: Type.Optional(Type.Number({ minimum: 0 }))
+            }),
             response: {
                 200: createAIResponse(Type.Array(Type.Object({
                     id: Type.Number(),
@@ -175,15 +871,26 @@ export default async function apiRoutes(server: FastifyInstance) {
                 })))
             }
         }
-    }, async () => {
-        const types = await db.select().from(contentTypes);
+    }, async (request, reply) => {
+        const { limit: rawLimit, offset: rawOffset } = request.query as PaginationQuery;
+        const limit = clampLimit(rawLimit);
+        const offset = clampOffset(rawOffset);
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes);
+        const types = await db.select()
+            .from(contentTypes)
+            .limit(limit)
+            .offset(offset);
+
+        const hasMore = offset + types.length < total;
         return {
             data: types,
             meta: buildMeta(
                 types.length > 0 ? 'Select a content type to create items' : 'Create a new content type',
                 ['POST /api/content-types'],
                 'low',
-                1
+                1,
+                false,
+                { total, offset, limit, hasMore }
             )
         };
     });
@@ -299,7 +1006,14 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentType(id));
         }
 
-        await logAudit('update', 'content_type', updatedType.id, { ...updateData, previous: 'n/a' });
+        await logAudit(
+            'update',
+            'content_type',
+            updatedType.id,
+            { ...updateData, previous: 'n/a' },
+            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            request.id
+        );
 
         return {
             data: updatedType,
@@ -359,7 +1073,14 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentType(id));
         }
 
-        await logAudit('delete', 'content_type', deletedType.id, deletedType);
+        await logAudit(
+            'delete',
+            'content_type',
+            deletedType.id,
+            deletedType,
+            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            request.id
+        );
 
         return {
             data: {
@@ -426,7 +1147,14 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentItems).values(data).returning();
-        await logAudit('create', 'content_item', newItem.id, newItem);
+        await logAudit(
+            'create',
+            'content_item',
+            newItem.id,
+            newItem,
+            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            request.id
+        );
 
         return reply.status(201).send({
             data: newItem,
@@ -442,7 +1170,12 @@ export default async function apiRoutes(server: FastifyInstance) {
     server.get('/content-items', {
         schema: {
             querystring: Type.Object({
-                contentTypeId: Type.Optional(Type.Number())
+                contentTypeId: Type.Optional(Type.Number()),
+                status: Type.Optional(Type.String()),
+                createdAfter: Type.Optional(Type.String()),
+                createdBefore: Type.Optional(Type.String()),
+                limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+                offset: Type.Optional(Type.Number({ minimum: 0 }))
             }),
             response: {
                 200: createAIResponse(Type.Array(Type.Object({
@@ -454,13 +1187,56 @@ export default async function apiRoutes(server: FastifyInstance) {
                     createdAt: Type.String(),
                     updatedAt: Type.String()
                 })))
+                ,
+                400: AIErrorResponse
             }
         }
-    }, async (request) => {
-        const { contentTypeId } = request.query as ContentItemsQuery;
-        const items = contentTypeId === undefined
-            ? await db.select().from(contentItems)
-            : await db.select().from(contentItems).where(eq(contentItems.contentTypeId, contentTypeId));
+    }, async (request, reply) => {
+        const {
+            contentTypeId,
+            status,
+            createdAfter,
+            createdBefore,
+            limit: rawLimit,
+            offset: rawOffset
+        } = request.query as ContentItemsQuery;
+
+        const limit = clampLimit(rawLimit);
+        const offset = clampOffset(rawOffset);
+
+        const afterDate = createdAfter ? new Date(createdAfter) : null;
+        if (afterDate && Number.isNaN(afterDate.getTime())) {
+            return reply.status(400).send({
+                error: 'Invalid createdAfter timestamp',
+                code: 'INVALID_CREATED_AFTER',
+                remediation: 'Provide createdAfter as an ISO-8601 date-time string.'
+            });
+        }
+
+        const beforeDate = createdBefore ? new Date(createdBefore) : null;
+        if (beforeDate && Number.isNaN(beforeDate.getTime())) {
+            return reply.status(400).send({
+                error: 'Invalid createdBefore timestamp',
+                code: 'INVALID_CREATED_BEFORE',
+                remediation: 'Provide createdBefore as an ISO-8601 date-time string.'
+            });
+        }
+
+        const conditions = [
+            contentTypeId !== undefined ? eq(contentItems.contentTypeId, contentTypeId) : undefined,
+            status ? eq(contentItems.status, status) : undefined,
+            afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
+            beforeDate ? lte(contentItems.createdAt, beforeDate) : undefined,
+        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentItems).where(whereClause);
+        const items = await db.select()
+            .from(contentItems)
+            .where(whereClause)
+            .limit(limit)
+            .offset(offset);
+        const hasMore = offset + items.length < total;
 
         return {
             data: items,
@@ -468,7 +1244,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 'Filter or select a content item',
                 ['POST /api/content-items'],
                 'low',
-                1
+                1,
+                false,
+                { total, offset, limit, hasMore }
             )
         };
     });
@@ -613,7 +1391,14 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentItem(id));
         }
 
-        await logAudit('update', 'content_item', result.id, updateData);
+        await logAudit(
+            'update',
+            'content_item',
+            result.id,
+            updateData,
+            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            request.id
+        );
 
         return {
             data: result,
@@ -767,7 +1552,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                 return reply.status(404).send(notFoundContentItem(id));
             }
 
-            await logAudit('rollback', 'content_item', result.id, { fromVersion: result.version - 1, toVersion: version });
+            await logAudit(
+                'rollback',
+                'content_item',
+                result.id,
+                { fromVersion: result.version - 1, toVersion: version },
+                toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+                request.id
+            );
 
             return {
                 data: {
@@ -842,7 +1634,14 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentItem(id));
         }
 
-        await logAudit('delete', 'content_item', deletedItem.id, deletedItem);
+        await logAudit(
+            'delete',
+            'content_item',
+            deletedItem.id,
+            deletedItem,
+            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            request.id
+        );
 
         return {
             data: {
@@ -858,13 +1657,631 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
+    server.post('/content-items/batch', {
+        schema: {
+            querystring: Type.Object({
+                mode: Type.Optional(Type.Literal('dry_run')),
+                atomic: Type.Optional(Type.Boolean())
+            }),
+            body: Type.Object({
+                items: Type.Array(Type.Object({
+                    contentTypeId: Type.Number(),
+                    data: Type.String(),
+                    status: Type.Optional(Type.String())
+                }))
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    atomic: Type.Boolean(),
+                    results: Type.Array(Type.Object({
+                        index: Type.Number(),
+                        ok: Type.Boolean(),
+                        id: Type.Optional(Type.Number()),
+                        version: Type.Optional(Type.Number()),
+                        code: Type.Optional(Type.String()),
+                        error: Type.Optional(Type.String())
+                    }))
+                })),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { mode, atomic } = request.query as BatchModeQuery;
+        const { items } = request.body as {
+            items: Array<{ contentTypeId: number; data: string; status?: string }>;
+        };
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const isAtomic = atomic === true;
+
+        if (items.length === 0) {
+            return reply.status(400).send(toErrorPayload(
+                'Batch request is empty',
+                'EMPTY_BATCH',
+                'Provide at least one item in body.items.'
+            ));
+        }
+
+        const buildError = (index: number, code: string, error: string) => ({ index, ok: false, code, error });
+
+        if (isDryRun(mode)) {
+            const results = await Promise.all(items.map(async (item, index) => {
+                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                if (!contentType) {
+                    return buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`);
+                }
+
+                const contentValidation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                if (contentValidation) {
+                    return buildError(index, contentValidation.code, contentValidation.error);
+                }
+
+                return {
+                    index,
+                    ok: true,
+                    id: 0,
+                    version: 1
+                };
+            }));
+
+            return {
+                data: {
+                    atomic: isAtomic,
+                    results
+                },
+                meta: buildMeta(
+                    'Execute batch create when dry-run output is acceptable',
+                    ['POST /api/content-items/batch'],
+                    'medium',
+                    0,
+                    true
+                )
+            };
+        }
+
+        if (isAtomic) {
+            try {
+                const created = await db.transaction(async (tx) => {
+                    const results: Array<{ index: number; ok: boolean; id?: number; version?: number }> = [];
+                    for (const [index, item] of items.entries()) {
+                        const [contentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                        if (!contentType) {
+                            throw new Error(JSON.stringify(buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`)));
+                        }
+
+                        const contentValidation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                        if (contentValidation) {
+                            throw new Error(JSON.stringify(buildError(index, contentValidation.code, contentValidation.error)));
+                        }
+
+                        const [newItem] = await tx.insert(contentItems).values({
+                            contentTypeId: item.contentTypeId,
+                            data: item.data,
+                            status: item.status || 'draft'
+                        }).returning();
+
+                        results.push({ index, ok: true, id: newItem.id, version: newItem.version });
+                    }
+                    return results;
+                });
+
+                for (const entry of created) {
+                    if (entry.id !== undefined) {
+                        await logAudit(
+                            'create',
+                            'content_item',
+                            entry.id,
+                            { batch: true, mode: 'atomic' },
+                            actorId,
+                            request.id
+                        );
+                    }
+                }
+
+                return {
+                    data: {
+                        atomic: true,
+                        results: created
+                    },
+                    meta: buildMeta(
+                        'Review created items',
+                        ['GET /api/content-items'],
+                        'medium',
+                        1
+                    )
+                };
+            } catch (error) {
+                const parsed = error instanceof Error ? error.message : String(error);
+                let context: Record<string, unknown> | undefined;
+                try {
+                    context = JSON.parse(parsed);
+                } catch {
+                    context = { details: parsed };
+                }
+
+                return reply.status(400).send({
+                    error: 'Atomic batch create failed',
+                    code: 'BATCH_ATOMIC_FAILED',
+                    remediation: 'Fix the failing item and retry; atomic mode rolls back all items on failure.',
+                    ...(context ? { context } : {})
+                });
+            }
+        }
+
+        const results: Array<{ index: number; ok: boolean; id?: number; version?: number; code?: string; error?: string }> = [];
+        for (const [index, item] of items.entries()) {
+            try {
+                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                if (!contentType) {
+                    results.push(buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`));
+                    continue;
+                }
+
+                const contentValidation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                if (contentValidation) {
+                    results.push(buildError(index, contentValidation.code, contentValidation.error));
+                    continue;
+                }
+
+                const [newItem] = await db.insert(contentItems).values({
+                    contentTypeId: item.contentTypeId,
+                    data: item.data,
+                    status: item.status || 'draft'
+                }).returning();
+
+                await logAudit(
+                    'create',
+                    'content_item',
+                    newItem.id,
+                    { batch: true, mode: 'partial' },
+                    actorId,
+                    request.id
+                );
+
+                results.push({ index, ok: true, id: newItem.id, version: newItem.version });
+            } catch (error) {
+                results.push(buildError(index, 'BATCH_ITEM_FAILED', error instanceof Error ? error.message : String(error)));
+            }
+        }
+
+        return {
+            data: {
+                atomic: false,
+                results
+            },
+            meta: buildMeta(
+                'Review failed items and retry only failures',
+                ['POST /api/content-items/batch'],
+                'medium',
+                1
+            )
+        };
+    });
+
+    server.put('/content-items/batch', {
+        schema: {
+            querystring: Type.Object({
+                mode: Type.Optional(Type.Literal('dry_run')),
+                atomic: Type.Optional(Type.Boolean())
+            }),
+            body: Type.Object({
+                items: Type.Array(Type.Object({
+                    id: Type.Number(),
+                    contentTypeId: Type.Optional(Type.Number()),
+                    data: Type.Optional(Type.String()),
+                    status: Type.Optional(Type.String())
+                }))
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    atomic: Type.Boolean(),
+                    results: Type.Array(Type.Object({
+                        index: Type.Number(),
+                        ok: Type.Boolean(),
+                        id: Type.Optional(Type.Number()),
+                        version: Type.Optional(Type.Number()),
+                        code: Type.Optional(Type.String()),
+                        error: Type.Optional(Type.String())
+                    }))
+                })),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { mode, atomic } = request.query as BatchModeQuery;
+        const { items } = request.body as {
+            items: Array<{ id: number; contentTypeId?: number; data?: string; status?: string }>;
+        };
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const isAtomic = atomic === true;
+
+        if (items.length === 0) {
+            return reply.status(400).send(toErrorPayload(
+                'Batch request is empty',
+                'EMPTY_BATCH',
+                'Provide at least one item in body.items.'
+            ));
+        }
+
+        const buildError = (index: number, code: string, error: string) => ({ index, ok: false, code, error });
+
+        const validateUpdateInput = async (item: { id: number; contentTypeId?: number; data?: string; status?: string }, index: number) => {
+            const updateData = stripUndefined({ contentTypeId: item.contentTypeId, data: item.data, status: item.status });
+            if (!hasDefinedValues(updateData)) {
+                return { ok: false, error: buildError(index, 'EMPTY_UPDATE_BODY', `No update fields provided for item ${item.id}`) } as const;
+            }
+
+            const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
+            if (!existing) {
+                return { ok: false, error: buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${item.id} not found`) } as const;
+            }
+
+            const targetContentTypeId = updateData.contentTypeId ?? existing.contentTypeId;
+            const [targetContentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+            if (!targetContentType) {
+                return { ok: false, error: buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${targetContentTypeId} not found`) } as const;
+            }
+
+            const targetData = updateData.data ?? existing.data;
+            const validation = validateContentDataAgainstSchema(targetContentType.schema, targetData);
+            if (validation) {
+                return { ok: false, error: buildError(index, validation.code, validation.error) } as const;
+            }
+
+            return { ok: true, existing, updateData } as const;
+        };
+
+        if (isDryRun(mode)) {
+            const dryResults: Array<Record<string, unknown>> = [];
+            for (const [index, item] of items.entries()) {
+                const validated = await validateUpdateInput(item, index);
+                if (!validated.ok) {
+                    dryResults.push(validated.error);
+                    continue;
+                }
+
+                dryResults.push({
+                    index,
+                    ok: true,
+                    id: item.id,
+                    version: validated.existing.version + 1
+                });
+            }
+
+            return {
+                data: {
+                    atomic: isAtomic,
+                    results: dryResults
+                },
+                meta: buildMeta(
+                    'Execute batch update when dry-run output is acceptable',
+                    ['PUT /api/content-items/batch'],
+                    'medium',
+                    0,
+                    true
+                )
+            };
+        }
+
+        if (isAtomic) {
+            try {
+                const results = await db.transaction(async (tx) => {
+                    const output: Array<{ index: number; ok: boolean; id: number; version: number }> = [];
+                    for (const [index, item] of items.entries()) {
+                        const updateData = stripUndefined({ contentTypeId: item.contentTypeId, data: item.data, status: item.status });
+                        if (!hasDefinedValues(updateData)) {
+                            throw new Error(JSON.stringify(buildError(index, 'EMPTY_UPDATE_BODY', `No update fields provided for item ${item.id}`)));
+                        }
+
+                        const [existing] = await tx.select().from(contentItems).where(eq(contentItems.id, item.id));
+                        if (!existing) {
+                            throw new Error(JSON.stringify(buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${item.id} not found`)));
+                        }
+
+                        const targetContentTypeId = updateData.contentTypeId ?? existing.contentTypeId;
+                        const [targetContentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+                        if (!targetContentType) {
+                            throw new Error(JSON.stringify(buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${targetContentTypeId} not found`)));
+                        }
+
+                        const targetData = updateData.data ?? existing.data;
+                        const validation = validateContentDataAgainstSchema(targetContentType.schema, targetData);
+                        if (validation) {
+                            throw new Error(JSON.stringify(buildError(index, validation.code, validation.error)));
+                        }
+
+                        await tx.insert(contentItemVersions).values({
+                            contentItemId: existing.id,
+                            version: existing.version,
+                            data: existing.data,
+                            status: existing.status,
+                            createdAt: existing.updatedAt
+                        });
+
+                        const [updated] = await tx.update(contentItems)
+                            .set({
+                                ...updateData,
+                                version: existing.version + 1,
+                                updatedAt: new Date()
+                            })
+                            .where(eq(contentItems.id, item.id))
+                            .returning();
+
+                        output.push({ index, ok: true, id: updated.id, version: updated.version });
+                    }
+
+                    return output;
+                });
+
+                for (const row of results) {
+                    await logAudit(
+                        'update',
+                        'content_item',
+                        row.id,
+                        { batch: true, mode: 'atomic' },
+                        actorId,
+                        request.id
+                    );
+                }
+
+                return {
+                    data: {
+                        atomic: true,
+                        results
+                    },
+                    meta: buildMeta(
+                        'Review updated items',
+                        ['GET /api/content-items'],
+                        'medium',
+                        1
+                    )
+                };
+            } catch (error) {
+                const parsed = error instanceof Error ? error.message : String(error);
+                let context: Record<string, unknown> | undefined;
+                try {
+                    context = JSON.parse(parsed);
+                } catch {
+                    context = { details: parsed };
+                }
+
+                return reply.status(400).send({
+                    error: 'Atomic batch update failed',
+                    code: 'BATCH_ATOMIC_FAILED',
+                    remediation: 'Fix the failing item and retry; atomic mode rolls back all items on failure.',
+                    ...(context ? { context } : {})
+                });
+            }
+        }
+
+        const results: Array<Record<string, unknown>> = [];
+        for (const [index, item] of items.entries()) {
+            const validated = await validateUpdateInput(item, index);
+            if (!validated.ok) {
+                results.push(validated.error);
+                continue;
+            }
+
+            const result = await db.transaction(async (tx) => {
+                await tx.insert(contentItemVersions).values({
+                    contentItemId: validated.existing.id,
+                    version: validated.existing.version,
+                    data: validated.existing.data,
+                    status: validated.existing.status,
+                    createdAt: validated.existing.updatedAt
+                });
+
+                const [updated] = await tx.update(contentItems)
+                    .set({
+                        ...validated.updateData,
+                        version: validated.existing.version + 1,
+                        updatedAt: new Date()
+                    })
+                    .where(eq(contentItems.id, validated.existing.id))
+                    .returning();
+
+                return updated;
+            });
+
+            await logAudit(
+                'update',
+                'content_item',
+                result.id,
+                { batch: true, mode: 'partial' },
+                actorId,
+                request.id
+            );
+
+            results.push({
+                index,
+                ok: true,
+                id: result.id,
+                version: result.version
+            });
+        }
+
+        return {
+            data: {
+                atomic: false,
+                results
+            },
+            meta: buildMeta(
+                'Review failed items and retry only failures',
+                ['PUT /api/content-items/batch'],
+                'medium',
+                1
+            )
+        };
+    });
+
+    server.delete('/content-items/batch', {
+        schema: {
+            querystring: Type.Object({
+                mode: Type.Optional(Type.Literal('dry_run')),
+                atomic: Type.Optional(Type.Boolean())
+            }),
+            body: Type.Object({
+                ids: Type.Array(Type.Number())
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    atomic: Type.Boolean(),
+                    results: Type.Array(Type.Object({
+                        index: Type.Number(),
+                        ok: Type.Boolean(),
+                        id: Type.Optional(Type.Number()),
+                        code: Type.Optional(Type.String()),
+                        error: Type.Optional(Type.String())
+                    }))
+                })),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { mode, atomic } = request.query as BatchModeQuery;
+        const { ids } = request.body as { ids: number[] };
+        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const isAtomic = atomic === true;
+
+        if (ids.length === 0) {
+            return reply.status(400).send(toErrorPayload(
+                'Batch request is empty',
+                'EMPTY_BATCH',
+                'Provide at least one id in body.ids.'
+            ));
+        }
+
+        const buildError = (index: number, code: string, error: string) => ({ index, ok: false, code, error });
+
+        if (isDryRun(mode)) {
+            const results = await Promise.all(ids.map(async (id, index) => {
+                const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+                if (!existing) {
+                    return buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`);
+                }
+
+                return {
+                    index,
+                    ok: true,
+                    id
+                };
+            }));
+
+            return {
+                data: {
+                    atomic: isAtomic,
+                    results
+                },
+                meta: buildMeta(
+                    'Execute batch delete when dry-run output is acceptable',
+                    ['DELETE /api/content-items/batch'],
+                    'high',
+                    0,
+                    true
+                )
+            };
+        }
+
+        if (isAtomic) {
+            try {
+                const deleted = await db.transaction(async (tx) => {
+                    const rows: Array<{ index: number; ok: boolean; id: number }> = [];
+                    for (const [index, id] of ids.entries()) {
+                        const [existing] = await tx.delete(contentItems).where(eq(contentItems.id, id)).returning();
+                        if (!existing) {
+                            throw new Error(JSON.stringify(buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`)));
+                        }
+                        rows.push({ index, ok: true, id: existing.id });
+                    }
+                    return rows;
+                });
+
+                for (const row of deleted) {
+                    await logAudit(
+                        'delete',
+                        'content_item',
+                        row.id,
+                        { batch: true, mode: 'atomic' },
+                        actorId,
+                        request.id
+                    );
+                }
+
+                return {
+                    data: {
+                        atomic: true,
+                        results: deleted
+                    },
+                    meta: buildMeta(
+                        'List remaining content items',
+                        ['GET /api/content-items'],
+                        'high',
+                        1
+                    )
+                };
+            } catch (error) {
+                const parsed = error instanceof Error ? error.message : String(error);
+                let context: Record<string, unknown> | undefined;
+                try {
+                    context = JSON.parse(parsed);
+                } catch {
+                    context = { details: parsed };
+                }
+
+                return reply.status(400).send({
+                    error: 'Atomic batch delete failed',
+                    code: 'BATCH_ATOMIC_FAILED',
+                    remediation: 'Fix the failing item and retry; atomic mode rolls back all items on failure.',
+                    ...(context ? { context } : {})
+                });
+            }
+        }
+
+        const results: Array<Record<string, unknown>> = [];
+        for (const [index, id] of ids.entries()) {
+            const [deleted] = await db.delete(contentItems).where(eq(contentItems.id, id)).returning();
+            if (!deleted) {
+                results.push(buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`));
+                continue;
+            }
+
+            await logAudit(
+                'delete',
+                'content_item',
+                deleted.id,
+                { batch: true, mode: 'partial' },
+                actorId,
+                request.id
+            );
+
+            results.push({
+                index,
+                ok: true,
+                id: deleted.id
+            });
+        }
+
+        return {
+            data: {
+                atomic: false,
+                results
+            },
+            meta: buildMeta(
+                'Review failed items and retry only failures',
+                ['DELETE /api/content-items/batch'],
+                'high',
+                1
+            )
+        };
+    });
+
     server.get('/audit-logs', {
         schema: {
             querystring: Type.Object({
                 entityType: Type.Optional(Type.String()),
                 entityId: Type.Optional(Type.Number()),
                 action: Type.Optional(Type.String()),
-                limit: Type.Optional(Type.Number({ default: 50 }))
+                limit: Type.Optional(Type.Number({ default: 50, minimum: 1, maximum: 500 })),
+                cursor: Type.Optional(Type.String())
             }),
             response: {
                 200: createAIResponse(Type.Array(Type.Object({
@@ -875,16 +2292,46 @@ export default async function apiRoutes(server: FastifyInstance) {
                     details: Type.Optional(Type.String()),
                     createdAt: Type.String()
                 })))
+                ,
+                400: AIErrorResponse
             }
         }
-    }, async (request) => {
-        const { entityType, entityId, action, limit } = request.query as AuditLogQuery;
+    }, async (request, reply) => {
+        const { entityType, entityId, action, limit: rawLimit, cursor } = request.query as AuditLogQuery;
+        const limit = clampLimit(rawLimit);
+        const decodedCursor = cursor ? decodeCursor(cursor) : null;
+        if (cursor && !decodedCursor) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid audit cursor',
+                'INVALID_AUDIT_CURSOR',
+                'Provide cursor returned by previous GET /api/audit-logs response.'
+            ));
+        }
 
-        const conditions = [
+        const baseConditions = [
             entityType ? eq(auditLogs.entityType, entityType) : undefined,
             entityId !== undefined ? eq(auditLogs.entityId, entityId) : undefined,
             action ? eq(auditLogs.action, action) : undefined,
         ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+        const cursorCondition = decodedCursor
+            ? or(
+                lt(auditLogs.createdAt, decodedCursor.createdAt),
+                and(eq(auditLogs.createdAt, decodedCursor.createdAt), lt(auditLogs.id, decodedCursor.id))
+            )
+            : undefined;
+
+        const whereConditions = [
+            ...baseConditions,
+            cursorCondition
+        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+        const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
+        const baseWhereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
+
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
+            .from(auditLogs)
+            .where(baseWhereClause);
 
         const logs = await db.select({
             id: auditLogs.id,
@@ -895,17 +2342,28 @@ export default async function apiRoutes(server: FastifyInstance) {
             createdAt: auditLogs.createdAt
         })
             .from(auditLogs)
-            .where(conditions.length > 0 ? and(...conditions) : undefined)
+            .where(whereClause)
             .orderBy(desc(auditLogs.createdAt))
-            .limit(limit);
+            .limit(limit + 1);
+
+        const hasMore = logs.length > limit;
+        const page = hasMore ? logs.slice(0, limit) : logs;
+        const last = page[page.length - 1];
+        const nextCursor = hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
 
         return {
-            data: logs,
+            data: page,
             meta: buildMeta(
                 'Monitor system activity',
                 ['GET /api/audit-logs'],
                 'low',
-                1
+                1,
+                false,
+                {
+                    total,
+                    hasMore,
+                    nextCursor
+                }
             )
         };
     });

@@ -29,6 +29,13 @@
       "when": 1771497903506,
       "tag": "0003_abnormal_lake",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1772000000000,
+      "tag": "0004_agent_hardening",
+      "breakpoints": true
     }
   ]
 }
