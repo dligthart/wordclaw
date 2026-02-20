@@ -17,7 +17,8 @@ export async function logAudit(
     entityId: number,
     details?: Record<string, unknown>,
     userId?: number,
-    requestId?: string
+    requestId?: string,
+    skipWebhooks = false
 ) {
     try {
         const detailsWithContext = {
@@ -44,7 +45,9 @@ export async function logAudit(
         };
 
         auditEventBus.emit('audit', eventPayload);
-        await emitAuditWebhookEvents(eventPayload);
+        if (!skipWebhooks) {
+            await emitAuditWebhookEvents(eventPayload);
+        }
     } catch (error) {
         console.error('Failed to log audit:', error);
         // Audit failure should not break the main operation
@@ -73,6 +76,7 @@ export async function listAuditLogs(filters: AuditLogFilters = {}) {
         action: auditLogs.action,
         entityType: auditLogs.entityType,
         entityId: auditLogs.entityId,
+        userId: auditLogs.userId,
         details: auditLogs.details,
         createdAt: auditLogs.createdAt,
     })

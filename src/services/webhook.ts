@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { webhooks } from '../db/schema.js';
 import type { AuditEventPayload } from './event-bus.js';
+import { logAudit } from './audit.js';
 
 type CreateWebhookInput = {
     url: string;
@@ -106,6 +107,15 @@ export async function emitAuditWebhookEvents(payload: AuditEventPayload): Promis
             const delivered = await deliverWebhook(hook.url, hook.secret, payload);
             if (!delivered) {
                 console.error(`Webhook delivery failed for webhook ${hook.id} (${hook.url})`);
+                await logAudit(
+                    'update',
+                    'webhook',
+                    hook.id,
+                    { delivered: false, url: hook.url, triggerAction: payload.action, triggerEntityType: payload.entityType, triggerEntityId: payload.entityId },
+                    undefined,
+                    undefined,
+                    true // skipWebhooks — prevent infinite recursion
+                );
             }
         })
     );

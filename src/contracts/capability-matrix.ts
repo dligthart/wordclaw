@@ -129,6 +129,41 @@ export const capabilityMatrix: Capability[] = [
         rest: { method: 'GET', path: '/audit-logs' },
         graphql: { operation: 'Query', field: 'auditLogs' },
         mcp: { tool: 'get_audit_logs' }
+    },
+    {
+        id: 'create_webhook',
+        description: 'Register a webhook endpoint for audit events',
+        rest: { method: 'POST', path: '/webhooks' },
+        graphql: { operation: 'Mutation', field: 'createWebhook' },
+        mcp: { tool: 'create_webhook' }
+    },
+    {
+        id: 'list_webhooks',
+        description: 'List registered webhooks',
+        rest: { method: 'GET', path: '/webhooks' },
+        graphql: { operation: 'Query', field: 'webhooks' },
+        mcp: { tool: 'list_webhooks' }
+    },
+    {
+        id: 'get_webhook',
+        description: 'Get webhook by ID',
+        rest: { method: 'GET', path: '/webhooks/:id' },
+        graphql: { operation: 'Query', field: 'webhook' },
+        mcp: { tool: 'get_webhook' }
+    },
+    {
+        id: 'update_webhook',
+        description: 'Update webhook URL, events, secret, or active state',
+        rest: { method: 'PUT', path: '/webhooks/:id' },
+        graphql: { operation: 'Mutation', field: 'updateWebhook' },
+        mcp: { tool: 'update_webhook' }
+    },
+    {
+        id: 'delete_webhook',
+        description: 'Delete a webhook registration',
+        rest: { method: 'DELETE', path: '/webhooks/:id' },
+        graphql: { operation: 'Mutation', field: 'deleteWebhook' },
+        mcp: { tool: 'delete_webhook' }
     }
 ];
 

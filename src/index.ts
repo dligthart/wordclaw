@@ -92,7 +92,14 @@ server.register(mercurius, {
     schema,
     resolvers,
     graphiql: true,
-    path: '/graphql'
+    path: '/graphql',
+    context: async (request) => {
+        const auth = await authorizeApiRequest(request.method, '/graphql', request.headers);
+        return {
+            requestId: request.id,
+            authPrincipal: auth.ok ? auth.principal : undefined
+        };
+    }
 });
 
 server.register(import('@fastify/rate-limit'), {

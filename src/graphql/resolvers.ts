@@ -8,6 +8,15 @@ import { ValidationFailure, validateContentDataAgainstSchema, validateContentTyp
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 
+type ResolverContext = {
+    requestId?: string;
+    authPrincipal?: { keyId: number | string; scopes: Set<string>; source: string };
+};
+
+function toActorId(context: ResolverContext): number | undefined {
+    return typeof context.authPrincipal?.keyId === 'number' ? context.authPrincipal.keyId : undefined;
+}
+
 type IdValue = string | number;
 
 type IdArg = { id: IdValue };
@@ -425,7 +434,7 @@ export const resolvers = {
     },
 
     Mutation: {
-        createContentType: async (_parent: unknown, args: CreateContentTypeArgs) => {
+        createContentType: async (_parent: unknown, args: CreateContentTypeArgs, context: ResolverContext) => {
             const now = new Date();
             const schemaFailure = validateContentTypeSchema(args.schema);
             if (schemaFailure) {
@@ -451,11 +460,11 @@ export const resolvers = {
                 schema: args.schema
             }).returning();
 
-            await logAudit('create', 'content_type', newItem.id, newItem);
+            await logAudit('create', 'content_type', newItem.id, newItem, toActorId(context), context.requestId);
             return newItem;
         },
 
-        updateContentType: async (_parent: unknown, args: UpdateContentTypeArgs) => {
+        updateContentType: async (_parent: unknown, args: UpdateContentTypeArgs, context: ResolverContext) => {
             const id = parseId(args.id);
             const updateData = stripUndefined({
                 name: args.name,
@@ -493,11 +502,11 @@ export const resolvers = {
                 throw notFoundContentTypeError(id);
             }
 
-            await logAudit('update', 'content_type', updated.id, updateData);
+            await logAudit('update', 'content_type', updated.id, updateData, toActorId(context), context.requestId);
             return updated;
         },
 
-        deleteContentType: async (_parent: unknown, args: DeleteContentTypeArgs) => {
+        deleteContentType: async (_parent: unknown, args: DeleteContentTypeArgs, context: ResolverContext) => {
             const id = parseId(args.id);
 
             if (args.dryRun) {
@@ -520,7 +529,7 @@ export const resolvers = {
                 throw notFoundContentTypeError(id);
             }
 
-            await logAudit('delete', 'content_type', deleted.id, deleted);
+            await logAudit('delete', 'content_type', deleted.id, deleted, toActorId(context), context.requestId);
 
             return {
                 id: deleted.id,
@@ -528,7 +537,7 @@ export const resolvers = {
             };
         },
 
-        createContentItem: async (_parent: unknown, args: CreateContentItemArgs) => {
+        createContentItem: async (_parent: unknown, args: CreateContentItemArgs, context: ResolverContext) => {
             const contentTypeId = parseId(args.contentTypeId, 'contentTypeId');
             const status = args.status || 'draft';
             const now = new Date();
@@ -560,11 +569,11 @@ export const resolvers = {
                 status
             }).returning();
 
-            await logAudit('create', 'content_item', newItem.id, newItem);
+            await logAudit('create', 'content_item', newItem.id, newItem, toActorId(context), context.requestId);
             return newItem;
         },
 
-        createContentItemsBatch: async (_parent: unknown, args: BatchCreateContentItemsArgs) => {
+        createContentItemsBatch: async (_parent: unknown, args: BatchCreateContentItemsArgs, context: ResolverContext) => {
             const isAtomic = args.atomic === true;
             if (args.items.length === 0) {
                 throw toError(
@@ -643,7 +652,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('create', 'content_item', row.id, { batch: true, mode: 'atomic' });
+                            await logAudit('create', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), context.requestId);
                         }
                     }
 
@@ -691,7 +700,7 @@ export const resolvers = {
                         status: item.status || 'draft'
                     }).returning();
 
-                    await logAudit('create', 'content_item', created.id, { batch: true, mode: 'partial' });
+                    await logAudit('create', 'content_item', created.id, { batch: true, mode: 'partial' }, toActorId(context), context.requestId);
 
                     results.push({
                         index,
@@ -710,7 +719,7 @@ export const resolvers = {
             };
         },
 
-        updateContentItem: async (_parent: unknown, args: UpdateContentItemArgs) => {
+        updateContentItem: async (_parent: unknown, args: UpdateContentItemArgs, context: ResolverContext) => {
             const id = parseId(args.id);
             const contentTypeId = parseOptionalId(args.contentTypeId, 'contentTypeId');
             const updateData = stripUndefined({
@@ -776,11 +785,11 @@ export const resolvers = {
                 throw notFoundContentItemError(id);
             }
 
-            await logAudit('update', 'content_item', result.id, updateData);
+            await logAudit('update', 'content_item', result.id, updateData, toActorId(context), context.requestId);
             return result;
         },
 
-        updateContentItemsBatch: async (_parent: unknown, args: BatchUpdateContentItemsArgs) => {
+        updateContentItemsBatch: async (_parent: unknown, args: BatchUpdateContentItemsArgs, context: ResolverContext) => {
             const isAtomic = args.atomic === true;
             if (args.items.length === 0) {
                 throw toError(
@@ -882,7 +891,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('update', 'content_item', row.id, { batch: true, mode: 'atomic' });
+                            await logAudit('update', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), context.requestId);
                         }
                     }
 
@@ -938,7 +947,7 @@ export const resolvers = {
                     return updated;
                 });
 
-                await logAudit('update', 'content_item', result.id, { batch: true, mode: 'partial' });
+                await logAudit('update', 'content_item', result.id, { batch: true, mode: 'partial' }, toActorId(context), context.requestId);
 
                 results.push({
                     index,
@@ -954,7 +963,7 @@ export const resolvers = {
             };
         },
 
-        deleteContentItem: async (_parent: unknown, args: DeleteContentItemArgs) => {
+        deleteContentItem: async (_parent: unknown, args: DeleteContentItemArgs, context: ResolverContext) => {
             const id = parseId(args.id);
 
             if (args.dryRun) {
@@ -977,7 +986,7 @@ export const resolvers = {
                 throw notFoundContentItemError(id);
             }
 
-            await logAudit('delete', 'content_item', deleted.id, deleted);
+            await logAudit('delete', 'content_item', deleted.id, deleted, toActorId(context), context.requestId);
 
             return {
                 id: deleted.id,
@@ -985,7 +994,7 @@ export const resolvers = {
             };
         },
 
-        deleteContentItemsBatch: async (_parent: unknown, args: BatchDeleteContentItemsArgs) => {
+        deleteContentItemsBatch: async (_parent: unknown, args: BatchDeleteContentItemsArgs, context: ResolverContext) => {
             const isAtomic = args.atomic === true;
             if (args.ids.length === 0) {
                 throw toError(
@@ -1041,7 +1050,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('delete', 'content_item', row.id, { batch: true, mode: 'atomic' });
+                            await logAudit('delete', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), context.requestId);
                         }
                     }
 
@@ -1076,7 +1085,7 @@ export const resolvers = {
                     continue;
                 }
 
-                await logAudit('delete', 'content_item', deleted.id, { batch: true, mode: 'partial' });
+                await logAudit('delete', 'content_item', deleted.id, { batch: true, mode: 'partial' }, toActorId(context), context.requestId);
                 results.push({
                     index,
                     ok: true,
@@ -1090,7 +1099,7 @@ export const resolvers = {
             };
         },
 
-        rollbackContentItem: async (_parent: unknown, args: RollbackContentItemArgs) => {
+        rollbackContentItem: async (_parent: unknown, args: RollbackContentItemArgs, context: ResolverContext) => {
             const id = parseId(args.id);
             const targetVersion = args.version;
             const [currentItem] = await db.select().from(contentItems).where(eq(contentItems.id, id));
@@ -1167,7 +1176,7 @@ export const resolvers = {
                 await logAudit('rollback', 'content_item', result.id, {
                     fromVersion: result.version - 1,
                     toVersion: targetVersion
-                });
+                }, toActorId(context), context.requestId);
 
                 return {
                     id: result.id,

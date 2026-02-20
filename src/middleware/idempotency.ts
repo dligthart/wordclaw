@@ -54,6 +54,7 @@ function toPayloadString(payload: unknown): string {
 const plugin: FastifyPluginAsync<IdempotencyOptions> = async (server, options) => {
     const ttlMs = options.ttlMs ?? 5 * 60 * 1000;
     const cache = new Map<string, CachedResponse>();
+    const inFlight = new Set<string>();
 
     const purgeExpired = () => {
         const now = Date.now();
@@ -87,6 +88,15 @@ const plugin: FastifyPluginAsync<IdempotencyOptions> = async (server, options) =
                 cache.delete(cacheKey);
             }
 
+            if (inFlight.has(cacheKey)) {
+                return reply.status(409).send({
+                    error: 'Duplicate request in flight',
+                    code: 'IDEMPOTENCY_CONFLICT',
+                    remediation: 'A request with this Idempotency-Key is already being processed. Wait for it to complete before retrying.'
+                });
+            }
+
+            inFlight.add(cacheKey);
             return;
         }
 
@@ -104,6 +114,8 @@ const plugin: FastifyPluginAsync<IdempotencyOptions> = async (server, options) =
         if (!cacheKey || request.idempotencyReplay) {
             return payload;
         }
+
+        inFlight.delete(cacheKey);
 
         if (reply.statusCode >= 500) {
             return payload;
@@ -123,6 +135,13 @@ const plugin: FastifyPluginAsync<IdempotencyOptions> = async (server, options) =
         });
 
         return payload;
+    });
+
+    server.addHook('onError', async (request) => {
+        const cacheKey = request.idempotencyCacheKey;
+        if (cacheKey) {
+            inFlight.delete(cacheKey);
+        }
     });
 };
 
