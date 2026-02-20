@@ -1,5 +1,8 @@
 # WordClaw
 
+<p align="center">
+  <img src="doc/images/logos/wordclaw.png" alt="WordClaw Logo" width="300" />
+</p>
 [![Node.js CI](https://github.com/dligthart/wordclaw/actions/workflows/test.yml/badge.svg)](https://github.com/dligthart/wordclaw/actions/workflows/test.yml)
 
 **WordClaw** is an AI-first Headless CMS designed to bridge the gap between human content creation and AI agent consumption. It features standardized API responses with action guidance, a built-in Model Context Protocol (MCP) server, and robust safety features like dry-run modes.
