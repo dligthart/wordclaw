@@ -10,6 +10,17 @@
 - **Version History** — Browse the full history of any content item.
 - **Rollback** — Restore a content item to any previous version. Creates a new version entry so history is never lost.
 
+## Human Supervisor Web Interface
+
+A built-in SvelteKit control plane served under `/ui` providing robust human oversight over agent-driven operations:
+
+- **Dashboard** — System health and activity telemetry at a glance.
+- **Audit Log Viewer** — Searchable, paginated history of all agent mutations with raw payload inspection.
+- **Content Browser** — Read-only oversight of all content models and items, featuring a 1-click **Rollback** mechanism.
+- **Schema Manager** — Visual JSON schema editor with a live dry-run Validation Sandbox for content types.
+- **Agent Keys** — Provision, rotate, and securely revoke API keys for individual LLM agents.
+- **Approval Queue** — Review pending or drafted content payloads and approve (publish) or reject them.
+
 ## Protocol Parity
 
 Every operation is available through three interfaces:

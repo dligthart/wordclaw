@@ -68,3 +68,11 @@ export const webhooks = pgTable('webhooks', {
     createdAt: timestamp('created_at').defaultNow().notNull(),
     active: boolean('active').notNull().default(true),
 });
+
+export const supervisors = pgTable('supervisors', {
+    id: serial('id').primaryKey(),
+    email: text('email').notNull().unique(),
+    passwordHash: text('password_hash').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    lastLoginAt: timestamp('last_login_at'),
+});

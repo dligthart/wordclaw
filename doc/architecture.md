@@ -8,12 +8,12 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          CLIENTS                                    │
 │                                                                     │
-│   ┌──────────┐     ┌──────────┐     ┌──────────┐                   │
-│   │  Browser  │     │  Agent   │     │   CLI    │                   │
-│   │  / cURL   │     │  (LLM)   │     │  Tools   │                   │
-│   └────┬──────┘     └────┬─────┘     └────┬─────┘                   │
-│        │ HTTP            │ HTTP/stdio      │ HTTP                    │
-└────────┼────────────────┼────────────────┼──────────────────────────┘
+│   ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐  │
+│   │  Browser  │     │  Agent   │     │   CLI    │     │Supervisor│  │
+│   │  / cURL   │     │  (LLM)   │     │  Tools   │     │    UI    │  │
+│   └────┬──────┘     └────┬─────┘     └────┬─────┘     └────┬─────┘  │
+│        │ HTTP            │ HTTP/stdio      │ HTTP               │ HTTP   │
+└────────┼────────────────┼────────────────┼────────────────────┼─────┘
          │                │                │
 ┌────────▼────────────────▼────────────────▼──────────────────────────┐
 │                        WORDCLAW SERVER                              │
@@ -60,6 +60,10 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
                      └────────────────────┘
 ```
 
+Rendered image:
+
+![System architecture diagram](images/diagrams/architecture-system-diagram.svg)
+
 ## Layer Responsibilities
 
 ### Middleware Chain
@@ -76,11 +80,12 @@ Every incoming HTTP request passes through a shared middleware pipeline before r
 
 ### API Layer
 
-Three protocol interfaces expose the same set of operations:
+Three protocol interfaces expose the same set of operations, alongside a dedicated UI:
 
 - **REST** — RESTful routes under `/api/*` with OpenAPI documentation at `/documentation`.
 - **GraphQL** — Full query and mutation schema at `/graphql` with GraphiQL playground.
 - **MCP** — Model Context Protocol over stdio; exposes tools, resources, and prompts for LLM agents.
+- **Supervisor UI** — A SvelteKit application served at `/ui` for human oversight, schema management, and audit log review.
 
 Feature parity across the three is enforced by an automated [capability parity contract](../src/contracts/capability-parity.test.ts) that runs in CI.
 
@@ -106,6 +111,10 @@ content_types 1───* content_items 1───* content_item_versions
 
 users 1───* api_keys
 ```
+
+Rendered image:
+
+![Architecture data model diagram](images/diagrams/architecture-data-model-diagram.svg)
 
 Key relationships:
 
@@ -147,6 +156,10 @@ Client Request
      ▼
   Return response with x-request-id
 ```
+
+Rendered image:
+
+![Request lifecycle diagram](images/diagrams/architecture-request-lifecycle-diagram.svg)
 
 ## Technology Stack
 

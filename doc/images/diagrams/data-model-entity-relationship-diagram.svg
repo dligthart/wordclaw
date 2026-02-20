@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980">
+  <defs>
+    <style>
+      .title { font: 700 26px Arial, sans-serif; fill: #0f172a; }
+      .table { fill: #ffffff; stroke: #1e293b; stroke-width: 2; }
+      .head { fill: #e2e8f0; stroke: #1e293b; stroke-width: 2; }
+      .name { font: 700 16px Arial, sans-serif; fill: #0f172a; }
+      .field { font: 500 13px Arial, sans-serif; fill: #334155; }
+      .edge { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .edgeLabel { font: 600 12px Arial, sans-serif; fill: #0f172a; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#334155" />
+    </marker>
+  </defs>
+
+  <text class="title" x="40" y="42">Entity Relationship Diagram</text>
+
+  <g transform="translate(60,90)">
+    <rect class="table" x="0" y="0" width="260" height="220" rx="8" ry="8"/>
+    <rect class="head" x="0" y="0" width="260" height="42" rx="8" ry="8"/>
+    <text class="name" x="78" y="27">content_types</text>
+    <text class="field" x="18" y="65">id (PK)</text>
+    <text class="field" x="18" y="88">name</text>
+    <text class="field" x="18" y="111">slug (UQ)</text>
+    <text class="field" x="18" y="134">schema</text>
+    <text class="field" x="18" y="157">createdAt</text>
+    <text class="field" x="18" y="180">updatedAt</text>
+  </g>
+
+  <g transform="translate(430,90)">
+    <rect class="table" x="0" y="0" width="300" height="245" rx="8" ry="8"/>
+    <rect class="head" x="0" y="0" width="300" height="42" rx="8" ry="8"/>
+    <text class="name" x="94" y="27">content_items</text>
+    <text class="field" x="18" y="65">id (PK)</text>
+    <text class="field" x="18" y="88">contentTypeId (FK)</text>
+    <text class="field" x="18" y="111">data</text>
+    <text class="field" x="18" y="134">status</text>
+    <text class="field" x="18" y="157">version</text>
+    <text class="field" x="18" y="180">createdAt</text>
+    <text class="field" x="18" y="203">updatedAt</text>
+  </g>
+
+  <g transform="translate(840,90)">
+    <rect class="table" x="0" y="0" width="330" height="245" rx="8" ry="8"/>
+    <rect class="head" x="0" y="0" width="330" height="42" rx="8" ry="8"/>
+    <text class="name" x="78" y="27">content_item_versions</text>
+    <text class="field" x="18" y="65">id (PK)</text>
+    <text class="field" x="18" y="88">contentItemId (FK)</text>
+    <text class="field" x="18" y="111">data</text>
+    <text class="field" x="18" y="134">status</text>
+    <text class="field" x="18" y="157">version</text>
+    <text class="field" x="18" y="180">createdAt</text>
+  </g>
+
+  <g transform="translate(60,430)">
+    <rect class="table" x="0" y="0" width="230" height="180" rx="8" ry="8"/>
+    <rect class="head" x="0" y="0" width="230" height="42" rx="8" ry="8"/>
+    <text class="name" x="88" y="27">users</text>
+    <text class="field" x="18" y="65">id (PK)</text>
+    <text class="field" x="18" y="88">email</text>
+    <text class="field" x="18" y="111">name</text>
+    <text class="field" x="18" y="134">createdAt</text>
+  </g>
+
+  <g transform="translate(340,430)">
+    <rect class="table" x="0" y="0" width="280" height="250" rx="8" ry="8"/>
+    <rect class="head" x="0" y="0" width="280" height="42" rx="8" ry="8"/>
+    <text class="name" x="92" y="27">api_keys</text>
+    <text class="field" x="18" y="65">id (PK)</text>
+    <text class="field" x="18" y="88">name</text>
+    <text class="field" x="18" y="111">keyHash</text>
+    <text class="field" x="18" y="134">keyPrefix</text>
+    <text class="field" x="18" y="157">scopes</text>
+    <text class="field" x="18" y="180">createdBy (FK)</text>
+    <text class="field" x="18" y="203">expiresAt / revokedAt</text>
+    <text class="field" x="18" y="226">lastUsedAt</text>
+  </g>
+
+  <g transform="translate(760,430)">
+    <rect class="table" x="0" y="0" width="300" height="220" rx="8" ry="8"/>
+    <rect class="head" x="0" y="0" width="300" height="42" rx="8" ry="8"/>
+    <text class="name" x="104" y="27">audit_logs</text>
+    <text class="field" x="18" y="65">id (PK)</text>
+    <text class="field" x="18" y="88">action, entityType, entityId</text>
+    <text class="field" x="18" y="111">details</text>
+    <text class="field" x="18" y="134">userId (FK)</text>
+    <text class="field" x="18" y="157">requestId</text>
+    <text class="field" x="18" y="180">createdAt</text>
+  </g>
+
+  <g transform="translate(1120,430)">
+    <rect class="table" x="0" y="0" width="280" height="200" rx="8" ry="8"/>
+    <rect class="head" x="0" y="0" width="280" height="42" rx="8" ry="8"/>
+    <text class="name" x="98" y="27">webhooks</text>
+    <text class="field" x="18" y="65">id (PK)</text>
+    <text class="field" x="18" y="88">url</text>
+    <text class="field" x="18" y="111">events</text>
+    <text class="field" x="18" y="134">secret</text>
+    <text class="field" x="18" y="157">active, createdAt</text>
+  </g>
+
+  <path class="edge" d="M320 200 L430 200" />
+  <text class="edgeLabel" x="366" y="186">1..*</text>
+
+  <path class="edge" d="M730 210 L840 210" />
+  <text class="edgeLabel" x="776" y="196">1..*</text>
+
+  <path class="edge" d="M580 335 L900 430" />
+  <text class="edgeLabel" x="720" y="370">audited</text>
+
+  <path class="edge" d="M290 515 L340 515" />
+  <text class="edgeLabel" x="305" y="502">1..*</text>
+
+  <path class="edge" d="M620 545 L760 545" />
+  <text class="edgeLabel" x="672" y="531">actor</text>
+
+  <path class="edge" d="M1060 540 L1120 540" />
+  <text class="edgeLabel" x="1073" y="526">events</text>
+</svg>

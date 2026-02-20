@@ -1,0 +1,82 @@
+import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import { sql, desc, eq, gt } from 'drizzle-orm';
+import { db } from '../db/index.js';
+import { auditLogs, contentItems, contentTypes } from '../db/schema.js';
+
+export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: FastifyInstance) => {
+    // Shared authenticaton hook for these routes
+    server.addHook('onRequest', async (request, reply) => {
+        try {
+            await request.jwtVerify({ onlyCookie: true });
+        } catch (err) {
+            return reply.status(401).send({ error: 'Unauthorized' });
+        }
+    });
+
+    server.get('/dashboard', async (request, reply) => {
+        // 1. System Health
+        let dbOk = false;
+        try {
+            await db.execute(sql`SELECT 1`);
+            dbOk = true;
+        } catch {
+            dbOk = false;
+        }
+
+        const health = {
+            api: 'ok',
+            database: dbOk ? 'ok' : 'down',
+            rateLimitStatus: 'operational' // Placeholder for actual rate limit monitoring
+        };
+
+        // 2. Activity Summary (Last 24h)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        const recentLogs = await db
+            .select()
+            .from(auditLogs)
+            .where(gt(auditLogs.createdAt, yesterday));
+
+        const activitySummary = {
+            creates: recentLogs.filter(l => l.action === 'create').length,
+            updates: recentLogs.filter(l => l.action === 'update').length,
+            deletes: recentLogs.filter(l => l.action === 'delete').length,
+            rollbacks: recentLogs.filter(l => l.action === 'rollback').length,
+            totalAgentsActive: new Set(recentLogs.filter(l => l.userId).map(l => l.userId)).size
+        };
+
+        // 3. Recent Audit Events Feed (Last 20)
+        const recentEvents = await db
+            .select()
+            .from(auditLogs)
+            .orderBy(desc(auditLogs.createdAt))
+            .limit(20);
+
+        // 4. Alert Indicators
+        const alerts = [];
+        if (!dbOk) alerts.push({ type: 'critical', message: 'Database connection failed' });
+
+        const errorLogs = await db
+            .select()
+            .from(auditLogs)
+            .where(eq(auditLogs.action, 'error'))
+            .orderBy(desc(auditLogs.createdAt))
+            .limit(5);
+
+        for (const errLog of errorLogs) {
+            alerts.push({ type: 'warning', message: `System Error: ${errLog.details || 'Unknown error'}` });
+        }
+
+        if (activitySummary.rollbacks > 5) {
+            alerts.push({ type: 'warning', message: `High rollback activity in the last 24 hours (${activitySummary.rollbacks})` });
+        }
+
+        return {
+            health,
+            activitySummary,
+            recentEvents,
+            alerts
+        };
+    });
+};

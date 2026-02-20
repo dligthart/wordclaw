@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="520" viewBox="0 0 1100 520">
+  <defs>
+    <style>
+      .title { font: 700 26px Arial, sans-serif; fill: #0f172a; }
+      .node { fill: #ffffff; stroke: #1e293b; stroke-width: 2; rx: 10; ry: 10; }
+      .label { font: 600 16px Arial, sans-serif; fill: #0f172a; }
+      .small { font: 500 13px Arial, sans-serif; fill: #334155; }
+      .edge { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .edgeLabel { font: 600 12px Arial, sans-serif; fill: #0f172a; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#334155" />
+    </marker>
+  </defs>
+
+  <text class="title" x="36" y="42">Architecture Data Model Relations</text>
+
+  <rect class="node" x="70" y="90" width="220" height="72" />
+  <text class="label" x="110" y="125">content_types</text>
+  <text class="small" x="110" y="145">schema definitions</text>
+
+  <rect class="node" x="430" y="90" width="220" height="72" />
+  <text class="label" x="470" y="125">content_items</text>
+  <text class="small" x="475" y="145">versioned entities</text>
+
+  <rect class="node" x="790" y="90" width="240" height="72" />
+  <text class="label" x="820" y="125">content_item_versions</text>
+  <text class="small" x="850" y="145">immutable snapshots</text>
+
+  <rect class="node" x="430" y="280" width="220" height="72" />
+  <text class="label" x="490" y="315">audit_logs</text>
+  <text class="small" x="476" y="335">mutation history</text>
+
+  <rect class="node" x="790" y="280" width="220" height="72" />
+  <text class="label" x="860" y="315">webhooks</text>
+  <text class="small" x="835" y="335">event subscriptions</text>
+
+  <rect class="node" x="70" y="280" width="180" height="72" />
+  <text class="label" x="125" y="315">users</text>
+
+  <rect class="node" x="70" y="420" width="180" height="72" />
+  <text class="label" x="110" y="455">api_keys</text>
+
+  <path class="edge" d="M290 126 L430 126" />
+  <text class="edgeLabel" x="340" y="112">1..*</text>
+
+  <path class="edge" d="M650 126 L790 126" />
+  <text class="edgeLabel" x="700" y="112">1..*</text>
+
+  <path class="edge" d="M540 162 L540 280" />
+  <text class="edgeLabel" x="552" y="230">audited by</text>
+
+  <path class="edge" d="M650 316 L790 316" />
+  <text class="edgeLabel" x="700" y="302">matched events</text>
+
+  <path class="edge" d="M160 352 L160 420" />
+  <text class="edgeLabel" x="172" y="392">1..*</text>
+
+  <path class="edge" d="M250 456 L430 316" />
+  <text class="edgeLabel" x="286" y="398">actor in logs</text>
+</svg>

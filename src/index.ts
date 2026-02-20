@@ -8,8 +8,13 @@ import dotenv from 'dotenv';
 import mercurius from 'mercurius';
 import { sql } from 'drizzle-orm';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
-
+import path from 'node:path';
+import fastifyStatic from '@fastify/static';
+import fastifyJwt from '@fastify/jwt';
+import fastifyCookie from '@fastify/cookie';
 import apiRoutes from './api/routes.js';
+import { supervisorAuthRoutes } from './api/supervisor-auth.js';
+import { supervisorDashboardRoutes } from './api/supervisor-dashboard.js';
 import { authorizeApiRequest } from './api/auth.js';
 import { errorHandler } from './api/error-handler.js';
 import { db } from './db/index.js';
@@ -87,6 +92,11 @@ server.register(import('@fastify/swagger-ui'), {
     routePrefix: '/documentation',
 });
 server.register(import('@fastify/websocket'));
+server.register(fastifyJwt, { secret: process.env.JWT_SECRET || 'super-secret-fallback' });
+server.register(fastifyCookie, {
+    secret: process.env.COOKIE_SECRET || 'cookie-secret-fallback',
+    hook: 'onRequest'
+});
 
 server.register(mercurius, {
     schema,
@@ -182,6 +192,19 @@ server.get('/ws/events', { websocket: true }, (connection, request) => {
 });
 
 server.register(apiRoutes, { prefix: '/api' });
+server.register(supervisorAuthRoutes, { prefix: '/api/supervisors' });
+server.register(supervisorDashboardRoutes, { prefix: '/api/supervisors' });
+
+// Serve SvelteKit UI
+server.register(fastifyStatic, {
+    root: path.join(__dirname, '../ui/build'),
+    prefix: '/ui/',
+    wildcard: false
+});
+
+server.get('/ui/*', (request, reply) => {
+    return reply.sendFile('index.html');
+});
 
 server.get('/health', async (_request, reply) => {
     const timestamp = new Date().toISOString();

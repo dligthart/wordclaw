@@ -36,6 +36,13 @@
       "when": 1772000000000,
       "tag": "0004_agent_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1771605208231,
+      "tag": "0005_cute_shooting_star",
+      "breakpoints": true
     }
   ]
 }

@@ -171,6 +171,21 @@ function isValidUrl(url: string): boolean {
 
 export default async function apiRoutes(server: FastifyInstance) {
     server.addHook('preHandler', async (request, reply) => {
+        try {
+            await request.jwtVerify({ onlyCookie: true });
+            const user = request.user as { sub: number, role: string };
+            if (user && user.role === 'supervisor') {
+                (request as any).authPrincipal = {
+                    keyId: `supervisor:${user.sub}`,
+                    scopes: new Set(['admin']),
+                    source: 'cookie'
+                };
+                return undefined; // Bypass further auth checks
+            }
+        } catch {
+            // Ignore JWT errors, fallback to normal api key auth
+        }
+
         const path = request.url.split('?')[0];
         const auth = await authorizeApiRequest(request.method, path, request.headers);
         if (!auth.ok) {

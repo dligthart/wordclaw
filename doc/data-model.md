@@ -44,6 +44,10 @@
 └──────────────────┘
 ```
 
+Rendered image:
+
+![Entity relationship diagram](images/diagrams/data-model-entity-relationship-diagram.svg)
+
 ## Tables
 
 ### content_types
@@ -157,5 +161,9 @@ Rollback request (to version N)
      ▼
   Overwrite item with version N data, increment version
 ```
+
+Rendered image:
+
+![Versioning strategy diagram](images/diagrams/data-model-versioning-strategy-diagram.svg)
 
 Versions are append-only. Rollback does not delete history — it creates a new version that restores the old state.

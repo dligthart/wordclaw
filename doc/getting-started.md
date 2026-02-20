@@ -73,8 +73,9 @@ For AI agent integration over stdio:
 npm run mcp:start
 ```
 
-## Explore the API
+## Explore the Interfaces
 
+- **Supervisor UI**: http://localhost:4000/ui (Default port)
 - **Swagger UI**: http://localhost:4000/documentation
 - **GraphiQL**: http://localhost:4000/graphql
 
