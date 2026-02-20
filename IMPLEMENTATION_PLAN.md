@@ -210,6 +210,109 @@ Exit Criteria:
 - Write integration tests using a mock payment provider.
 - Update agent SDK/documentation to demonstrate how an agent should handle the 402 response, pay the invoice, and retry the request.
 
+## Phase 8: Human Supervisor Web Interface
+
+Objective: give human operators a purpose-built interface for oversight, governance, and intervention — distinct from a content editor. Agents do the work; supervisors observe, approve, and intervene.
+
+**Current state**: No frontend exists. Human-facing surfaces are GraphiQL (`/graphql`) and Swagger UI (`/documentation`) — developer tools, not operator tools.
+
+**Scope**: This is a *supervisor control plane*, not a WYSIWYG content editor. Priority is observability, governance, and safety controls.
+
+**Tech stack recommendation**: SvelteKit (lightweight, SSR, TypeScript-native) served on a separate port or as a static build served by Fastify from `/ui`. Consumes the existing REST API exclusively — no direct DB access.
+
+---
+
+### 8.1 Dashboard (Home)
+
+Single-screen overview for an operator arriving after agent activity:
+
+- **System health strip**: API status, DB connectivity, rate limit headroom
+- **Activity summary**: operations in last 24h (creates/updates/deletes/rollbacks), grouped by agent key
+- **Recent audit events**: live-updating feed of the last 20 events with entity type, action, agent, and timestamp
+- **Alert indicators**: flagged events (rollbacks, auth failures, rate limit hits, schema validation failures)
+
+---
+
+### 8.2 Audit Log Viewer
+
+Full audit trail with supervisor-grade filtering and inspection:
+
+- Paginated table: timestamp, action, entity type, entity ID, agent key, details
+- Filter bar: by action type, entity type, agent key, date range
+- Expandable row: full `details` JSON, linked entity (click to view content item/type)
+- Export to CSV/JSON for compliance reporting
+- Real-time tail mode (WebSocket stream once 7.8 is implemented)
+
+---
+
+### 8.3 Agent Key Management
+
+Depends on Phase 7.0 (agent identity & DB-backed keys):
+
+- Table: key name, prefix, scopes, created, last used, status (active/revoked/expired)
+- **Create key**: form with name, scope checkboxes, optional expiry — displays full key once
+- **Revoke key**: single-click with confirmation modal, immediate effect
+- **Rotate key**: atomic revoke + replace, displays new key once
+- Activity sparkline per key (operations over last 7 days)
+
+---
+
+### 8.4 Content Browser
+
+Read-only inspection surface for supervisor review (not a content editor):
+
+- Content type list: name, slug, item count, last modified
+- Content type detail: rendered JSON Schema, list of items
+- Content item list: paginated, filterable by status and date
+- Content item detail: rendered data fields, version history timeline, rollback button (with confirmation)
+- Diff view between versions: side-by-side or unified diff of JSON data
+
+---
+
+### 8.5 Approval Queue
+
+Depends on approval workflow hooks (Strategic Next Step in existing plan):
+
+- List of pending operations flagged for human review before execution
+- Each entry: requesting agent, operation type, target entity, proposed payload, dry-run preview
+- Supervisor actions: **Approve** (executes operation), **Reject** (returns deterministic error to agent), **Edit & Approve** (modify payload before execution)
+- Audit event emitted on approve/reject with supervisor identity
+
+---
+
+### 8.6 Schema Manager
+
+Visual interface for content type schema governance:
+
+- List and create content types with guided JSON Schema builder
+- Schema field editor: add/remove/edit fields with type, required, description
+- Live validation preview: paste sample data, see validation result immediately
+- Schema change impact: show how an update would affect existing items (dry-run)
+
+---
+
+### 8.7 Supervisor Authentication
+
+Separate auth from agent API keys:
+
+- Session-based login (username + password) stored in DB — not API key
+- `supervisors` table: `id`, `email`, `password_hash`, `created_at`, `last_login_at`
+- JWT session tokens with configurable expiry
+- All supervisor actions attributed in audit log with `supervisorId` (distinct from `userId`/agent key)
+- Optional: TOTP/2FA for high-risk operations (rollback, key revocation)
+
+---
+
+### Delivery Notes
+
+- Phase 8 depends on Phase 7.0 (agent keys) for the key management views
+- Phase 8.5 (approval queue) depends on the approval workflow hooks noted in Strategic Next Step
+- Phases 8.1–8.4 can be built independently against the existing REST API
+- UI must itself authenticate via an admin-scoped API key or the supervisor session — no unauthenticated access
+- All supervisor actions must produce audit log entries (attribution, not just agent ops)
+
+---
+
 ## Quality and Reliability Strategy
 
 - Contract tests for critical route behavior and error mapping
