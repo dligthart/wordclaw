@@ -88,19 +88,23 @@
         if (
             name.includes("blog-post") ||
             name.includes("dry-run") ||
-            name.includes("post-invalid")
+            name.includes("post-invalid") ||
+            name.includes("l402")
         ) {
             try {
                 const res = await fetch("/api/content-types");
                 if (res.ok) {
                     const data = await res.json();
                     if (data.data && data.data.length > 0) {
-                        const blogType = data.data.find(
-                            (t: any) => t.slug === "agent_blog_post",
+                        const targetSlug = name.includes("l402")
+                            ? "guest-post"
+                            : "agent_blog_post";
+                        const targetType = data.data.find(
+                            (t: any) => t.slug && t.slug.startsWith(targetSlug),
                         );
-                        dynamicContentTypeId = blogType
-                            ? blogType.id
-                            : data.data[0].id; // Fallback to first available type
+                        dynamicContentTypeId = targetType
+                            ? targetType.id
+                            : data.data[data.data.length - 1].id; // Fallback
                     }
                 }
             } catch (err) {
@@ -174,6 +178,29 @@
             method = "GET";
             endpoint = `/api/content-items?contentTypeId=${dynamicContentTypeId}`;
             jsonBody = "";
+        } else if (name === "l402-payment-required") {
+            method = "POST";
+            endpoint = "/api/content-items";
+            jsonBody = JSON.stringify(
+                {
+                    contentTypeId: dynamicContentTypeId,
+                    data: JSON.stringify({
+                        title: "My paid Guest Post",
+                        body: "I am ready to pay for this placement",
+                        author: "Agent L402",
+                    }),
+                    status: "draft",
+                },
+                null,
+                2,
+            );
+            headersText = JSON.stringify(
+                {
+                    "Content-Type": "application/json",
+                },
+                null,
+                2,
+            );
         } else if (name === "update-blog-post") {
             method = "PUT";
             endpoint = "/api/content-items/1"; // Using ID 1 as standard assumption for an item ID
@@ -258,6 +285,9 @@
                     >
                     <option value="create-post-invalid"
                         >Create Invalid Post (Missing Field)</option
+                    >
+                    <option value="l402-payment-required"
+                        >L402 Payment Required (Guest Post)</option
                     >
                     <option value="list-blog-posts">List Blog Posts</option>
                     <option value="update-blog-post"

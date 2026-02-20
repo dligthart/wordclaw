@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
     id: serial('id').primaryKey(),
@@ -84,6 +84,8 @@ export const payments = pgTable('payments', {
     amountSatoshis: integer('amount_satoshis').notNull(),
     status: text('status').notNull().default('pending'), // 'pending' or 'paid'
     resourcePath: text('resource_path').notNull(),
+    actorId: text('actor_id'),
+    details: jsonb('details'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

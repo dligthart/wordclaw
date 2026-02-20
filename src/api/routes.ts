@@ -1149,12 +1149,21 @@ export default async function apiRoutes(server: FastifyInstance) {
                 return contentType.basePrice;
             },
             onInvoiceCreated: async (invoice, req, amountSatoshis) => {
+                const principal = (req as any).authPrincipal;
+                const actorId = principal ? String(principal.keyId) : null;
+                const details = {
+                    body: req.body,
+                    headers: req.headers
+                };
+
                 await db.insert(payments).values({
                     paymentHash: invoice.hash,
                     paymentRequest: invoice.paymentRequest,
                     amountSatoshis,
                     status: 'pending',
-                    resourcePath: req.url
+                    resourcePath: req.url,
+                    actorId,
+                    details
                 });
             },
             onPaymentVerified: async (paymentHash, req) => {
@@ -2448,6 +2457,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     amountSatoshis: Type.Number(),
                     status: Type.String(),
                     resourcePath: Type.String(),
+                    actorId: Type.Union([Type.String(), Type.Null()]),
+                    details: Type.Any(),
                     createdAt: Type.String()
                 }))),
                 400: AIErrorResponse
@@ -2465,6 +2476,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             amountSatoshis: payments.amountSatoshis,
             status: payments.status,
             resourcePath: payments.resourcePath,
+            actorId: payments.actorId,
+            details: payments.details,
             createdAt: payments.createdAt
         })
             .from(payments)

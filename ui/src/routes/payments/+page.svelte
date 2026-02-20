@@ -1,27 +1,29 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { fetchApi } from "$lib/api";
 
     let payments = $state<any[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
+    let expandedRows = $state<Set<number>>(new Set());
+
+    function toggleRow(id: number) {
+        if (expandedRows.has(id)) {
+            expandedRows.delete(id);
+        } else {
+            expandedRows.add(id);
+        }
+        expandedRows = new Set(expandedRows);
+    }
 
     async function loadPayments() {
         loading = true;
+        error = null;
         try {
-            const token = localStorage.getItem("token");
-            const res = await fetch("http://localhost:4000/api/payments", {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-            const payload = await res.json();
-            if (!res.ok) {
-                error = payload.error?.message || "Failed to load payments";
-            } else {
-                payments = payload.data;
-            }
+            const res = await fetchApi("/payments");
+            payments = res.data;
         } catch (err: any) {
-            error = err.message;
+            error = err.message || "Failed to load payments";
         } finally {
             loading = false;
         }
@@ -91,10 +93,16 @@
                         >
                             <thead class="bg-gray-50 dark:bg-gray-800">
                                 <tr>
+                                    <th scope="col" class="w-10 px-6 py-3"></th>
                                     <th
                                         scope="col"
                                         class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6"
                                         >ID</th
+                                    >
+                                    <th
+                                        scope="col"
+                                        class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"
+                                        >Actor</th
                                     >
                                     <th
                                         scope="col"
@@ -122,11 +130,46 @@
                                 class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900"
                             >
                                 {#each payments as p}
-                                    <tr>
+                                    <tr
+                                        class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                                        onclick={() => toggleRow(p.id)}
+                                    >
+                                        <td
+                                            class="px-6 py-4 whitespace-nowrap text-gray-400"
+                                        >
+                                            <svg
+                                                class="w-5 h-5 transform transition-transform {expandedRows.has(
+                                                    p.id,
+                                                )
+                                                    ? 'rotate-90 text-blue-500'
+                                                    : ''}"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                                ><path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    stroke-width="2"
+                                                    d="M9 5l7 7-7 7"
+                                                ></path></svg
+                                            >
+                                        </td>
                                         <td
                                             class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sm:pl-6"
                                         >
                                             {p.id}
+                                        </td>
+                                        <td
+                                            class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300 font-mono"
+                                        >
+                                            {#if p.actorId}
+                                                {p.actorId}
+                                            {:else}
+                                                <span
+                                                    class="italic text-gray-400"
+                                                    >Anonymous</span
+                                                >
+                                            {/if}
                                         </td>
                                         <td
                                             class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300"
@@ -163,6 +206,56 @@
                                             ).toLocaleString()}
                                         </td>
                                     </tr>
+                                    {#if expandedRows.has(p.id)}
+                                        <tr
+                                            class="bg-gray-50 dark:bg-gray-800/50"
+                                        >
+                                            <td
+                                                colspan="7"
+                                                class="px-10 py-4 border-b border-gray-100 dark:border-gray-700"
+                                            >
+                                                {#if p.details}
+                                                    <div
+                                                        class="rounded-md bg-gray-900 overflow-hidden shadow-inner"
+                                                    >
+                                                        <div
+                                                            class="px-4 py-2 border-b border-gray-700 bg-gray-800 flex justify-between items-center text-xs text-gray-400 font-mono"
+                                                        >
+                                                            <span
+                                                                >Request Context</span
+                                                            >
+                                                        </div>
+                                                        <pre
+                                                            class="p-4 text-xs text-green-400 font-mono overflow-x-auto"><code
+                                                                >{JSON.stringify(
+                                                                    p.details,
+                                                                    null,
+                                                                    2,
+                                                                )}</code
+                                                            ></pre>
+                                                    </div>
+                                                {:else}
+                                                    <p
+                                                        class="text-sm text-gray-500 italic"
+                                                    >
+                                                        No detailed request
+                                                        context recorded.
+                                                    </p>
+                                                {/if}
+                                                <div
+                                                    class="mt-4 text-sm text-gray-500 dark:text-gray-400"
+                                                >
+                                                    <strong
+                                                        >Payment Hash:</strong
+                                                    >
+                                                    <span
+                                                        class="font-mono text-xs ml-2 bg-gray-200 dark:bg-gray-700 p-1 rounded"
+                                                        >{p.paymentHash}</span
+                                                    >
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {/if}
                                 {/each}
                             </tbody>
                         </table>
