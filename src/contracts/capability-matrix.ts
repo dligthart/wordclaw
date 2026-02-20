@@ -1,0 +1,122 @@
+export type RestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+export type GraphqlOperation = 'Query' | 'Mutation';
+
+export type Capability = {
+    id: string;
+    description: string;
+    rest: {
+        method: RestMethod;
+        path: string;
+    };
+    graphql: {
+        operation: GraphqlOperation;
+        field: string;
+    };
+    mcp: {
+        tool: string;
+    };
+};
+
+export const capabilityMatrix: Capability[] = [
+    {
+        id: 'create_content_type',
+        description: 'Create content type schema',
+        rest: { method: 'POST', path: '/content-types' },
+        graphql: { operation: 'Mutation', field: 'createContentType' },
+        mcp: { tool: 'create_content_type' }
+    },
+    {
+        id: 'list_content_types',
+        description: 'List content types',
+        rest: { method: 'GET', path: '/content-types' },
+        graphql: { operation: 'Query', field: 'contentTypes' },
+        mcp: { tool: 'list_content_types' }
+    },
+    {
+        id: 'get_content_type',
+        description: 'Get content type by ID',
+        rest: { method: 'GET', path: '/content-types/:id' },
+        graphql: { operation: 'Query', field: 'contentType' },
+        mcp: { tool: 'get_content_type' }
+    },
+    {
+        id: 'update_content_type',
+        description: 'Update content type',
+        rest: { method: 'PUT', path: '/content-types/:id' },
+        graphql: { operation: 'Mutation', field: 'updateContentType' },
+        mcp: { tool: 'update_content_type' }
+    },
+    {
+        id: 'delete_content_type',
+        description: 'Delete content type',
+        rest: { method: 'DELETE', path: '/content-types/:id' },
+        graphql: { operation: 'Mutation', field: 'deleteContentType' },
+        mcp: { tool: 'delete_content_type' }
+    },
+    {
+        id: 'create_content_item',
+        description: 'Create content item',
+        rest: { method: 'POST', path: '/content-items' },
+        graphql: { operation: 'Mutation', field: 'createContentItem' },
+        mcp: { tool: 'create_content_item' }
+    },
+    {
+        id: 'list_content_items',
+        description: 'List content items',
+        rest: { method: 'GET', path: '/content-items' },
+        graphql: { operation: 'Query', field: 'contentItems' },
+        mcp: { tool: 'get_content_items' }
+    },
+    {
+        id: 'get_content_item',
+        description: 'Get content item by ID',
+        rest: { method: 'GET', path: '/content-items/:id' },
+        graphql: { operation: 'Query', field: 'contentItem' },
+        mcp: { tool: 'get_content_item' }
+    },
+    {
+        id: 'update_content_item',
+        description: 'Update content item',
+        rest: { method: 'PUT', path: '/content-items/:id' },
+        graphql: { operation: 'Mutation', field: 'updateContentItem' },
+        mcp: { tool: 'update_content_item' }
+    },
+    {
+        id: 'delete_content_item',
+        description: 'Delete content item',
+        rest: { method: 'DELETE', path: '/content-items/:id' },
+        graphql: { operation: 'Mutation', field: 'deleteContentItem' },
+        mcp: { tool: 'delete_content_item' }
+    },
+    {
+        id: 'list_content_item_versions',
+        description: 'List item version history',
+        rest: { method: 'GET', path: '/content-items/:id/versions' },
+        graphql: { operation: 'Query', field: 'contentItemVersions' },
+        mcp: { tool: 'get_content_item_versions' }
+    },
+    {
+        id: 'rollback_content_item',
+        description: 'Rollback item to a previous version',
+        rest: { method: 'POST', path: '/content-items/:id/rollback' },
+        graphql: { operation: 'Mutation', field: 'rollbackContentItem' },
+        mcp: { tool: 'rollback_content_item' }
+    },
+    {
+        id: 'list_audit_logs',
+        description: 'List audit logs with filters',
+        rest: { method: 'GET', path: '/audit-logs' },
+        graphql: { operation: 'Query', field: 'auditLogs' },
+        mcp: { tool: 'get_audit_logs' }
+    }
+];
+
+export const dryRunCapabilities = new Set<string>([
+    'create_content_type',
+    'update_content_type',
+    'delete_content_type',
+    'create_content_item',
+    'update_content_item',
+    'delete_content_item',
+    'rollback_content_item'
+]);
