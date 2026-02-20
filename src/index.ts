@@ -92,7 +92,13 @@ server.register(import('@fastify/swagger-ui'), {
     routePrefix: '/documentation',
 });
 server.register(import('@fastify/websocket'));
-server.register(fastifyJwt, { secret: process.env.JWT_SECRET || 'super-secret-fallback' });
+server.register(fastifyJwt, {
+    secret: process.env.JWT_SECRET || 'super-secret-fallback',
+    cookie: {
+        cookieName: 'supervisor_session',
+        signed: false
+    }
+});
 server.register(fastifyCookie, {
     secret: process.env.COOKIE_SECRET || 'cookie-secret-fallback',
     hook: 'onRequest'
