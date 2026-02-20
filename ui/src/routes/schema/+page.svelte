@@ -8,6 +8,7 @@
         slug: string;
         description: string;
         schema: any;
+        basePrice?: number | null;
     };
 
     let types = $state<ContentType[]>([]);
@@ -22,6 +23,7 @@
     let editingSlug = $state("");
     let editingDesc = $state("");
     let editingSchemaStr = $state("");
+    let editingBasePrice = $state<number | null>(null);
     let schemaError = $state<string | null>(null);
 
     // Live validation preview
@@ -68,6 +70,7 @@
         editingName = t.name;
         editingSlug = t.slug;
         editingDesc = t.description || "";
+        editingBasePrice = t.basePrice ?? null;
         editingSchemaStr =
             typeof t.schema === "string"
                 ? t.schema
@@ -83,6 +86,7 @@
         editingName = "";
         editingSlug = "";
         editingDesc = "";
+        editingBasePrice = null;
         editingSchemaStr = defaultSchemaStr;
         schemaError = null;
         previewValidationResult = null;
@@ -125,6 +129,7 @@
                         slug: editingSlug,
                         description: editingDesc,
                         schema: editingSchemaStr,
+                        basePrice: editingBasePrice,
                     }),
                 });
                 await loadTypes();
@@ -138,6 +143,7 @@
                             name: editingName,
                             description: editingDesc,
                             schema: editingSchemaStr,
+                            basePrice: editingBasePrice,
                         }),
                     },
                 );
@@ -389,20 +395,44 @@
                                     placeholder="e.g. blog-post"
                                 />
                             </div>
-                            <div>
-                                <label
-                                    for="desc"
-                                    class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                                    >Description</label
-                                >
-                                <textarea
-                                    id="desc"
-                                    bind:value={editingDesc}
-                                    disabled={!isEditing}
-                                    rows="2"
-                                    class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 disabled:opacity-50"
-                                    placeholder="Agent guidance for this model"
-                                ></textarea>
+                            <div class="flex gap-4">
+                                <div class="flex-1">
+                                    <label
+                                        for="desc"
+                                        class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        >Description</label
+                                    >
+                                    <textarea
+                                        id="desc"
+                                        bind:value={editingDesc}
+                                        disabled={!isEditing}
+                                        rows="2"
+                                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 disabled:opacity-50"
+                                        placeholder="Agent guidance for this model"
+                                    ></textarea>
+                                </div>
+                                <div class="w-1/3">
+                                    <label
+                                        for="basePrice"
+                                        class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        >Base Price (Sats)</label
+                                    >
+                                    <input
+                                        id="basePrice"
+                                        type="number"
+                                        min="0"
+                                        bind:value={editingBasePrice}
+                                        disabled={!isEditing}
+                                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 disabled:opacity-50"
+                                        placeholder="Optional..."
+                                        title="Minimum Lightning payment required to create items of this type"
+                                    />
+                                    <p
+                                        class="text-[0.65rem] text-gray-500 mt-1 dark:text-gray-400"
+                                    >
+                                        Leave empty to disable L402.
+                                    </p>
+                                </div>
                             </div>
 
                             <div class="flex-1 flex flex-col relative">

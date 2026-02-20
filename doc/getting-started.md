@@ -46,8 +46,10 @@
 5. **Run database migrations**
 
    ```bash
-   npx drizzle-kit push
+   npx drizzle-kit migrate
    ```
+
+   For full migration workflows (`generate`, `migrate`, `push`) see [drizzle-migrations.md](drizzle-migrations.md).
 
 6. **Start the server**
 

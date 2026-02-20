@@ -36,5 +36,15 @@ To create a Content Item, the endpoint is `POST /api/content-items`, and the age
 **Impact:**
 While functional, this breaks standard RESTful nesting conventions (e.g., `/api/content-types/{id}/items`). It forces the agent to read the documentation carefully rather than relying on intuitive REST URL structures.
 
-**Recommendation:**
 Consider supporting nested paths like `POST /api/content-types/:contentTypeId/items` alongside or instead of the flat `/api/content-items` endpoint. This makes the relationship between Content Types and their Items structurally obvious to LLMs.
+
+## 4. L402 Pricing Lacks Extensibility for Variable Resource Costing
+
+**Issue:**
+While implementing dynamic L402 pricing for Guest Posts, it became apparent that retrieving the price dynamically relies on intercepting the `POST` payload. In this MVP, the `getPrice` function assumes the client's intent is based on the `basePrice` defined in the Content Type schema + any optional `x-proposed-price` header.
+
+**Impact:**
+This design binds the L402 payment validation closely to the HTTP layer and the Fastify `request` object. If agents wish to pay for *computational time* (e.g. running an complex database query via the MCP Server instead of the REST API), the current `L402Options.getPrice(request)` interface doesn't neatly scale to other transports or highly variable workloads.
+
+**Recommendation:**
+In future iterations of the L402 protocol integration, consider decoupling the `getPrice` logic from the HTTP request structure. Implementing a generic `ResourceIdentifier` or `WorkloadEstimator` interface would allow the L402 middleware to price items identically whether they arrive via REST, GraphQL, or JSON-RPC (MCP).

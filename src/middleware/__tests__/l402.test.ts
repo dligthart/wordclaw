@@ -7,7 +7,7 @@ describe('L402 Middleware', () => {
   const provider = new MockPaymentProvider();
   const options = {
     provider,
-    priceSatoshis: 100,
+    getPrice: async () => 100,
     secretKey: 'test-secret'
   };
 

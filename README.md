@@ -103,6 +103,7 @@ The server will start at `http://localhost:4000`.
 For detailed guides on setting up the Supervisor UI, authentication, testing, and system architecture, please refer to the `doc/` directory:
 
 - [Getting Started Guide](doc/getting-started.md) — Frontend UI setup, API authentication, testing, and environment setup.
+- [Drizzle Migrations Guide](doc/drizzle-migrations.md) — How to generate/apply/push schema migrations safely.
 - [Architecture Overview](doc/architecture.md) — System layer breakdown and data models.
 - [Features Outline](doc/features.md) — Content API and Human Supervisor Web Interface capabilities.
 - [MCP Integration](doc/mcp-integration.md) — Model Context Protocol implementation details.

@@ -3,13 +3,15 @@ import { Type } from '@sinclair/typebox';
 import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authorizeApiRequest } from './auth.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
+import { l402Middleware } from '../middleware/l402.js';
+import { MockPaymentProvider } from '../services/mock-payment-provider.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -810,17 +812,20 @@ export default async function apiRoutes(server: FastifyInstance) {
                 slug: Type.String(),
                 description: Type.Optional(Type.String()),
                 schema: Type.String(),
+                basePrice: Type.Optional(Type.Number()),
             }),
             response: {
                 201: createAIResponse(Type.Object({
                     id: Type.Number(),
                     name: Type.String(),
                     slug: Type.String(),
+                    basePrice: Type.Optional(Type.Number()),
                 })),
                 200: createAIResponse(Type.Object({
                     id: Type.Number(),
                     name: Type.String(),
                     slug: Type.String(),
+                    basePrice: Type.Optional(Type.Number()),
                 })),
                 400: AIErrorResponse
             },
@@ -881,6 +886,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     slug: Type.String(),
                     description: Type.Optional(Type.String()),
                     schema: Type.String(),
+                    basePrice: Type.Optional(Type.Number()),
                     createdAt: Type.String(),
                     updatedAt: Type.String()
                 })))
@@ -922,6 +928,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     slug: Type.String(),
                     description: Type.Optional(Type.String()),
                     schema: Type.String(),
+                    basePrice: Type.Optional(Type.Number()),
                     createdAt: Type.String(),
                     updatedAt: Type.String()
                 })),
@@ -958,6 +965,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 slug: Type.Optional(Type.String()),
                 description: Type.Optional(Type.String()),
                 schema: Type.Optional(Type.String()),
+                basePrice: Type.Optional(Type.Number()),
             }),
             response: {
                 200: createAIResponse(Type.Object({
@@ -966,6 +974,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     slug: Type.Optional(Type.String()),
                     description: Type.Optional(Type.String()),
                     schema: Type.Optional(Type.String()),
+                    basePrice: Type.Optional(Type.Number()),
                     createdAt: Type.Optional(Type.String()),
                     updatedAt: Type.Optional(Type.String())
                 })),
@@ -1110,8 +1119,50 @@ export default async function apiRoutes(server: FastifyInstance) {
             )
         };
     });
+    const mockPaymentProvider = new MockPaymentProvider();
 
     server.post('/content-items', {
+        preHandler: l402Middleware({
+            provider: mockPaymentProvider, // In production, this would be a real node
+            secretKey: process.env.L402_SECRET || 'dev-macaroon-secret',
+            getPrice: async (req) => {
+                const body = req.body as typeof contentItems.$inferInsert;
+                if (!body || !body.contentTypeId) return 0;
+
+                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, body.contentTypeId));
+
+                if (!contentType || contentType.basePrice === null || contentType.basePrice <= 0) {
+                    return 0; // Not a paid content type
+                }
+
+                const proposedPriceHeader = req.headers['x-proposed-price'];
+                let proposedPrice = 0;
+                if (typeof proposedPriceHeader === 'string') {
+                    proposedPrice = parseInt(proposedPriceHeader, 10);
+                }
+
+                // Agent must pay at least the base price, but can voluntarily pay more
+                if (proposedPrice > contentType.basePrice) {
+                    return proposedPrice;
+                }
+
+                return contentType.basePrice;
+            },
+            onInvoiceCreated: async (invoice, req, amountSatoshis) => {
+                await db.insert(payments).values({
+                    paymentHash: invoice.hash,
+                    paymentRequest: invoice.paymentRequest,
+                    amountSatoshis,
+                    status: 'pending',
+                    resourcePath: req.url
+                });
+            },
+            onPaymentVerified: async (paymentHash, req) => {
+                await db.update(payments)
+                    .set({ status: 'paid', updatedAt: new Date() })
+                    .where(eq(payments.paymentHash, paymentHash));
+            }
+        }),
         schema: {
             querystring: DryRunQuery,
             body: Type.Object({
@@ -1131,7 +1182,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     version: Type.Number()
                 })),
                 400: AIErrorResponse,
-                404: AIErrorResponse
+                404: AIErrorResponse,
+                402: Type.Any() // Added 402 for L402 Payment Required response
             }
         },
     }, async (request, reply) => {
@@ -2379,6 +2431,58 @@ export default async function apiRoutes(server: FastifyInstance) {
                     hasMore,
                     nextCursor
                 }
+            )
+        };
+    });
+
+    server.get('/payments', {
+        schema: {
+            querystring: Type.Object({
+                limit: Type.Optional(Type.Number({ default: 50, minimum: 1, maximum: 500 })),
+                offset: Type.Optional(Type.Number({ minimum: 0 }))
+            }),
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    paymentHash: Type.String(),
+                    amountSatoshis: Type.Number(),
+                    status: Type.String(),
+                    resourcePath: Type.String(),
+                    createdAt: Type.String()
+                }))),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request) => {
+        const { limit: rawLimit, offset: rawOffset } = request.query as PaginationQuery;
+        const limit = clampLimit(rawLimit);
+        const offset = clampOffset(rawOffset);
+
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(payments);
+        const results = await db.select({
+            id: payments.id,
+            paymentHash: payments.paymentHash,
+            amountSatoshis: payments.amountSatoshis,
+            status: payments.status,
+            resourcePath: payments.resourcePath,
+            createdAt: payments.createdAt
+        })
+            .from(payments)
+            .orderBy(desc(payments.createdAt))
+            .limit(limit)
+            .offset(offset);
+
+        const hasMore = offset + results.length < total;
+
+        return {
+            data: results,
+            meta: buildMeta(
+                'Monitor payment activity',
+                ['GET /api/payments'],
+                'low',
+                1,
+                false,
+                { total, offset, limit, hasMore }
             )
         };
     });

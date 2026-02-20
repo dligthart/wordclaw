@@ -131,6 +131,16 @@
                 >
                     Agent Sandbox
                 </a>
+                <a
+                    href="/ui/payments"
+                    class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {$page.url.pathname.includes(
+                        '/payments',
+                    )
+                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+                >
+                    Payments
+                </a>
             </nav>
 
             <div class="p-4 border-t border-gray-200 dark:border-gray-700">

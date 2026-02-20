@@ -14,6 +14,7 @@ export const contentTypes = pgTable('content_types', {
     slug: text('slug').notNull().unique(),
     description: text('description'),
     schema: text('schema').notNull(),
+    basePrice: integer('base_price'), // Minimum cost in Satoshis for creating an item of this type
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -75,4 +76,14 @@ export const supervisors = pgTable('supervisors', {
     passwordHash: text('password_hash').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     lastLoginAt: timestamp('last_login_at'),
+});
+export const payments = pgTable('payments', {
+    id: serial('id').primaryKey(),
+    paymentHash: text('payment_hash').notNull().unique(),
+    paymentRequest: text('payment_request').notNull(),
+    amountSatoshis: integer('amount_satoshis').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending' or 'paid'
+    resourcePath: text('resource_path').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

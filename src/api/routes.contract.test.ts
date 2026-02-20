@@ -311,7 +311,8 @@ describe('API Route Contracts', () => {
             from: () => ({
                 where: vi.fn().mockResolvedValue([{
                     id: 1,
-                    schema: '{"type":"object"}'
+                    schema: '{"type":"object"}',
+                    basePrice: 0
                 }]),
             }),
         }));
@@ -343,7 +344,8 @@ describe('API Route Contracts', () => {
             from: () => ({
                 where: vi.fn().mockResolvedValue([{
                     id: 1,
-                    schema: '{"type":"object","required":["title"],"properties":{"title":{"type":"string"}}}'
+                    schema: '{"type":"object","required":["title"],"properties":{"title":{"type":"string"}}}',
+                    basePrice: 0
                 }]),
             }),
         }));

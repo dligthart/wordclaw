@@ -9,8 +9,10 @@ import * as crypto from 'crypto';
 
 export interface L402Options {
   provider: PaymentProvider;
-  priceSatoshis: number;
+  getPrice: (req: FastifyRequest) => Promise<number | null>; // Return null or 0 to bypass L402
   secretKey: string; // Used to sign the macaroon/token
+  onInvoiceCreated?: (invoice: any, request: FastifyRequest, requiredPrice: number) => Promise<void>;
+  onPaymentVerified?: (paymentHash: string, request: FastifyRequest) => Promise<void>;
 }
 
 /**
@@ -47,6 +49,16 @@ function verifyToken(token: string, secret: string): string | null {
 
 export function l402Middleware(options: L402Options) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
+
+    // First, determine if we even need to challenge this request.
+    const requiredPrice = await options.getPrice(request);
+
+    // If getting the price returns null or 0, it means L402 is disabled or not applicable
+    // for this specific resource/user, so proceed without challenging.
+    if (requiredPrice === null || requiredPrice <= 0) {
+      return;
+    }
+
     const authHeader = request.headers.authorization;
 
     // Check if the client provided an L402 authorization header
@@ -58,12 +70,15 @@ export function l402Middleware(options: L402Options) {
 
         // Verify the token (macaroon)
         const paymentHash = verifyToken(token, options.secretKey);
-        
+
         if (paymentHash) {
           // Verify the payment with the provider
           const isPaid = await options.provider.verifyPayment(paymentHash, preimage);
-          
+
           if (isPaid) {
+            if (options.onPaymentVerified) {
+              await options.onPaymentVerified(paymentHash, request);
+            }
             // Payment is valid, allow the request to proceed
             return;
           }
@@ -72,16 +87,20 @@ export function l402Middleware(options: L402Options) {
     }
 
     // If we reach here, payment is required or the provided token/preimage is invalid.
-    // Generate a new invoice
-    const invoice = await options.provider.createInvoice(options.priceSatoshis, `Payment for ${request.url}`);
-    
+    // Generate a new invoice using the dynamic required price
+    const invoice = await options.provider.createInvoice(requiredPrice, `Payment for ${request.url}`);
+
+    if (options.onInvoiceCreated) {
+      await options.onInvoiceCreated(invoice, request, requiredPrice);
+    }
+
     // Generate a new token (macaroon) tied to the invoice hash
     const token = generateToken(invoice.hash, options.secretKey);
 
     // Send 402 Payment Required response
     reply.status(402);
     reply.header('WWW-Authenticate', `L402 macaroon="${token}", invoice="${invoice.paymentRequest}"`);
-    
+
     // Return a structured error for the agent
     reply.send({
       success: false,
@@ -91,12 +110,12 @@ export function l402Middleware(options: L402Options) {
         details: {
           invoice: invoice.paymentRequest,
           macaroon: token,
-          amountSatoshis: options.priceSatoshis
+          amountSatoshis: requiredPrice
         }
       },
       recommendedNextAction: 'pay_invoice_and_retry'
     });
-    
+
     return reply;
   };
 }
