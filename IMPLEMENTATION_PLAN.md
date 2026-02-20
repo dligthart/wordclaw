@@ -223,3 +223,12 @@ Build a **policy and approvals layer** on top of the parity baseline:
 - Route/tool-level policy contracts (who/what/when) with deterministic denial reasons
 - Approval workflow for high-risk write operations
 - Quota and cost-governor hooks to prepare paid/limited autonomous execution
+
+## Immediate Improvements Recommended
+
+Based on recent repository reviews, the following improvements should be integrated into the roadmap:
+
+1. **Database Migration Consistency:** Ensure all development schema changes are consistently captured in migration journals to prevent drift between the runtime schema and deployment environments.
+2. **Robust Validation:** Strengthen input validation across all endpoints (e.g., preventing empty bodies on PUT requests) to avoid unhandled server errors and provide clear, actionable feedback to agents.
+3. **Comprehensive Coverage:** Increase the parity between the GraphQL and REST interfaces, ensuring features like dry-run and detailed error envelopes are universally available.
+4. **Automated Auditing:** Expand the verification scripts to continuously monitor the health of audit logs and versioning mechanisms during CI.
