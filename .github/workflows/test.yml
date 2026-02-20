@@ -1,0 +1,51 @@
+name: Node.js CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wordclaw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Install dependencies (Backend)
+      run: npm install
+      
+    - name: Run Backend Tests
+      run: npm test
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/wordclaw
+        
+    - name: Install dependencies (Frontend)
+      run: npm install
+      working-directory: ./ui
+      
+    - name: Run Frontend Tests
+      run: npx vitest run
+      working-directory: ./ui

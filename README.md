@@ -1,5 +1,7 @@
 # WordClaw
 
+[![Node.js CI](https://github.com/dligthart/wordclaw/actions/workflows/test.yml/badge.svg)](https://github.com/dligthart/wordclaw/actions/workflows/test.yml)
+
 **WordClaw** is an AI-first Headless CMS designed to bridge the gap between human content creation and AI agent consumption. It features standardized API responses with action guidance, a built-in Model Context Protocol (MCP) server, and robust safety features like dry-run modes.
 
 ## 🚀 Features
@@ -70,6 +72,21 @@ npm run dev
 ```
 
 The server will start at `http://localhost:4000`.
+
+### Supervisor Web Interface (Frontend)
+
+WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, agent API keys, and reviewing audit logs/content approvals.
+
+To run the frontend locally:
+1. Ensure the WordClaw backend is running (`npm run dev` in the root folder).
+2. Start the SvelteKit development server:
+   ```bash
+   cd ui
+   npm run dev
+   ```
+3. Navigate to `http://localhost:5173` to access the Supervisor UI.
+
+> **Note:** In production, the SvelteKit app is compiled statically (`cd ui && npm run build`) and natively served by the Fastify backend at `http://localhost:4000/ui`.
 
 ### API Authentication (Optional but recommended)
 
