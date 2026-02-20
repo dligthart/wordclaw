@@ -88,6 +88,17 @@ To run the frontend locally:
 
 > **Note:** In production, the SvelteKit app is compiled statically (`cd ui && npm run build`) and natively served by the Fastify backend at `http://localhost:4000/ui`.
 
+**Initial Login (Bootstrapping):**
+Because WordClaw does not ship with default credentials, you must create your first supervisor account via the API. Send a POST request to your local server once it is running:
+
+```bash
+curl -X POST http://localhost:4000/api/supervisors/setup-initial \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@wordclaw.local", "password":"password123"}'
+```
+
+You can then log in to the UI using those credentials. *Note: this endpoint will only work if zero supervisor accounts exist.*
+
 ### API Authentication (Optional but recommended)
 
 When `AUTH_REQUIRED=true`, include an API key on `/api` requests:

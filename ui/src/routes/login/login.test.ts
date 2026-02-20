@@ -24,12 +24,15 @@ vi.mock('$lib/auth.svelte', () => ({
 
 describe('Login Page', () => {
     it('renders the login form', () => {
-        render(Login);
+        const { container } = render(Login);
 
         expect(screen.getByText('WordClaw Supervisor')).toBeTruthy();
         expect(screen.getByLabelText('Email address')).toBeTruthy();
         expect(screen.getByLabelText('Password')).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+
+        // Cover the rendering of the UI with a snapshot
+        expect(container).toMatchSnapshot();
     });
 
     it('allows typing in email and password fields', async () => {
