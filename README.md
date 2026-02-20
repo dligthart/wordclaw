@@ -1,9 +1,13 @@
 # WordClaw
 
 <p align="center">
-  <img src="doc/images/logos/wordclaw.png" alt="WordClaw Logo" width="300" />
+    <picture>
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/logos/wordclaw.png">
+        <img src="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/logos/wordclaw.png" alt="WordClaw Logo" width="300">
+    </picture>
 </p>
-[![Node.js CI](https://github.com/dligthart/wordclaw/actions/workflows/test.yml/badge.svg)](https://github.com/dligthart/wordclaw/actions/workflows/test.yml)
+
+[![Node.js CI](https://github.com/dligthart/wordclaw/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dligthart/wordclaw/actions/workflows/test.yml)
 
 **WordClaw** is an AI-first Headless CMS designed to bridge the gap between human content creation and AI agent consumption. It features standardized API responses with action guidance, a built-in Model Context Protocol (MCP) server, and robust safety features like dry-run modes.
 
@@ -21,13 +25,19 @@
 ### System Architecture
 
 <p align="center">
-  <img src="doc/images/diagrams/architecture-system-diagram.svg" alt="WordClaw System Diagram" width="800" />
+    <picture>
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/diagrams/architecture-system-diagram.svg">
+        <img src="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/diagrams/architecture-system-diagram.svg" alt="WordClaw System Diagram" width="800">
+    </picture>
 </p>
 
 ### Data Model
 
 <p align="center">
-  <img src="doc/images/diagrams/data-model-entity-relationship-diagram.svg" alt="WordClaw Entity Relationship Diagram" width="800" />
+    <picture>
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/diagrams/data-model-entity-relationship-diagram.svg">
+        <img src="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/diagrams/data-model-entity-relationship-diagram.svg" alt="WordClaw Entity Relationship Diagram" width="800">
+    </picture>
 </p>
 
 ## 🛠️ Prerequisites
