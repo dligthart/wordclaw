@@ -89,6 +89,7 @@ WordClaw is the **control plane for agent-driven content operations**.
 ## Delivery Roadmap (Improved)
 
 ### Phase 1: Core Runtime Foundation
+**Status: ✅ Implemented**
 
 Objective: reliable data model and CRUD baseline.
 
@@ -104,6 +105,7 @@ Exit Criteria:
 - clean migrations and reproducible local setup
 
 ### Phase 2: Agent Contract Layer
+**Status: ✅ Implemented**
 
 Objective: deterministic machine contracts and safer request handling.
 
@@ -119,6 +121,7 @@ Exit Criteria:
 - no ambiguous 500s for common client mistakes
 
 ### Phase 3: MCP Runtime Surface
+**Status: ✅ Implemented**
 
 Objective: first-class tool protocol for agent interoperability.
 
@@ -134,6 +137,7 @@ Exit Criteria:
 - key operations support dry-run + clear errors
 
 ### Phase 4: Operational Safety and Governance
+**Status: ✅ Implemented**
 
 Objective: make autonomous edits reversible and auditable.
 
@@ -149,6 +153,7 @@ Exit Criteria:
 - audit events emitted consistently
 
 ### Phase 5: Packaging and Adoption Readiness
+**Status: ✅ Implemented**
 
 Objective: make onboarding and deployment reproducible.
 
@@ -303,6 +308,7 @@ Completed:
 ---
 
 ## Phase 8: Human Supervisor Web Interface
+**Status: ✅ Implemented**
 
 Objective: give human operators a purpose-built interface for oversight, governance, and intervention — distinct from a content editor. Agents do the work; supervisors observe, approve, and intervene.
 
