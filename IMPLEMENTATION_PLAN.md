@@ -179,6 +179,129 @@ Deliverables:
 **Next Steps (RFC 0003):** 
 Integration with a production Lightning Node (LND/LNbits) will transition this from a mock deployment to a live settlement ecosystem. 
 
+## Phase 7: Agent Usability Hardening
+
+Objective: remove friction for autonomous agents operating at scale — batch throughput, reliable retries, real-time event integration, and improved discoverability.
+
+### 7.0 Agent Identity & Authentication
+Status: ✅ Implemented
+
+Completed:
+- Added DB-backed `api_keys` model + migration (`drizzle/0004_agent_hardening.sql`)
+- Reworked auth to validate hashed keys from DB, enforce scope/expiry/revocation, and touch `last_used_at`
+- Retained env-key fallback for local/dev flows
+- Added admin key-management routes:
+  - `POST /api/auth/keys`
+  - `GET /api/auth/keys`
+  - `DELETE /api/auth/keys/:id`
+  - `PUT /api/auth/keys/:id`
+- Added MCP key tools:
+  - `create_api_key`
+  - `list_api_keys`
+  - `revoke_api_key`
+- Audit writes now pass authenticated key identity when available
+
+### 7.1 Batch Operations
+Status: ✅ Implemented
+
+Completed across REST + GraphQL + MCP:
+- Create batch:
+  - `POST /api/content-items/batch`
+  - `createContentItemsBatch`
+  - `create_content_items_batch`
+- Update batch:
+  - `PUT /api/content-items/batch`
+  - `updateContentItemsBatch`
+  - `update_content_items_batch`
+- Delete batch:
+  - `DELETE /api/content-items/batch`
+  - `deleteContentItemsBatch`
+  - `delete_content_items_batch`
+- Dry-run and atomic transaction modes implemented
+- Partial-success envelopes implemented in non-atomic mode
+
+### 7.2 Pagination on List Endpoints
+Status: ✅ Implemented
+
+Completed:
+- REST:
+  - `GET /api/content-types` supports `limit`, `offset` + meta `{ total, limit, offset, hasMore }`
+  - `GET /api/content-items` supports `limit`, `offset` + same meta
+  - `GET /api/audit-logs` supports cursor pagination + `{ total, hasMore, nextCursor }`
+- GraphQL:
+  - `contentTypes(limit, offset)`
+  - `contentItems(..., limit, offset)`
+  - `auditLogs(..., limit, cursor)`
+- MCP:
+  - `list_content_types(limit, offset)`
+  - `get_content_items(..., limit, offset)`
+  - `get_audit_logs(limit, cursor)`
+
+### 7.3 Idempotency Keys
+Status: ✅ Implemented
+
+Completed:
+- Added `src/middleware/idempotency.ts`
+- Accepts `Idempotency-Key` on POST/PUT/DELETE
+- Caches first response by `method:path:key` for 5 minutes
+- Replays cached response on duplicate request
+- Sets `X-Idempotent-Replayed: true` on replay
+- Added middleware tests in `src/middleware/__tests__/idempotency.test.ts`
+
+### 7.4 Request ID Tracing
+Status: ✅ Implemented
+
+Completed:
+- Added request ID generation (`X-Request-ID` passthrough or generated UUID)
+- Echoes `X-Request-ID` in all responses
+- Error payloads include `context.requestId`
+- Audit service accepts and persists requestId context in `details`
+
+### 7.5 Enhanced Health Endpoint
+Status: ✅ Implemented
+
+Completed:
+- `/health` now executes DB ping (`SELECT 1`)
+- Returns:
+  - `200` with `{ status: "ok", services: { database: "ok" }, timestamp }`
+  - `503` with `{ status: "degraded", services: { database: "down" }, timestamp }`
+
+### 7.6 GraphQL Schema Descriptions
+Status: ✅ Implemented
+
+Completed:
+- Added SDL descriptions for all major types, fields, queries, mutations, and batch inputs in `src/graphql/schema.ts`
+
+### 7.7 Advanced List Filtering
+Status: ✅ Implemented
+
+Completed:
+- REST filtering on `GET /api/content-items`:
+  - `contentTypeId`, `status`, `createdAfter`, `createdBefore`
+- GraphQL filtering on `contentItems(...)` with matching args
+- MCP filtering on `get_content_items(...)` with matching args
+- Deterministic invalid-date error handling
+
+### 7.8 Webhook / Event Stream Support
+Status: ✅ Implemented
+
+Completed:
+- Added `webhooks` model + migration
+- Added webhook service with HMAC signatures and retries
+- Added webhook REST management:
+  - `POST /api/webhooks`
+  - `GET /api/webhooks`
+  - `GET /api/webhooks/:id`
+  - `PUT /api/webhooks/:id`
+  - `DELETE /api/webhooks/:id`
+- Audit events now emit through event bus and deliver to active webhooks
+- Added authenticated websocket stream endpoint:
+  - `GET /ws/events` (websocket upgrade)
+- Signature header on webhook delivery:
+  - `x-wordclaw-signature`
+
+---
+
 ## Phase 8: Human Supervisor Web Interface
 
 Objective: give human operators a purpose-built interface for oversight, governance, and intervention — distinct from a content editor. Agents do the work; supervisors observe, approve, and intervene.
@@ -327,129 +450,6 @@ Build a **policy and approvals layer** on top of the parity baseline:
 - Route/tool-level policy contracts (who/what/when) with deterministic denial reasons
 - Approval workflow for high-risk write operations
 - Quota and cost-governor hooks to prepare paid/limited autonomous execution
-
-## Phase 7: Agent Usability Hardening
-
-Objective: remove friction for autonomous agents operating at scale — batch throughput, reliable retries, real-time event integration, and improved discoverability.
-
-### 7.0 Agent Identity & Authentication
-Status: ✅ Implemented
-
-Completed:
-- Added DB-backed `api_keys` model + migration (`drizzle/0004_agent_hardening.sql`)
-- Reworked auth to validate hashed keys from DB, enforce scope/expiry/revocation, and touch `last_used_at`
-- Retained env-key fallback for local/dev flows
-- Added admin key-management routes:
-  - `POST /api/auth/keys`
-  - `GET /api/auth/keys`
-  - `DELETE /api/auth/keys/:id`
-  - `PUT /api/auth/keys/:id`
-- Added MCP key tools:
-  - `create_api_key`
-  - `list_api_keys`
-  - `revoke_api_key`
-- Audit writes now pass authenticated key identity when available
-
-### 7.1 Batch Operations
-Status: ✅ Implemented
-
-Completed across REST + GraphQL + MCP:
-- Create batch:
-  - `POST /api/content-items/batch`
-  - `createContentItemsBatch`
-  - `create_content_items_batch`
-- Update batch:
-  - `PUT /api/content-items/batch`
-  - `updateContentItemsBatch`
-  - `update_content_items_batch`
-- Delete batch:
-  - `DELETE /api/content-items/batch`
-  - `deleteContentItemsBatch`
-  - `delete_content_items_batch`
-- Dry-run and atomic transaction modes implemented
-- Partial-success envelopes implemented in non-atomic mode
-
-### 7.2 Pagination on List Endpoints
-Status: ✅ Implemented
-
-Completed:
-- REST:
-  - `GET /api/content-types` supports `limit`, `offset` + meta `{ total, limit, offset, hasMore }`
-  - `GET /api/content-items` supports `limit`, `offset` + same meta
-  - `GET /api/audit-logs` supports cursor pagination + `{ total, hasMore, nextCursor }`
-- GraphQL:
-  - `contentTypes(limit, offset)`
-  - `contentItems(..., limit, offset)`
-  - `auditLogs(..., limit, cursor)`
-- MCP:
-  - `list_content_types(limit, offset)`
-  - `get_content_items(..., limit, offset)`
-  - `get_audit_logs(limit, cursor)`
-
-### 7.3 Idempotency Keys
-Status: ✅ Implemented
-
-Completed:
-- Added `src/middleware/idempotency.ts`
-- Accepts `Idempotency-Key` on POST/PUT/DELETE
-- Caches first response by `method:path:key` for 5 minutes
-- Replays cached response on duplicate request
-- Sets `X-Idempotent-Replayed: true` on replay
-- Added middleware tests in `src/middleware/__tests__/idempotency.test.ts`
-
-### 7.4 Request ID Tracing
-Status: ✅ Implemented
-
-Completed:
-- Added request ID generation (`X-Request-ID` passthrough or generated UUID)
-- Echoes `X-Request-ID` in all responses
-- Error payloads include `context.requestId`
-- Audit service accepts and persists requestId context in `details`
-
-### 7.5 Enhanced Health Endpoint
-Status: ✅ Implemented
-
-Completed:
-- `/health` now executes DB ping (`SELECT 1`)
-- Returns:
-  - `200` with `{ status: "ok", services: { database: "ok" }, timestamp }`
-  - `503` with `{ status: "degraded", services: { database: "down" }, timestamp }`
-
-### 7.6 GraphQL Schema Descriptions
-Status: ✅ Implemented
-
-Completed:
-- Added SDL descriptions for all major types, fields, queries, mutations, and batch inputs in `src/graphql/schema.ts`
-
-### 7.7 Advanced List Filtering
-Status: ✅ Implemented
-
-Completed:
-- REST filtering on `GET /api/content-items`:
-  - `contentTypeId`, `status`, `createdAfter`, `createdBefore`
-- GraphQL filtering on `contentItems(...)` with matching args
-- MCP filtering on `get_content_items(...)` with matching args
-- Deterministic invalid-date error handling
-
-### 7.8 Webhook / Event Stream Support
-Status: ✅ Implemented
-
-Completed:
-- Added `webhooks` model + migration
-- Added webhook service with HMAC signatures and retries
-- Added webhook REST management:
-  - `POST /api/webhooks`
-  - `GET /api/webhooks`
-  - `GET /api/webhooks/:id`
-  - `PUT /api/webhooks/:id`
-  - `DELETE /api/webhooks/:id`
-- Audit events now emit through event bus and deliver to active webhooks
-- Added authenticated websocket stream endpoint:
-  - `GET /ws/events` (websocket upgrade)
-- Signature header on webhook delivery:
-  - `x-wordclaw-signature`
-
----
 
 ## Current Roadmap & Feature Proposals (RFCs)
 
