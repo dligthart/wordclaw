@@ -14,7 +14,7 @@ This document provides a holistic analysis of WordClaw RFCs 0001-0009, evaluatin
 
 ### RFC 0003: Production Lightning Settlement
 *   **Feasibility:** Moderate. Integrating `lsat-js` and LNbits is proven tech. However, asynchronous webhooks introduce inherent race conditions and networking edge cases (e.g., dropped packets, out-of-order delivery).
-*   **Real-World Usage:** Enables true micro-transactions without high credit card processing minimums. The inclusion of a 72-hour `eventId` replay window and the periodic reconciliation worker are vital real-world safeguards against duplicate accounting or hanging invoices.
+*   **Real-World Usage:** Enables true micro-transactions without high credit card processing minimums. The inclusion of a 72-hour `eventId` replay window and the periodic reconciliation worker are vital real-world safeguards against duplicate accounting or hanging invoices. Structurally enforcing an `IPaymentProvider` interface protects the platform from being hard-locked into Lightning, allowing generic payment adapters (like Stripe or PayPal) to seamlessly plug into the architecture in the future.
 
 ### RFC 0004: Agentic Content Licensing and Entitlements
 *   **Feasibility:** Moderate. Leveraging Macaroons for caveat execution at the edge/middleware is highly performant. The primary challenge is ensuring strict atomic decrements in highly concurrent environments.
@@ -66,5 +66,6 @@ Based on architectural dependencies, risk mitigation, and product value generati
 1.  **State Machine Density:** WordClaw will execute multiple concurrent state machines (Payments, Distribution Jobs, and Editorial Reviews). Deep integration testing is necessary to ensure these processes don't deadlock or clash (e.g., an editorial workflow transition attempting to fire while an L402 invoice is actively settling).
 2.  **Latency Constraints:** Integrating asynchronous checks (external Ahrefs API, LNBits, Central Policy Engine) introduces P99 latency risks. Aggressive background syncs and local caching are the right architectural mitigations.
 3.  **Liquidity & Execution:** Sending thousands of micro-transactions via LN Addresses relies heavily on the liquidity and routing topology of the underlying Lightning node. The batching process and auto-reconciliation thresholds established in RFC 0003 and 0006 are crucial to prevent the ledger from clogging up with unroutable 5-satoshi transactions.
+4.  **Payment Vendor Lock-in:** Relying solely on the Lightning Network introduces the risk of alienating users who prefer traditional fiat transactions. This systemic risk is actively mitigated by strictly adhering to abstract `IPaymentProvider` and `paymentHash/transactionId` interfaces deep in the database schema, ensuring other payment rails can be swapped in without dismantling the L402/Entitlement architecture above it.
 
 **Conclusion:** The architectural suite described across RFCs 0001-0009 represents a robust, highly cohesive, and feasible foundation for an agentic content management system. It proactively addresses standard real-world challenges like idempotency, race conditions, observability, and network failures.
