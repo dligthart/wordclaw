@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { PaymentProvider } from '../interfaces/payment-provider';
-import * as crypto from 'crypto';
+import crypto from 'crypto';
+import { PaymentProvider, Invoice } from '../interfaces/payment-provider.js';
 
 // We'll use a simple token generation for the mock L402 since real Macaroons
 // require a C-binding library or complex pure-JS library that might be overkill for this phase.
@@ -11,9 +11,10 @@ export interface L402Options {
   provider: PaymentProvider;
   getPrice: (req: FastifyRequest) => Promise<number | null>; // Return null or 0 to bypass L402
   secretKey: string; // Used to sign the macaroon/token
-  onInvoiceCreated?: (invoice: any, request: FastifyRequest, requiredPrice: number) => Promise<void>;
+  onInvoiceCreated?: (invoice: Invoice, request: FastifyRequest, amountSatoshis: number) => Promise<void>;
   onPaymentVerified?: (paymentHash: string, request: FastifyRequest) => Promise<void>;
-  isPaymentConsumed?: (paymentHash: string, request: FastifyRequest) => Promise<boolean>;
+  onPaymentConsumed?: (paymentHash: string, request: FastifyRequest) => Promise<void>;
+  getPaymentStatus?: (paymentHash: string, request: FastifyRequest) => Promise<'pending' | 'paid' | 'consumed'>;
 }
 
 /**
@@ -73,12 +74,25 @@ export function l402Middleware(options: L402Options) {
         const paymentHash = verifyToken(token, options.secretKey);
 
         if (paymentHash) {
-          let consumed = false;
-          if (options.isPaymentConsumed) {
-            consumed = await options.isPaymentConsumed(paymentHash, request);
+          let status: string = 'pending';
+
+          if (options.getPaymentStatus) {
+            status = await options.getPaymentStatus(paymentHash, request);
           }
 
-          if (!consumed) {
+          if (status === 'consumed') {
+            reply.status(403);
+            reply.send({
+              success: false,
+              error: {
+                code: 'PAYMENT_CONSUMED',
+                message: 'This L402 token has already been consumed for a previous request. Please request a new invoice.'
+              }
+            });
+            return reply;
+          }
+
+          if (status !== 'consumed') {
             // Verify the payment with the provider
             const isPaid = await options.provider.verifyPayment(paymentHash, preimage);
 
@@ -86,6 +100,18 @@ export function l402Middleware(options: L402Options) {
               if (options.onPaymentVerified) {
                 await options.onPaymentVerified(paymentHash, request);
               }
+
+              // After successful completion of the request, mark as consumed
+              if (options.onPaymentConsumed) {
+                reply.raw.on('finish', async () => {
+                  if (reply.statusCode >= 200 && reply.statusCode < 300) {
+                    if (options.onPaymentConsumed) {
+                      await options.onPaymentConsumed(paymentHash, request);
+                    }
+                  }
+                });
+              }
+
               // Payment is valid, allow the request to proceed
               return;
             }

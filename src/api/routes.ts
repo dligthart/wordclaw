@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
+import crypto from 'crypto';
 import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
@@ -1126,9 +1127,19 @@ export default async function apiRoutes(server: FastifyInstance) {
         mockPaymentProvider = new MockPaymentProvider();
     }
 
+    let l402Secret = process.env.L402_SECRET;
+    if (!l402Secret) {
+        if (process.env.NODE_ENV === 'production') {
+            throw new Error("L402_SECRET environment variable is strictly required in production.");
+        } else {
+            l402Secret = crypto.randomBytes(32).toString('hex');
+            console.warn(`[WARNING] L402_SECRET is not set. Generating a random secret for development: ${l402Secret}`);
+        }
+    }
+
     const globalL402Middleware = l402Middleware({
         provider: mockPaymentProvider, // In production, this would be a real node instead of mock.
-        secretKey: process.env.L402_SECRET || 'dev-macaroon-secret',
+        secretKey: l402Secret,
         getPrice: async (req) => {
             let totalBasePrice = 0;
 
@@ -1193,9 +1204,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                 .set({ status: 'paid', updatedAt: new Date() })
                 .where(eq(payments.paymentHash, paymentHash));
         },
-        isPaymentConsumed: async (paymentHash, req) => {
+        onPaymentConsumed: async (paymentHash, req) => {
+            await db.update(payments)
+                .set({ status: 'consumed', updatedAt: new Date() })
+                .where(eq(payments.paymentHash, paymentHash));
+        },
+        getPaymentStatus: async (paymentHash, req) => {
             const [payment] = await db.select().from(payments).where(eq(payments.paymentHash, paymentHash));
-            return payment ? payment.status === 'paid' : false;
+            return (payment?.status as 'pending' | 'paid' | 'consumed') || 'pending';
         }
     });
 
