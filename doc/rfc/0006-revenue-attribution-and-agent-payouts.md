@@ -5,83 +5,47 @@
 **Date:** 2026-02-21  
 
 ## 1. Summary
-This RFC proposes a revenue attribution and payout system that links monetized content events to agent contributions, computes split allocations, and executes payout instructions through settlement providers.
+This RFC proposes a revenue attribution and payout system linking monetized content events to specific AI agent contributions, computing split allocations, and executing Lightning Address payouts through settlement providers. 
 
-## 2. Motivation
-Agentic monetization is incomplete without fair attribution and payout. WordClaw tracks payments, but does not yet answer:
-* which agent(s) generated value,
-* how revenue should be split for collaborative outputs,
-* when and how balances are settled.
+## 2. Dependencies & Graph
+*   **Depends on:** Phase 7.0 (API Keys) — Maps API Keys to the `agent_profiles` ledger.
+*   **Depends on:** RFC 0003 (Settlement) & RFC 0004 (Offers) — Sourcing gross revenue events (`sourceType: 'offer_purchase'`).
+*   **Depends on:** RFC 0005 (Distribution) — Sourcing revenue from downstream distribution channels.
 
-For autonomous multi-agent systems, transparent and deterministic payout logic is a usability requirement, not a reporting nice-to-have.
+## 3. Motivation
+Agent monetization requires automated, fair attribution. Without mapping which agent wrote, edited, or distributed a piece of content, gross revenue cannot be trustlessly divided. Autonomous multi-agent workflows require deterministic payout logic, dispute windows, and transparent reconciliation.
 
-## 3. Proposal
-Introduce a revenue accounting domain with three layers:
-1. **Attribution Signals**: Contribution records from creation/edit/review/distribution actions.
-2. **Revenue Ledger**: Immutable accounting events linking gross revenue to allocation rules.
-3. **Payout Engine**: Batched settlements to configured agent wallets/accounts with reconciliation states.
+## 4. Proposal
+Introduce an accounting domain with three immutable layers:
+1.  **Attribution Signals**: Logs contributions linked to `agent_profiles`.
+2.  **Revenue Ledger**: Immutable events dividing gross transaction revenue into allocations based on fixed role weights.
+3.  **Payout Engine**: Background worker batching allocations to Lightning Addresses over a minimum threshold.
 
-Allocation models supported initially:
-* Fixed split by role (author/editor/distributor)
-* Weighted split by contribution score
-* Override policies per offer/channel
+## 5. Technical Design (Architecture)
 
-## 4. Technical Design (Architecture)
+### 5.1 Data Model
+*   `agent_profiles` (`id`, `api_key_id`, `displayName`, `payoutAddress`)
+*   `contribution_events` (`id`, `contentItemId`, `agentProfileId`, `role`, `weight`)
+*   `revenue_events` (`id`, `sourceType`, `sourceRef`, `grossSats`, `netSats`)
+*   `revenue_allocations` (`id`, `revenueEventId`, `agentProfileId`, `amountSats`, `status` [pending, disputed, cleared])
+*   `payout_transfers` (`id`, `batchId`, `agentProfileId`, `amountSats`, `status`)
 
-### Data Model Additions
-* `agent_profiles`
-  * `id`, `principalRef`, `displayName`, `payoutMethod`, `payoutAddress`, `active`
-* `contribution_events`
-  * `id`, `contentItemId`, `agentProfileId`, `role`, `weight`, `contextJson`, `createdAt`
-* `revenue_events`
-  * `id`, `sourceType` (`offer_purchase`, `distribution_sale`, `subscription_usage`), `sourceRef`, `grossSats`, `feeSats`, `netSats`, `createdAt`
-* `revenue_allocations`
-  * `id`, `revenueEventId`, `agentProfileId`, `amountSats`, `ruleRef`, `status`
-* `payout_batches`
-  * `id`, `periodStart`, `periodEnd`, `status`, `createdAt`
-* `payout_transfers`
-  * `id`, `batchId`, `agentProfileId`, `amountSats`, `providerRef`, `status`, `settledAt`
+### 5.2 Allocation & Dispute Flow
+*   When RFC 0004's Offer is purchased, a `revenue_event` is logged.
+*   The system looks up `contribution_events` and utilizes a **Fixed Split by Role** model (e.g., Author 70%, Editor 10%, Distributor 20%). Dynamic AI negotiation is deferred to V2.
+*   Allocations sit in a `pending` state for a time window, allowing Supervisors to mark them as `DISPUTED` via the UI with an audit trail, effectively pausing the payout.
 
-### Core Services
-* `AttributionService`: resolves contribution set per monetized event.
-* `AllocationService`: applies rule set and writes immutable allocations.
-* `PayoutService`: groups payable balances and calls settlement provider adapters.
+### 5.3 Execution Engine (Isolation)
+*   Creating ledgers for thousands of micro-transactions is computationally heavy. `PayoutService` runs fully decoupled in a background worker context to prevent freezing the Fastify HTTP loop.
+*   **Thresholds & Formats**: Payouts map strictly to Lightning Addresses (`agent@lnprovider.com`). To avoid wasting capital on routing fees, `payout_transfers` only execute when an agent's cleared balance exceeds a configurable minimum threshold (e.g., 500 sats). 
 
-### API / Protocol
-* REST:
-  * `GET /api/revenue/events`
-  * `GET /api/revenue/allocations`
-  * `POST /api/payouts/run`
-* GraphQL:
-  * `revenueEvents`, `revenueAllocations`, `runPayoutBatch`
-* MCP:
-  * `list_revenue_events`, `list_revenue_allocations`, `run_payout_batch`
+### 5.4 Agent Real-Time Visibility
+*   Add `GET /api/agents/me/earnings` (and tools `get_my_earnings`) so agents can autonomously query their pending balances and cleared histories, ensuring they can make programmatic decisions about continuing to provide services.
+*   **Taxation**: Data models aggregate YTD totals by `agent_profile` to prepare the platform for eventual 1099/VAT export requirements.
 
-### Operator/Agent Usability
-* Deterministic remediation codes for payout failures (`PAYOUT_DESTINATION_INVALID`, `SETTLEMENT_PROVIDER_UNAVAILABLE`).
-* Explainable allocation payloads showing rule path and weights.
-* Cursor pagination on all ledger endpoints.
-
-## 5. Alternatives Considered
-* **Single-wallet treasury with no attribution**: Simple but unusable for multi-agent economics.
-* **Off-platform accounting only**: Loses traceability between content actions and revenue outcomes.
-* **Fully dynamic AI-determined splits**: Hard to audit and dispute; deterministic policy is safer for first release.
-
-## 6. Security & Privacy Implications
-* Payout credentials and destinations are sensitive financial data and must be encrypted and access-controlled.
-* Ledger entries should be append-only to preserve auditability.
-* Payout execution must be idempotent and replay-safe.
-* Role-based scopes should separate `revenue:read` and `payout:write`.
-
-## 7. Rollout Plan / Milestones
-1. **Phase 1**: Add revenue/attribution schema and immutable ledger write path.
-2. **Phase 2**: Implement allocation rules and explainable allocation responses.
-3. **Phase 3**: Add payout batch runner with provider adapters and reconciliation statuses.
-4. **Phase 4**: Expose UI dashboards for agent earnings and payout history.
-5. **Phase 5**: Add alerts for payout failures and parity tests across REST/GraphQL/MCP.
-
-## 8. Review Comments (AI Assistant)
-
-*   **Crucial for Multi-Agent Economies**: This solves the hardest part of autonomous collaboration—making sure everyone actually gets paid fairly. Appending it to an immutable ledger is the only correct way to do this.
-*   **Computation Isolation**: Given the potential volume of `revenue_allocations` when many small L402 micropayments stream in, the `PayoutService` needs to be heavily decoupled from the API request thread via a cron or worker to prevent CPU starvation.
-*   **Weight Clarification**: The concept of a contribution `weight` is structurally sound, but we'll need a very strict definition of how that is calculated. Is the Supervisor UI deciding the weight? Is it automated by content-edit diff size? I recommend we default to simple Fixed Splits in V1 before letting agents negotiate weights.
+## 6. Rollout Plan / Milestones
+1.  **Phase 1**: Expand `agent_profiles` table mapped to Phase 7.0 API Keys.
+2.  **Phase 2**: Add immutable revenue and allocation ledgers. Implement Fixed Split configuration.
+3.  **Phase 3**: Add Supervisor UI for viewing balances and disputing allocations.
+4.  **Phase 4**: Implement Payout Worker for Lightning Addresses with minimum thresholds and automatic retries (re-crediting the balance on permanent failure).
+5.  **Phase 5**: Expose `/api/agents/me/earnings` to MCP for autonomous querying.

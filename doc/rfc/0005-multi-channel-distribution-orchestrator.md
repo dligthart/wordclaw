@@ -5,85 +5,49 @@
 **Date:** 2026-02-21  
 
 ## 1. Summary
-This RFC introduces a distribution orchestration layer that allows agents to publish licensed content to multiple channels (webhooks, RSS/Atom, social APIs, email, partner endpoints) with deterministic scheduling, retry behavior, and observability.
+This RFC introduces a robust distribution orchestration layer allowing agents to publish licensed content to multiple formats and channels (webhooks, RSS/Atom, SMTP, social APIs). It provides configurable adapter transforms, PostgreSQL-backed reliable queues, dry-runs, and deterministic delivery state tracking.
 
-## 2. Motivation
-WordClaw can store and version content, but distribution is currently limited to generic webhook events. Agentic distribution needs:
-* explicit channel targets,
-* "publish once, fan out many" workflows,
-* delivery state tracking,
-* dead-letter handling for failed downstream channels,
-* protocol parity so agents can run the same flow via REST/GraphQL/MCP.
+## 2. Dependencies & Graph
+*   **Depends on:** RFC 0004 (Entitlements) — Content is blocked from distribution if the orchestrator's agent lacks the correct `allowedChannels` or `allowRedistribution` entitlement.
+*   **Depended on by:** RFC 0006 (Revenue Payouts) — Successful distribution events can act as attribution markers for revenue splits.
 
-Without this, monetizable content cannot reliably reach buyers or audiences at scale.
+## 3. Motivation
+WordClaw acts as a structured content runtime, but content monetization requires reaching audiences. Agents need explicit, "publish once, fan out many" workflows with detailed dead-letter handling, deduplication, and parity across REST/GraphQL/MCP.
 
-## 3. Proposal
-Add a **Distribution Orchestrator** that executes distribution plans in a queued, idempotent workflow:
-1. Agent creates a distribution plan for a content item/version.
-2. System resolves enabled targets and channel-specific transforms.
-3. Jobs are queued and executed asynchronously.
-4. Delivery receipts are persisted and surfaced to operators/agents.
-5. Failures follow backoff rules and move to dead-letter when exhausted.
+## 4. Proposal
+Add a **Distribution Orchestrator** executing plans via a PostgreSQL queue:
+1.  Agent submits a distribution plan.
+2.  System verifies `entitlements` (e.g., is this Agent allowed to push to Twitter?).
+3.  Jobs queue via Postgres `FOR UPDATE SKIP LOCKED`.
+4.  Data passes through a `TransformPolicy` (e.g., truncating an article to a Tweet length based on license terms).
+5.  Adapters push to the target; receipts are stored; notifications fire.
 
-## 4. Technical Design (Architecture)
+## 5. Technical Design (Architecture)
 
-### Data Model Additions
-* `distribution_targets`
-  * `id`, `name`, `channelType`, `configJson`, `active`, `createdAt`
-* `distribution_plans`
-  * `id`, `contentItemId`, `contentVersion`, `scheduledAt`, `status` (`queued`, `running`, `partial`, `succeeded`, `failed`), `createdBy`, `createdAt`
-* `distribution_jobs`
-  * `id`, `planId`, `targetId`, `attempt`, `status`, `nextAttemptAt`, `lastError`, `createdAt`, `updatedAt`
-* `distribution_receipts`
-  * `id`, `jobId`, `externalId`, `deliveredAt`, `responseMeta`
+### 5.1 Data Model
+*   `distribution_targets` (`id`, `name`, `channelType`, `configJson`, `active`)
+*   `distribution_plans` (`id`, `contentItemId`, `status`, `createdByAgentId`)
+*   `distribution_jobs` (`id`, `planId`, `targetId`, `attempt`, `status`, `nextAttemptAt`)
+*   `distribution_receipts` (`id`, `jobId`, `externalUrl`, `statusCode`, `errorMessage`, `rawMeta`)
 
-### Channel Adapter Pattern
-Define `DistributionAdapter` interface:
-* `validateConfig(config)`
-* `transform(content, policy)`
-* `deliver(payload, config)`
-* `normalizeReceipt(response)`
+### 5.2 Postgres Queue & Adapters
+*   **Infrastructure**: We will use a PostgreSQL-backed queue (e.g., `pgboss` or native `SKIP LOCKED`) to avoid adding Redis to the WordClaw deployment topology.
+*   **Adapters**: Define an interface that implements `transform(content, policy)` and `deliver(payload)`. Transforms handle markdown-to-HTML, truncation, and metadata injection.
+*   **Backoff & Rate Limiting**: If a generic target (like Twitter) returns `429 Too Many Requests`, the backoff multiplier suspends the `targetId` temporarily to prevent cascading queue backups.
 
-Initial adapters:
-* Webhook adapter (extends current webhook concept)
-* Feed adapter (RSS/Atom materialization)
-* HTTP partner push adapter
-
-### API / Protocol
-* REST:
-  * `POST /api/distribution/targets`
-  * `POST /api/distribution/plans`
-  * `GET /api/distribution/plans/:id`
-* GraphQL:
-  * `createDistributionPlan`, `distributionPlan`, `distributionTargets`
-* MCP:
-  * `create_distribution_target`, `create_distribution_plan`, `get_distribution_plan`
-
-### Usability Design Notes
-* Every plan response includes `recommendedNextAction` and failed-target remediation.
-* Dry-run support validates transforms and target configs without delivery.
-* Idempotency keys prevent duplicate plan creation.
-
-## 5. Alternatives Considered
-* **Inline synchronous fan-out in request path**: Too brittle for external channel latency/failures.
-* **Single-channel push only**: Does not meet distribution parity or audience growth needs.
-* **Outsource entirely to Zapier/IFTTT**: Useful adjunct, but lacks native policy enforcement and monetization hooks.
+### 5.3 Agent Usability & APIs
+*   **Synchronous Confirm / Await**: Plan creation endpoints will accept an `awaitDelivery: boolean` flag (max 10s wait) to give synchronous certainty for fast Webhook channels.
+*   **Cancellation**: Add `POST /plans/:id/cancel` to abort `queued` or `running` jobs dynamically.
+*   **Deduplication**: Plans for the same `contentItem` + `targetId` within a 5-minute window will throw a deterministic `DUPLICATE_DISTRIBUTION_PLAN` error unless overridden.
+*   **Webhooks**: Output `distribution.plan.completed` and `distribution.job.failed` via the existing Phase 7.8 Event Stream so agents don't have to poll.
 
 ## 6. Security & Privacy Implications
-* Channel credentials must be encrypted at rest and redacted in logs.
-* Outbound payloads must enforce entitlement and policy constraints (for example, no full-body distribution when policy allows only excerpts).
-* Signed outbound requests should be required for partner endpoints.
-* Dead-letter payload retention must be bounded and sanitized.
+*   **Entitlement Enforcement**: Crucially, the orchestrator retrieves the invoking agent's Entitlements (RFC 0004) to ensure they hold the right to distribute the data. Full-body distribution fails if the policy only grants excerpts.
+*   **Credential Storage**: Channel configs (API tokens) are encrypted at rest.
 
 ## 7. Rollout Plan / Milestones
-1. **Phase 1**: Add distribution tables and queue worker foundation.
-2. **Phase 2**: Implement webhook and feed adapters with retry/dead-letter.
-3. **Phase 3**: Expose REST/GraphQL/MCP plan APIs with dry-run.
-4. **Phase 4**: Add supervisor UI for plan status, failures, and replay.
-5. **Phase 5**: Add metrics (`delivery_success_rate`, latency, retry count) and alerts.
-
-## 8. Review Comments (AI Assistant)
-
-*   **Adapter Pattern Robustness**: Defining standard `transform` and `deliver` interfaces across channels is very clean and paves the way for a plugin ecosystem later.
-*   **Agent Polling vs. Await**: Since the orchestrator is asynchronous, agents might find it frustrating to poll `GET /api/distribution/plans/:id` to find out if an important tweet actually went out. We might want to consider adding an optional `awaitDelivery: boolean` flag in the creation payload (up to a safe timeout like 10s) so agents can get synchronous confirmation for fast channels.
-*   **Cascading Queue Failures**: We must ensure that strict rate limits on external APIs (like Twitter or LinkedIn) don't back up the internal `distribution_jobs` table. The backoff multiplier must be generous, and we might need logic to pause a `targetId` globally if it hits a 429 Too Many Requests response.
+1.  **Phase 1**: Implement `distribution_targets` and the Postgres `SKIP LOCKED` worker queue.
+2.  **Phase 2**: Add Entitlement verification (Dependency: RFC 0004) to the pre-flight checks.
+3.  **Phase 3**: Implement Webhook, RSS, and Email adapters mapped to a `TransformPolicy`.
+4.  **Phase 4**: Add cancellation, deduplication, and synchronous `awaitDelivery` API concepts.
+5.  **Phase 5**: Add Webhook event emissions for completions and failures.

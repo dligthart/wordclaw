@@ -5,74 +5,55 @@
 **Date:** 2026-02-21  
 
 ## 1. Summary
-This RFC proposes a first-class licensing and entitlement system so agents can monetize content distribution and consumption, not only content creation. It introduces paid offers, machine-readable license terms, entitlement issuance, and policy checks on read/export routes.
+This RFC proposes a first-class licensing and entitlement system so agents can monetize content distribution and consumption, not only content creation. It introduces versioned paid offers, machine-readable license terms, entitlement issuance via Macaroon caveats, and policy checks on read/export routes. 
 
-## 2. Motivation
-WordClaw currently supports L402 around content-item write paths, but there is no productized concept of "what is being sold" when content is distributed to downstream buyers, bots, channels, or partner systems. For agentic monetization, agents need:
-* predictable offers and pricing metadata,
-* cryptographically verifiable access rights,
-* a durable entitlement ledger,
-* deterministic remediation when access is denied.
+It also formally establishes the **Unified Agent Identity Model**, linking API keys to Agent Profiles bridging purchasing, distribution, and payouts.
 
-Without this layer, revenue can be collected for writes but not tied to distributable rights, making monetization and distribution workflows incomplete.
+## 2. Dependencies & Graph
+*   **Depends on:** RFC 0003 (Production Lightning Settlement) — Entitlements are paid via LN invoices.
+*   **Depended on by:** RFC 0005 (Distribution Orchestrator) — Distribution targets must pass entitlement checks.
+*   **Depended on by:** RFC 0006 (Revenue Payouts) — Purchases fund the agent revenue ledger.
 
-## 3. Proposal
+## 3. Motivation
+WordClaw currently supports L402 around content-item write paths, but there is no productized concept of "what is being sold" when content is distributed to downstream buyers. For agentic monetization, agents need predictable offers, cryptographically verifiable access rights, transferrable entitlements, and atomic usage tracking.
+
+## 4. Proposal
 Introduce a licensing domain with four core artifacts:
-1. **Offer**: A sellable package tied to content scope (single item, type, collection, or feed).
-2. **License Policy**: Terms like allowed channels, usage window, read limits, and redistribution constraints.
-3. **Entitlement**: The granted right to access/export content after successful settlement.
-4. **Access Proof**: A token or signed claim that can be presented by agents across REST/GraphQL/MCP contexts.
+1. **Offer**: A sellable package tied to content scope (single item, type, collection, or `subscription`).
+2. **License Policy (Immutable)**: Terms like allowed channels, usage window, and read limits. Append-only to ensure buyer terms never change post-purchase.
+3. **Entitlement**: The granted right to access/export content. Belongs to an `agentProfileId`.
+4. **Access Proof**: Encoded directly into RFC 0003's L402 Macaroons as an `entitlementId` caveat.
 
-L402 remains a settlement mechanism, but settlement now mints a concrete entitlement tied to an offer and policy.
+## 5. Technical Design (Architecture)
 
-## 4. Technical Design (Architecture)
+### 5.1 Unified Agent Identity Model
+To support multi-agent economies, all system identities roll up to an `AgentProfile`:
+*   `api_keys` (from Phase 7.0) map 1:1 to an `agent_profile` in the database.
+*   An `agent_profile` holds an `agentProfileId`, `payoutAddress` (RFC 0006), and is the owner of Entitlements (RFC 0004).
 
-### Data Model Additions
-* `offers`
-  * `id`, `slug`, `name`, `scopeType`, `scopeRef`, `priceSats`, `active`, `createdAt`
-* `license_policies`
-  * `id`, `offerId`, `maxReads`, `expiresAt`, `allowedChannels`, `allowRedistribution`, `termsJson`
-* `entitlements`
-  * `id`, `offerId`, `buyerPrincipal`, `status` (`active`, `expired`, `revoked`), `grantedAt`, `expiresAt`, `remainingReads`
-* `access_events`
-  * `id`, `entitlementId`, `resourcePath`, `action`, `granted`, `reason`, `createdAt`
+### 5.2 Data Model Additions
+*   `offers`
+    *   `id`, `slug`, `name`, `scopeType` (`item`, `type`, `subscription`), `scopeRef`, `priceSats`, `active`
+*   `license_policies` (Append-Only)
+    *   `id`, `offerId`, `version`, `maxReads`, `expiresAt`, `allowedChannels`, `allowRedistribution`, `termsJson`
+*   `entitlements`
+    *   `id`, `offerId`, `policyId`, `agentProfileId`, `status`, `expiresAt`, `remainingReads`
+*   `access_events`
+    *   `id`, `entitlementId`, `resourcePath`, `action`, `granted`, `reason`, `createdAt`
 
-### API / Protocol
-* REST
-  * `POST /api/offers`
-  * `GET /api/offers`
-  * `POST /api/offers/:id/purchase` (L402 challenge + entitlement issuance)
-  * `GET /api/entitlements`
-* GraphQL
-  * `offers`, `entitlements`, `purchaseOffer`
-* MCP
-  * `create_offer`, `list_offers`, `purchase_offer`, `list_entitlements`
-
-### Enforcement
-* Add an entitlement middleware/service check for monetized read/export endpoints.
-* Deduct usage (`remainingReads`) when policy is metered.
-* Return AI-friendly denial payloads (`ENTITLEMENT_MISSING`, `ENTITLEMENT_EXPIRED`, `ENTITLEMENT_EXHAUSTED`) with remediation.
-
-## 5. Alternatives Considered
-* **Reuse only API scopes**: Too coarse. Scopes authorize capabilities, not commercial rights.
-* **Invoice-only model without entitlements**: Cannot prove durable buyer rights across distribution workflows.
-* **External commerce only**: Reduces control and parity across REST/GraphQL/MCP.
+### 5.3 API / Protocol
+*   **REST/GraphQL/MCP:** APIs to list offers and trigger `purchaseOffer` (returns L402 Challenge).
+*   **Transfer/Delegation:** Add `POST /api/entitlements/:id/delegate` to temporarily grant access to a subordinate agent (vital for Orchestrators in RFC 0005).
+*   **Atomic Metering:** Decrementing `remainingReads` must use atomic SQL: `UPDATE entitlements SET remainingReads = remainingReads - 1 WHERE remainingReads > 0 RETURNING *`.
+*   **Events Retention:** A cron job will aggregate and purge raw `access_events` older than 30 days into daily metric rollups.
 
 ## 6. Security & Privacy Implications
-* Entitlement tokens must be signed and short-lived when bearer-style.
-* Access checks must be server-side authoritative; client claims are advisory only.
-* Access events should avoid storing raw sensitive request headers.
-* Revocation and expiry must be enforced consistently across protocols.
+*   **Macaroon Caveats**: By storing `entitlementId` as an L402 caveat, we reuse RFC 0003's cryptographic validation, preventing token sharing between mismatched API Keys.
+*   **Revocation**: `entitlements.status = 'revoked'` immediately halts access, providing a kill switch for disputed payments or TOS violations.
 
 ## 7. Rollout Plan / Milestones
-1. **Phase 1**: Introduce `offers`, `license_policies`, `entitlements`, `access_events` tables and internal services.
-2. **Phase 2**: Add purchase and entitlement APIs in REST/GraphQL/MCP.
-3. **Phase 3**: Enforce entitlements on selected monetized read/export paths.
-4. **Phase 4**: Add UI for offer management and buyer entitlement visibility.
-5. **Phase 5**: Add parity and contract tests for entitlement denial/remediation semantics.
-
-## 8. Review Comments (AI Assistant)
-
-*   **Excellent Domain Separation**: The distinction between the settlement protocol layer (L402) and a durable commercial rights object (Entitlement) is a fantastic architectural decision. It prevents the API gateway from being clustered with business logic.
-*   **Bearer Token Security**: For the `Access Proof`, we must be careful about token sharing. If an agent buys an entitlement and receives a bearer token, what prevents them from sharing it? We should ensure the `buyerPrincipal` is strictly validated against the API key/Agent making the read request.
-*   **Revocation**: We should explicitly account for the ability to revoke entitlements programmatically (e.g., if a Lightning payment is disputed, or a channel detects abuse).
+1.  **Phase 1**: Implement the Unified Identity (`agent_profiles` mapping).
+2.  **Phase 2**: Introduce core tables (`offers`, `license_policies`, `entitlements`).
+3.  **Phase 3**: Mint L402 Macaroons with `entitlementId` caveats upon settlement.
+4.  **Phase 4**: Enforce API read/export routes using atomic decrements.
+5.  **Phase 5**: Add aggregation workers for `access_events` retention.
