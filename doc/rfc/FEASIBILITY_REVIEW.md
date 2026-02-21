@@ -40,6 +40,27 @@ This document provides a holistic analysis of WordClaw RFCs 0001-0009, evaluatin
 *   **Feasibility:** High. PostgreSQL's native Full-Text Search handles millions of rows perfectly well for a V1 index before requiring external engines like ElasticSearch. Cursor-based pull subscriptions are much easier to initially scale than active push webhooks.
 *   **Real-World Usage:** For an agent economy to thrive, agents must be able to discover what is for sale. The rigid token bucket limits (per principal) prevent a rogue agent script from performing aggressive indexing crawls that would bring the search database down for everyone else.
 
+## Implementation Priority
+
+Based on architectural dependencies, risk mitigation, and product value generation, the RFCs should be implemented in the following prioritized order:
+
+### Priority 0: Foundational & Usability (Immediate)
+*   **RFC 0002 (Agent Usability Improvements):** Fixing the DX (native JSON, nested REST, strict error parity) is a hard prerequisite before agents can effectively interact with the platform.
+*   **RFC 0008 (Cross-Protocol Policy Parity Framework):** The unified policy engine must be established *before* new features (like licensing or workflows) are built. Otherwise, teams will continually duplicate (and drift) authorization logic across REST, GraphQL, and MCP.
+
+### Priority 1: Core Monetization & Safety (High)
+*   **RFC 0003 (Production Lightning Settlement):** Actual money movement is the engine of the commercial agent economy. Must exist before entitlements can be transacted.
+*   **RFC 0004 (Agentic Content Licensing and Entitlements):** The core commercial product. Requires RFC 0003 to execute, but formally defines the rights being exchanged.
+*   **RFC 0007 (Policy-Driven Editorial Workflow):** The core safety mechanism. As agents begin submitting content at scale, explicit human-in-the-loop approval gates ensure quality control isn't bypassed by automated pipelines.
+
+### Priority 2: Discovery & Outbound Distribution (Medium)
+*   **RFC 0005 (Multi-Channel Distribution Orchestrator):** Solves the "fan-out" problem for outbound reach. Structurally depends on Entitlements (0004) to know what a broadcaster is licensed to distribute.
+*   **RFC 0009 (Content Discovery and Consumption API):** Allows buyer agents to find content at scale. Essential for long-term growth, though basic list endpoints can act as a stopgap while the transaction loop is stabilized.
+
+### Priority 3: Polish & Backoffice Economics (Low)
+*   **RFC 0006 (Revenue Attribution and Agent Payouts):** Splitting the settlement and paying agents out. While critical eventually, capital can safely pool in the platform's main Lightning node for the initial rollout phase while the publishing loops are proven.
+*   **RFC 0001 (Blog Valuation Architecture):** A highly valuable metadata feature for broker agents, but architecturally independent from the core CMS writing/transaction loop.
+
 ## Synthesis & Systemic Risks
 
 1.  **State Machine Density:** WordClaw will execute multiple concurrent state machines (Payments, Distribution Jobs, and Editorial Reviews). Deep integration testing is necessary to ensure these processes don't deadlock or clash (e.g., an editorial workflow transition attempting to fire while an L402 invoice is actively settling).
