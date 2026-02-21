@@ -35,8 +35,10 @@ function verifyToken(token: string, secret: string): string | null {
   if (parts.length !== 2) return null;
   const [payload, signature] = parts;
 
-  const expectedSignature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
-  if (crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+  const expectedSignatureBuffer = Buffer.from(crypto.createHmac('sha256', secret).update(payload).digest('base64url'));
+  const signatureBuffer = Buffer.from(signature);
+
+  if (signatureBuffer.length === expectedSignatureBuffer.length && crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer)) {
     try {
       const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
       if (decoded.exp && decoded.exp > Date.now()) {

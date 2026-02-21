@@ -67,14 +67,19 @@ async function deliverWebhook(url: string, secret: string, payload: AuditEventPa
 
     for (let attempt = 0; attempt < retryDelays.length + 1; attempt += 1) {
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
                     'content-type': 'application/json',
                     'x-wordclaw-signature': signature
                 },
-                body
+                body,
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             if (response.ok) {
                 return true;
@@ -97,7 +102,8 @@ export async function emitAuditWebhookEvents(payload: AuditEventPayload): Promis
         return;
     }
 
-    await Promise.all(
+    // Fire and forget: don't block the caller (the HTTP request)
+    Promise.allSettled(
         targets.map(async (hook) => {
             const events = parseWebhookEvents(hook.events);
             if (!shouldDeliver(events, payload)) {
@@ -118,7 +124,7 @@ export async function emitAuditWebhookEvents(payload: AuditEventPayload): Promis
                 );
             }
         })
-    );
+    ).catch(e => console.error('Background webhook dispatch failed', e));
 }
 
 export async function createWebhook(input: CreateWebhookInput) {

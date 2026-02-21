@@ -8,7 +8,15 @@ exports[`Login Page > renders the login form 1`] = `
     <div
       class="max-w-md w-full space-y-8 bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700"
     >
-      <div>
+      <div
+        class="flex flex-col items-center"
+      >
+        <img
+          alt="WordClaw Logo"
+          class="w-24 h-auto"
+          src="/ui/images/logos/wordclaw-logo-transparent.png"
+        />
+         
         <h2
           class="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white"
         >

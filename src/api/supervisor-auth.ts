@@ -103,12 +103,24 @@ export const supervisorAuthRoutes: FastifyPluginAsync = async (server: FastifyIn
 
     server.post('/setup-initial', {
         schema: {
+            headers: Type.Object({
+                'x-setup-token': Type.Optional(Type.String())
+            }),
             body: Type.Object({
                 email: Type.String({ format: 'email' }),
                 password: Type.String()
             })
         }
     }, async (request, reply) => {
+        // Enforce SETUP_TOKEN if running in production to prevent account takeover
+        const setupToken = process.env.SETUP_TOKEN;
+        if (process.env.NODE_ENV === 'production') {
+            const providedToken = (request.headers as any)['x-setup-token'];
+            if (!setupToken || providedToken !== setupToken) {
+                return reply.status(403).send({ error: 'Invalid or missing SETUP_TOKEN' });
+            }
+        }
+
         // Only allow if no supervisors exist
         const existing = await db.select({ id: supervisors.id }).from(supervisors).limit(1);
         if (existing.length > 0) {

@@ -2469,7 +2469,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         })
             .from(auditLogs)
             .where(whereClause)
-            .orderBy(desc(auditLogs.createdAt))
+            .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
             .limit(limit + 1);
 
         const hasMore = logs.length > limit;

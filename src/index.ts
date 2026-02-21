@@ -92,15 +92,35 @@ server.register(import('@fastify/swagger-ui'), {
     routePrefix: '/documentation',
 });
 server.register(import('@fastify/websocket'));
+import crypto from 'crypto';
+
+let jwtSecret = process.env.JWT_SECRET;
+let cookieSecret = process.env.COOKIE_SECRET;
+
+if (!jwtSecret || !cookieSecret) {
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('JWT_SECRET and COOKIE_SECRET environment variables are strictly required in production.');
+    } else {
+        if (!jwtSecret) {
+            jwtSecret = crypto.randomBytes(32).toString('hex');
+            console.warn(`[WARNING] JWT_SECRET is not set. Generated ephemeral random secret for development: ${jwtSecret}`);
+        }
+        if (!cookieSecret) {
+            cookieSecret = crypto.randomBytes(32).toString('hex');
+            console.warn(`[WARNING] COOKIE_SECRET is not set. Generated ephemeral random secret for development: ${cookieSecret}`);
+        }
+    }
+}
+
 server.register(fastifyJwt, {
-    secret: process.env.JWT_SECRET || 'super-secret-fallback',
+    secret: jwtSecret,
     cookie: {
         cookieName: 'supervisor_session',
         signed: false
     }
 });
 server.register(fastifyCookie, {
-    secret: process.env.COOKIE_SECRET || 'cookie-secret-fallback',
+    secret: cookieSecret,
     hook: 'onRequest'
 });
 
@@ -111,9 +131,15 @@ server.register(mercurius, {
     path: '/graphql',
     context: async (request) => {
         const auth = await authorizeApiRequest(request.method, '/graphql', request.headers);
+        if (!auth.ok) {
+            const err = new Error(auth.payload.error) as any;
+            err.statusCode = auth.payload.code === 'AUTH_MISSING_API_KEY' ? 401 : 403;
+            err.code = auth.payload.code;
+            throw err;
+        }
         return {
             requestId: request.id,
-            authPrincipal: auth.ok ? auth.principal : undefined
+            authPrincipal: auth.principal
         };
     }
 });
