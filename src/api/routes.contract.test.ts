@@ -303,7 +303,7 @@ describe('API Route Contracts', () => {
 
             expect(response.statusCode).toBe(403);
             const body = response.json() as ApiErrorBody;
-            expect(body.code).toBe('AUTH_INSUFFICIENT_SCOPE');
+            expect(body.code).toBe('MISSING_CONTENT_WRITE_SCOPE');
         } finally {
             await app.close();
         }

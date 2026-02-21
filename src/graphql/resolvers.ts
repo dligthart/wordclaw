@@ -7,12 +7,16 @@ import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } 
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
+import { enforceL402Payment } from '../middleware/l402.js';
+import { globalL402Options } from '../services/l402-config.js';
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 
 type ResolverContext = {
     requestId?: string;
     authPrincipal?: { keyId: number | string; scopes: Set<string>; source: string };
+    headers?: Record<string, string>;
+    url?: string;
 };
 
 function contextView(context: unknown): ResolverContext {
@@ -395,7 +399,59 @@ function withPolicy(
             );
         }
 
-        return resolver(parent, args, context, info);
+        let l402Result;
+        // Apply L402 Payment Check for create/update/delete on content items
+        if (resource.type === 'content_item' || resource.type === 'batch' || (operation === 'content.write' && !['content_type', 'webhook'].includes(resource.type))) {
+            const pricingContext = {
+                resourceType: 'content-item',
+                operation: operation.includes('write') ? (args.id ? 'update' : 'create') : 'read',
+                contentTypeId: args.contentTypeId ? parseOptionalId(args.contentTypeId, 'contentTypeId') : undefined,
+                resourceId: args.id ? parseOptionalId(args.id, 'id') : undefined,
+                batchSize: args.items?.length || args.ids?.length || 1
+            };
+
+            l402Result = await enforceL402Payment(
+                globalL402Options,
+                pricingContext,
+                context?.headers?.authorization,
+                { path: context?.url || '/graphql', headers: context?.headers || {} }
+            );
+
+            if (!l402Result.ok) {
+                if (l402Result.mustChallenge && l402Result.challengeHeaders) {
+                    const authenticateHeader = l402Result.challengeHeaders['WWW-Authenticate'] || '';
+                    const macaroonMatch = /macaroon="([^"]+)"/.exec(authenticateHeader);
+                    const invoiceMatch = /invoice="([^"]+)"/.exec(authenticateHeader);
+
+                    throw toError(
+                        'Payment Required',
+                        'PAYMENT_REQUIRED',
+                        `L402 Payment Required`,
+                        {
+                            macaroon: macaroonMatch ? macaroonMatch[1] : undefined,
+                            invoice: invoiceMatch ? invoiceMatch[1] : undefined
+                        }
+                    );
+                } else if (l402Result.errorPayload) {
+                    throw toError(
+                        'Payment Error',
+                        l402Result.errorPayload.error?.code || 'PAYMENT_ERROR',
+                        l402Result.errorPayload.error?.message || 'Payment processing failed.'
+                    );
+                } else {
+                    throw toError('Payment Required', 'PAYMENT_REQUIRED', 'L402 payment required');
+                }
+            }
+        }
+
+        const result = await resolver(parent, args, context, info);
+
+        // If a payment was made and processing is finished, we should mark it consumed if a callback was returned
+        if (l402Result && typeof l402Result.onFinish === 'function') {
+            await l402Result.onFinish();
+        }
+
+        return result;
     };
 }
 

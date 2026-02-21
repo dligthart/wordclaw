@@ -75,7 +75,11 @@ describe('L402 Middleware', () => {
     const reply2 = {
       status: vi.fn().mockReturnThis(),
       header: vi.fn(),
-      send: vi.fn()
+      send: vi.fn(),
+      raw: {
+        on: vi.fn()
+      },
+      statusCode: 200
     } as unknown as FastifyReply;
 
     const result = await middleware(request2, reply2);

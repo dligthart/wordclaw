@@ -60,6 +60,12 @@ describe('GraphQL Resolver Contracts', () => {
     });
 
     it('updateContentItem rejects empty payload with EMPTY_UPDATE_BODY', async () => {
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([])
+            })
+        }));
+
         await expect(
             resolvers.Mutation.updateContentItem({}, { id: '1' }, { authPrincipal: { scopes: new Set(['admin']) } }, {})
         ).rejects.toMatchObject({
@@ -86,23 +92,42 @@ describe('GraphQL Resolver Contracts', () => {
     });
 
     it('maps TARGET_VERSION_NOT_FOUND to GraphQL error code', async () => {
-        mocks.dbMock.select
-            .mockImplementationOnce(() => ({
-                from: () => ({
-                    where: vi.fn().mockResolvedValue([{
-                        id: 5,
-                        contentTypeId: 1,
-                        data: '{"title":"current"}',
-                        status: 'published',
-                        version: 2,
-                    }]),
-                }),
-            }))
-            .mockImplementationOnce(() => ({
-                from: () => ({
-                    where: vi.fn().mockResolvedValue([]),
-                }),
-            }));
+        let callCount = 0;
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockImplementation(() => {
+                    callCount++;
+                    if (callCount === 1) {
+                        // First select is for L402 wrapper contentItems check
+                        return Promise.resolve([{
+                            id: 5,
+                            contentTypeId: 1,
+                            data: '{"title":"current"}',
+                            status: 'published',
+                            version: 2,
+                        }]);
+                    } else if (callCount === 2) {
+                        // Second select is for L402 wrapper contentTypes check
+                        return Promise.resolve([{
+                            id: 1,
+                            schema: '{}',
+                            basePrice: 0
+                        }]);
+                    } else if (callCount === 3) {
+                        // Third select is the actual contentItems fetch inside rollbackContentItem
+                        return Promise.resolve([{
+                            id: 5,
+                            contentTypeId: 1,
+                            data: '{"title":"current"}',
+                            status: 'published',
+                            version: 2,
+                        }]);
+                    }
+                    // Fourth select is the contentItemVersions fetch
+                    return Promise.resolve([]);
+                })
+            })
+        }));
 
         await expect(
             resolvers.Mutation.rollbackContentItem({}, { id: '5', version: 99 }, { authPrincipal: { scopes: new Set(['admin']) } }, {})
@@ -114,28 +139,30 @@ describe('GraphQL Resolver Contracts', () => {
     });
 
     it('updateContentItem logs audit on successful update', async () => {
-        mocks.dbMock.select
-            .mockImplementationOnce(() => ({
-                from: () => ({
-                    where: vi.fn().mockResolvedValue([{
-                        id: 7,
-                        contentTypeId: 1,
-                        data: '{"title":"v1"}',
-                        status: 'draft',
-                        version: 1,
-                        createdAt: new Date(),
-                        updatedAt: new Date(),
-                    }]),
-                }),
-            }))
-            .mockImplementationOnce(() => ({
-                from: () => ({
-                    where: vi.fn().mockResolvedValue([{
+        let callCount = 0;
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockImplementation(() => {
+                    callCount++;
+                    if (callCount === 1) {
+                        return Promise.resolve([{
+                            id: 7,
+                            contentTypeId: 1,
+                            data: '{"title":"v1"}',
+                            status: 'draft',
+                            version: 1,
+                            createdAt: new Date(),
+                            updatedAt: new Date(),
+                        }]);
+                    }
+                    return Promise.resolve([{
                         id: 1,
-                        schema: '{"type":"object","required":["title"],"properties":{"title":{"type":"string"}}}'
-                    }]),
-                }),
-            }));
+                        schema: '{"type":"object","required":["title"],"properties":{"title":{"type":"string"}}}',
+                        basePrice: 0
+                    }]);
+                })
+            })
+        }));
 
         mocks.dbMock.transaction.mockResolvedValue({
             id: 7,

@@ -14,7 +14,7 @@ import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWe
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from '../services/policy-adapters.js';
 import { l402Middleware } from '../middleware/l402.js';
-import { MockPaymentProvider } from '../services/mock-payment-provider.js';
+import { globalL402Options } from '../services/l402-config.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -1182,89 +1182,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             )
         };
     });
-    let mockPaymentProvider: MockPaymentProvider;
-    if (process.env.NODE_ENV === 'production' && process.env.PAYMENT_PROVIDER !== 'mock') {
-        throw new Error("A real PaymentProvider is required in production. Set PAYMENT_PROVIDER='mock' to override.");
-    } else {
-        mockPaymentProvider = new MockPaymentProvider();
-    }
-
-    let l402Secret = process.env.L402_SECRET;
-    if (!l402Secret) {
-        if (process.env.NODE_ENV === 'production') {
-            throw new Error("L402_SECRET environment variable is strictly required in production.");
-        } else {
-            l402Secret = crypto.randomBytes(32).toString('hex');
-            console.warn(`[WARNING] L402_SECRET is not set. Generating a random secret for development: ${l402Secret}`);
-        }
-    }
-
-    const globalL402Middleware = l402Middleware({
-        provider: mockPaymentProvider, // In production, this would be a real node instead of mock.
-        secretKey: l402Secret,
-        getPrice: async (context) => {
-            let totalBasePrice = 0;
-            let cType = context.contentTypeId;
-
-            if (!cType && context.resourceId) {
-                const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, context.resourceId));
-                if (existing) cType = existing.contentTypeId;
-            }
-
-            if (cType) {
-                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, cType));
-                if (contentType && contentType.basePrice) {
-                    totalBasePrice += contentType.basePrice * (context.batchSize || 1);
-                }
-            }
-
-            if (totalBasePrice <= 0) return 0;
-
-            const proposedPrice = context.proposedPrice || 0;
-            const maxCap = totalBasePrice * 10;
-
-            if (Number.isFinite(proposedPrice) && proposedPrice > totalBasePrice && proposedPrice <= maxCap) {
-                return proposedPrice;
-            } else if (Number.isFinite(proposedPrice) && proposedPrice > maxCap) {
-                return maxCap;
-            }
-
-            return totalBasePrice;
-        },
-        onInvoiceCreated: async (invoice: any, req: any, amountSatoshis: any) => {
-            const principal = (req as any).authPrincipal;
-            const actorId = principal ? String(principal.keyId) : null;
-            const { authorization, cookie, 'x-api-key': _, ...safeHeaders } = req.headers as any;
-            const details = {
-                body: req.body,
-                headers: safeHeaders
-            };
-
-            await db.insert(payments).values({
-                paymentHash: invoice.hash,
-                paymentRequest: invoice.paymentRequest,
-                amountSatoshis,
-                status: 'pending',
-                resourcePath: req.url,
-                actorId,
-                details
-            });
-        },
-        onPaymentVerified: async (paymentHash: string, req: any) => {
-            await db.update(payments)
-                .set({ status: 'paid', updatedAt: new Date() })
-                .where(eq(payments.paymentHash, paymentHash));
-        },
-        onPaymentConsumed: async (paymentHash: string, req: any) => {
-            await db.update(payments)
-                .set({ status: 'consumed', updatedAt: new Date() })
-                .where(eq(payments.paymentHash, paymentHash));
-        },
-        getPaymentStatus: async (paymentHash: string, req: any) => {
-            const [payment] = await db.select().from(payments).where(eq(payments.paymentHash, paymentHash));
-            return (payment?.status as 'pending' | 'paid' | 'consumed') || 'pending';
-        }
-    });
+    const globalL402Middleware = l402Middleware(globalL402Options);
 
     server.post('/content-items', {
         preHandler: globalL402Middleware,

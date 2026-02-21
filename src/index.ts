@@ -135,7 +135,7 @@ server.register(mercurius, {
         const auth = await authenticateApiRequest(request.headers);
         if (!auth.ok) {
             const err = new Error(auth.payload.error) as any;
-            err.statusCode = auth.payload.code === 'AUTH_MISSING_API_KEY' ? 401 : 403;
+            err.statusCode = auth.statusCode;
             err.code = auth.payload.code;
             throw err;
         }
