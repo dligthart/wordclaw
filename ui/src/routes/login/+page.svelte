@@ -46,7 +46,7 @@
     >
         <div class="flex flex-col items-center">
             <img
-                src="/wordclaw-logo-transparent.png"
+                src="/images/logos/wordclaw-logo-transparent.png"
                 alt="WordClaw Logo"
                 class="w-24 h-auto"
             />
