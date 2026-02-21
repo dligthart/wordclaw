@@ -163,52 +163,21 @@ Exit Criteria:
 - fresh-clone setup succeeds without tribal knowledge
 - default test workflow stable in CI and local environments
 
-### Phase 6: x402/L402 Payment Protocol
+### Phase 6: x402/L402 Payment Protocol & System Hardening
+**Status: ✅ Implemented & Deployed**
 
 Objective: enable programmable paid operations for agents.
 
 Deliverables:
+- x402/L402 protocol assessment and compatibility design.
+- `402 Payment Required` middleware for premium routes (Dynamic pricing via `x-proposed-price`).
+- Mock Lightning Provider for testing agent interactions.
+- Agent interactive testing sandbox UI available at `/ui/agent-sandbox` to demonstrate and validate machine-actionable remediations.
+- Decoupled `verifyPayment` status polling.
+- Comprehensive security patches resolving malformed signatures (500 crashes), unauthenticated setup scripts, and decoupled webhook execution times.
 
-- x402/L402 protocol assessment and compatibility design
-- `402 Payment Required` middleware for premium routes
-- compliant payment provider integration for settlement + receipts
-
-Exit Criteria:
-
-- protected endpoints enforce payment flow deterministically
-- payment-failure states return machine-actionable remediation
-
-#### Detailed Implementation Plan for Phase 6
-
-**1. Research & Architecture Design**
-- The L402 protocol combines HTTP 402 Payment Required with Macaroons (bearer tokens) and Lightning Network invoices.
-- **Flow:**
-  1. Agent requests a protected API route.
-  2. Server responds with `402 Payment Required`, returning a Macaroon and a Lightning Invoice in the `WWW-Authenticate` header.
-  3. Agent pays the invoice via the Lightning Network.
-  4. Agent obtains the payment preimage.
-  5. Agent replays the request with the Macaroon and preimage in the `Authorization: L402 <macaroon>:<preimage>` header.
-  6. Server verifies the Macaroon and preimage, then serves the request.
-
-**2. Middleware Implementation (Fastify)**
-- Create an `l402Middleware` for Fastify.
-- **Dependencies:** `macaroon` library for token generation and verification.
-- **Logic:**
-  - Check for the `Authorization: L402 ...` header.
-  - If missing or invalid, generate a Macaroon (tied to the request/resource) and fetch a Lightning invoice from the payment provider.
-  - Return `402 Payment Required` with `WWW-Authenticate: L402 macaroon="...", invoice="..."`.
-  - If present, parse the Macaroon and preimage, verify the Macaroon signature and the preimage against the invoice hash (or query the payment provider to confirm settlement).
-  - If valid, allow the request to proceed.
-
-**3. Payment Provider Integration**
-- Integrate with a Lightning infrastructure provider (e.g., LND, Alby, Lightspark, or Strike API) to generate invoices and check payment status.
-- Abstract the provider behind a `PaymentProvider` interface to allow swapping backends.
-- **Interface methods:** `createInvoice(amount, memo) -> { invoice, hash }`, `verifyPayment(hash, preimage) -> boolean`.
-
-**4. Testing & Verification**
-- Write unit tests for the `l402Middleware` simulating the 402 challenge-response flow.
-- Write integration tests using a mock payment provider.
-- Update agent SDK/documentation to demonstrate how an agent should handle the 402 response, pay the invoice, and retry the request.
+**Next Steps (RFC 0003):** 
+Integration with a production Lightning Node (LND/LNbits) will transition this from a mock deployment to a live settlement ecosystem. 
 
 ## Phase 8: Human Supervisor Web Interface
 
@@ -482,11 +451,13 @@ Completed:
 
 ---
 
-## Immediate Improvements Recommended
+## Current Roadmap & Feature Proposals (RFCs)
 
-Based on recent repository reviews, the following improvements should be integrated into the roadmap:
+As of **February 2026**, the core WordClaw runtime and Phase 6 safety metrics are complete and stable. All future feature additions and structural API changes are managed via the **RFC Methodology**. 
 
-1. **Database Migration Consistency:** Ensure all development schema changes are consistently captured in migration journals to prevent drift between the runtime schema and deployment environments.
-2. **Robust Validation:** Strengthen input validation across all endpoints (e.g., preventing empty bodies on PUT requests) to avoid unhandled server errors and provide clear, actionable feedback to agents.
-3. **Comprehensive Coverage:** Increase the parity between the GraphQL and REST interfaces, ensuring features like dry-run and detailed error envelopes are universally available.
-4. **Automated Auditing:** Expand the verification scripts to continuously monitor the health of audit logs and versioning mechanisms during CI.
+Active Proposals (`doc/rfc/`):
+1. **RFC 0001:** Blog Valuation & Third-Party Metrics Integration (Ahrefs/Stripe).
+2. **RFC 0002:** Agent Usability & API Improvements (Native JSON, nested routes, custom AI-friendly schema error wrappers).
+3. **RFC 0003:** Production Lightning Network Settlement Plan.
+
+To propose a new feature, duplicate `doc/rfc/0000-rfc-template.md` and submit it for discussion.
