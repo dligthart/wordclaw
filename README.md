@@ -107,6 +107,7 @@ For detailed guides on setting up the Supervisor UI, authentication, testing, an
 - [Architecture Overview](doc/architecture.md) — System layer breakdown and data models.
 - [Features Outline](doc/features.md) — Content API and Human Supervisor Web Interface capabilities.
 - [MCP Integration](doc/mcp-integration.md) — Model Context Protocol implementation details.
+- [Feature Proposals (RFCs)](doc/rfc) — Methodology and history of proposed platform features.
 
 ### API Documentation
 
@@ -117,10 +118,11 @@ Interactive Swagger/OpenAPI documentation is natively available while running th
 ## 🤝 Contributing
 
 1.  Fork the repository.
-2.  Create a feature branch.
-3.  Commit your changes.
-4.  Push to the branch.
-5.  Open a Pull Request.
+2.  **For major features or architectural changes:** First, submit an RFC (Request for Comments) by copying `doc/rfc/0000-rfc-template.md` and opening a PR to discuss the design.
+3.  Create a feature branch.
+4.  Commit your changes.
+5.  Push to the branch.
+6.  Open a Pull Request.
 
 ## 📄 License
 
