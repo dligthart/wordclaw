@@ -32,26 +32,35 @@ To support multi-agent economies, all system identities roll up to an `AgentProf
 *   An `agent_profile` holds an `agentProfileId`, `payoutAddress` (RFC 0006), and is the owner of Entitlements (RFC 0004).
 
 ### 5.2 Data Model Additions
+*   `agent_profiles`
+    *   `id`, `api_key_id`, `payoutAddress`
 *   `offers`
-    *   `id`, `slug`, `name`, `scopeType` (`item`, `type`, `subscription`), `scopeRef`, `priceSats`, `active`
+    *   `id`, `slug`, `name`, `scopeType` (`item`, `type`, `subscription`), `scopeRef` (Nullable for subscriptions), `priceSats`, `active`
 *   `license_policies` (Append-Only)
     *   `id`, `offerId`, `version`, `maxReads`, `expiresAt`, `allowedChannels`, `allowRedistribution`, `termsJson`
 *   `entitlements`
-    *   `id`, `offerId`, `policyId`, `agentProfileId`, `status`, `expiresAt`, `remainingReads`
+    *   `id`, `offerId`, `policyId`, `agentProfileId`, `status`, `expiresAt`, `remainingReads`, `delegatedFrom` (FK to parent entitlement)
 *   `access_events`
     *   `id`, `entitlementId`, `resourcePath`, `action`, `granted`, `reason`, `createdAt`
 
 ### 5.3 API / Protocol
+*   **Discovery:** `GET /api/content-items/:id/offers` allows agents to discover relevant purchasing options without mass-scanning all offers.
 *   **REST/GraphQL/MCP:** APIs to list offers and trigger `purchaseOffer` (returns L402 Challenge).
-*   **Transfer/Delegation:** Add `POST /api/entitlements/:id/delegate` to temporarily grant access to a subordinate agent (vital for Orchestrators in RFC 0005).
+*   **Transfer/Delegation:** Add `POST /api/entitlements/:id/delegate` to temporarily grant subset access to a subordinate agent (vital for Orchestrators in RFC 0005). Delegated entitlements carry strict subsets (fractional `remainingReads`, shorter expiry) and are independently revocable. Delegation chains are restricted to a depth of 1.
 *   **Atomic Metering:** Decrementing `remainingReads` must use atomic SQL: `UPDATE entitlements SET remainingReads = remainingReads - 1 WHERE remainingReads > 0 RETURNING *`.
 *   **Events Retention:** A cron job will aggregate and purge raw `access_events` older than 30 days into daily metric rollups.
 
-## 6. Security & Privacy Implications
-*   **Macaroon Caveats**: By storing `entitlementId` as an L402 caveat, we reuse RFC 0003's cryptographic validation, preventing token sharing between mismatched API Keys.
-*   **Revocation**: `entitlements.status = 'revoked'` immediately halts access, providing a kill switch for disputed payments or TOS violations.
+## 6. Alternatives Considered
+*   **Reuse only API scopes:** Too coarse. Scopes authorize broad capabilities, not item-level commercial rights.
+*   **Invoice-only model without entitlements:** Cannot prove durable buyer rights across distributed, asynchronous workflows.
+*   **External commerce only:** Drastically reduces predictability, control, and protocol parity across REST/GraphQL/MCP surfaces.
 
-## 7. Rollout Plan / Milestones
+## 7. Security & Privacy Implications
+*   **Macaroon Caveats**: By storing `entitlementId` as an L402 caveat, we reuse RFC 0003's cryptographic validation, preventing token sharing between mismatched API Keys.
+*   **Revocation**: `entitlements.status = 'revoked'` immediately halts access, providing a kill switch for disputed payments or TOS violations. Consistent enforcement across all protocols (REST/GraphQL/MCP) is mandatory.
+*   **Access Events**: Storage of access events must explicitly avoid recording raw sensitive HTTP request headers to prevent leaking auth material.
+
+## 8. Rollout Plan / Milestones
 1.  **Phase 1**: Implement the Unified Identity (`agent_profiles` mapping).
 2.  **Phase 2**: Introduce core tables (`offers`, `license_policies`, `entitlements`).
 3.  **Phase 3**: Mint L402 Macaroons with `entitlementId` caveats upon settlement.

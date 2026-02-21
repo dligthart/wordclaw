@@ -26,28 +26,55 @@ Add a **Distribution Orchestrator** executing plans via a PostgreSQL queue:
 
 ### 5.1 Data Model
 *   `distribution_targets` (`id`, `name`, `channelType`, `configJson`, `active`)
-*   `distribution_plans` (`id`, `contentItemId`, `status`, `createdByAgentId`)
+*   `distribution_plans` (`id`, `contentItemId`, `contentVersion`, `agentProfileId`, `status`, `createdAt`)
 *   `distribution_jobs` (`id`, `planId`, `targetId`, `attempt`, `status`, `nextAttemptAt`)
 *   `distribution_receipts` (`id`, `jobId`, `externalUrl`, `statusCode`, `errorMessage`, `rawMeta`)
 
 ### 5.2 Postgres Queue & Adapters
 *   **Infrastructure**: We will use a PostgreSQL-backed queue (e.g., `pgboss` or native `SKIP LOCKED`) to avoid adding Redis to the WordClaw deployment topology.
 *   **Adapters**: Define an interface that implements `transform(content, policy)` and `deliver(payload)`. Transforms handle markdown-to-HTML, truncation, and metadata injection.
+    ```typescript
+    interface TransformPolicy {
+      maxLength?: number;
+      outputFormat: 'markdown' | 'html' | 'plaintext';
+      includeCanonicalUrl: boolean;
+      includeAttribution: boolean;
+      excerptOnly: boolean; // enforced by entitlement policy
+    }
+    ```
 *   **Backoff & Rate Limiting**: If a generic target (like Twitter) returns `429 Too Many Requests`, the backoff multiplier suspends the `targetId` temporarily to prevent cascading queue backups.
 
 ### 5.3 Agent Usability & APIs
 *   **Synchronous Confirm / Await**: Plan creation endpoints will accept an `awaitDelivery: boolean` flag (max 10s wait) to give synchronous certainty for fast Webhook channels.
 *   **Cancellation**: Add `POST /plans/:id/cancel` to abort `queued` or `running` jobs dynamically.
-*   **Deduplication**: Plans for the same `contentItem` + `targetId` within a 5-minute window will throw a deterministic `DUPLICATE_DISTRIBUTION_PLAN` error unless overridden.
+*   **Deduplication**: Plans for the same `contentVersion` + `targetId` within a 5-minute window will throw a deterministic `DUPLICATE_DISTRIBUTION_PLAN` error unless overridden.
+*   **Dry-Run Mode**: `POST /api/distribution/plans?mode=dry_run` validates transforms and shows the transformed payloads per target without queuing jobs.
 *   **Webhooks**: Output `distribution.plan.completed` and `distribution.job.failed` via the existing Phase 7.8 Event Stream so agents don't have to poll.
 
-## 6. Security & Privacy Implications
+### 5.4 Plan State Machine
+Valid `distribution_plans.status` transitions:
+*   `queued` → `running` (Picked up by worker)
+*   `running` → `succeeded` (All jobs `succeeded`)
+*   `running` → `partial` (Some jobs failed max retries, some succeeded)
+*   `running` → `failed` (All jobs failed max retries)
+*   `partial` / `failed` → `running` (Agent explicitly triggers retry on failed jobs)
+
+## 6. Alternatives Considered
+*   **Inline synchronous fan-out in request path**: Too brittle for external channel latency/failures.
+*   **Single-channel push only**: Does not meet distribution parity or audience growth needs.
+*   **Outsource entirely to Zapier/IFTTT**: Useful adjunct, but lacks native policy enforcement and monetization hooks.
+
+## 7. Security & Privacy Implications
 *   **Entitlement Enforcement**: Crucially, the orchestrator retrieves the invoking agent's Entitlements (RFC 0004) to ensure they hold the right to distribute the data. Full-body distribution fails if the policy only grants excerpts.
 *   **Credential Storage**: Channel configs (API tokens) are encrypted at rest.
+*   **Signed Outbound Requests**: Partner endpoints should require signature headers on payloads delivered via webhooks.
+*   **Dead-Letter Retention bounds**: Dead-letter payload retention must be bounded carefully to prevent unbounded growth and sanitized for PII.
 
-## 7. Rollout Plan / Milestones
+## 8. Rollout Plan / Milestones
 1.  **Phase 1**: Implement `distribution_targets` and the Postgres `SKIP LOCKED` worker queue.
 2.  **Phase 2**: Add Entitlement verification (Dependency: RFC 0004) to the pre-flight checks.
 3.  **Phase 3**: Implement Webhook, RSS, and Email adapters mapped to a `TransformPolicy`.
-4.  **Phase 4**: Add cancellation, deduplication, and synchronous `awaitDelivery` API concepts.
+4.  **Phase 4**: Add cancellation, deduplication, dry-run, and synchronous `awaitDelivery` API concepts.
 5.  **Phase 5**: Add Webhook event emissions for completions and failures.
+
+

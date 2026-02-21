@@ -7,10 +7,14 @@
 ## 1. Summary
 This RFC proposes four structural and architectural improvements to the WordClaw API and payload processing to reduce friction for AI agents. This includes AI-friendly schema validation errors, native JSON payload support, RESTful nested routing, and decoupled L402 pricing interfaces.
 
-## 2. Motivation
+## 2. Dependencies & Graph
+*   **Depends on:** Core API foundations.
+*   **Depended on by:** RFC 0003 (Settlement) — Decoupled Pricing interface directly paves the way for advanced Macaroon signing.
+
+## 3. Motivation
 During testing of the "Agents running a shared blog together" use case, several usability friction points were identified. Agents occasionally failed to recover from basic payload validation errors or struggled to format nested stringified JSON correctly. Addressing these issues will make WordClaw more resilient and intuitive for autonomous agents interacting with it via REST or MCP.
 
-## 3. Proposal
+## 4. Proposal
 
 ### 3.1 AI-Friendly Schema Validation Errors
 **Problem:** Fastify returns generic `FST_ERR_VALIDATION` errors when payload structures are malformed, omitting the standard WordClaw `remediation` metadata.
@@ -20,15 +24,23 @@ During testing of the "Agents running a shared blog together" use case, several 
 **Problem:** The `schema` field (Content Types) and `data` field (Content Items) require double-encoded stringified JSON, which is error-prone for LLMs.
 **Solution:** Modify the OpenAPI spec, Fastify route schemas, and MCP tool definitions to accept native JSON objects (e.g., `Unknown` or `Object`). The server will stringify these payloads internally before persisting them to the database.
 
-### 3.3 Nested REST Endpoints for Content Items
+### 4.3 Nested REST Endpoints for Content Items
 **Problem:** Content items are created at the flat `/api/content-items` path, requiring agents to pass `contentTypeId` in the body.
-**Solution:** Expose structurally obvious nested REST routes. Introduce `POST /api/content-types/:contentTypeId/items` alongside the flat endpoint to follow standard conventions.
+**Solution:** Expose structurally obvious nested REST routes. Introduce `POST /api/content-types/:contentTypeId/items` alongside the flat endpoint to follow standard conventions. The legacy flat endpoint (`POST /api/content-items`) will respond with a standard `Deprecation: true` HTTP header and be slated for removal in v2.0.
 
-### 3.4 Decoupled L402 Pricing Interface
+### 4.4 Decoupled L402 Pricing Interface
 **Problem:** The current L402 dynamic pricing `getPrice(request)` interface is tightly coupled to the HTTP request object, hindering its application in other transports (like MCP directly).
-**Solution:** Decouple pricing logic by implementing a generic `ResourceIdentifier` or `WorkloadEstimator` interface. This allows identical L402 pricing calculations regardless of transport protocol.
+**Solution:** Decouple pricing logic by implementing a generic `PricingContext` interface. This allows identical L402 pricing calculations regardless of transport protocol.
+```typescript
+interface PricingContext {
+  resourceType: string;
+  operation: string; // 'create' | 'update' | 'read'
+  contentTypeId?: string;
+  batchSize?: number;
+}
+```
 
-## 4. Technical Design (Architecture)
+## 5. Technical Design (Architecture)
 
 ### Error Handler
 ```typescript
@@ -50,19 +62,20 @@ fastify.setErrorHandler(function (error, request, reply) {
 });
 ```
 
-### Protocol Changes
-*   **Database:** No changes required; the ORM will still text-encode the JSON types if strictly required by SQLite constraint, though Drizzle often handles this transparently.
-*   **Routes:** Route definitions using `@sinclair/typebox` will be updated from `Type.String()` to `Type.Unknown()` for payload data fields.
+### Protocol Parity & Changes
+*   **Database:** WordClaw utilizes PostgreSQL + Drizzle ORM. Moving forward, native `jsonb` column adoption will be preferred over text-encoded JSON for `schema`/`data` fields where possible to allow deep indexing.
+*   **Routes:** Route definitions using `@sinclair/typebox` will be updated from `Type.String()` to `Type.Object({}, { additionalProperties: true })` for payload data fields. This permissive object type correctly maintains the security boundary (preventing arrays/booleans at the root) while passing validation.
+*   **Error Parity (GraphQL/MCP):** The Custom Error remediation logic detailed above will be mirrored in Mercurius GraphQL error formatters and directly inside the MCP `CallToolResult` `{ isError: true, content: [{ text: "..." }] }` payload to guarantee cross-protocol parity.
 
-## 5. Alternatives Considered
+## 6. Alternatives Considered
 *   **Status Quo:** Keep stringified JSON and generic errors. Discarded because it directly impedes the product's primary value proposition (an AI-first CMS). 
 *   **Prompt Engineering:** Providing extensive definitions in system prompts to warn agents about the quirks. Discarded as it is less reliable than fixing the API boundaries.
 
-## 6. Security & Privacy Implications
+## 7. Security & Privacy Implications
 Accepting nested JSON structures instead of strings slightly increases the risk of deep-object denial-of-service (Payload depth exhaustion). We must ensure Fastify's default `bodyLimit` and recursion depth settings are suitably configured. Custom error handlers must also ensure they do not leak sensitive stack traces.
 
-## 7. Rollout Plan / Milestones
-*   **Phase 1:** Update Fastify error handler (Proposal 3.1).
-*   **Phase 2:** Refactor TypeBox schemas and MCP definitions for native JSON (Proposal 3.2).
-*   **Phase 3:** Introduce nested REST routes (Proposal 3.3).
-*   **Phase 4:** Refactor L402 Options interface (Proposal 3.4).
+## 8. Rollout Plan / Milestones
+*   **Phase 1:** Update Fastify error handlers + GraphQL + MCP parity (Proposal 4.1).
+*   **Phase 2:** Refactor TypeBox schemas to `Type.Object()` for native JSON (Proposal 4.2). Include backwards-compatibility middleware temporarily parsing incoming strings.
+*   **Phase 3:** Introduce nested REST routes and mark flat route Deprecated (Proposal 4.3).
+*   **Phase 4:** Refactor L402 Options interface using `PricingContext` (Proposal 4.4).
