@@ -37,17 +37,18 @@ To support multi-agent economies, all system identities roll up to an `AgentProf
 *   `offers`
     *   `id`, `slug`, `name`, `scopeType` (`item`, `type`, `subscription`), `scopeRef` (Nullable for subscriptions), `priceSats`, `active`
 *   `license_policies` (Append-Only)
-    *   `id`, `offerId`, `version`, `maxReads`, `expiresAt`, `allowedChannels`, `allowRedistribution`, `termsJson`
+    *   `id`, `offerId`, `version`, `maxReads` (Default: `Infinity`), `expiresAt` (Default: `Infinity`), `allowedChannels` (Default: `[]`), `allowRedistribution`, `termsJson`
 *   `entitlements`
-    *   `id`, `offerId`, `policyId`, `agentProfileId`, `status`, `expiresAt`, `remainingReads`, `delegatedFrom` (FK to parent entitlement)
+    *   `id`, `offerId`, `policyId`, `policyVersion`, `agentProfileId`, `paymentHash` (Unique Constraint), `status`, `expiresAt`, `remainingReads`, `delegatedFrom` (FK to parent entitlement)
 *   `access_events`
     *   `id`, `entitlementId`, `resourcePath`, `action`, `granted`, `reason`, `createdAt`
 
 ### 5.3 API / Protocol
 *   **Discovery:** `GET /api/content-items/:id/offers` allows agents to discover relevant purchasing options without mass-scanning all offers.
 *   **REST/GraphQL/MCP:** APIs to list offers and trigger `purchaseOffer` (returns L402 Challenge).
-*   **Transfer/Delegation:** Add `POST /api/entitlements/:id/delegate` to temporarily grant subset access to a subordinate agent (vital for Orchestrators in RFC 0005). Delegated entitlements carry strict subsets (fractional `remainingReads`, shorter expiry) and are independently revocable. Delegation chains are restricted to a depth of 1.
+*   **Transfer/Delegation:** Add `POST /api/entitlements/:id/delegate` to temporarily grant subset access to a subordinate agent (vital for Orchestrators in RFC 0005). Delegated entitlements carry strict subsets (fractional `remainingReads`, shorter expiry) and are independently revocable. Delegation chains are restricted to a depth of 1 at the DB layer to prevent cyclic abuse. If a parent entitlement is revoked or expires, all of its child delegated entitlements are immediately cascade-invalidated.
 *   **Atomic Metering:** Decrementing `remainingReads` must use atomic SQL: `UPDATE entitlements SET remainingReads = remainingReads - 1 WHERE remainingReads > 0 RETURNING *`.
+*   **Policy Version Pinning:** Entitlement evaluations in the access routes strict-check against the pinned `policyVersion` tied to the purchase event. This guarantees reproducible evaluations even if the `license_policies` table introduces a newer version for future buyers.
 *   **Events Retention:** A cron job will aggregate and purge raw `access_events` older than 30 days into daily metric rollups.
 
 ## 6. Alternatives Considered
@@ -66,3 +67,4 @@ To support multi-agent economies, all system identities roll up to an `AgentProf
 3.  **Phase 3**: Mint L402 Macaroons with `entitlementId` caveats upon settlement.
 4.  **Phase 4**: Enforce API read/export routes using atomic decrements.
 5.  **Phase 5**: Add aggregation workers for `access_events` retention.
+

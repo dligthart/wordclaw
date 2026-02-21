@@ -39,7 +39,7 @@ Content publication becomes a policy action (`submit_for_review`, `approve`, `re
 * `workflow_transitions`
   * `id`, `workflowDefinitionId`, `fromState`, `toState`, `requiredRoles` (String Array), `conditionJson`
 * `review_tasks`
-  * `id`, `contentItemId`, `state`, `assignee`, `dueAt`, `status`, `createdAt`, `updatedAt`
+  * `id`, `contentItemId`, `state`, `assignee`, `dueAt`, `status`, `version`, `createdAt`, `updatedAt`
 * `review_decisions`
   * `id`, `reviewTaskId`, `decision` (`approve`, `reject`, `escalate`), `reasonCode`, `notes`, `decidedBy`, `decidedAt`
 
@@ -56,8 +56,9 @@ Content publication becomes a policy action (`submit_for_review`, `approve`, `re
 
 ### 5.3 Enforcement & Conditions
 * Reject direct invalid state updates with deterministic codes (`WORKFLOW_TRANSITION_FORBIDDEN`, `REVIEW_REQUIRED`).
-* `conditionJson` parsing: Standardized structural rules evaluated against the item data before transition (e.g., `{"field": "wordCount", "operator": "gte", "value": 500}`).
-* **Task Assignment:** V1 implements explicit manual assignment passed during the `submit_content_item` mutation. V2 will introduce auto-assignment round-robin queues and SLA tiering.
+* `conditionJson` parsing: Standardized structural rules evaluated against the item data before transition using a strict JSONLogic subset. Unrecognized operators are explicitly rejected at workflow creation time to guarantee safe execution.
+* **Task Assignment & Escalation:** V1 implements explicit manual assignment passed during the `submit_content_item` mutation. If a review task misses its SLA (`dueAt`), the system automatically escalates the decision tier or reassigns it to the default platform supervisor queue to enforce SLA velocity.
+* **Optimistic Locking:** Decision submissions (`POST /api/review-tasks/:id/decide`) must provide an expected `version` integer to prevent double-approve race conditions during concurrent admin reviews.
 * Emit structured audit details including workflow version and decision metadata.
 * Support dry-run transition simulation for agents before mutation.
 
@@ -77,5 +78,4 @@ Content publication becomes a policy action (`submit_for_review`, `approve`, `re
 3. **Phase 3**: Expose REST/GraphQL/MCP workflow APIs and dry-run checks.
 4. **Phase 4**: Upgrade Approval Queue UI to task/decision model with SLA indicators.
 5. **Phase 5**: Add contract tests for invalid transitions and role-gated decisions.
-
-
+6. **Future**: Provide graceful migration scripts mapping existing active content in legacy `draft` to mapped states when a new workflow policy is activated for that `contentType`.

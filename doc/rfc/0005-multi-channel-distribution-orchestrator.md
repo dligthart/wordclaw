@@ -25,13 +25,14 @@ Add a **Distribution Orchestrator** executing plans via a PostgreSQL queue:
 ## 5. Technical Design (Architecture)
 
 ### 5.1 Data Model
-*   `distribution_targets` (`id`, `name`, `channelType`, `configJson`, `active`)
-*   `distribution_plans` (`id`, `contentItemId`, `contentVersion`, `agentProfileId`, `status`, `createdAt`)
-*   `distribution_jobs` (`id`, `planId`, `targetId`, `attempt`, `status`, `nextAttemptAt`)
+*   `distribution_targets` (`id`, `name`, `channelType`, `secretRefId` (vault reference, not raw config), `active`)
+*   `distribution_plans` (`id`, `contentItemId`, `contentVersion`, `idempotencyKey` (Unique), `agentProfileId`, `status`, `createdAt`)
+*   `distribution_jobs` (`id`, `planId`, `targetId`, `attempt`, `status`, `nextAttemptAt`, `payloadSnapshotJson`)
 *   `distribution_receipts` (`id`, `jobId`, `externalUrl`, `statusCode`, `errorMessage`, `rawMeta`)
 
-### 5.2 Postgres Queue & Adapters
+### 5.2 Postgres Queue, Snapshotting & Adapters
 *   **Infrastructure**: We will use a PostgreSQL-backed queue (e.g., `pgboss` or native `SKIP LOCKED`) to avoid adding Redis to the WordClaw deployment topology.
+*   **Payload Snapshotting:** To prevent data drift, the job queue isolates the payload at enqueue time into `payloadSnapshotJson`. Changes to the `contentItem` while jobs are in the queue will not affect the outgoing payloads.
 *   **Adapters**: Define an interface that implements `transform(content, policy)` and `deliver(payload)`. Transforms handle markdown-to-HTML, truncation, and metadata injection.
     ```typescript
     interface TransformPolicy {
@@ -46,8 +47,8 @@ Add a **Distribution Orchestrator** executing plans via a PostgreSQL queue:
 
 ### 5.3 Agent Usability & APIs
 *   **Synchronous Confirm / Await**: Plan creation endpoints will accept an `awaitDelivery: boolean` flag (max 10s wait) to give synchronous certainty for fast Webhook channels.
+*   **Idempotency & Deduplication**: To prevent unsafe retries from enqueuing duplicate fan-outs, plan creation strictly requires a client-provided `idempotencyKey` UUID. Duplicates within a 24-hour window return the existing plan data state.
 *   **Cancellation**: Add `POST /plans/:id/cancel` to abort `queued` or `running` jobs dynamically.
-*   **Deduplication**: Plans for the same `contentVersion` + `targetId` within a 5-minute window will throw a deterministic `DUPLICATE_DISTRIBUTION_PLAN` error unless overridden.
 *   **Dry-Run Mode**: `POST /api/distribution/plans?mode=dry_run` validates transforms and shows the transformed payloads per target without queuing jobs.
 *   **Webhooks**: Output `distribution.plan.completed` and `distribution.job.failed` via the existing Phase 7.8 Event Stream so agents don't have to poll.
 
@@ -66,9 +67,9 @@ Valid `distribution_plans.status` transitions:
 
 ## 7. Security & Privacy Implications
 *   **Entitlement Enforcement**: Crucially, the orchestrator retrieves the invoking agent's Entitlements (RFC 0004) to ensure they hold the right to distribute the data. Full-body distribution fails if the policy only grants excerpts.
-*   **Credential Storage**: Channel configs (API tokens) are encrypted at rest.
+*   **Credential Storage**: Target channels require OAuth or API tokens. These will be stored strictly as `secretRefId` mappings to an external Secret Manager or encrypted Vault, not raw config JSON, with periodic rotation mechanisms.
 *   **Signed Outbound Requests**: Partner endpoints should require signature headers on payloads delivered via webhooks.
-*   **Dead-Letter Retention bounds**: Dead-letter payload retention must be bounded carefully to prevent unbounded growth and sanitized for PII.
+*   **Dead-Letter Retention & Replay**: Payloads that permanently fail delivery will be retained as sanitized dead-letters for exactly 14 days for forensic purposes. Replaying failed jobs is restricted to the specific `agentProfileId` owner or an `admin` role spanning the platform.
 
 ## 8. Rollout Plan / Milestones
 1.  **Phase 1**: Implement `distribution_targets` and the Postgres `SKIP LOCKED` worker queue.

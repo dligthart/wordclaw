@@ -56,11 +56,11 @@ Introduce a structured discovery domain:
 * `GET /api/catalog/search` handles Full-text Search.
   * `q`: Supports logical AND/OR across `title` and vector text.
   * `tags`: Implicitly executed as an OR across tags array.
-* V1 Delivery Mode (`subscriptions.deliveryMode`): Strictly `pull` (client cursor iteration against `GET /subscriptions/:id/changes`). Push integration via webhooks is reserved for V2.
-* Lifecycle Coupling: Publishing or modifying content executes an asynchronous `pgboss` background job to re-index the catalog entry. Hard-deletes remove the catalog entry.
+* V1 Delivery Mode (`subscriptions.deliveryMode`): Strictly `pull`. Agent clients provide a deterministic cursor explicitly defined by `createdAt` snapshot and `tieBreakerId` to guarantee gap-free, replay-safe pull loop semantics. Push integration via webhooks is reserved for V2.
+* Lifecycle Coupling: Publishing or modifying content executes an asynchronous `pgboss` background job to re-index the catalog entry. Hard-deletes trigger a `tombstone` catalog entry variant indicating the content was erased, allowing downstream synchronization cascades to complete cleanly before absolute purging happens later.
 
 ### 5.4 Retrieval Excerpts & Paywalls
-* Free vs Paid Metadata: The catalog endpoint returns the `title`, `tags`, and explicit `summary`. If no `summary` exists, an auto-truncated 300C excerpt of the body is generated. Full body execution is gated via standard Entitlement verification.
+* Free vs Paid Metadata: The catalog endpoint returns the `title`, `tags`, and explicit `summary`. If no `summary` exists, an auto-truncated 300C excerpt of the body is generated. Full body execution is gated via standard Entitlement verification. Filtering predicates (such as Enforced Entitlement Visibility rules) are evaluated in SQL *prior* to full-text vector ranking, successfully preventing unauthorized content properties from manipulating search result scores or producing algorithmic side-channel leaks.
 
 ## 6. Alternatives Considered
 * **Use only `/content-items` filters**: Not enough for buyer discovery or subscription workflows.
@@ -71,7 +71,7 @@ Introduce a structured discovery domain:
 * Search results must respect visibility and entitlement boundaries.
 * Subscription endpoints should enforce principal isolation.
 * Catalog summaries should avoid leaking protected full content.
-* **Query Abuse Controls**: Max integer result window of 10,000 index hits. Strict token bucket rate limit on search endpoint `25r/sec` globally to intercept index crawling.
+* **Query Abuse Controls**: Max integer result window of 10,000 index hits. Strict token bucket rate limits mapped per `agentProfileId` independently guarantee robust multi-tenant operation, ensuring that aggressive index-crawling by one principal cannot degrade catalog latency for the broader network.
 
 ## 8. Rollout Plan / Milestones
 1. **Phase 1**: Add catalog/collection schema, PostgreSQL full-text search configs, and indexing backgrounds jobs tied to item mutations.

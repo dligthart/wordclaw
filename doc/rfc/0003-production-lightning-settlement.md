@@ -38,7 +38,10 @@ Macaroons allow WordClaw to attach signed **Caveats** to an invoice.
 Lightning payments can take 1-15 seconds to route. Relying on synchronous client polling risks timeouts.
 *   Expose a webhook endpoint: `POST /webhooks/lightning/invoice-settled`.
 *   When WordClaw requests an invoice from the LSP, it registers this webhook URL.
-*   Upon successful payment, the provider pushes a notification to WordClaw, which asynchronously updates the `payments` database table `status` to `paid`.
+*   Upon successful payment, the provider pushes a notification to WordClaw.
+*   **Idempotency & Replay Window:** Webhook execution requires deterministic checking. We will enforce an explicit `eventId` uniqueness constraint with a 72-hour rolling replay-block window to discard duplicate webhook fires or out-of-order retries.
+*   **State Machine Transitions:** Webhooks drive the `payments` state transitions across 4 strict domains: `pending` -> `paid` -> `failed` or `pending` -> `expired`. Out-of-order state transitions (like `failed` returning to `paid`) are rejected at the DB layer.
+*   **Reconciliation Worker:** A scheduled background job (`pg-boss`) will execute every 15 minutes to query the LSP for any `pending` invoices over 5 minutes old to sweep and reconcile delays or dropped webhooks automatically.
 
 ### 5.4 Invoice Expiry & Exhausing Retries
 *   Generated `lnbc` invoices expire in 60 minutes. 
@@ -52,13 +55,13 @@ Lightning payments can take 1-15 seconds to route. Relying on synchronous client
 ## 7. Security & Privacy Implications
 *   **Macaroon Trust:** The `L402_SECRET` used to sign Macaroons must be robustly secured.
 *   **Webhook Spoofing:** Webhooks receiving settlement confirmations from the LSP **MUST** validate HMAC cryptographic signatures (`X-LNbits-Signature` or equivalent) matched against the pre-shared secret. Replay protection is enforced by asserting that the `paymentHash` exists in the local `payments` table and its status is `pending` prior to marking it `paid`.
+*   **Secret Rotation:** Both `L402_SECRET` and Webhook HMAC keys require strict dual-key overlap strategies to support rotation. WordClaw will evaluate against `[CURRENT_KEY, PREVIOUS_KEY]` during active rolling periods to prevent downtime.
 *   **Testnet Isolation:** A strict testnet-first boundary utilizing signet/testnet infrastructure must be deployed and monitored for 30 days prior to executing mainnet liquidity.
 
 ## 8. Rollout Plan / Milestones
 1.  **Phase 1**: Integrate `lsat-js`/`macaroons.js` and securely sign/verify Caveats internally, continuing to use the Mock Provider.
 2.  **Phase 2**: Define Testnet deployment architecture and establish base operational metrics (invoice creation rate, webhook latency).
-3.  **Phase 3**: Implement the `LnbitsPaymentProvider` and hit testnet Lightning nodes.
+3.  **Phase 3**: Implement the `LnbitsPaymentProvider`, testnet hooks, and the Reconciliation Worker.
 4.  **Phase 4**: Hard-enforce HMAC signature spoofing protection on the Async webhook. Integrate auto-expiration recreation.
 5.  **Phase 5**: Graduate to Mainnet and publish OpenAPI price discovery endpoints.
-
 

@@ -28,18 +28,22 @@ Introduce an accounting domain with three immutable layers:
     *   Adds `displayName`
 *   `contribution_events` (`id`, `contentItemId`, `agentProfileId`, `role`, `weight`)
 *   `revenue_events` (`id`, `sourceType`, `sourceRef`, `grossSats`, `feeSats`, `netSats`)
-*   `revenue_allocations` (`id`, `revenueEventId`, `agentProfileId`, `amountSats`, `status` [pending, disputed, cleared])
+*   `revenue_allocations` (`id`, `revenueEventId`, `agentProfileId`, `amountSats`)
+*   `allocation_status_events` (`id`, `allocationId`, `status` [pending, disputed, cleared], `createdAt`) - Immutable ledger replacing mutating status.
 *   `payout_batches` (`id`, `periodStart`, `periodEnd`, `status`)
 *   `payout_transfers` (`id`, `batchId`, `agentProfileId`, `amountSats`, `status`)
 
 ### 5.2 Allocation & Dispute Flow
 *   When RFC 0004's Offer is purchased, a `revenue_event` is logged.
 *   The system looks up `contribution_events` and utilizes a **Fixed Split by Role** model (e.g., Author 70%, Editor 10%, Distributor 20%). Dynamic AI negotiation is deferred to V2.
-*   Allocations sit in a `pending` state for a strict **7-day time window**, allowing Supervisors to mark them as `DISPUTED` via the UI with an audit trail, effectively pausing the payout.
+*   **Rounding:** All fractional satoshi splits strictly round *down* via `Math.floor`. Any leftover remainder sats from rounding are systematically credited to the `Author` role allocation to prevent leakages.
+*   **Dispute Window:** Allocations sit in a `pending` state for a strict **7-day time window**, allowing Supervisors to mark them as `DISPUTED` via the UI with an audit trail, effectively pausing the payout.
+*   **Auto-Clear Protocol:** If an allocation remains in `disputed` status for more than 14 days with no manual override or escalation, an automated job will override and push the status forward to `cleared` to prevent stuck distributions indefinitely.
 
 ### 5.3 Execution Engine (Isolation)
 *   Creating ledgers for thousands of micro-transactions is computationally heavy. `PayoutService` runs fully decoupled in a background worker context to prevent freezing the Fastify HTTP loop.
 *   **Thresholds & Formats**: Payouts map strictly to Lightning Addresses (`agent@lnprovider.com`). To avoid wasting capital on routing fees, `payout_transfers` only execute when an agent's cleared balance exceeds a configurable minimum threshold (e.g., 500 sats). 
+*   **Idempotency & Retry**: The Payout engine will map the `payout_transfers.id` directly into the Lightning Provider's idempotency-key header to prevent double payments on retry.
 *   **Reconciliation Failure**: Unreachable providers will automatically retry failed payouts up to 3 times. On permanent failure, the ledger re-credits the agent's balance, notifies the supervisor dashboard, and exposes a `PAYOUT_FAILED_PERMANENT` status on the agent earnings endpoint with actionable remediation guidance.
 
 ### 5.4 Agent Real-Time Visibility
@@ -63,3 +67,4 @@ Introduce an accounting domain with three immutable layers:
 3.  **Phase 3**: Add Supervisor UI for viewing balances and disputing allocations.
 4.  **Phase 4**: Implement Payout Worker for Lightning Addresses with minimum thresholds and automatic retries.
 5.  **Phase 5**: Expose `/api/agents/me/earnings` to MCP for autonomous querying.
+

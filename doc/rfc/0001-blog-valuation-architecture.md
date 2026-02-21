@@ -20,7 +20,9 @@ A media holding company managing independent blogs, for instance, needs an autom
 We propose implementing the standard industry valuation formula:
 `Valuation = Monthly Net Profit (SDE) × Earnings Multiple`
 
-The "Earnings Multiple" typically ranges from 24x to 45x. This multiple will be dynamically calculated by a `ValuationEngine` which ingests qualitative metrics (like Domain Authority and Traffic Value) and quantitative metrics (like SDE) from third-party APIs. The calculation logic will be entirely driven by a configurable `ValuationPolicy` to avoid hardcoded step functions.
+The "Earnings Multiple" typically ranges from 24x to 45x. This multiple will be dynamically calculated by a `ValuationEngine` which ingests qualitative metrics (like Domain Authority and Traffic Value) and quantitative metrics (like SDE) from third-party APIs. 
+
+The calculation logic will be driven by a configurable `ValuationPolicy`. To ensure auditability and reproducible results, the system will persist a **deterministic Valuation Snapshot** for every request, logging the specific input telemetry alongside the exact `ValuationPolicy` version active at the time of execution.
 
 ## 5. Technical Design (Architecture)
 To build this feature, the system needs to fetch data from diverse providers in a standardized way. A **Provider Pattern** (or Strategy Pattern) is the ideal modular architecture.
@@ -103,11 +105,16 @@ class ValuationEngine {
             let multiple = this.policy.baseMultiple;
             // Apply policy weights based on trafficData...
             
+            // Formula applies weight to provider count and specific metrics 
+            // Must have >= 1 qualitative and >= 1 quantitative provider to breach 0.0 confidence
+            const confidenceScore = (trafficData && monthlySDE > 0) ? 0.95 : 0.0;
+            
             return {
                 estimatedValue: monthlySDE * multiple,
                 multiple,
-                confidenceScore: 1.0,
-                metricsResponded: 2
+                confidenceScore,
+                metricsResponded: 2,
+                policyVersion: this.policy.version
             };
         } catch (e) {
             // Graceful degradation logic
@@ -116,12 +123,13 @@ class ValuationEngine {
 }
 ```
 
-### 5.1 Protocol Parity & Caching
+### 5.1 Protocol Parity, Caching & Stale Data
 Valuation will be strictly exposed across all 3 protocols:
 *   **REST**: `GET /api/valuations/:domain`
 *   **GraphQL**: `query { domainValuation(domain: "...") }`
 *   **MCP**: `estimate_domain_value` tool
 *   **Caching**: To prevent API quota exhaustion (e.g., Ahrefs), all valuations are TTL-cached for 24 hours.
+*   **Stale Data Fallback:** If a provider API is unreachable, the engine will use the most recent cached values if they are < 72 hours old (returning a reduced `confidenceScore`). If no cache exists, it fails fast with a standardized `PROVIDER_UNAVAILABLE` error code.
 
 ## 6. Alternatives Considered
 *   **Monolithic Direct Integration:** Hardcoding Ahrefs and Stripe API calls directly into the WordClaw backend. Discarded because it creates tight coupling, makes testing difficult without active subscriptions, and prevents easily swapping out providers (e.g., using Semrush instead of Ahrefs).
@@ -131,6 +139,7 @@ The valuation engine requires read-only access to highly sensitive financial dat
 *   Provider API keys must be securely encrypted or managed via a robust Secret Manager.
 *   The valuation endpoints must be strictly authorized (`admin` or `supervisor` roles only). 
 *   All accesses to valuation data trigger structured audit events to ensure governance traceablity.
+*   **Data Minimization & Retention:** No raw financial transaction payloads or PII will be persisted in WordClaw. The system must process transactions entirely in-memory or at the provider level, persisting only the final aggregate metrics (e.g., Monthly SDE integer) and executing TTL purges on any interim caches.
 
 ## 8. Rollout Plan / Milestones
 1.  **Phase 1**: Define the TypeScript interfaces and the core mathematical `ValuationEngine`. Include a `MockValuationProvider` for rapid testing parity.
@@ -138,3 +147,4 @@ The valuation engine requires read-only access to highly sensitive financial dat
 3.  **Phase 3**: Expose REST/GraphQL/MCP parity endpoints with 24-hour TTL caching.
 4.  **Phase 4**: Build the `AhrefsProvider` utilizing their Traffic Value and DR metrics.
 5.  **Phase 5**: Build the `StripeProvider` to extract net profit figures.
+

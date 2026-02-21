@@ -51,8 +51,9 @@ interface OperationContext {
 ### 5.3 Policy Registry and Execution Constraints
 Define operation IDs aligned with `capabilityMatrix` and add `policyMatrix`:
 * Structure: In-memory static schema combined with high-frequency database cache overrides (e.g., updated rate limits).
-* Performance bounds: Entire evaluation pipeline must resolve in `< 5ms`.
+* Performance bounds: The evaluation pipeline sets target p95/p99 SLOs at `< 5ms`.
 * Resolution Hierarchy ("Restrictive wins"): `deny` > `challenge` > `allow`. If any domain explicitly denies, the operation folds.
+* **Failover Stance**: If the external policy datastore becomes unreachable, the PolicyEngine executes a strict `fail-closed` fallback for all state mutations (`POST`, `PUT`, `DELETE` operations) to safeguard the platform. Read operations (`GET`) degrade gracefully under specific relaxed configurations.
 * required scopes
 * monetization mode
 * workflow constraints
@@ -76,8 +77,8 @@ Define operation IDs aligned with `capabilityMatrix` and add `policyMatrix`:
 
 ## 7. Security & Privacy Implications
 * Centralized policy evaluation reduces inconsistent authorization surfaces.
-* **Traceability:** Emit structured `PolicyDecisionLogs` tracking `operationContext` and `evaluatedRules` duration for diagnostics. Redact authorization/API tokens securely before logging. Expose decisions selectively to endpoint `GET /api/policy/decisions?principal=me`.
-* Policy config changes should be versioned incrementally and stamped onto decisions for replicable auditing (`policyVersion`).
+* **Traceability:** Emit structured `PolicyDecisionLogs` tracking `operationContext` and `evaluatedRules` duration for diagnostics. Redact authorization/API tokens securely before logging. Expose decisions selectively to endpoint `GET /api/policy/decisions?principal=me`. Visibility is constrained to Least Privilege principles (agents may only query their own principal history, while supervisors view systemic logs). All resource metadata is securely redacted.
+* Policy config changes should be versioned incrementally, with strict rollout controls established (version canary, staged publish, and rollback hooks) to minimize blast radius on large deployed fleets. Replicable auditing relies on the stamped `policyVersion` per decision.
 
 ## 8. Rollout Plan / Milestones
 1. **Phase 1**: Define `policyMatrix` schema, `OperationContext`, and test matrix.
