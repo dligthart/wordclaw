@@ -10,6 +10,22 @@ import { ValidationFailure, validateContentDataAgainstSchema, validateContentTyp
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
 
+import { PolicyEngine } from '../services/policy.js';
+import { buildOperationContext } from '../services/policy-adapters.js';
+
+function withMCPPolicy<T>(operation: string, extractResource: (args: T) => any, handler: (args: T, extra: any) => Promise<ToolResult>) {
+    return async (args: T, extra: any) => {
+        const principal = { keyId: 'mcp-local', scopes: new Set(['admin']), source: 'local' };
+        const resource = extractResource(args) || { type: 'system' };
+        const operationContext = buildOperationContext('mcp', principal, operation, resource);
+        const decision = await PolicyEngine.evaluate(operationContext);
+        if (decision.outcome !== 'allow') {
+            return err(`${decision.code}: Access Denied by Policy. ${decision.remediation || ''}`);
+        }
+        return handler(args, extra);
+    };
+}
+
 const server = new McpServer({
     name: 'WordClaw CMS',
     version: '1.0.0'
@@ -129,12 +145,13 @@ server.tool(
         name: z.string().describe('Name of the content type'),
         slug: z.string().describe('Unique slug for the content type'),
         description: z.string().optional().describe('Description of the content type'),
-        schema: z.string().describe('JSON schema definition as a string'),
+        schema: z.union([z.string(), z.record(z.string(), z.any())]).describe('JSON schema definition as a string or object'),
         dryRun: z.boolean().optional().describe('If true, simulates the action without making changes')
     },
-    async ({ name, slug, description, schema, dryRun }) => {
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ name, slug, description, schema, dryRun }) => {
         try {
-            const schemaFailure = validateContentTypeSchema(schema);
+            const schemaStr = typeof schema === 'string' ? schema : JSON.stringify(schema);
+            const schemaFailure = validateContentTypeSchema(schemaStr);
             if (schemaFailure) {
                 return err(validationFailureToText(schemaFailure));
             }
@@ -147,7 +164,7 @@ server.tool(
                 name,
                 slug,
                 description,
-                schema
+                schema: schemaStr
             }).returning();
 
             await logAudit('create', 'content_type', newItem.id, newItem);
@@ -157,7 +174,7 @@ server.tool(
             return err(`Error creating content type: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'list_content_types',
@@ -166,7 +183,7 @@ server.tool(
         limit: z.number().optional().describe('Page size (default 50, max 500)'),
         offset: z.number().optional().describe('Row offset (default 0)')
     },
-    async ({ limit: rawLimit, offset: rawOffset }) => {
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ limit: rawLimit, offset: rawOffset }) => {
         const limit = clampLimit(rawLimit);
         const offset = clampOffset(rawOffset);
         const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes);
@@ -183,7 +200,7 @@ server.tool(
             hasMore: offset + types.length < total
         });
     }
-);
+    ));
 
 server.tool(
     'get_content_type',
@@ -192,7 +209,7 @@ server.tool(
         id: z.number().optional().describe('ID of the content type'),
         slug: z.string().optional().describe('Slug of the content type')
     },
-    async ({ id, slug }) => {
+    withMCPPolicy('content.read', (args) => ({ type: 'content_type', id: args.id }), async ({ id, slug }) => {
         if (id === undefined && !slug) {
             return err("Must provide either 'id' or 'slug'");
         }
@@ -207,7 +224,7 @@ server.tool(
 
         return okJson(type);
     }
-);
+    ));
 
 server.tool(
     'update_content_type',
@@ -217,12 +234,13 @@ server.tool(
         name: z.string().optional(),
         slug: z.string().optional(),
         description: z.string().optional(),
-        schema: z.string().optional(),
+        schema: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
         dryRun: z.boolean().optional()
     },
-    async ({ id, name, slug, description, schema, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async ({ id, name, slug, description, schema, dryRun }) => {
         try {
-            const updateData = stripUndefined({ name, slug, description, schema });
+            const schemaStr = schema ? (typeof schema === 'string' ? schema : JSON.stringify(schema)) : undefined;
+            const updateData = stripUndefined({ name, slug, description, schema: schemaStr });
             if (!hasDefinedValues({ name, slug, description, schema })) {
                 return err('At least one update field is required (name, slug, description, schema).');
             }
@@ -254,7 +272,7 @@ server.tool(
             return err(`Error updating content type: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'delete_content_type',
@@ -263,7 +281,7 @@ server.tool(
         id: z.number().describe('ID of the content type to delete'),
         dryRun: z.boolean().optional()
     },
-    async ({ id, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async ({ id, dryRun }) => {
         try {
             if (dryRun) {
                 return ok(`[Dry Run] Would delete content type ${id}`);
@@ -284,7 +302,7 @@ server.tool(
             return err(`Error deleting content type: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'create_api_key',
@@ -294,7 +312,7 @@ server.tool(
         scopes: z.array(z.string()).describe('Scopes such as content:read|content:write|audit:read|admin'),
         expiresAt: z.string().optional().describe('Optional ISO expiry timestamp')
     },
-    async ({ name, scopes, expiresAt }) => {
+    withMCPPolicy('apikey.write', () => ({ type: 'system' }), async ({ name, scopes, expiresAt }) => {
         try {
             let normalizedScopes: string[];
             try {
@@ -335,13 +353,13 @@ server.tool(
             return err(`Error creating API key: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'list_api_keys',
     'List API keys and their status',
     {},
-    async () => {
+    withMCPPolicy('apikey.list', () => ({ type: 'system' }), async () => {
         const keys = await listApiKeys();
         return okJson(keys.map((key) => ({
             id: key.id,
@@ -355,7 +373,7 @@ server.tool(
             lastUsedAt: key.lastUsedAt
         })));
     }
-);
+    ));
 
 server.tool(
     'revoke_api_key',
@@ -363,7 +381,7 @@ server.tool(
     {
         id: z.number().describe('API key id to revoke')
     },
-    async ({ id }) => {
+    withMCPPolicy('apikey.write', (args) => ({ type: 'apikey', id: args.id }), async ({ id }) => {
         const revoked = await revokeApiKey(id);
         if (!revoked) {
             return err(`API key ${id} not found or already revoked`);
@@ -376,7 +394,7 @@ server.tool(
 
         return ok(`Revoked API key ${revoked.id}`);
     }
-);
+    ));
 
 server.tool(
     'create_webhook',
@@ -387,7 +405,7 @@ server.tool(
         secret: z.string().describe('Shared secret for HMAC signing'),
         active: z.boolean().optional().describe('Whether webhook is active immediately')
     },
-    async ({ url, events, secret, active }) => {
+    withMCPPolicy('webhook.write', () => ({ type: 'system' }), async ({ url, events, secret, active }) => {
         try {
             if (!isValidUrl(url)) {
                 return err('INVALID_WEBHOOK_URL: Provide a valid absolute URL.');
@@ -425,13 +443,13 @@ server.tool(
             return err(`Error creating webhook: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'list_webhooks',
     'List registered webhooks',
     {},
-    async () => {
+    withMCPPolicy('webhook.list', () => ({ type: 'system' }), async () => {
         try {
             const hooks = await listWebhooks();
             return okJson(hooks.map((hook) => ({
@@ -445,7 +463,7 @@ server.tool(
             return err(`Error listing webhooks: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'get_webhook',
@@ -453,7 +471,7 @@ server.tool(
     {
         id: z.number().describe('Webhook ID')
     },
-    async ({ id }) => {
+    withMCPPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async ({ id }) => {
         try {
             const hook = await getWebhookById(id);
             if (!hook) {
@@ -471,7 +489,7 @@ server.tool(
             return err(`Error reading webhook: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'update_webhook',
@@ -483,7 +501,7 @@ server.tool(
         secret: z.string().optional(),
         active: z.boolean().optional()
     },
-    async ({ id, url, events, secret, active }) => {
+    withMCPPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async ({ id, url, events, secret, active }) => {
         try {
             if (url !== undefined && !isValidUrl(url)) {
                 return err('INVALID_WEBHOOK_URL: Provide a valid absolute URL.');
@@ -531,7 +549,7 @@ server.tool(
             return err(`Error updating webhook: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'delete_webhook',
@@ -539,7 +557,7 @@ server.tool(
     {
         id: z.number().describe('Webhook ID')
     },
-    async ({ id }) => {
+    withMCPPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async ({ id }) => {
         try {
             const existing = await getWebhookById(id);
             if (!existing) {
@@ -558,25 +576,26 @@ server.tool(
             return err(`Error deleting webhook: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'create_content_item',
     'Create a new content item',
     {
         contentTypeId: z.number().describe('ID of the content type'),
-        data: z.string().describe('JSON string of the content data conforming to the schema'),
+        data: z.union([z.string(), z.record(z.string(), z.any())]).describe('JSON string or object of the content data conforming to the schema'),
         status: z.enum(['draft', 'published', 'archived']).optional().describe('Status of the item'),
         dryRun: z.boolean().optional().describe('If true, simulates the action without making changes')
     },
-    async ({ contentTypeId, data, status, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.contentTypeId }), async ({ contentTypeId, data, status, dryRun }) => {
         try {
             const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, contentTypeId));
             if (!contentType) {
                 return err(`Content type ${contentTypeId} not found`);
             }
 
-            const contentFailure = validateContentDataAgainstSchema(contentType.schema, data);
+            const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
+            const contentFailure = validateContentDataAgainstSchema(contentType.schema, dataStr);
             if (contentFailure) {
                 return err(validationFailureToText(contentFailure));
             }
@@ -587,7 +606,7 @@ server.tool(
 
             const [newItem] = await db.insert(contentItems).values({
                 contentTypeId,
-                data,
+                data: dataStr,
                 status: status || 'draft'
             }).returning();
 
@@ -598,7 +617,7 @@ server.tool(
             return err(`Error creating content item: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'create_content_items_batch',
@@ -606,13 +625,13 @@ server.tool(
     {
         items: z.array(z.object({
             contentTypeId: z.number(),
-            data: z.string(),
+            data: z.union([z.string(), z.record(z.string(), z.any())]),
             status: z.string().optional()
         })),
         atomic: z.boolean().optional(),
         dryRun: z.boolean().optional()
     },
-    async ({ items, atomic, dryRun }) => {
+    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ items, atomic, dryRun }) => {
         if (items.length === 0) {
             return err('EMPTY_BATCH: Provide at least one item.');
         }
@@ -627,7 +646,8 @@ server.tool(
                     return buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`);
                 }
 
-                const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                const itemDataStr = typeof item.data === 'string' ? item.data : JSON.stringify(item.data);
+                const validation = validateContentDataAgainstSchema(contentType.schema, itemDataStr);
                 if (validation) {
                     return buildItemError(index, validation.code, validation.error);
                 }
@@ -654,14 +674,15 @@ server.tool(
                             throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`)));
                         }
 
-                        const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                        const itemDataStr = typeof item.data === 'string' ? item.data : JSON.stringify(item.data);
+                        const validation = validateContentDataAgainstSchema(contentType.schema, itemDataStr);
                         if (validation) {
                             throw new Error(JSON.stringify(buildItemError(index, validation.code, validation.error)));
                         }
 
                         const [created] = await tx.insert(contentItems).values({
                             contentTypeId: item.contentTypeId,
-                            data: item.data,
+                            data: itemDataStr,
                             status: item.status || 'draft'
                         }).returning();
 
@@ -706,7 +727,8 @@ server.tool(
                     continue;
                 }
 
-                const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                const itemDataStr = typeof item.data === 'string' ? item.data : JSON.stringify(item.data);
+                const validation = validateContentDataAgainstSchema(contentType.schema, itemDataStr);
                 if (validation) {
                     results.push(buildItemError(index, validation.code, validation.error));
                     continue;
@@ -714,7 +736,7 @@ server.tool(
 
                 const [created] = await db.insert(contentItems).values({
                     contentTypeId: item.contentTypeId,
-                    data: item.data,
+                    data: itemDataStr,
                     status: item.status || 'draft'
                 }).returning();
 
@@ -736,7 +758,7 @@ server.tool(
             results
         });
     }
-);
+    ));
 
 server.tool(
     'get_content_items',
@@ -793,27 +815,28 @@ server.tool(
     {
         id: z.number().describe('ID of the content item')
     },
-    async ({ id }) => {
+    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }) => {
         const [item] = await db.select().from(contentItems).where(eq(contentItems.id, id));
         if (!item) {
             return err('Content item not found');
         }
         return okJson(item);
     }
-);
+    ));
 
 server.tool(
     'update_content_item',
     'Update a content item with versioning',
     {
         id: z.number().describe('ID of the content item'),
-        data: z.string().optional().describe('New JSON data'),
+        data: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe('New JSON data or object'),
         status: z.enum(['draft', 'published', 'archived']).optional(),
         dryRun: z.boolean().optional()
     },
-    async ({ id, data, status, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, data, status, dryRun }) => {
         try {
-            const updateData = stripUndefined({ data, status });
+            const dataStr = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
+            const updateData = stripUndefined({ data: dataStr, status });
             if (!hasDefinedValues({ data, status })) {
                 return err('At least one update field is required (data, status).');
             }
@@ -875,7 +898,7 @@ server.tool(
             return err(`Error updating content item: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'update_content_items_batch',
@@ -890,7 +913,7 @@ server.tool(
         atomic: z.boolean().optional(),
         dryRun: z.boolean().optional()
     },
-    async ({ items, atomic, dryRun }) => {
+    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ items, atomic, dryRun }) => {
         if (items.length === 0) {
             return err('EMPTY_BATCH: Provide at least one item.');
         }
@@ -1097,7 +1120,7 @@ server.tool(
             results
         });
     }
-);
+    ));
 
 server.tool(
     'delete_content_item',
@@ -1106,7 +1129,7 @@ server.tool(
         id: z.number().describe('ID of the content item'),
         dryRun: z.boolean().optional()
     },
-    async ({ id, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, dryRun }) => {
         try {
             if (dryRun) {
                 return ok(`[Dry Run] Would delete content item ${id}`);
@@ -1127,7 +1150,7 @@ server.tool(
             return err(`Error deleting content item: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'delete_content_items_batch',
@@ -1137,7 +1160,7 @@ server.tool(
         atomic: z.boolean().optional(),
         dryRun: z.boolean().optional()
     },
-    async ({ ids, atomic, dryRun }) => {
+    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ ids, atomic, dryRun }) => {
         if (ids.length === 0) {
             return err('EMPTY_BATCH: Provide at least one id.');
         }
@@ -1226,7 +1249,7 @@ server.tool(
             results
         });
     }
-);
+    ));
 
 server.tool(
     'get_content_item_versions',
@@ -1234,7 +1257,7 @@ server.tool(
     {
         id: z.number().describe('ID of the content item')
     },
-    async ({ id }) => {
+    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }) => {
         const versions = await db.select()
             .from(contentItemVersions)
             .where(eq(contentItemVersions.contentItemId, id))
@@ -1242,7 +1265,7 @@ server.tool(
 
         return okJson(versions);
     }
-);
+    ));
 
 server.tool(
     'rollback_content_item',
@@ -1252,7 +1275,7 @@ server.tool(
         version: z.number().describe('Target version number to rollback to'),
         dryRun: z.boolean().optional()
     },
-    async ({ id, version, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, version, dryRun }) => {
         try {
             const [currentItem] = await db.select().from(contentItems).where(eq(contentItems.id, id));
             if (!currentItem) {
@@ -1332,7 +1355,7 @@ server.tool(
             return err(`Error rolling back: ${message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'get_audit_logs',
@@ -1452,6 +1475,27 @@ server.tool(
             return err(`Error retrieving payment: ${(error as Error).message}`);
         }
     }
+);
+
+server.tool(
+    'evaluate_policy',
+    'Evaluate a policy decision without side effects (Simulation/Dry-Run)',
+    {
+        operation: z.string().describe('The operation string (e.g. content.read, content.write)'),
+        resourceType: z.string().describe('The type of resource (e.g. content_item, system)'),
+        resourceId: z.string().optional().describe('The ID of the resource'),
+        contentTypeId: z.string().optional().describe('The content type ID of the resource')
+    },
+    withMCPPolicy('policy.read', () => ({ type: 'system' }), async ({ operation, resourceType, resourceId, contentTypeId }) => {
+        const operationContext = buildOperationContext(
+            'mcp',
+            { keyId: 'mcp-local', scopes: new Set(['admin']), source: 'local' },
+            operation,
+            { type: resourceType, id: resourceId, contentTypeId }
+        );
+        const decision = await PolicyEngine.evaluate(operationContext);
+        return okJson(decision);
+    })
 );
 
 server.resource(

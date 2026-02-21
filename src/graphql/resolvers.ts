@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, lt, lte, or } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
+import GraphQLJSON from 'graphql-type-json';
 
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } from '../db/schema.js';
@@ -58,7 +59,7 @@ type CreateContentTypeArgs = {
     name: string;
     slug: string;
     description?: string;
-    schema: string;
+    schema: string | Record<string, any>;
     dryRun?: boolean;
 };
 type UpdateContentTypeArgs = {
@@ -66,7 +67,7 @@ type UpdateContentTypeArgs = {
     name?: string;
     slug?: string;
     description?: string;
-    schema?: string;
+    schema?: string | Record<string, any>;
     dryRun?: boolean;
 };
 type DeleteContentTypeArgs = {
@@ -75,14 +76,14 @@ type DeleteContentTypeArgs = {
 };
 type CreateContentItemArgs = {
     contentTypeId: IdValue;
-    data: string;
+    data: string | Record<string, any>;
     status?: string;
     dryRun?: boolean;
 };
 type UpdateContentItemArgs = {
     id: IdValue;
     contentTypeId?: IdValue;
-    data?: string;
+    data?: string | Record<string, any>;
     status?: string;
     dryRun?: boolean;
 };
@@ -115,7 +116,7 @@ type DeleteWebhookArgs = {
 type BatchCreateContentItemsArgs = {
     items: Array<{
         contentTypeId: IdValue;
-        data: string;
+        data: string | Record<string, any>;
         status?: string;
     }>;
     atomic?: boolean;
@@ -126,7 +127,7 @@ type BatchUpdateContentItemsArgs = {
     items: Array<{
         id: IdValue;
         contentTypeId?: IdValue;
-        data?: string;
+        data?: string | Record<string, any>;
         status?: string;
     }>;
     atomic?: boolean;
@@ -313,7 +314,7 @@ function buildBatchError(index: number, code: string, error: string): BatchResul
 async function validateContentItemUpdateInput(item: {
     id: number;
     contentTypeId?: number;
-    data?: string;
+    data?: string | Record<string, any>;
     status?: string;
 }, index: number): Promise<{
     ok: true;
@@ -323,9 +324,11 @@ async function validateContentItemUpdateInput(item: {
     ok: false;
     error: BatchResultRow;
 }> {
+    const dataStr = item.data ? (typeof item.data === 'string' ? item.data : JSON.stringify(item.data)) : undefined;
+
     const updateData = stripUndefined({
         contentTypeId: item.contentTypeId,
-        data: item.data,
+        data: dataStr,
         status: item.status
     }) as ContentItemUpdateInput;
 
@@ -369,24 +372,52 @@ async function validateContentItemUpdateInput(item: {
     };
 }
 
+
+import { PolicyEngine } from '../services/policy.js';
+import { buildOperationContext } from '../services/policy-adapters.js';
+
+function withPolicy(
+    operation: string,
+    extractResource: (args: any) => any,
+    resolver: any
+) {
+    return async (parent: any, args: any, context: any, info: any) => {
+        const resource = extractResource(args) || { type: 'system' };
+        const operationContext = buildOperationContext('graphql', context?.authPrincipal, operation, resource);
+        const decision = await PolicyEngine.evaluate(operationContext);
+
+        if (decision.outcome !== 'allow') {
+            throw toError(
+                'Access Denied by Policy',
+                decision.code,
+                decision.remediation || 'Contact administrator.',
+                decision.metadata
+            );
+        }
+
+        return resolver(parent, args, context, info);
+    };
+}
+
 export const resolvers = {
+    JSON: GraphQLJSON,
     Query: {
-        contentTypes: async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: ContentTypesArgs) => {
+        contentTypes: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: ContentTypesArgs) => {
             const limit = clampLimit(rawLimit);
             const offset = clampOffset(rawOffset);
             return db.select()
                 .from(contentTypes)
                 .limit(limit)
                 .offset(offset);
-        },
+        }),
 
-        contentType: async (_parent: unknown, { id }: IdArg) => {
+        contentType: withPolicy('content.read', (args) => ({ type: 'content_type', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
             const numericId = parseId(id);
             const [type] = await db.select().from(contentTypes).where(eq(contentTypes.id, numericId));
             return type || null;
-        },
+        }),
 
-        contentItems: async (_parent: unknown, {
+        contentItems: withPolicy('content.read', (args) => ({ type: 'system' }), async (_parent: unknown, {
             contentTypeId,
             status,
             createdAfter,
@@ -412,23 +443,23 @@ export const resolvers = {
                 .where(conditions.length > 0 ? and(...conditions) : undefined)
                 .limit(limit)
                 .offset(offset);
-        },
+        }),
 
-        contentItem: async (_parent: unknown, { id }: IdArg) => {
+        contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
             const numericId = parseId(id);
             const [item] = await db.select().from(contentItems).where(eq(contentItems.id, numericId));
             return item || null;
-        },
+        }),
 
-        contentItemVersions: async (_parent: unknown, { id }: IdArg) => {
+        contentItemVersions: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
             const numericId = parseId(id);
             return db.select()
                 .from(contentItemVersions)
                 .where(eq(contentItemVersions.contentItemId, numericId))
                 .orderBy(desc(contentItemVersions.version));
-        },
+        }),
 
-        auditLogs: async (_parent: unknown, { entityType, entityId, action, limit: rawLimit, cursor }: AuditLogArgs) => {
+        auditLogs: withPolicy('audit.read', () => ({ type: 'system' }), async (_parent: unknown, { entityType, entityId, action, limit: rawLimit, cursor }: AuditLogArgs) => {
             const numericEntityId = parseOptionalId(entityId, 'entityId');
             const limit = clampLimit(rawLimit);
             const decodedCursor = cursor ? decodeCursor(cursor) : null;
@@ -471,9 +502,9 @@ export const resolvers = {
                 .where(conditions.length > 0 ? and(...conditions) : undefined)
                 .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
                 .limit(limit);
-        },
+        }),
 
-        payments: async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: { limit?: number; offset?: number }) => {
+        payments: withPolicy('payment.read', () => ({ type: 'system' }), async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: { limit?: number; offset?: number }) => {
             const limit = clampLimit(rawLimit);
             const offset = clampOffset(rawOffset);
             const results = await db.select().from(payments)
@@ -486,9 +517,9 @@ export const resolvers = {
                 createdAt: row.createdAt.toISOString(),
                 details: row.details ? JSON.stringify(row.details) : null
             }));
-        },
+        }),
 
-        payment: async (_parent: unknown, { id }: IdArg) => {
+        payment: withPolicy('payment.read', (args) => ({ type: 'payment', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
             const numericId = parseId(id);
             const [payment] = await db.select().from(payments).where(eq(payments.id, numericId));
             if (!payment) return null;
@@ -497,7 +528,7 @@ export const resolvers = {
                 createdAt: payment.createdAt.toISOString(),
                 details: payment.details ? JSON.stringify(payment.details) : null
             };
-        },
+        }),
 
         webhooks: async () => {
             const hooks = await listWebhooks();
@@ -510,7 +541,7 @@ export const resolvers = {
             }));
         },
 
-        webhook: async (_parent: unknown, { id }: IdArg) => {
+        webhook: withPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
             const numericId = parseId(id);
             const hook = await getWebhookById(numericId);
             if (!hook) {
@@ -524,13 +555,14 @@ export const resolvers = {
                 active: hook.active,
                 createdAt: hook.createdAt
             };
-        }
+        })
     },
 
     Mutation: {
-        createContentType: async (_parent: unknown, args: CreateContentTypeArgs, context?: unknown) => {
+        createContentType: withPolicy('content.write', () => ({ type: 'system' }), async (_parent: unknown, args: CreateContentTypeArgs, context?: unknown) => {
             const now = new Date();
-            const schemaFailure = validateContentTypeSchema(args.schema);
+            const schemaStr = typeof args.schema === 'string' ? args.schema : JSON.stringify(args.schema);
+            const schemaFailure = validateContentTypeSchema(schemaStr);
             if (schemaFailure) {
                 throw toErrorFromValidation(schemaFailure);
             }
@@ -541,7 +573,7 @@ export const resolvers = {
                     name: args.name,
                     slug: args.slug,
                     description: args.description,
-                    schema: args.schema,
+                    schema: schemaStr,
                     createdAt: now,
                     updatedAt: now
                 };
@@ -551,20 +583,21 @@ export const resolvers = {
                 name: args.name,
                 slug: args.slug,
                 description: args.description,
-                schema: args.schema
+                schema: schemaStr
             }).returning();
 
             await logAudit('create', 'content_type', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
-        },
+        }),
 
-        updateContentType: async (_parent: unknown, args: UpdateContentTypeArgs, context?: unknown) => {
+        updateContentType: withPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async (_parent: unknown, args: UpdateContentTypeArgs, context?: unknown) => {
             const id = parseId(args.id);
+            const schemaStr = args.schema ? (typeof args.schema === 'string' ? args.schema : JSON.stringify(args.schema)) : undefined;
             const updateData = stripUndefined({
                 name: args.name,
                 slug: args.slug,
                 description: args.description,
-                schema: args.schema
+                schema: schemaStr
             });
 
             if (!hasDefinedValues(updateData)) {
@@ -598,9 +631,9 @@ export const resolvers = {
 
             await logAudit('update', 'content_type', updated.id, updateData, toActorId(context), toRequestId(context));
             return updated;
-        },
+        }),
 
-        deleteContentType: async (_parent: unknown, args: DeleteContentTypeArgs, context?: unknown) => {
+        deleteContentType: withPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async (_parent: unknown, args: DeleteContentTypeArgs, context?: unknown) => {
             const id = parseId(args.id);
 
             if (args.dryRun) {
@@ -629,18 +662,19 @@ export const resolvers = {
                 id: deleted.id,
                 message: `Content type '${deleted.name}' deleted successfully`
             };
-        },
+        }),
 
-        createContentItem: async (_parent: unknown, args: CreateContentItemArgs, context?: unknown) => {
+        createContentItem: withPolicy('content.write', () => ({ type: 'system' }), async (_parent: unknown, args: CreateContentItemArgs, context?: unknown) => {
             const contentTypeId = parseId(args.contentTypeId, 'contentTypeId');
             const status = args.status || 'draft';
             const now = new Date();
+            const dataStr = typeof args.data === 'string' ? args.data : JSON.stringify(args.data);
             const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, contentTypeId));
             if (!contentType) {
                 throw notFoundContentTypeError(contentTypeId);
             }
 
-            const contentFailure = validateContentDataAgainstSchema(contentType.schema, args.data);
+            const contentFailure = validateContentDataAgainstSchema(contentType.schema, dataStr);
             if (contentFailure) {
                 throw toErrorFromValidation(contentFailure);
             }
@@ -649,7 +683,7 @@ export const resolvers = {
                 return {
                     id: 0,
                     contentTypeId,
-                    data: args.data,
+                    data: dataStr,
                     status,
                     version: 1,
                     createdAt: now,
@@ -659,15 +693,15 @@ export const resolvers = {
 
             const [newItem] = await db.insert(contentItems).values({
                 contentTypeId,
-                data: args.data,
+                data: dataStr,
                 status
             }).returning();
 
             await logAudit('create', 'content_item', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
-        },
+        }),
 
-        createContentItemsBatch: async (_parent: unknown, args: BatchCreateContentItemsArgs, context?: unknown) => {
+        createContentItemsBatch: withPolicy('content.write', () => ({ type: 'batch' }), async (_parent: unknown, args: BatchCreateContentItemsArgs, context?: unknown) => {
             const isAtomic = args.atomic === true;
             if (args.items.length === 0) {
                 throw toError(
@@ -679,7 +713,7 @@ export const resolvers = {
 
             const normalizedItems = args.items.map((item) => ({
                 contentTypeId: parseId(item.contentTypeId, 'contentTypeId'),
-                data: item.data,
+                data: typeof item.data === 'string' ? item.data : JSON.stringify(item.data),
                 status: item.status
             }));
 
@@ -811,14 +845,15 @@ export const resolvers = {
                 atomic: false,
                 results
             };
-        },
+        }),
 
-        updateContentItem: async (_parent: unknown, args: UpdateContentItemArgs, context?: unknown) => {
+        updateContentItem: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, args: UpdateContentItemArgs, context?: unknown) => {
             const id = parseId(args.id);
             const contentTypeId = parseOptionalId(args.contentTypeId, 'contentTypeId');
+            const dataStr = args.data ? (typeof args.data === 'string' ? args.data : JSON.stringify(args.data)) : undefined;
             const updateData = stripUndefined({
                 contentTypeId,
-                data: args.data,
+                data: dataStr,
                 status: args.status
             });
 
@@ -881,9 +916,9 @@ export const resolvers = {
 
             await logAudit('update', 'content_item', result.id, updateData, toActorId(context), toRequestId(context));
             return result;
-        },
+        }),
 
-        updateContentItemsBatch: async (_parent: unknown, args: BatchUpdateContentItemsArgs, context?: unknown) => {
+        updateContentItemsBatch: withPolicy('content.write', () => ({ type: 'batch' }), async (_parent: unknown, args: BatchUpdateContentItemsArgs, context?: unknown) => {
             const isAtomic = args.atomic === true;
             if (args.items.length === 0) {
                 throw toError(
@@ -1055,9 +1090,9 @@ export const resolvers = {
                 atomic: false,
                 results
             };
-        },
+        }),
 
-        deleteContentItem: async (_parent: unknown, args: DeleteContentItemArgs, context?: unknown) => {
+        deleteContentItem: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, args: DeleteContentItemArgs, context?: unknown) => {
             const id = parseId(args.id);
 
             if (args.dryRun) {
@@ -1086,9 +1121,9 @@ export const resolvers = {
                 id: deleted.id,
                 message: `Content item ${deleted.id} deleted successfully`
             };
-        },
+        }),
 
-        deleteContentItemsBatch: async (_parent: unknown, args: BatchDeleteContentItemsArgs, context?: unknown) => {
+        deleteContentItemsBatch: withPolicy('content.write', () => ({ type: 'batch' }), async (_parent: unknown, args: BatchDeleteContentItemsArgs, context?: unknown) => {
             const isAtomic = args.atomic === true;
             if (args.ids.length === 0) {
                 throw toError(
@@ -1191,9 +1226,9 @@ export const resolvers = {
                 atomic: false,
                 results
             };
-        },
+        }),
 
-        createWebhook: async (_parent: unknown, args: CreateWebhookArgs, context?: unknown) => {
+        createWebhook: withPolicy('webhook.write', () => ({ type: 'system' }), async (_parent: unknown, args: CreateWebhookArgs, context?: unknown) => {
             if (!isValidUrl(args.url)) {
                 throw toError(
                     'Invalid webhook URL',
@@ -1236,9 +1271,9 @@ export const resolvers = {
                 active: created.active,
                 createdAt: created.createdAt
             };
-        },
+        }),
 
-        updateWebhook: async (_parent: unknown, args: UpdateWebhookArgs, context?: unknown) => {
+        updateWebhook: withPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, args: UpdateWebhookArgs, context?: unknown) => {
             const id = parseId(args.id);
             const updateData = stripUndefined({
                 url: args.url,
@@ -1303,9 +1338,9 @@ export const resolvers = {
                 active: updated.active,
                 createdAt: updated.createdAt
             };
-        },
+        }),
 
-        deleteWebhook: async (_parent: unknown, args: DeleteWebhookArgs, context?: unknown) => {
+        deleteWebhook: withPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, args: DeleteWebhookArgs, context?: unknown) => {
             const id = parseId(args.id);
             const existing = await getWebhookById(id);
             if (!existing) {
@@ -1330,9 +1365,9 @@ export const resolvers = {
                 id: existing.id,
                 message: `Webhook ${id} deleted successfully`
             };
-        },
+        }),
 
-        rollbackContentItem: async (_parent: unknown, args: RollbackContentItemArgs, context?: unknown) => {
+        rollbackContentItem: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, args: RollbackContentItemArgs, context?: unknown) => {
             const id = parseId(args.id);
             const targetVersion = args.version;
             const [currentItem] = await db.select().from(contentItems).where(eq(contentItems.id, id));
@@ -1423,6 +1458,16 @@ export const resolvers = {
 
                 throw error;
             }
-        }
+        }),
+
+        policyEvaluate: withPolicy('policy.read', () => ({ type: 'system' }), async (_parent: unknown, { operation, resource }: { operation: string, resource: { type: string, id?: string, contentTypeId?: string } }, context?: unknown) => {
+            const operationContext = buildOperationContext(
+                'graphql',
+                (context as any)?.authPrincipal,
+                operation,
+                resource
+            );
+            return PolicyEngine.evaluate(operationContext);
+        })
     }
 };

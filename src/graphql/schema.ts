@@ -1,4 +1,6 @@
 export const schema = `
+  scalar JSON
+
   """A reusable content schema definition used to validate content items."""
   type ContentType {
     """Stable numeric identifier."""
@@ -10,7 +12,7 @@ export const schema = `
     """Optional description for operators and agents."""
     description: String
     """JSON schema string that validates content payloads."""
-    schema: String!
+    schema: JSON!
     """Creation timestamp (ISO-8601)."""
     createdAt: String
     """Last update timestamp (ISO-8601)."""
@@ -24,7 +26,7 @@ export const schema = `
     """Owning content type identifier."""
     contentTypeId: ID!
     """JSON payload stored as a string."""
-    data: String!
+    data: JSON!
     """Lifecycle status."""
     status: String!
     """Monotonic version number."""
@@ -44,7 +46,7 @@ export const schema = `
     """Version number of the historical snapshot."""
     version: Int!
     """Historical JSON payload as a string."""
-    data: String!
+    data: JSON!
     """Historical status value."""
     status: String!
     """Snapshot timestamp (ISO-8601)."""
@@ -62,7 +64,7 @@ export const schema = `
     """Target entity identifier."""
     entityId: ID!
     """Optional serialized details payload."""
-    details: String
+    details: JSON
     """Event timestamp (ISO-8601)."""
     createdAt: String
   }
@@ -82,7 +84,7 @@ export const schema = `
     """The actor UUID/ID if authenticated."""
     actorId: String
     """JSON details of the request."""
-    details: String
+    details: JSON
     """Creation timestamp (ISO-8601)."""
     createdAt: String
   }
@@ -124,7 +126,7 @@ export const schema = `
     """Target content type identifier."""
     contentTypeId: ID!
     """JSON payload as string."""
-    data: String!
+    data: JSON!
     """Optional content status."""
     status: String
   }
@@ -136,7 +138,7 @@ export const schema = `
     """Optional replacement content type identifier."""
     contentTypeId: ID
     """Optional replacement JSON payload as string."""
-    data: String
+    data: JSON
     """Optional replacement status."""
     status: String
   }
@@ -195,13 +197,27 @@ export const schema = `
     webhook(id: ID!): Webhook
   }
 
+  type PolicyDecision {
+    outcome: String!
+    code: String!
+    remediation: String
+    metadata: JSON
+    policyVersion: String!
+  }
+
+  input ResourceInput {
+    type: String!
+    id: String
+    contentTypeId: String
+  }
+
   type Mutation {
     """Create a content type."""
     createContentType(
       name: String!,
       slug: String!,
       description: String,
-      schema: String!,
+      schema: JSON!,
       dryRun: Boolean = false
     ): ContentType!
     """Update a content type."""
@@ -210,7 +226,7 @@ export const schema = `
       name: String,
       slug: String,
       description: String,
-      schema: String,
+      schema: JSON,
       dryRun: Boolean = false
     ): ContentType!
     """Delete a content type."""
@@ -218,7 +234,7 @@ export const schema = `
     """Create a single content item."""
     createContentItem(
       contentTypeId: ID!,
-      data: String!,
+      data: JSON!,
       status: String,
       dryRun: Boolean = false
     ): ContentItem!
@@ -232,7 +248,7 @@ export const schema = `
     updateContentItem(
       id: ID!,
       contentTypeId: ID,
-      data: String,
+      data: JSON,
       status: String,
       dryRun: Boolean = false
     ): ContentItem!
@@ -265,5 +281,7 @@ export const schema = `
     deleteWebhook(id: ID!): DeleteResult!
     """Rollback a content item to a previous version."""
     rollbackContentItem(id: ID!, version: Int!, dryRun: Boolean = false): RollbackResult!
+    """Evaluate a policy decision without side effects."""
+    policyEvaluate(operation: String!, resource: ResourceInput!): PolicyDecision!
   }
 `;

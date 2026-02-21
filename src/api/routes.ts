@@ -8,9 +8,11 @@ import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } 
 import { logAudit } from '../services/audit.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
-import { authorizeApiRequest } from './auth.js';
+import { authenticateApiRequest } from './auth.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
+import { PolicyEngine } from '../services/policy.js';
+import { buildOperationContext, resolveRestOperation, resolveRestResource } from '../services/policy-adapters.js';
 import { l402Middleware } from '../middleware/l402.js';
 import { MockPaymentProvider } from '../services/mock-payment-provider.js';
 
@@ -174,28 +176,48 @@ function isValidUrl(url: string): boolean {
 
 export default async function apiRoutes(server: FastifyInstance) {
     server.addHook('preHandler', async (request, reply) => {
+        let principal: { keyId: number | string; scopes: Set<string>; source: string } | null = null;
         try {
             await request.jwtVerify({ onlyCookie: true });
             const user = request.user as { sub: number, role: string };
             if (user && user.role === 'supervisor') {
-                (request as any).authPrincipal = {
+                principal = {
                     keyId: `supervisor:${user.sub}`,
                     scopes: new Set(['admin']),
                     source: 'cookie'
                 };
-                return undefined; // Bypass further auth checks
             }
         } catch {
             // Ignore JWT errors, fallback to normal api key auth
         }
 
         const path = request.url.split('?')[0];
-        const auth = await authorizeApiRequest(request.method, path, request.headers);
-        if (!auth.ok) {
-            return reply.status(auth.statusCode).send(auth.payload);
+
+        if (!principal) {
+            const auth = await authenticateApiRequest(request.headers);
+            if (!auth.ok) {
+                return reply.status(auth.statusCode).send(auth.payload);
+            }
+            principal = auth.principal as { keyId: number | string; scopes: Set<string>; source: string };
         }
 
-        (request as { authPrincipal?: { keyId: number | string; scopes: Set<string>; source: string } }).authPrincipal = auth.principal;
+        (request as any).authPrincipal = principal;
+
+        const operationContext = buildOperationContext(
+            'rest',
+            principal,
+            resolveRestOperation(request.method, path),
+            resolveRestResource(path)
+        );
+
+        const decision = await PolicyEngine.evaluate(operationContext);
+        if (decision.outcome !== 'allow') {
+            return reply.status(403).send(toErrorPayload(
+                'Access Denied by Policy',
+                decision.code,
+                decision.remediation || 'Contact administrator.'
+            ));
+        }
 
         return undefined;
     });
@@ -419,6 +441,40 @@ export default async function apiRoutes(server: FastifyInstance) {
                 1
             )
         };
+    });
+
+    server.post('/policy/evaluate', {
+        schema: {
+            body: Type.Object({
+                operation: Type.String(),
+                resource: Type.Object({
+                    type: Type.String(),
+                    id: Type.Optional(Type.String()),
+                    contentTypeId: Type.Optional(Type.String())
+                })
+            }),
+            response: {
+                200: Type.Object({
+                    outcome: Type.String(),
+                    code: Type.String(),
+                    remediation: Type.Optional(Type.String()),
+                    metadata: Type.Optional(Type.Record(Type.String(), Type.Any())),
+                    policyVersion: Type.String()
+                })
+            }
+        }
+    }, async (request) => {
+        const body = request.body as { operation: string; resource: { type: string; id?: string; contentTypeId?: string } };
+
+        const operationContext = buildOperationContext(
+            'rest',
+            (request as any).authPrincipal,
+            body.operation,
+            body.resource
+        );
+
+        const decision = await PolicyEngine.evaluate(operationContext);
+        return decision;
     });
 
     server.post('/webhooks', {
@@ -812,7 +868,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 name: Type.String(),
                 slug: Type.String(),
                 description: Type.Optional(Type.String()),
-                schema: Type.String(),
+                schema: Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })]),
                 basePrice: Type.Optional(Type.Number()),
             }),
             response: {
@@ -833,7 +889,9 @@ export default async function apiRoutes(server: FastifyInstance) {
         },
     }, async (request, reply) => {
         const { mode } = request.query as DryRunQueryType;
-        const data = request.body as typeof contentTypes.$inferInsert;
+        const rawBody = request.body as any;
+        const schemaStr = typeof rawBody.schema === 'string' ? rawBody.schema : JSON.stringify(rawBody.schema);
+        const data = { ...rawBody, schema: schemaStr } as typeof contentTypes.$inferInsert;
         const schemaFailure = validateContentTypeSchema(data.schema);
 
         if (schemaFailure) {
@@ -965,7 +1023,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 name: Type.Optional(Type.String()),
                 slug: Type.Optional(Type.String()),
                 description: Type.Optional(Type.String()),
-                schema: Type.Optional(Type.String()),
+                schema: Type.Optional(Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })])),
                 basePrice: Type.Optional(Type.Number()),
             }),
             response: {
@@ -986,7 +1044,11 @@ export default async function apiRoutes(server: FastifyInstance) {
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
         const { mode } = request.query as DryRunQueryType;
-        const payload = request.body as ContentTypeUpdate;
+        const rawPayload = request.body as any;
+        if (rawPayload.schema && typeof rawPayload.schema !== 'string') {
+            rawPayload.schema = JSON.stringify(rawPayload.schema);
+        }
+        const payload = rawPayload as ContentTypeUpdate;
         const updateData = stripUndefined(payload);
 
         if (!hasDefinedValues(payload)) {
@@ -1140,38 +1202,27 @@ export default async function apiRoutes(server: FastifyInstance) {
     const globalL402Middleware = l402Middleware({
         provider: mockPaymentProvider, // In production, this would be a real node instead of mock.
         secretKey: l402Secret,
-        getPrice: async (req) => {
+        getPrice: async (context) => {
             let totalBasePrice = 0;
+            let cType = context.contentTypeId;
 
-            if (Array.isArray(req.body)) {
-                for (const item of req.body) {
-                    if (item.contentTypeId) {
-                        const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
-                        if (contentType && contentType.basePrice) totalBasePrice += contentType.basePrice;
-                    }
-                }
-            } else if (req.body && typeof req.body === 'object') {
-                const body = req.body as any;
-                let cType = body.contentTypeId;
-                if (!cType && req.params && (req.params as any).id) {
-                    const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, Number((req.params as any).id)));
-                    if (existing) cType = existing.contentTypeId;
-                }
-                if (cType) {
-                    const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, cType));
-                    if (contentType && contentType.basePrice) totalBasePrice += contentType.basePrice;
+            if (!cType && context.resourceId) {
+                const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, context.resourceId));
+                if (existing) cType = existing.contentTypeId;
+            }
+
+            if (cType) {
+                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, cType));
+                if (contentType && contentType.basePrice) {
+                    totalBasePrice += contentType.basePrice * (context.batchSize || 1);
                 }
             }
 
             if (totalBasePrice <= 0) return 0;
 
-            const proposedPriceHeader = req.headers['x-proposed-price'];
-            let proposedPrice = 0;
-            if (typeof proposedPriceHeader === 'string') {
-                proposedPrice = parseInt(proposedPriceHeader, 10);
-            }
-
+            const proposedPrice = context.proposedPrice || 0;
             const maxCap = totalBasePrice * 10;
+
             if (Number.isFinite(proposedPrice) && proposedPrice > totalBasePrice && proposedPrice <= maxCap) {
                 return proposedPrice;
             } else if (Number.isFinite(proposedPrice) && proposedPrice > maxCap) {
@@ -1180,7 +1231,7 @@ export default async function apiRoutes(server: FastifyInstance) {
 
             return totalBasePrice;
         },
-        onInvoiceCreated: async (invoice, req, amountSatoshis) => {
+        onInvoiceCreated: async (invoice: any, req: any, amountSatoshis: any) => {
             const principal = (req as any).authPrincipal;
             const actorId = principal ? String(principal.keyId) : null;
             const { authorization, cookie, 'x-api-key': _, ...safeHeaders } = req.headers as any;
@@ -1199,17 +1250,17 @@ export default async function apiRoutes(server: FastifyInstance) {
                 details
             });
         },
-        onPaymentVerified: async (paymentHash, req) => {
+        onPaymentVerified: async (paymentHash: string, req: any) => {
             await db.update(payments)
                 .set({ status: 'paid', updatedAt: new Date() })
                 .where(eq(payments.paymentHash, paymentHash));
         },
-        onPaymentConsumed: async (paymentHash, req) => {
+        onPaymentConsumed: async (paymentHash: string, req: any) => {
             await db.update(payments)
                 .set({ status: 'consumed', updatedAt: new Date() })
                 .where(eq(payments.paymentHash, paymentHash));
         },
-        getPaymentStatus: async (paymentHash, req) => {
+        getPaymentStatus: async (paymentHash: string, req: any) => {
             const [payment] = await db.select().from(payments).where(eq(payments.paymentHash, paymentHash));
             return (payment?.status as 'pending' | 'paid' | 'consumed') || 'pending';
         }
@@ -1221,7 +1272,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             querystring: DryRunQuery,
             body: Type.Object({
                 contentTypeId: Type.Number(),
-                data: Type.String(),
+                data: Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })]),
                 status: Type.Optional(Type.String()),
             }),
             response: {
@@ -1241,8 +1292,11 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         },
     }, async (request, reply) => {
+        reply.header('Deprecation', 'true');
         const { mode } = request.query as DryRunQueryType;
-        const data = request.body as typeof contentItems.$inferInsert;
+        const rawBody = request.body as any;
+        const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
+        const data = { ...rawBody, data: dataStr } as typeof contentItems.$inferInsert;
         const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, data.contentTypeId));
 
         if (!contentType) {
@@ -1260,6 +1314,85 @@ export default async function apiRoutes(server: FastifyInstance) {
                 meta: buildMeta(
                     'Execute creation of content item',
                     ['POST /api/content-items'],
+                    'medium',
+                    0,
+                    true
+                )
+            });
+        }
+
+        const [newItem] = await db.insert(contentItems).values(data).returning();
+        await logAudit(
+            'create',
+            'content_item',
+            newItem.id,
+            newItem,
+            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            request.id
+        );
+
+        return reply.status(201).send({
+            data: newItem,
+            meta: buildMeta(
+                `Review or publish content item ${newItem.id}`,
+                ['GET /api/content-items/:id', 'PUT /api/content-items/:id'],
+                'medium',
+                1
+            )
+        });
+    });
+
+    server.post('/content-types/:contentTypeId/items', {
+        preHandler: globalL402Middleware,
+        schema: {
+            querystring: DryRunQuery,
+            params: Type.Object({
+                contentTypeId: Type.Number(),
+            }),
+            body: Type.Object({
+                data: Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })]),
+                status: Type.Optional(Type.String()),
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    contentTypeId: Type.Number(),
+                    version: Type.Number()
+                })),
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    contentTypeId: Type.Number(),
+                    version: Type.Number()
+                })),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                402: Type.Any()
+            }
+        },
+    }, async (request, reply) => {
+        const { mode } = request.query as DryRunQueryType;
+        const params = request.params as { contentTypeId: number };
+        const rawBody = request.body as any;
+        const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
+        const data = { ...rawBody, data: dataStr, contentTypeId: params.contentTypeId } as typeof contentItems.$inferInsert;
+
+        const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, data.contentTypeId));
+
+        if (!contentType) {
+            return reply.status(404).send(notFoundContentType(data.contentTypeId));
+        }
+
+        const contentValidation = validateContentDataAgainstSchema(contentType.schema, data.data);
+        if (contentValidation) {
+            return reply.status(400).send(fromValidationFailure(contentValidation));
+        }
+
+        if (isDryRun(mode)) {
+            return reply.status(200).send({
+                data: { ...data, id: 0, version: 1 },
+                meta: buildMeta(
+                    'Execute creation of content item',
+                    [`POST /api/content-types/${data.contentTypeId}/items`],
                     'medium',
                     0,
                     true
@@ -1418,7 +1551,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }),
             body: Type.Object({
                 contentTypeId: Type.Optional(Type.Number()),
-                data: Type.Optional(Type.String()),
+                data: Type.Optional(Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })])),
                 status: Type.Optional(Type.String()),
             }),
             response: {
@@ -1438,7 +1571,11 @@ export default async function apiRoutes(server: FastifyInstance) {
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
         const { mode } = request.query as DryRunQueryType;
-        const payload = request.body as ContentItemUpdate;
+        const rawPayload = request.body as any;
+        if (rawPayload.data && typeof rawPayload.data !== 'string') {
+            rawPayload.data = JSON.stringify(rawPayload.data);
+        }
+        const payload = rawPayload as ContentItemUpdate;
         const updateData = stripUndefined(payload);
 
         if (!hasDefinedValues(payload)) {

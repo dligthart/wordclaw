@@ -214,3 +214,39 @@ export async function authorizeApiRequest(method: string, routePath: string, hea
         principal: resolved
     };
 }
+
+export async function authenticateApiRequest(headers: IncomingHttpHeaders): Promise<AuthResult> {
+    const configuredKeys = parseApiKeyConfig(process.env[ENV_API_KEYS]);
+    const key = getApiKey(headers);
+    const mustAuthenticate = isAuthRequired();
+
+    if (!key) {
+        if (mustAuthenticate) {
+            return authError(
+                401,
+                'Missing API key',
+                'AUTH_MISSING_API_KEY',
+                `Provide ${HEADER_API_KEY} header or Authorization: Bearer <key>.`
+            );
+        }
+
+        return {
+            ok: true,
+            principal: {
+                keyId: 'anonymous',
+                scopes: new Set(['admin']),
+                source: 'anonymous'
+            }
+        };
+    }
+
+    const resolved = await resolvePrincipalFromKey(key, configuredKeys);
+    if (isAuthFailure(resolved)) {
+        return resolved;
+    }
+
+    return {
+        ok: true,
+        principal: resolved
+    };
+}

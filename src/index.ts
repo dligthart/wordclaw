@@ -15,7 +15,9 @@ import fastifyCookie from '@fastify/cookie';
 import apiRoutes from './api/routes.js';
 import { supervisorAuthRoutes } from './api/supervisor-auth.js';
 import { supervisorDashboardRoutes } from './api/supervisor-dashboard.js';
-import { authorizeApiRequest } from './api/auth.js';
+import { authenticateApiRequest } from './api/auth.js';
+import { PolicyEngine } from './services/policy.js';
+import { buildOperationContext, resolveRestOperation, resolveRestResource } from './services/policy-adapters.js';
 import { errorHandler } from './api/error-handler.js';
 import { db } from './db/index.js';
 import { resolvers } from './graphql/resolvers.js';
@@ -130,7 +132,7 @@ server.register(mercurius, {
     graphiql: true,
     path: '/graphql',
     context: async (request) => {
-        const auth = await authorizeApiRequest(request.method, '/graphql', request.headers);
+        const auth = await authenticateApiRequest(request.headers);
         if (!auth.ok) {
             const err = new Error(auth.payload.error) as any;
             err.statusCode = auth.payload.code === 'AUTH_MISSING_API_KEY' ? 401 : 403;
@@ -187,10 +189,24 @@ server.addHook('onSend', async (request, reply, payload) => {
 
 server.get('/ws/events', { websocket: true }, (connection, request) => {
     void (async () => {
-        const auth = await authorizeApiRequest('GET', '/ws/events', request.headers);
+        const auth = await authenticateApiRequest(request.headers);
         if (!auth.ok) {
             connection.socket.send(JSON.stringify(auth.payload));
             connection.socket.close(1008, 'Unauthorized');
+            return;
+        }
+
+        const operationContext = buildOperationContext(
+            'rest',
+            auth.principal as any,
+            'audit.read',
+            { type: 'system' }
+        );
+
+        const decision = await PolicyEngine.evaluate(operationContext);
+        if (decision.outcome !== 'allow') {
+            connection.socket.send(JSON.stringify(decision));
+            connection.socket.close(1008, 'Access Denied');
             return;
         }
 

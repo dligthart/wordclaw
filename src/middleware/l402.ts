@@ -7,9 +7,18 @@ import { PaymentProvider, Invoice } from '../interfaces/payment-provider.js';
 // A real implementation would use 'macaroons.js' or similar.
 // For the purpose of the MVP/Phase 6, we implement the L402 protocol flow using signed JWTs or HMAC tokens.
 
+export interface PricingContext {
+  resourceType: string;
+  operation: string;
+  contentTypeId?: number;
+  resourceId?: number;
+  batchSize?: number;
+  proposedPrice?: number;
+}
+
 export interface L402Options {
   provider: PaymentProvider;
-  getPrice: (req: FastifyRequest) => Promise<number | null>; // Return null or 0 to bypass L402
+  getPrice: (context: PricingContext) => Promise<number | null>; // Return null or 0 to bypass L402
   secretKey: string; // Used to sign the macaroon/token
   onInvoiceCreated?: (invoice: Invoice, request: FastifyRequest, amountSatoshis: number) => Promise<void>;
   onPaymentVerified?: (paymentHash: string, request: FastifyRequest) => Promise<void>;
@@ -54,8 +63,53 @@ function verifyToken(token: string, secret: string): string | null {
 export function l402Middleware(options: L402Options) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
 
+    // Abstract Fastify request into Protocol-agnostic PricingContext
+    let contentTypeId: number | undefined;
+    let resourceId: number | undefined;
+    let batchSize = 1;
+    let proposedPrice: number | undefined;
+
+    const proposedPriceHeader = request.headers['x-proposed-price'];
+    if (typeof proposedPriceHeader === 'string') {
+      proposedPrice = parseInt(proposedPriceHeader, 10);
+    }
+
+    if (request.body) {
+      if (Array.isArray(request.body)) {
+        batchSize = request.body.length;
+        if (batchSize > 0 && request.body[0].contentTypeId) {
+          contentTypeId = Number(request.body[0].contentTypeId);
+        }
+      } else if (typeof request.body === 'object') {
+        const body = request.body as any;
+        if (body.contentTypeId) {
+          contentTypeId = Number(body.contentTypeId);
+        }
+      }
+    }
+
+    if (request.params) {
+      const params = request.params as any;
+      if (params.contentTypeId) contentTypeId = Number(params.contentTypeId);
+      if (params.id) resourceId = Number(params.id);
+    }
+
+    let operation = 'read';
+    if (request.method === 'POST') operation = 'create';
+    if (request.method === 'PUT' || request.method === 'PATCH') operation = 'update';
+    if (request.method === 'DELETE') operation = 'delete';
+
+    const context: PricingContext = {
+      resourceType: request.url.includes('content-items') ? 'content-item' : 'unknown',
+      operation,
+      contentTypeId,
+      resourceId,
+      batchSize,
+      proposedPrice
+    };
+
     // First, determine if we even need to challenge this request.
-    const requiredPrice = await options.getPrice(request);
+    const requiredPrice = await options.getPrice(context);
 
     // If getting the price returns null or 0, it means L402 is disabled or not applicable
     // for this specific resource/user, so proceed without challenging.

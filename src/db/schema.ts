@@ -94,3 +94,22 @@ export const payments = pgTable('payments', {
         paymentCreatedAtIdx: index('payment_created_at_idx').on(table.createdAt)
     };
 });
+
+export const policyDecisionLogs = pgTable('policy_decision_logs', {
+    id: serial('id').primaryKey(),
+    principalId: text('principal_id'),
+    operation: text('operation').notNull(),
+    resourceType: text('resource_type').notNull(),
+    resourceId: text('resource_id'),
+    environment: text('environment').notNull(), // 'rest', 'graphql', 'mcp'
+    outcome: text('outcome').notNull(), // 'allow', 'deny', 'challenge'
+    remediation: text('remediation'),
+    policyVersion: text('policy_version').notNull(),
+    evaluationDurationMs: integer('evaluation_duration_ms').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        policyOutcomeIdx: index('policy_outcome_idx').on(table.outcome),
+        policyCreatedAtIdx: index('policy_created_at_idx').on(table.createdAt)
+    };
+});

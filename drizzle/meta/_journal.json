@@ -64,6 +64,13 @@
       "when": 1771616082457,
       "tag": "0008_solid_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1771704604741,
+      "tag": "0009_bouncy_pretty_boy",
+      "breakpoints": true
     }
   ]
 }
