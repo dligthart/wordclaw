@@ -1694,6 +1694,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     });
 
     server.delete('/content-items/:id', {
+        preHandler: globalL402Middleware,
         schema: {
             querystring: DryRunQuery,
             params: Type.Object({
