@@ -1,6 +1,7 @@
 <script lang="ts">
     import { fetchApi } from "$lib/api";
     import { onMount } from "svelte";
+    import { feedbackStore } from "$lib/ui-feedback.svelte";
 
     type ContentType = {
         id: number;
@@ -14,7 +15,6 @@
     let types = $state<ContentType[]>([]);
     let selectedType = $state<ContentType | null>(null);
     let loading = $state(true);
-    let error = $state<string | null>(null);
 
     // Editor State
     let isCreating = $state(false);
@@ -52,12 +52,15 @@
 
     async function loadTypes() {
         loading = true;
-        error = null;
         try {
             const res = await fetchApi("/content-types");
             types = res.data;
         } catch (err: any) {
-            error = err.message || "Failed to load content types";
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Failed to load content types",
+                message: err.message || "An error occurred.",
+            });
         } finally {
             loading = false;
         }
@@ -109,7 +112,6 @@
 
     async function saveType() {
         schemaError = null;
-        error = null;
 
         let schemaObj;
         try {
@@ -150,10 +152,19 @@
                 await loadTypes();
                 selectType(types.find((t) => t.id === res.data.id)!);
             }
+            feedbackStore.pushToast({
+                severity: "success",
+                title: "Success",
+                message: `Content model successfully ${isCreating ? "created" : "updated"}.`,
+            });
         } catch (err: any) {
-            error =
-                err.message ||
-                `Failed to ${isCreating ? "create" : "update"} content type`;
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Save Failed",
+                message:
+                    err.message ||
+                    `Failed to ${isCreating ? "create" : "update"} content type`,
+            });
         }
     }
 
@@ -236,14 +247,6 @@
             New Content Model
         </button>
     </div>
-
-    {#if error}
-        <div
-            class="bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 mb-6 rounded shadow-sm"
-        >
-            <p class="text-sm text-red-700 dark:text-red-400">{error}</p>
-        </div>
-    {/if}
 
     <div class="flex-1 flex gap-6 overflow-hidden">
         <!-- Types List Sidebar -->

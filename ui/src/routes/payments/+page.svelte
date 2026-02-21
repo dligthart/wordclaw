@@ -1,20 +1,21 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { fetchApi } from "$lib/api";
+    import DataTable from "$lib/components/DataTable.svelte";
 
     let payments = $state<any[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
-    let expandedRows = $state<Set<number>>(new Set());
 
-    function toggleRow(id: number) {
-        if (expandedRows.has(id)) {
-            expandedRows.delete(id);
-        } else {
-            expandedRows.add(id);
-        }
-        expandedRows = new Set(expandedRows);
-    }
+    const columns = [
+        { key: "_expand", label: "", width: "40px" },
+        { key: "id", label: "ID", sortable: true },
+        { key: "actorId", label: "Actor" },
+        { key: "amountSatoshis", label: "Amount (Sats)" },
+        { key: "status", label: "Status", sortable: true },
+        { key: "resourcePath", label: "Resource Path" },
+        { key: "createdAt", label: "Created At", sortable: true },
+    ];
 
     async function loadPayments() {
         loading = true;
@@ -85,181 +86,92 @@
                         </p>
                     </div>
                 {:else}
-                    <div
-                        class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg"
+                    <DataTable
+                        {columns}
+                        data={payments}
+                        keyField="id"
+                        expandable={true}
                     >
-                        <table
-                            class="min-w-full divide-y divide-gray-300 dark:divide-gray-700"
-                        >
-                            <thead class="bg-gray-50 dark:bg-gray-800">
-                                <tr>
-                                    <th scope="col" class="w-10 px-6 py-3"></th>
-                                    <th
-                                        scope="col"
-                                        class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6"
-                                        >ID</th
-                                    >
-                                    <th
-                                        scope="col"
-                                        class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"
-                                        >Actor</th
-                                    >
-                                    <th
-                                        scope="col"
-                                        class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"
-                                        >Amount (Sats)</th
-                                    >
-                                    <th
-                                        scope="col"
-                                        class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"
-                                        >Status</th
-                                    >
-                                    <th
-                                        scope="col"
-                                        class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"
-                                        >Resource Path</th
-                                    >
-                                    <th
-                                        scope="col"
-                                        class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white"
-                                        >Created At</th
-                                    >
-                                </tr>
-                            </thead>
-                            <tbody
-                                class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900"
-                            >
-                                {#each payments as p}
-                                    <tr
-                                        class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                                        onclick={() => toggleRow(p.id)}
-                                    >
-                                        <td
-                                            class="px-6 py-4 whitespace-nowrap text-gray-400"
+                        <svelte:fragment slot="cell" let:row let:column>
+                            {#if column.key === "id"}
+                                <span
+                                    class="font-medium text-gray-900 dark:text-white"
+                                    >{row.id}</span
+                                >
+                            {:else if column.key === "actorId"}
+                                <span class="font-mono">
+                                    {#if row.actorId}
+                                        {row.actorId}
+                                    {:else}
+                                        <span class="italic text-gray-400"
+                                            >Anonymous</span
                                         >
-                                            <svg
-                                                class="w-5 h-5 transform transition-transform {expandedRows.has(
-                                                    p.id,
-                                                )
-                                                    ? 'rotate-90 text-blue-500'
-                                                    : ''}"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                                ><path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    stroke-width="2"
-                                                    d="M9 5l7 7-7 7"
-                                                ></path></svg
-                                            >
-                                        </td>
-                                        <td
-                                            class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sm:pl-6"
-                                        >
-                                            {p.id}
-                                        </td>
-                                        <td
-                                            class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300 font-mono"
-                                        >
-                                            {#if p.actorId}
-                                                {p.actorId}
-                                            {:else}
-                                                <span
-                                                    class="italic text-gray-400"
-                                                    >Anonymous</span
-                                                >
-                                            {/if}
-                                        </td>
-                                        <td
-                                            class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300"
-                                        >
-                                            {p.amountSatoshis}
-                                        </td>
-                                        <td
-                                            class="whitespace-nowrap px-3 py-4 text-sm"
-                                        >
-                                            {#if p.status === "paid"}
-                                                <span
-                                                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                                >
-                                                    PAID
-                                                </span>
-                                            {:else}
-                                                <span
-                                                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-                                                >
-                                                    PENDING
-                                                </span>
-                                            {/if}
-                                        </td>
-                                        <td
-                                            class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300"
-                                        >
-                                            {p.resourcePath}
-                                        </td>
-                                        <td
-                                            class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-300"
-                                        >
-                                            {new Date(
-                                                p.createdAt,
-                                            ).toLocaleString()}
-                                        </td>
-                                    </tr>
-                                    {#if expandedRows.has(p.id)}
-                                        <tr
-                                            class="bg-gray-50 dark:bg-gray-800/50"
-                                        >
-                                            <td
-                                                colspan="7"
-                                                class="px-10 py-4 border-b border-gray-100 dark:border-gray-700"
-                                            >
-                                                {#if p.details}
-                                                    <div
-                                                        class="rounded-md bg-gray-900 overflow-hidden shadow-inner"
-                                                    >
-                                                        <div
-                                                            class="px-4 py-2 border-b border-gray-700 bg-gray-800 flex justify-between items-center text-xs text-gray-400 font-mono"
-                                                        >
-                                                            <span
-                                                                >Request Context</span
-                                                            >
-                                                        </div>
-                                                        <pre
-                                                            class="p-4 text-xs text-green-400 font-mono overflow-x-auto"><code
-                                                                >{JSON.stringify(
-                                                                    p.details,
-                                                                    null,
-                                                                    2,
-                                                                )}</code
-                                                            ></pre>
-                                                    </div>
-                                                {:else}
-                                                    <p
-                                                        class="text-sm text-gray-500 italic"
-                                                    >
-                                                        No detailed request
-                                                        context recorded.
-                                                    </p>
-                                                {/if}
-                                                <div
-                                                    class="mt-4 text-sm text-gray-500 dark:text-gray-400"
-                                                >
-                                                    <strong
-                                                        >Payment Hash:</strong
-                                                    >
-                                                    <span
-                                                        class="font-mono text-xs ml-2 bg-gray-200 dark:bg-gray-700 p-1 rounded"
-                                                        >{p.paymentHash}</span
-                                                    >
-                                                </div>
-                                            </td>
-                                        </tr>
                                     {/if}
-                                {/each}
-                            </tbody>
-                        </table>
-                    </div>
+                                </span>
+                            {:else if column.key === "amountSatoshis"}
+                                {row.amountSatoshis}
+                            {:else if column.key === "status"}
+                                {#if row.status === "paid"}
+                                    <span
+                                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                        >PAID</span
+                                    >
+                                {:else}
+                                    <span
+                                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                                        >PENDING</span
+                                    >
+                                {/if}
+                            {:else if column.key === "resourcePath"}
+                                <span class="text-gray-500 dark:text-gray-300"
+                                    >{row.resourcePath}</span
+                                >
+                            {:else if column.key === "createdAt"}
+                                <span class="text-gray-500 dark:text-gray-300"
+                                    >{new Date(
+                                        row.createdAt,
+                                    ).toLocaleString()}</span
+                                >
+                            {/if}
+                        </svelte:fragment>
+
+                        <svelte:fragment slot="expanded" let:row>
+                            <div class="px-10 py-4">
+                                {#if row.details}
+                                    <div
+                                        class="rounded-md bg-gray-900 overflow-hidden shadow-inner"
+                                    >
+                                        <div
+                                            class="px-4 py-2 border-b border-gray-700 bg-gray-800 flex justify-between items-center text-xs text-gray-400 font-mono"
+                                        >
+                                            <span>Request Context</span>
+                                        </div>
+                                        <pre
+                                            class="p-4 text-xs text-green-400 font-mono overflow-x-auto"><code
+                                                >{JSON.stringify(
+                                                    row.details,
+                                                    null,
+                                                    2,
+                                                )}</code
+                                            ></pre>
+                                    </div>
+                                {:else}
+                                    <p class="text-sm text-gray-500 italic">
+                                        No detailed request context recorded.
+                                    </p>
+                                {/if}
+                                <div
+                                    class="mt-4 text-sm text-gray-500 dark:text-gray-400"
+                                >
+                                    <strong>Payment Hash:</strong>
+                                    <span
+                                        class="font-mono text-xs ml-2 bg-gray-200 dark:bg-gray-700 p-1 rounded break-all"
+                                        >{row.paymentHash}</span
+                                    >
+                                </div>
+                            </div>
+                        </svelte:fragment>
+                    </DataTable>
                 {/if}
             </div>
         </div>

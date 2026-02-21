@@ -1,6 +1,7 @@
 <script lang="ts">
-    import { fetchApi } from "$lib/api";
+    import { fetchApi, ApiError } from "$lib/api";
     import { onMount } from "svelte";
+    import { feedbackStore } from "$lib/ui-feedback.svelte";
 
     type ContentType = {
         id: number;
@@ -79,23 +80,49 @@
 
     async function rollbackToVersion(version: number) {
         if (!selectedItem) return;
-        rollingBack = true;
-        try {
-            await fetchApi(`/content-items/${selectedItem.id}/rollback`, {
-                method: "POST",
-                body: JSON.stringify({ version }),
-            });
-            // Refresh
-            await selectType(selectedType!);
-            const refreshedItem = items.find((i) => i.id === selectedItem!.id);
-            if (refreshedItem) await selectItem(refreshedItem);
 
-            alert(`Successfully rolled back to version ${version}`);
-        } catch (err: any) {
-            alert(`Rollback failed: ${err.message}`);
-        } finally {
-            rollingBack = false;
-        }
+        feedbackStore.openConfirm({
+            title: "Rollback Content",
+            message: `Are you sure you want to rollback to version ${version}? This will become the active state for the content item.`,
+            confirmLabel: "Rollback",
+            confirmIntent: "danger",
+            onConfirm: async () => {
+                rollingBack = true;
+                try {
+                    await fetchApi(
+                        `/content-items/${selectedItem!.id}/rollback`,
+                        {
+                            method: "POST",
+                            body: JSON.stringify({ version }),
+                        },
+                    );
+
+                    const refreshedItem = items.find(
+                        (i) => i.id === selectedItem!.id,
+                    );
+                    await selectType(selectedType!);
+                    if (refreshedItem) await selectItem(refreshedItem);
+
+                    feedbackStore.pushToast({
+                        severity: "success",
+                        title: "Rollback Applied",
+                        message: `Successfully rolled back to version ${version}`,
+                    });
+                } catch (err: any) {
+                    const isApiError = err instanceof ApiError;
+                    feedbackStore.pushToast({
+                        severity: "error",
+                        title: "Rollback Failed",
+                        message: err.message || "An error occurred.",
+                        code: isApiError ? err.code : undefined,
+                        remediation: isApiError ? err.remediation : undefined,
+                    });
+                    throw err;
+                } finally {
+                    rollingBack = false;
+                }
+            },
+        });
     }
 </script>
 
@@ -121,10 +148,12 @@
         </div>
     {/if}
 
-    <div class="flex-1 flex gap-6 overflow-hidden">
+    <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
         <!-- Content Types Sidebar -->
         <div
-            class="w-1/4 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+            class="w-full md:w-1/4 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedType
+                ? 'hidden md:flex'
+                : 'flex'}"
         >
             <div
                 class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"
@@ -172,7 +201,11 @@
         </div>
 
         <!-- Content Items / Detail View -->
-        <div class="flex-1 flex gap-6 overflow-hidden">
+        <div
+            class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden {!selectedType
+                ? 'hidden md:flex'
+                : 'flex'}"
+        >
             {#if !selectedType}
                 <div
                     class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-400 italic text-sm"
@@ -183,17 +216,37 @@
                 <!-- Items List -->
                 <div
                     class="{selectedItem
-                        ? 'w-1/3'
+                        ? 'hidden md:flex md:w-1/3'
                         : 'w-full'} transition-all duration-300 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
                 >
                     <div
                         class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center"
                     >
-                        <h3
-                            class="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                        >
-                            Items in "{selectedType.name}"
-                        </h3>
+                        <div class="flex items-center gap-2">
+                            <button
+                                class="md:hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                aria-label="Back to models"
+                                onclick={() => (selectedType = null)}
+                            >
+                                <svg
+                                    class="w-5 h-5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    ><path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        stroke-width="2"
+                                        d="M15 19l-7-7 7-7"
+                                    ></path></svg
+                                >
+                            </button>
+                            <h3
+                                class="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider"
+                            >
+                                Items in "{selectedType.name}"
+                            </h3>
+                        </div>
                         <span
                             class="bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 py-0.5 px-2 rounded-full text-xs font-bold"
                             >{items.length}</span
@@ -272,7 +325,7 @@
                 <!-- Item Detail & Versions -->
                 {#if selectedItem}
                     <div
-                        class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden transition-all duration-300"
+                        class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden transition-all duration-300 w-full"
                     >
                         <!-- Top header -->
                         <div
@@ -280,6 +333,24 @@
                         >
                             <div>
                                 <div class="flex items-center gap-3">
+                                    <button
+                                        class="md:hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                        aria-label="Close detail"
+                                        onclick={() => (selectedItem = null)}
+                                    >
+                                        <svg
+                                            class="w-5 h-5"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                            ><path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                stroke-width="2"
+                                                d="M15 19l-7-7 7-7"
+                                            ></path></svg
+                                        >
+                                    </button>
                                     <h2
                                         class="text-lg font-bold text-gray-900 dark:text-white"
                                     >

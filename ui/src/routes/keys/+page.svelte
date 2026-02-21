@@ -1,6 +1,8 @@
 <script lang="ts">
-    import { fetchApi } from "$lib/api";
+    import { fetchApi, ApiError } from "$lib/api";
     import { onMount } from "svelte";
+    import DataTable from "$lib/components/DataTable.svelte";
+    import { feedbackStore } from "$lib/ui-feedback.svelte";
 
     type ApiKey = {
         id: number;
@@ -25,8 +27,13 @@
 
     let generatedKey = $state<{ name: string; apiKey: string } | null>(null);
 
-    let confirmRevokeId = $state<number | null>(null);
-    let confirmRotateId = $state<number | null>(null);
+    const columns = [
+        { key: "name", label: "Name", sortable: true },
+        { key: "keyPrefix", label: "Key Prefix" },
+        { key: "scopes", label: "Scopes" },
+        { key: "lastUsedAt", label: "Last Used", sortable: true },
+        { key: "actions", label: "", width: "100px" },
+    ];
 
     const availableScopes = [
         "content:read",
@@ -85,25 +92,72 @@
         }
     }
 
-    async function revokeKey(id: number) {
-        try {
-            await fetchApi(`/auth/keys/${id}`, { method: "DELETE" });
-            confirmRevokeId = null;
-            await loadKeys();
-        } catch (err: any) {
-            error = err.message || "Failed to revoke key";
-        }
+    function revokeKey(id: number) {
+        feedbackStore.openConfirm({
+            title: "Revoke API Key",
+            message:
+                "Are you sure you want to permanently revoke this API key? Any agents using this key will immediately lose access.",
+            confirmLabel: "Revoke Key",
+            confirmIntent: "danger",
+            onConfirm: async () => {
+                try {
+                    await fetchApi(`/auth/keys/${id}`, { method: "DELETE" });
+                    feedbackStore.pushToast({
+                        severity: "success",
+                        title: "Key Revoked",
+                        message: "The API key was successfully revoked.",
+                    });
+                    await loadKeys();
+                } catch (err: any) {
+                    const isApiError = err instanceof ApiError;
+                    feedbackStore.pushToast({
+                        severity: "error",
+                        title: "Failed to revoke key",
+                        message: err.message || "An error occurred.",
+                        code: isApiError ? err.code : undefined,
+                        remediation: isApiError ? err.remediation : undefined,
+                    });
+                    throw err;
+                }
+            },
+        });
     }
 
-    async function rotateKey(id: number) {
-        try {
-            const res = await fetchApi(`/auth/keys/${id}`, { method: "PUT" });
-            generatedKey = { name: "Rotated Key", apiKey: res.data.apiKey };
-            confirmRotateId = null;
-            await loadKeys();
-        } catch (err: any) {
-            error = err.message || "Failed to rotate key";
-        }
+    function rotateKey(id: number) {
+        feedbackStore.openConfirm({
+            title: "Rotate API Key",
+            message:
+                "Rotating this key will generate a new secret and invalidate the current one. Continue?",
+            confirmLabel: "Rotate Key",
+            confirmIntent: "primary",
+            onConfirm: async () => {
+                try {
+                    const res = await fetchApi(`/auth/keys/${id}`, {
+                        method: "PUT",
+                    });
+                    generatedKey = {
+                        name: "Rotated Key",
+                        apiKey: res.data.apiKey,
+                    };
+                    feedbackStore.pushToast({
+                        severity: "success",
+                        title: "Key Rotated",
+                        message: "A new key secret has been generated.",
+                    });
+                    await loadKeys();
+                } catch (err: any) {
+                    const isApiError = err instanceof ApiError;
+                    feedbackStore.pushToast({
+                        severity: "error",
+                        title: "Failed to rotate key",
+                        message: err.message || "An error occurred.",
+                        code: isApiError ? err.code : undefined,
+                        remediation: isApiError ? err.remediation : undefined,
+                    });
+                    throw err;
+                }
+            },
+        });
     }
 
     function formatDate(d: string | null) {
@@ -333,228 +387,114 @@
                 </p>
             </div>
         {:else}
-            <div class="overflow-x-auto flex-1">
-                <table
-                    class="min-w-full divide-y divide-gray-200 dark:divide-gray-700"
-                >
-                    <thead class="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Name</th
-                            >
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Key Prefix</th
-                            >
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Scopes</th
-                            >
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Last Used</th
-                            >
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Actions</th
-                            >
-                        </tr>
-                    </thead>
-                    <tbody
-                        class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700"
-                    >
-                        {#each keys as key}
-                            <tr
-                                class="hover:bg-gray-50 dark:hover:bg-gray-750 {key.revokedAt
-                                    ? 'opacity-60'
-                                    : ''}"
-                            >
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="flex items-center">
-                                        {#if key.revokedAt}
-                                            <span
-                                                class="flex-shrink-0 h-2.5 w-2.5 rounded-full bg-red-500 mr-2"
-                                                title="Revoked"
-                                            ></span>
-                                        {:else}
-                                            <span
-                                                class="flex-shrink-0 h-2.5 w-2.5 rounded-full bg-green-500 mr-2"
-                                                title="Active"
-                                            ></span>
-                                        {/if}
-                                        <div>
-                                            <div
-                                                class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2"
-                                            >
-                                                {key.name}
-                                                {#if key.revokedAt}
-                                                    <span
-                                                        class="text-[0.6rem] uppercase tracking-wider font-bold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-400 px-1.5 py-0.5 rounded"
-                                                        >Revoked</span
-                                                    >
-                                                {/if}
-                                            </div>
-                                            <div class="text-xs text-gray-500">
-                                                Created: {formatDate(
-                                                    key.createdAt,
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono bg-gray-50 dark:bg-gray-800/50"
+            <DataTable {columns} data={keys} keyField="id">
+                <svelte:fragment slot="cell" let:row let:column>
+                    {#if column.key === "name"}
+                        <div class="flex items-center">
+                            {#if row.revokedAt}
+                                <span
+                                    class="flex-shrink-0 h-2.5 w-2.5 rounded-full bg-red-500 mr-2"
+                                    title="Revoked"
+                                ></span>
+                            {:else}
+                                <span
+                                    class="flex-shrink-0 h-2.5 w-2.5 rounded-full bg-green-500 mr-2"
+                                    title="Active"
+                                ></span>
+                            {/if}
+                            <div>
+                                <div
+                                    class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2"
                                 >
-                                    {key.keyPrefix}••••••••
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                                    {row.name}
+                                    {#if row.revokedAt}
+                                        <span
+                                            class="text-[0.6rem] uppercase tracking-wider font-bold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-400 px-1.5 py-0.5 rounded"
+                                            >Revoked</span
+                                        >
+                                    {/if}
+                                </div>
+                                <div class="text-xs text-gray-500">
+                                    Created: {formatDate(row.createdAt)}
+                                </div>
+                            </div>
+                        </div>
+                    {:else if column.key === "keyPrefix"}
+                        <span class="font-mono bg-gray-50 dark:bg-gray-800/50"
+                            >{row.keyPrefix}••••••••</span
+                        >
+                    {:else if column.key === "scopes"}
+                        <div class="flex flex-wrap gap-1 max-w-[200px]">
+                            {#each row.scopes as scope}
+                                <span
+                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 font-mono"
+                                    >{scope}</span
                                 >
-                                    <div
-                                        class="flex flex-wrap gap-1 max-w-[200px]"
+                            {/each}
+                        </div>
+                    {:else if column.key === "lastUsedAt"}
+                        {#if row.lastUsedAt}
+                            <div class="text-gray-900 dark:text-gray-200">
+                                {formatDate(row.lastUsedAt).split(",")[0]}
+                            </div>
+                            <div class="text-xs">
+                                {formatDate(row.lastUsedAt).split(",")[1]}
+                            </div>
+                        {:else}
+                            <span class="italic text-gray-400">Never</span>
+                        {/if}
+                    {:else if column.key === "actions"}
+                        {#if !row.revokedAt}
+                            <div
+                                class="flex items-center justify-end gap-3 pr-4"
+                            >
+                                <!-- Rotate -->
+                                <button
+                                    onclick={() => rotateKey(row.id)}
+                                    class="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300"
+                                    title="Rotate Key"
+                                >
+                                    <svg
+                                        class="w-5 h-5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        ><path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            stroke-width="2"
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                        ></path></svg
                                     >
-                                        {#each key.scopes as scope}
-                                            <span
-                                                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 font-mono"
-                                                >{scope}</span
-                                            >
-                                        {/each}
-                                    </div>
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"
+                                </button>
+                                <!-- Revoke -->
+                                <button
+                                    onclick={() => revokeKey(row.id)}
+                                    class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                    title="Revoke Key"
                                 >
-                                    {#if key.lastUsedAt}
-                                        <div
-                                            class="text-gray-900 dark:text-gray-200"
-                                        >
-                                            {formatDate(key.lastUsedAt).split(
-                                                ",",
-                                            )[0]}
-                                        </div>
-                                        <div class="text-xs">
-                                            {formatDate(key.lastUsedAt).split(
-                                                ",",
-                                            )[1]}
-                                        </div>
-                                    {:else}
-                                        <span class="italic text-gray-400"
-                                            >Never</span
-                                        >
-                                    {/if}
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"
-                                >
-                                    {#if !key.revokedAt}
-                                        <div
-                                            class="flex items-center justify-end gap-3"
-                                        >
-                                            <!-- Rotate -->
-                                            {#if confirmRotateId === key.id}
-                                                <div
-                                                    class="flex items-center gap-2 animate-pulse text-yellow-600 dark:text-yellow-400"
-                                                >
-                                                    <span>Sure?</span>
-                                                    <button
-                                                        onclick={() =>
-                                                            rotateKey(key.id)}
-                                                        class="text-white bg-yellow-400 dark:bg-yellow-600 px-2 py-1 rounded text-xs hover:bg-yellow-500"
-                                                        >Yes</button
-                                                    >
-                                                    <button
-                                                        onclick={() =>
-                                                            (confirmRotateId =
-                                                                null)}
-                                                        class="text-gray-500 dark:text-gray-400 hover:text-gray-700"
-                                                        >No</button
-                                                    >
-                                                </div>
-                                            {:else}
-                                                <button
-                                                    onclick={() =>
-                                                        (confirmRotateId =
-                                                            key.id)}
-                                                    class="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300"
-                                                    title="Rotate Key"
-                                                >
-                                                    <svg
-                                                        class="w-5 h-5"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        viewBox="0 0 24 24"
-                                                        ><path
-                                                            stroke-linecap="round"
-                                                            stroke-linejoin="round"
-                                                            stroke-width="2"
-                                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                                        ></path></svg
-                                                    >
-                                                </button>
-                                            {/if}
-
-                                            <!-- Revoke -->
-                                            {#if confirmRevokeId === key.id}
-                                                <div
-                                                    class="flex items-center gap-2 animate-pulse text-red-600 dark:text-red-400"
-                                                >
-                                                    <span>Revoke?</span>
-                                                    <button
-                                                        onclick={() =>
-                                                            revokeKey(key.id)}
-                                                        class="text-white bg-red-600 px-2 py-1 rounded text-xs hover:bg-red-700"
-                                                        >Yes</button
-                                                    >
-                                                    <button
-                                                        onclick={() =>
-                                                            (confirmRevokeId =
-                                                                null)}
-                                                        class="text-gray-500 dark:text-gray-400 hover:text-gray-700"
-                                                        >No</button
-                                                    >
-                                                </div>
-                                            {:else if confirmRotateId !== key.id}
-                                                <button
-                                                    onclick={() =>
-                                                        (confirmRevokeId =
-                                                            key.id)}
-                                                    class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                                                    title="Revoke Key"
-                                                >
-                                                    <svg
-                                                        class="w-5 h-5"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        viewBox="0 0 24 24"
-                                                        ><path
-                                                            stroke-linecap="round"
-                                                            stroke-linejoin="round"
-                                                            stroke-width="2"
-                                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                                        ></path></svg
-                                                    >
-                                                </button>
-                                            {/if}
-                                        </div>
-                                    {:else}
-                                        <span class="text-xs text-gray-500"
-                                            >Revoked on {formatDate(
-                                                key.revokedAt,
-                                            )}</span
-                                        >
-                                    {/if}
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
+                                    <svg
+                                        class="w-5 h-5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        ><path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            stroke-width="2"
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                        ></path></svg
+                                    >
+                                </button>
+                            </div>
+                        {:else}
+                            <span class="text-xs text-gray-500 block text-right"
+                                >Revoked on {formatDate(row.revokedAt)}</span
+                            >
+                        {/if}
+                    {/if}
+                </svelte:fragment>
+            </DataTable>
         {/if}
     </div>
 </div>

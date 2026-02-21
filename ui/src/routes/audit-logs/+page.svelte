@@ -1,6 +1,7 @@
 <script lang="ts">
     import { fetchApi } from "$lib/api";
     import { onMount } from "svelte";
+    import DataTable from "$lib/components/DataTable.svelte";
 
     type AuditEvent = {
         id: number;
@@ -29,17 +30,13 @@
     const ACTIONS = ["create", "update", "delete", "rollback", "error"];
     const ENTITIES = ["content_type", "content_item", "api_key", "webhook"];
 
-    let expandedRows = $state<Set<number>>(new Set());
-
-    function toggleRow(id: number) {
-        if (expandedRows.has(id)) {
-            expandedRows.delete(id);
-        } else {
-            expandedRows.add(id);
-        }
-        // $state triggers reactivity on Sets when reassigned or in Svelte 5 we can just reassign
-        expandedRows = new Set(expandedRows);
-    }
+    const columns = [
+        { key: "_expand", label: "", width: "40px" },
+        { key: "createdAt", label: "Timestamp" },
+        { key: "action", label: "Action" },
+        { key: "entity", label: "Entity" },
+        { key: "userId", label: "Agent/User" },
+    ];
 
     async function loadEvents(reset = false) {
         loading = true;
@@ -190,183 +187,104 @@
     <div
         class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col"
     >
-        <div class="overflow-x-auto flex-1">
-            <table
-                class="min-w-full divide-y divide-gray-200 dark:divide-gray-700 relative"
-            >
-                <thead class="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
-                    <tr>
-                        <th scope="col" class="w-10 px-6 py-3"></th>
-                        <th
-                            scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                            >Timestamp</th
+        <div class="overflow-x-auto flex-1 relative">
+            <DataTable {columns} data={events} keyField="id" expandable={true}>
+                <svelte:fragment slot="cell" let:row let:column>
+                    {#if column.key === "createdAt"}
+                        <span
+                            class="text-sm text-gray-500 dark:text-gray-400 font-mono"
                         >
-                        <th
-                            scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                            >Action</th
+                            {new Date(row.createdAt)
+                                .toISOString()
+                                .replace("T", " ")
+                                .substring(0, 19)}
+                        </span>
+                    {:else if column.key === "action"}
+                        <span
+                            class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                            {row.action === 'create'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                : row.action === 'update'
+                                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                  : row.action === 'delete'
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                    : row.action === 'rollback'
+                                      ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
+                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
                         >
-                        <th
-                            scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                            >Entity</th
+                            {row.action.toUpperCase()}
+                        </span>
+                    {:else if column.key === "entity"}
+                        <span
+                            class="font-medium font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
                         >
-                        <th
-                            scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                            >Agent/User</th
-                        >
-                    </tr>
-                </thead>
-                <tbody
-                    class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700 relative"
-                >
-                    {#if loading && events.length === 0}
-                        <tr
-                            ><td
-                                colspan="5"
-                                class="px-6 py-12 text-center text-gray-500"
-                                ><div
-                                    class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"
-                                ></div></td
-                            ></tr
-                        >
-                    {:else if events.length === 0}
-                        <tr
-                            ><td
-                                colspan="5"
-                                class="px-6 py-12 text-center text-gray-500 dark:text-gray-400"
-                                >No audit logs found matching criteria.</td
-                            ></tr
-                        >
-                    {:else}
-                        {#each events as event}
-                            <tr
-                                class="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors cursor-pointer {expandedRows.has(
-                                    event.id,
-                                )
-                                    ? 'bg-blue-50/50 dark:bg-blue-900/10'
-                                    : ''}"
-                                onclick={() => toggleRow(event.id)}
+                            {row.entityType}:{row.entityId}
+                        </span>
+                    {:else if column.key === "userId"}
+                        {#if row.userId}
+                            <span
+                                class="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400"
                             >
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-gray-400"
+                                <svg
+                                    class="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    ><path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        stroke-width="2"
+                                        d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                                    ></path></svg
                                 >
-                                    <svg
-                                        class="w-5 h-5 transform transition-transform {expandedRows.has(
-                                            event.id,
-                                        )
-                                            ? 'rotate-90 text-blue-500'
-                                            : ''}"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                        ><path
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            stroke-width="2"
-                                            d="M9 5l7 7-7 7"
-                                        ></path></svg
-                                    >
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono"
-                                >
-                                    {new Date(event.createdAt)
-                                        .toISOString()
-                                        .replace("T", " ")
-                                        .substring(0, 19)}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span
-                                        class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                                        {event.action === 'create'
-                                            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                            : event.action === 'update'
-                                              ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                                              : event.action === 'delete'
-                                                ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                                                : event.action === 'rollback'
-                                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-                                                  : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
-                                    >
-                                        {event.action.toUpperCase()}
-                                    </span>
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200"
-                                >
-                                    <span
-                                        class="font-medium font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
-                                        >{event.entityType}:{event.entityId}</span
-                                    >
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"
-                                >
-                                    {#if event.userId}
-                                        <span class="flex items-center gap-1">
-                                            <svg
-                                                class="w-4 h-4"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                                ><path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    stroke-width="2"
-                                                    d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-                                                ></path></svg
-                                            >
-                                            {event.userId}
-                                        </span>
-                                    {:else}
-                                        <span class="text-gray-400 italic"
-                                            >System / Unauthenticated</span
-                                        >
-                                    {/if}
-                                </td>
-                            </tr>
-                            {#if expandedRows.has(event.id)}
-                                <tr class="bg-gray-50 dark:bg-gray-800/50">
-                                    <td
-                                        colspan="5"
-                                        class="px-10 py-4 border-b border-gray-100 dark:border-gray-700"
-                                    >
-                                        {#if event.details}
-                                            <div
-                                                class="rounded-md bg-gray-900 overflow-hidden shadow-inner"
-                                            >
-                                                <div
-                                                    class="px-4 py-2 border-b border-gray-700 bg-gray-800 flex justify-between items-center text-xs text-gray-400 font-mono"
-                                                >
-                                                    <span>Payload Details</span>
-                                                </div>
-                                                <pre
-                                                    class="p-4 text-xs text-green-400 font-mono overflow-x-auto"><code
-                                                        >{JSON.stringify(
-                                                            event.details,
-                                                            null,
-                                                            2,
-                                                        )}</code
-                                                    ></pre>
-                                            </div>
-                                        {:else}
-                                            <p
-                                                class="text-sm text-gray-500 italic"
-                                            >
-                                                No details recorded for this
-                                                event.
-                                            </p>
-                                        {/if}
-                                    </td>
-                                </tr>
-                            {/if}
-                        {/each}
+                                {row.userId}
+                            </span>
+                        {:else}
+                            <span class="text-gray-400 italic text-sm"
+                                >System / Unauthenticated</span
+                            >
+                        {/if}
                     {/if}
-                </tbody>
-            </table>
+                </svelte:fragment>
+
+                <svelte:fragment slot="empty">
+                    {#if loading}
+                        <div
+                            class="animate-spin flex-shrink-0 align-middle inline-block rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"
+                        ></div>
+                    {:else}
+                        No audit logs found matching criteria.
+                    {/if}
+                </svelte:fragment>
+
+                <svelte:fragment slot="expanded" let:row>
+                    <div class="px-10 py-4">
+                        {#if row.details}
+                            <div
+                                class="rounded-md bg-gray-900 overflow-hidden shadow-inner"
+                            >
+                                <div
+                                    class="px-4 py-2 border-b border-gray-700 bg-gray-800 flex justify-between items-center text-xs text-gray-400 font-mono"
+                                >
+                                    <span>Payload Details</span>
+                                </div>
+                                <pre
+                                    class="p-4 text-xs text-green-400 font-mono overflow-x-auto"><code
+                                        >{JSON.stringify(
+                                            row.details,
+                                            null,
+                                            2,
+                                        )}</code
+                                    ></pre>
+                            </div>
+                        {:else}
+                            <p class="text-sm text-gray-500 italic">
+                                No details recorded for this event.
+                            </p>
+                        {/if}
+                    </div>
+                </svelte:fragment>
+            </DataTable>
 
             {#if loading && events.length > 0}
                 <div

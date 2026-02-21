@@ -1,6 +1,7 @@
 <script lang="ts">
-    import { fetchApi } from "$lib/api";
+    import { fetchApi, ApiError } from "$lib/api";
     import { onMount } from "svelte";
+    import { feedbackStore } from "$lib/ui-feedback.svelte";
 
     type ContentItem = {
         id: number;
@@ -75,22 +76,47 @@
         item: ContentItem,
         newStatus: "published" | "rejected",
     ) {
-        processingItem = item.id;
-        try {
-            await fetchApi(`/content-items/${item.id}`, {
-                method: "PUT",
-                body: JSON.stringify({ status: newStatus }),
-            });
-            // Remove from list
-            pendingItems = pendingItems.filter((i) => i.id !== item.id);
-            if (selectedItem?.id === item.id) {
-                selectedItem = null;
-            }
-        } catch (err: any) {
-            alert(`Failed to ${newStatus} item: ${err.message}`);
-        } finally {
-            processingItem = null;
-        }
+        feedbackStore.openConfirm({
+            title:
+                newStatus === "published"
+                    ? "Approve Content"
+                    : "Reject Content",
+            message: `Are you sure you want to ${newStatus === "published" ? "publish" : "reject"} item #${item.id}? This action cannot be undone.`,
+            confirmLabel: newStatus === "published" ? "Approve" : "Reject",
+            confirmIntent: newStatus === "published" ? "primary" : "danger",
+            onConfirm: async () => {
+                processingItem = item.id;
+                try {
+                    await fetchApi(`/content-items/${item.id}`, {
+                        method: "PUT",
+                        body: JSON.stringify({ status: newStatus }),
+                    });
+
+                    pendingItems = pendingItems.filter((i) => i.id !== item.id);
+                    if (selectedItem?.id === item.id) {
+                        selectedItem = null;
+                    }
+
+                    feedbackStore.pushToast({
+                        severity: "success",
+                        title: "Operation Successful",
+                        message: `Item #${item.id} has been ${newStatus}.`,
+                    });
+                } catch (err: any) {
+                    const isApiError = err instanceof ApiError;
+                    feedbackStore.pushToast({
+                        severity: "error",
+                        title: "Operation Failed",
+                        message: err.message || `Failed to ${newStatus} item.`,
+                        code: isApiError ? err.code : undefined,
+                        remediation: isApiError ? err.remediation : undefined,
+                    });
+                    throw err; // bubble up for modal loading state to reset natively via the ConfirmDialog try/catch
+                } finally {
+                    processingItem = null;
+                }
+            },
+        });
     }
 
     function viewItem(item: ContentItem) {
@@ -148,10 +174,12 @@
         </div>
     {/if}
 
-    <div class="flex-1 flex gap-6 overflow-hidden">
+    <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
         <!-- Queue List -->
         <div
-            class="w-1/3 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+            class="w-full md:w-1/3 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedItem
+                ? 'hidden md:flex'
+                : 'flex'}"
         >
             <div
                 class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center"
@@ -253,7 +281,9 @@
 
         <!-- Review Detail -->
         <div
-            class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+            class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {!selectedItem
+                ? 'hidden md:flex'
+                : 'flex'}"
         >
             {#if !selectedItem}
                 <div
@@ -268,6 +298,24 @@
                 >
                     <div>
                         <div class="flex items-center gap-3">
+                            <button
+                                class="md:hidden mr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                aria-label="Close review"
+                                onclick={() => (selectedItem = null)}
+                            >
+                                <svg
+                                    class="w-6 h-6"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    ><path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        stroke-width="2"
+                                        d="M15 19l-7-7 7-7"
+                                    ></path></svg
+                                >
+                            </button>
                             <h3
                                 class="text-lg font-bold text-gray-900 dark:text-white"
                             >
