@@ -63,6 +63,12 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 |------------------|--------------------------------|
 | `get_audit_logs` | Cursor-paginated audit trail   |
 
+### Policy Tools
+
+| Tool              | Description                    |
+|-------------------|--------------------------------|
+| `evaluate_policy` | Dry-run permission checks against the PolicyEngine |
+
 ## Resources
 
 | Resource         | Description                           |

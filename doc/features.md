@@ -22,6 +22,13 @@ A built-in SvelteKit control plane served under `/ui` providing robust human ove
 - **Agent Keys** — Provision, rotate, and securely revoke API keys for individual LLM agents.
 - **Approval Queue** — Review pending or drafted content payloads and approve (publish) or reject them.
 
+## Policy Engine & Context Geometry
+
+A centralized authorization layer ensuring that any rule mapping identities to actions applies equally across all interfaces:
+- **Protocol Agnostic** — Transforms REST headers, GraphQL context, and MCP tool signatures into one strict `OperationContext` validation geometry.
+- **Fail-Closed Mutations** — Non-idempotent write operations instantly rollback and deny access upon encountering internal policy evaluation errors.
+- **Simulation** — Agents can dry-run permission checks (`policyEvaluate`) to verify if their current credentials satisfy the required operation scopes before executing mutations.
+
 ## Protocol Parity
 
 Every operation is available through three interfaces:
@@ -43,6 +50,7 @@ All write operations support a dry-run flag (`?mode=dry_run` for REST, `dryRun: 
 - **Scope-based** — Fine-grained permissions: `content:read`, `content:write`, `audit:read`, `admin`.
 - **Dual key sources** — Environment variables for development, database-managed keys for production with expiration, rotation, and revocation.
 - **AI-friendly errors** — Auth failures include a `remediation` field telling agents exactly which scope they need.
+- **Native Data Ingestion** — AI agents can supply native JSON objects directly to the APIs or fall back to stringified formats.
 
 ## Audit Logging
 

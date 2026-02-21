@@ -39,7 +39,7 @@ POST /api/content-types
 | Field    | Type   | Required | Description                    |
 |----------|--------|----------|--------------------------------|
 | `name`   | string | yes      | Unique name                    |
-| `schema` | string | yes      | JSON schema for content items  |
+| `schema` | JSON/string| yes  | JSON schema for content items  |
 | `slug`   | string | no       | URL-friendly identifier        |
 
 ### List Content Types
@@ -73,13 +73,13 @@ DELETE /api/content-types/:id
 ### Create Content Item
 
 ```
-POST /api/content-items
+POST /api/content-types/:contentTypeId/items
 ```
+*(Note: The legacy flat route `POST /api/content-items` is deprecated but still supported)*
 
 | Field           | Type   | Required | Description                          |
 |-----------------|--------|----------|--------------------------------------|
-| `contentTypeId` | number | yes      | Reference to content type            |
-| `data`          | string | yes      | JSON content (validated against schema) |
+| `data`          | JSON/string | yes | JSON content (validated against schema) |
 | `status`        | string | no       | `draft` (default), `published`, `archived` |
 
 ### Batch Create
@@ -157,6 +157,25 @@ GET    /api/webhooks/:id
 PUT    /api/webhooks/:id
 DELETE /api/webhooks/:id
 ```
+
+---
+
+## Policy Engine
+
+### Evaluate Policy (Dry-Run Permission Check)
+
+```
+POST /api/policy/evaluate
+```
+
+Allows an agent to simulate executing an operation to see if its API key scope satisfies the policy requirements.
+
+| Field                     | Type   | Required | Description                                                    |
+|---------------------------|--------|----------|----------------------------------------------------------------|
+| `operation`               | string | yes      | Abstract capability (e.g., `content.write`, `audit.read`)      |
+| `resource.type`           | string | yes      | Resource type (e.g., `system`, `content_type`, `content_item`) |
+| `resource.id`             | string | no       | Exact ID if applicable                                         |
+| `resource.contentTypeId`  | string | no       | Parent schema ID if applicable                                 |
 
 ---
 

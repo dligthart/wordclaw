@@ -42,6 +42,22 @@
 │ requestId        │       │ updatedAt            │
 │ createdAt        │       └──────────────────────┘
 └──────────────────┘
+
+┌──────────────────┐       ┌──────────────────────┐
+│    payments      │       │ policy_decision_logs │
+├──────────────────┤       ├──────────────────────┤
+│ id          PK   │       │ id             PK    │
+│ paymentHash UQ   │       │ principalId          │
+│ paymentRequest   │       │ operation            │
+│ amountSatoshis   │       │ resourceType         │
+│ status           │       │ resourceId           │
+│ resourcePath     │       │ environment          │
+│ actorId          │       │ outcome              │
+│ details          │       │ remediation          │
+│ createdAt        │       │ policyVersion        │
+│ updatedAt        │       │ evaluationDurationMs │
+└──────────────────┘       │ createdAt            │
+                           └──────────────────────┘
 ```
 
 Rendered image:
@@ -135,6 +151,41 @@ Event delivery endpoints with HMAC signing.
 | `active`    | boolean   | Delivery enabled/disabled            |
 | `createdAt` | timestamp |                                      |
 | `updatedAt` | timestamp |                                      |
+
+### payments
+
+Tracks Lightning Network (L402) invoice states across API interactions.
+
+| Column           | Type      | Notes                                |
+|------------------|-----------|--------------------------------------|
+| `id`             | serial PK |                                      |
+| `paymentHash`    | text      | Unique hash of the LN invoice        |
+| `paymentRequest` | text      | The BOLT11 invoice string            |
+| `amountSatoshis` | integer   | Cost in satoshis                     |
+| `status`         | text      | `pending`, `paid`, or `consumed`     |
+| `resourcePath`   | text      | The API route triggering the payment |
+| `actorId`        | text      | Identity of the caller               |
+| `details`        | jsonb     | Request context and agent headers    |
+| `createdAt`      | timestamp |                                      |
+| `updatedAt`      | timestamp |                                      |
+
+### policy_decision_logs
+
+Audit trail of PolicyEngine outcome evaluations for strict authorization parity.
+
+| Column                 | Type      | Notes                                |
+|------------------------|-----------|--------------------------------------|
+| `id`                   | serial PK |                                      |
+| `principalId`          | text      | Identity invoking the rule           |
+| `operation`            | text      | Abstract capability (e.g. `content.write`) |
+| `resourceType`         | text      | Type of resource being accessed      |
+| `resourceId`           | text      | Specific resource                    |
+| `environment`          | text      | `rest`, `graphql`, or `mcp`          |
+| `outcome`              | text      | `allow`, `deny`, `challenge`         |
+| `remediation`          | text      | Error resolution suggestions         |
+| `policyVersion`        | text      | Semantic version of the engine       |
+| `evaluationDurationMs` | integer   | P95 profiling data                   |
+| `createdAt`            | timestamp |                                      |
 
 ## Versioning Strategy
 

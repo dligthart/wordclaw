@@ -40,9 +40,9 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  ┌────────────────────────────────────────────────────────────────┐ │
 │  │                     SERVICES LAYER                             │ │
 │  │                                                                │ │
-│  │  Content Types ─── Content Items ─── Content Schema Validation │ │
-│  │  API Keys ──────── Audit Logging ─── Webhook Delivery          │ │
-│  │  Event Bus ──────── Payment Provider                           │ │
+│  │  Policy Engine ── Context Adapters ── Content Schema Validation│ │
+│  │  Content Types ── Content Items ─── Event Bus ── Webhooks      │ │
+│  │  API Keys ─────── Audit Logging ───── Payment Provider         │ │
 │  └────────────────────────────┬───────────────────────────────────┘ │
 │                               ▼                                     │
 │  ┌────────────────────────────────────────────────────────────────┐ │
@@ -50,6 +50,7 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  │                                                                │ │
 │  │  content_types ── content_items ── content_item_versions       │ │
 │  │  audit_logs ───── api_keys ─────── webhooks ─── users          │ │
+│  │  payments ─────── policy_decision_logs                         │ │
 │  └────────────────────────────┬───────────────────────────────────┘ │
 │                               │                                     │
 └───────────────────────────────┼─────────────────────────────────────┘
@@ -92,6 +93,9 @@ Feature parity across the three is enforced by an automated [capability parity c
 ### Services Layer
 
 Business logic lives in isolated service modules. No API handler accesses the database directly — all operations route through services that own validation, versioning, audit emission, and webhook delivery.
+
+#### Policy Engine & Context Adapters
+The `PolicyEngine` enforces rigorous cross-protocol parity. A request from REST, GraphQL, or MCP traverses through a `ContextAdapter` to map into a flat, protocol-agnostic `OperationContext`. The engine parses the active rules against the principal's scope and produces an immutable `PolicyDecision` (allow/deny) and automatically populates the `policy_decision_logs` database table.
 
 ### Data Layer
 
