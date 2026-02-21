@@ -2,6 +2,7 @@
     import { fetchApi } from "$lib/api";
     import { auth, checkAuth } from "$lib/auth.svelte";
     import { goto } from "$app/navigation";
+    import { base } from "$app/paths";
     import { onMount } from "svelte";
 
     let email = $state("");
@@ -46,7 +47,7 @@
     >
         <div class="flex flex-col items-center">
             <img
-                src="/images/logos/wordclaw-logo-transparent.png"
+                src="{base}/images/logos/wordclaw-logo-transparent.png"
                 alt="WordClaw Logo"
                 class="w-24 h-auto"
             />
