@@ -17,12 +17,40 @@
         { key: "createdAt", label: "Created At", sortable: true },
     ];
 
+    function deepParseJsonPayload(obj: any): any {
+        if (typeof obj === "string") {
+            try {
+                const parsed = JSON.parse(obj);
+                if (typeof parsed === "object" && parsed !== null) {
+                    return deepParseJsonPayload(parsed);
+                }
+            } catch (e) {
+                // Ignored, not valid JSON
+            }
+            return obj;
+        } else if (Array.isArray(obj)) {
+            return obj.map(deepParseJsonPayload);
+        } else if (typeof obj === "object" && obj !== null) {
+            const result: any = {};
+            for (const key in obj) {
+                result[key] = deepParseJsonPayload(obj[key]);
+            }
+            return result;
+        }
+        return obj;
+    }
+
     async function loadPayments() {
         loading = true;
         error = null;
         try {
             const res = await fetchApi("/payments");
-            payments = res.data;
+            payments = res.data.map((p: any) => {
+                if (p.details) {
+                    p.details = deepParseJsonPayload(p.details);
+                }
+                return p;
+            });
         } catch (err: any) {
             error = err.message || "Failed to load payments";
         } finally {
