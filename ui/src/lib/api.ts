@@ -24,6 +24,13 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
         'Accept': 'application/json'
     };
 
+    if (typeof window !== 'undefined') {
+        const domainId = localStorage.getItem('__wc_domain_id');
+        if (domainId) {
+            defaultHeaders['x-wordclaw-domain'] = domainId;
+        }
+    }
+
     if (options.body && typeof options.body === 'string') {
         defaultHeaders['Content-Type'] = 'application/json';
     }

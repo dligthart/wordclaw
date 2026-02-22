@@ -6,6 +6,7 @@ type Scope = ApiScope;
 
 type AuthPrincipal = {
     keyId: number | string;
+    domainId: number;
     scopes: Set<string>;
     source: 'db' | 'env' | 'anonymous';
 };
@@ -129,6 +130,7 @@ async function resolvePrincipalFromKey(rawKey: string, envKeys: Map<string, Set<
     if (envScopes) {
         return {
             keyId: rawKey.slice(0, 6) + '...',
+            domainId: 1, // Fallback default tenant for ancient .env keys
             scopes: envScopes,
             source: 'env'
         };
@@ -160,6 +162,7 @@ async function resolvePrincipalFromKey(rawKey: string, envKeys: Map<string, Set<
 
     return {
         keyId: dbKey.id,
+        domainId: dbKey.domainId,
         scopes: parseScopes(dbKey.scopes),
         source: 'db'
     };
@@ -185,6 +188,7 @@ export async function authorizeApiRequest(method: string, routePath: string, hea
             ok: true,
             principal: {
                 keyId: 'anonymous',
+                domainId: 1, // Default unprotected local execution tenant
                 scopes: new Set(['admin']),
                 source: 'anonymous'
             }
@@ -234,6 +238,7 @@ export async function authenticateApiRequest(headers: IncomingHttpHeaders): Prom
             ok: true,
             principal: {
                 keyId: 'anonymous',
+                domainId: 1, // Default local fallback tenant
                 scopes: new Set(['admin']),
                 source: 'anonymous'
             }

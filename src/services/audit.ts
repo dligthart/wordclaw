@@ -12,6 +12,7 @@ export type EntityType = 'content_type' | 'content_item' | 'api_key' | 'webhook'
 // --- Write ---
 
 export async function logAudit(
+    domainId: number,
     action: AuditAction,
     entityType: EntityType,
     entityId: number,
@@ -27,6 +28,7 @@ export async function logAudit(
         };
 
         const [entry] = await db.insert(auditLogs).values({
+            domainId,
             action,
             entityType,
             entityId,
@@ -46,7 +48,7 @@ export async function logAudit(
 
         auditEventBus.emit('audit', eventPayload);
         if (!skipWebhooks) {
-            await emitAuditWebhookEvents(eventPayload);
+            await emitAuditWebhookEvents(domainId, eventPayload);
         }
     } catch (error) {
         console.error('Failed to log audit:', error);
@@ -63,10 +65,10 @@ export interface AuditLogFilters {
     limit?: number;
 }
 
-export async function listAuditLogs(filters: AuditLogFilters = {}) {
+export async function listAuditLogs(domainId: number, filters: AuditLogFilters = {}) {
     const { entityType, entityId, action, limit = 50 } = filters;
 
-    const conditions = [];
+    const conditions = [eq(auditLogs.domainId, domainId)];
     if (entityType) conditions.push(eq(auditLogs.entityType, entityType));
     if (entityId) conditions.push(eq(auditLogs.entityId, entityId));
     if (action) conditions.push(eq(auditLogs.action, action));

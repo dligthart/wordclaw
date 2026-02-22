@@ -2,6 +2,7 @@ import { OperationContext } from './policy.js';
 
 export interface AuthPrincipalData {
     keyId?: string | number;
+    domainId?: number;
     scopes?: Set<string> | string[];
     source?: string;
 }
@@ -22,6 +23,7 @@ export function buildOperationContext(
     return {
         principal: {
             id: principal?.keyId?.toString() || 'anonymous',
+            domainId: principal?.domainId ?? 1, // Fallback to 1 (default domain)
             scopes: scopesArray,
             source: principal?.source || 'anonymous'
         },

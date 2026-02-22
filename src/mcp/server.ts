@@ -161,13 +161,14 @@ server.tool(
             }
 
             const [newItem] = await db.insert(contentTypes).values({
+                domainId: 1,
                 name,
                 slug,
                 description,
                 schema: schemaStr
             }).returning();
 
-            await logAudit('create', 'content_type', newItem.id, newItem);
+            await logAudit(1, 'create', 'content_type', newItem.id, newItem);
 
             return ok(`Created content type '${newItem.name}' (ID: ${newItem.id})`);
         } catch (error) {
@@ -265,7 +266,7 @@ server.tool(
                 return err(`Content type ${id} not found`);
             }
 
-            await logAudit('update', 'content_type', updated.id, updateData);
+            await logAudit(1, 'update', 'content_type', updated.id, updateData);
 
             return ok(`Updated content type '${updated.name}' (ID: ${updated.id})`);
         } catch (error) {
@@ -295,7 +296,7 @@ server.tool(
                 return err(`Content type ${id} not found`);
             }
 
-            await logAudit('delete', 'content_type', deleted.id, deleted);
+            await logAudit(1, 'delete', 'content_type', deleted.id, deleted);
 
             return ok(`Deleted content type '${deleted.name}' (ID: ${deleted.id})`);
         } catch (error) {
@@ -330,12 +331,12 @@ server.tool(
             }
 
             const { key, plaintext } = await createApiKey({
-                name,
+                domainId: 1, name,
                 scopes: normalizedScopes,
                 expiresAt: parsedExpiry
             });
 
-            await logAudit('create', 'api_key', key.id, {
+            await logAudit(1, 'create', 'api_key', key.id, {
                 mcpTool: 'create_api_key',
                 name: key.name,
                 scopes: normalizedScopes
@@ -360,7 +361,7 @@ server.tool(
     'List API keys and their status',
     {},
     withMCPPolicy('apikey.list', () => ({ type: 'system' }), async () => {
-        const keys = await listApiKeys();
+        const keys = await listApiKeys(1);
         return okJson(keys.map((key) => ({
             id: key.id,
             name: key.name,
@@ -382,12 +383,12 @@ server.tool(
         id: z.number().describe('API key id to revoke')
     },
     withMCPPolicy('apikey.write', (args) => ({ type: 'apikey', id: args.id }), async ({ id }) => {
-        const revoked = await revokeApiKey(id);
+        const revoked = await revokeApiKey(id, 1);
         if (!revoked) {
             return err(`API key ${id} not found or already revoked`);
         }
 
-        await logAudit('delete', 'api_key', revoked.id, {
+        await logAudit(1, 'delete', 'api_key', revoked.id, {
             mcpTool: 'revoke_api_key',
             keyPrefix: revoked.keyPrefix
         });
@@ -419,13 +420,13 @@ server.tool(
             }
 
             const created = await createWebhook({
-                url,
+                domainId: 1, url,
                 events: normalizedEvents,
                 secret,
                 active
             });
 
-            await logAudit('create', 'webhook', created.id, {
+            await logAudit(1, 'create', 'webhook', created.id, {
                 mcpTool: 'create_webhook',
                 url: created.url,
                 events: normalizedEvents,
@@ -451,7 +452,7 @@ server.tool(
     {},
     withMCPPolicy('webhook.list', () => ({ type: 'system' }), async () => {
         try {
-            const hooks = await listWebhooks();
+            const hooks = await listWebhooks(1);
             return okJson(hooks.map((hook) => ({
                 id: hook.id,
                 url: hook.url,
@@ -473,7 +474,7 @@ server.tool(
     },
     withMCPPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async ({ id }) => {
         try {
-            const hook = await getWebhookById(id);
+            const hook = await getWebhookById(id, 1);
             if (!hook) {
                 return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
             }
@@ -520,7 +521,7 @@ server.tool(
                 return err('EMPTY_UPDATE_BODY: Provide at least one update field.');
             }
 
-            const updated = await updateWebhook(id, {
+            const updated = await updateWebhook(id, 1, {
                 url,
                 events: normalizedEvents,
                 secret,
@@ -531,7 +532,7 @@ server.tool(
                 return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
             }
 
-            await logAudit('update', 'webhook', updated.id, {
+            await logAudit(1, 'update', 'webhook', updated.id, {
                 mcpTool: 'update_webhook',
                 url: updated.url,
                 events: parseWebhookEvents(updated.events),
@@ -559,13 +560,13 @@ server.tool(
     },
     withMCPPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async ({ id }) => {
         try {
-            const existing = await getWebhookById(id);
+            const existing = await getWebhookById(id, 1);
             if (!existing) {
                 return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
             }
 
-            await deleteWebhook(id);
-            await logAudit('delete', 'webhook', existing.id, {
+            await deleteWebhook(id, 1);
+            await logAudit(1, 'delete', 'webhook', existing.id, {
                 mcpTool: 'delete_webhook',
                 url: existing.url,
                 events: parseWebhookEvents(existing.events)
@@ -605,12 +606,13 @@ server.tool(
             }
 
             const [newItem] = await db.insert(contentItems).values({
+                domainId: 1,
                 contentTypeId,
                 data: dataStr,
                 status: status || 'draft'
             }).returning();
 
-            await logAudit('create', 'content_item', newItem.id, newItem);
+            await logAudit(1, 'create', 'content_item', newItem.id, newItem);
 
             return ok(`Created content item ID: ${newItem.id}`);
         } catch (error) {
@@ -681,6 +683,7 @@ server.tool(
                         }
 
                         const [created] = await tx.insert(contentItems).values({
+                            domainId: 1,
                             contentTypeId: item.contentTypeId,
                             data: itemDataStr,
                             status: item.status || 'draft'
@@ -700,7 +703,7 @@ server.tool(
                 for (const row of results) {
                     const id = row.id;
                     if (typeof id === 'number') {
-                        await logAudit('create', 'content_item', id, { batch: true, mode: 'atomic' });
+                        await logAudit(1, 'create', 'content_item', id, { batch: true, mode: 'atomic' });
                     }
                 }
 
@@ -735,12 +738,13 @@ server.tool(
                 }
 
                 const [created] = await db.insert(contentItems).values({
+                    domainId: 1,
                     contentTypeId: item.contentTypeId,
                     data: itemDataStr,
                     status: item.status || 'draft'
                 }).returning();
 
-                await logAudit('create', 'content_item', created.id, { batch: true, mode: 'partial' });
+                await logAudit(1, 'create', 'content_item', created.id, { batch: true, mode: 'partial' });
 
                 results.push({
                     index,
@@ -891,7 +895,7 @@ server.tool(
                 return err('Content item not found');
             }
 
-            await logAudit('update', 'content_item', result.id, updateData);
+            await logAudit(1, 'update', 'content_item', result.id, updateData);
 
             return ok(`Updated content item ${result.id} to version ${result.version}`);
         } catch (error) {
@@ -1058,7 +1062,7 @@ server.tool(
                 for (const row of results) {
                     const id = row.id;
                     if (typeof id === 'number') {
-                        await logAudit('update', 'content_item', id, { batch: true, mode: 'atomic' });
+                        await logAudit(1, 'update', 'content_item', id, { batch: true, mode: 'atomic' });
                     }
                 }
 
@@ -1105,7 +1109,7 @@ server.tool(
                 return updated;
             });
 
-            await logAudit('update', 'content_item', result.id, { batch: true, mode: 'partial' });
+            await logAudit(1, 'update', 'content_item', result.id, { batch: true, mode: 'partial' });
 
             results.push({
                 index,
@@ -1143,7 +1147,7 @@ server.tool(
                 return err('Content item not found');
             }
 
-            await logAudit('delete', 'content_item', deleted.id, deleted);
+            await logAudit(1, 'delete', 'content_item', deleted.id, deleted);
 
             return ok(`Deleted content item ${deleted.id}`);
         } catch (error) {
@@ -1210,7 +1214,7 @@ server.tool(
                 for (const row of results) {
                     const id = row.id;
                     if (typeof id === 'number') {
-                        await logAudit('delete', 'content_item', id, { batch: true, mode: 'atomic' });
+                        await logAudit(1, 'delete', 'content_item', id, { batch: true, mode: 'atomic' });
                     }
                 }
 
@@ -1236,7 +1240,7 @@ server.tool(
                 continue;
             }
 
-            await logAudit('delete', 'content_item', deleted.id, { batch: true, mode: 'partial' });
+            await logAudit(1, 'delete', 'content_item', deleted.id, { batch: true, mode: 'partial' });
             results.push({
                 index,
                 ok: true,
@@ -1343,7 +1347,7 @@ server.tool(
                 return err('Content item not found');
             }
 
-            await logAudit('rollback', 'content_item', result.id, { from: result.version - 1, to: version });
+            await logAudit(1, 'rollback', 'content_item', result.id, { from: result.version - 1, to: version });
 
             return ok(`Rolled back item ${result.id} to version ${version} (new version ${result.version})`);
 

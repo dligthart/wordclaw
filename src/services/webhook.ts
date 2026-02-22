@@ -7,6 +7,7 @@ import type { AuditEventPayload } from './event-bus.js';
 import { logAudit } from './audit.js';
 
 type CreateWebhookInput = {
+    domainId: number;
     url: string;
     events: string[];
     secret: string;
@@ -96,8 +97,8 @@ async function deliverWebhook(url: string, secret: string, payload: AuditEventPa
     return false;
 }
 
-export async function emitAuditWebhookEvents(payload: AuditEventPayload): Promise<void> {
-    const targets = await db.select().from(webhooks).where(eq(webhooks.active, true));
+export async function emitAuditWebhookEvents(domainId: number, payload: AuditEventPayload): Promise<void> {
+    const targets = await db.select().from(webhooks).where(and(eq(webhooks.active, true), eq(webhooks.domainId, domainId)));
     if (targets.length === 0) {
         return;
     }
@@ -114,6 +115,7 @@ export async function emitAuditWebhookEvents(payload: AuditEventPayload): Promis
             if (!delivered) {
                 console.error(`Webhook delivery failed for webhook ${hook.id} (${hook.url})`);
                 await logAudit(
+                    domainId,
                     'update',
                     'webhook',
                     hook.id,
@@ -129,6 +131,7 @@ export async function emitAuditWebhookEvents(payload: AuditEventPayload): Promis
 
 export async function createWebhook(input: CreateWebhookInput) {
     const [created] = await db.insert(webhooks).values({
+        domainId: input.domainId,
         url: input.url,
         events: serializeWebhookEvents(input.events),
         secret: input.secret,
@@ -138,11 +141,11 @@ export async function createWebhook(input: CreateWebhookInput) {
     return created;
 }
 
-export async function listWebhooks() {
-    return db.select().from(webhooks);
+export async function listWebhooks(domainId: number) {
+    return db.select().from(webhooks).where(eq(webhooks.domainId, domainId));
 }
 
-export async function updateWebhook(id: number, input: UpdateWebhookInput) {
+export async function updateWebhook(id: number, domainId: number, input: UpdateWebhookInput) {
     const updates: Record<string, unknown> = {};
     if (input.url !== undefined) updates.url = input.url;
     if (input.secret !== undefined) updates.secret = input.secret;
@@ -155,21 +158,21 @@ export async function updateWebhook(id: number, input: UpdateWebhookInput) {
 
     const [updated] = await db.update(webhooks)
         .set(updates)
-        .where(eq(webhooks.id, id))
+        .where(and(eq(webhooks.id, id), eq(webhooks.domainId, domainId)))
         .returning();
 
     return updated || null;
 }
 
-export async function deleteWebhook(id: number) {
+export async function deleteWebhook(id: number, domainId: number) {
     const [deleted] = await db.delete(webhooks)
-        .where(eq(webhooks.id, id))
+        .where(and(eq(webhooks.id, id), eq(webhooks.domainId, domainId)))
         .returning();
 
     return deleted || null;
 }
 
-export async function getWebhookById(id: number) {
-    const [hook] = await db.select().from(webhooks).where(and(eq(webhooks.id, id)));
+export async function getWebhookById(id: number, domainId: number) {
+    const [hook] = await db.select().from(webhooks).where(and(eq(webhooks.id, id), eq(webhooks.domainId, domainId)));
     return hook || null;
 }

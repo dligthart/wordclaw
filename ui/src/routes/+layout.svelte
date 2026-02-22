@@ -10,10 +10,21 @@
 
     let { children } = $props();
     let isMobileMenuOpen = $state(false);
+    let currentDomain = $state("1");
 
     onMount(async () => {
+        const stored = localStorage.getItem("__wc_domain_id");
+        if (stored) currentDomain = stored;
         await checkAuth();
     });
+
+    function handleDomainChange(e: Event) {
+        const target = e.target as HTMLSelectElement;
+        localStorage.setItem("__wc_domain_id", target.value);
+        currentDomain = target.value;
+        // Securely flush layouts forcing re-query over bounds
+        window.location.reload();
+    }
 
     $effect(() => {
         if (
@@ -144,6 +155,15 @@
                         class="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
                         >Supervisor</span
                     >
+                    <select
+                        class="ml-auto text-sm border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-blue-500 focus:border-blue-500 py-1 pl-2 pr-8 focus:outline-none"
+                        title="Active Domain Context"
+                        value={currentDomain}
+                        onchange={handleDomainChange}
+                    >
+                        <option value="1">Domain 1 (Default)</option>
+                        <option value="2">Domain 2 (Sub-Tenant)</option>
+                    </select>
                 </div>
                 <!-- Navigation links -->
                 <nav class="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
@@ -184,6 +204,15 @@
                         >SUPV</span
                     >
                 </div>
+                <select
+                    class="ml-auto mr-4 text-xs border-gray-300 rounded-md py-1 pl-2 pr-6 dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    title="Active Domain Context"
+                    value={currentDomain}
+                    onchange={handleDomainChange}
+                >
+                    <option value="1">D1</option>
+                    <option value="2">D2</option>
+                </select>
                 <button
                     type="button"
                     class="-mr-2 inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500"

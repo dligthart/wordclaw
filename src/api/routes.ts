@@ -269,14 +269,13 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const { key, plaintext } = await createApiKey({
-            name: body.name,
+            domainId: (request as any).authPrincipal?.domainId ?? 1, name: body.name,
             scopes,
             createdBy: actorId ?? null,
             expiresAt
         });
 
-        await logAudit(
-            'create',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
             'api_key',
             key.id,
             { authKeyCreated: true, scopes, name: key.name },
@@ -318,8 +317,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                 })))
             }
         }
-    }, async () => {
-        const keys = await listApiKeys();
+    }, async (request, reply) => {
+        const keys = await listApiKeys((request as any).authPrincipal?.domainId ?? 1);
 
         return {
             data: keys.map((key) => ({
@@ -358,7 +357,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     }, async (request, reply) => {
         const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
         const { id } = request.params as IdParams;
-        const revoked = await revokeApiKey(id);
+        const revoked = await revokeApiKey(id, (request as any).authPrincipal?.domainId ?? 1);
         if (!revoked) {
             return reply.status(404).send(toErrorPayload(
                 'API key not found',
@@ -367,8 +366,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        await logAudit(
-            'delete',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
             'api_key',
             revoked.id,
             { apiKeyRevoked: true, keyPrefix: revoked.keyPrefix },
@@ -409,7 +407,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
         const { id } = request.params as IdParams;
 
-        const rotated = await rotateApiKey(id, actorId ?? null);
+        const rotated = await rotateApiKey(id, (request as any).authPrincipal?.domainId ?? 1, actorId ?? null);
         if (!rotated) {
             return reply.status(404).send(toErrorPayload(
                 'API key not found',
@@ -418,8 +416,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        await logAudit(
-            'update',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
             'api_key',
             rotated.newKey.id,
             { apiKeyRotated: true, oldId: rotated.oldKey.id, newId: rotated.newKey.id },
@@ -548,14 +545,13 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const created = await createWebhook({
-            url: body.url,
+            domainId: (request as any).authPrincipal?.domainId ?? 1, url: body.url,
             events,
             secret: body.secret,
             active: body.active
         });
 
-        await logAudit(
-            'create',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
             'webhook',
             created.id,
             { url: created.url, events, active: created.active },
@@ -592,8 +588,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                 })))
             }
         }
-    }, async () => {
-        const hooks = await listWebhooks();
+    }, async (request, reply) => {
+        const hooks = await listWebhooks((request as any).authPrincipal?.domainId ?? 1);
         return {
             data: hooks.map((hook) => ({
                 id: hook.id,
@@ -629,7 +625,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
-        const hook = await getWebhookById(id);
+        const hook = await getWebhookById(id, (request as any).authPrincipal?.domainId ?? 1);
         if (!hook) {
             return reply.status(404).send(toErrorPayload(
                 'Webhook not found',
@@ -719,7 +715,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
 
-        const existing = await getWebhookById(id);
+        const existing = await getWebhookById(id, (request as any).authPrincipal?.domainId ?? 1);
         if (!existing) {
             return reply.status(404).send(toErrorPayload(
                 'Webhook not found',
@@ -747,7 +743,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             };
         }
 
-        const updated = await updateWebhook(id, {
+        const updated = await updateWebhook(id, (request as any).authPrincipal?.domainId ?? 1, {
             url: body.url,
             events: normalizedEvents,
             secret: body.secret,
@@ -762,8 +758,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        await logAudit(
-            'update',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
             'webhook',
             updated.id,
             {
@@ -811,7 +806,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
         const { id } = request.params as IdParams;
 
-        const existing = await getWebhookById(id);
+        const existing = await getWebhookById(id, (request as any).authPrincipal?.domainId ?? 1);
         if (!existing) {
             return reply.status(404).send(toErrorPayload(
                 'Webhook not found',
@@ -836,10 +831,9 @@ export default async function apiRoutes(server: FastifyInstance) {
             };
         }
 
-        await deleteWebhook(id);
+        await deleteWebhook(id, (request as any).authPrincipal?.domainId ?? 1);
 
-        await logAudit(
-            'delete',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
             'webhook',
             existing.id,
             { url: existing.url, events: parseWebhookEvents(existing.events) },
@@ -912,8 +906,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentTypes).values(data).returning();
-        await logAudit(
-            'create',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
             'content_type',
             newItem.id,
             newItem,
@@ -1093,8 +1086,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentType(id));
         }
 
-        await logAudit(
-            'update',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
             'content_type',
             updatedType.id,
             { ...updateData, previous: 'n/a' },
@@ -1160,8 +1152,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentType(id));
         }
 
-        await logAudit(
-            'delete',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
             'content_type',
             deletedType.id,
             deletedType,
@@ -1240,8 +1231,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentItems).values(data).returning();
-        await logAudit(
-            'create',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
             'content_item',
             newItem.id,
             newItem,
@@ -1319,8 +1309,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentItems).values(data).returning();
-        await logAudit(
-            'create',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
             'content_item',
             newItem.id,
             newItem,
@@ -1568,8 +1557,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentItem(id));
         }
 
-        await logAudit(
-            'update',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
             'content_item',
             result.id,
             updateData,
@@ -1729,8 +1717,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 return reply.status(404).send(notFoundContentItem(id));
             }
 
-            await logAudit(
-                'rollback',
+            await logAudit((request as any).authPrincipal?.domainId ?? 1, 'rollback',
                 'content_item',
                 result.id,
                 { fromVersion: result.version - 1, toVersion: version },
@@ -1812,8 +1799,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentItem(id));
         }
 
-        await logAudit(
-            'delete',
+        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
             'content_item',
             deletedItem.id,
             deletedItem,
@@ -1933,6 +1919,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                         }
 
                         const [newItem] = await tx.insert(contentItems).values({
+                            domainId: (request as any).authPrincipal?.domainId ?? 1,
                             contentTypeId: item.contentTypeId,
                             data: item.data,
                             status: item.status || 'draft'
@@ -1945,8 +1932,7 @@ export default async function apiRoutes(server: FastifyInstance) {
 
                 for (const entry of created) {
                     if (entry.id !== undefined) {
-                        await logAudit(
-                            'create',
+                        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
                             'content_item',
                             entry.id,
                             { batch: true, mode: 'atomic' },
@@ -2002,13 +1988,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                 }
 
                 const [newItem] = await db.insert(contentItems).values({
+                    domainId: (request as any).authPrincipal?.domainId ?? 1,
                     contentTypeId: item.contentTypeId,
                     data: item.data,
                     status: item.status || 'draft'
                 }).returning();
 
-                await logAudit(
-                    'create',
+                await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
                     'content_item',
                     newItem.id,
                     { batch: true, mode: 'partial' },
@@ -2193,8 +2179,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 });
 
                 for (const row of results) {
-                    await logAudit(
-                        'update',
+                    await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
                         'content_item',
                         row.id,
                         { batch: true, mode: 'atomic' },
@@ -2262,8 +2247,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 return updated;
             });
 
-            await logAudit(
-                'update',
+            await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
                 'content_item',
                 result.id,
                 { batch: true, mode: 'partial' },
@@ -2377,8 +2361,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 });
 
                 for (const row of deleted) {
-                    await logAudit(
-                        'delete',
+                    await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
                         'content_item',
                         row.id,
                         { batch: true, mode: 'atomic' },
@@ -2425,8 +2408,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 continue;
             }
 
-            await logAudit(
-                'delete',
+            await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
                 'content_item',
                 deleted.id,
                 { batch: true, mode: 'partial' },

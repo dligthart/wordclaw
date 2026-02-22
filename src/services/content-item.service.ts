@@ -6,6 +6,7 @@ import { logAudit } from './audit.js';
 // --- Types ---
 
 export interface CreateContentItemInput {
+    domainId: number;
     contentTypeId: number;
     data: string;
     status?: string;
@@ -21,24 +22,25 @@ export interface UpdateContentItemInput {
 
 export async function createContentItem(input: CreateContentItemInput) {
     const [created] = await db.insert(contentItems).values({
+        domainId: input.domainId,
         contentTypeId: input.contentTypeId,
         data: input.data,
         status: input.status || 'draft',
     }).returning();
 
-    await logAudit('create', 'content_item', created.id, created as unknown as Record<string, unknown>);
+    await logAudit(input.domainId, 'create', 'content_item', created.id, created as unknown as Record<string, unknown>);
     return created;
 }
 
-export async function listContentItems(contentTypeId?: number) {
+export async function listContentItems(domainId: number, contentTypeId?: number) {
     if (contentTypeId) {
-        return db.select().from(contentItems).where(eq(contentItems.contentTypeId, contentTypeId));
+        return db.select().from(contentItems).where(and(eq(contentItems.domainId, domainId), eq(contentItems.contentTypeId, contentTypeId)));
     }
-    return db.select().from(contentItems);
+    return db.select().from(contentItems).where(eq(contentItems.domainId, domainId));
 }
 
-export async function getContentItem(id: number) {
-    const [item] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+export async function getContentItem(id: number, domainId: number) {
+    const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
     return item ?? null;
 }
 
@@ -46,9 +48,9 @@ export async function getContentItem(id: number) {
  * Update a content item with automatic versioning.
  * Archives the current state and increments the version number.
  */
-export async function updateContentItem(id: number, input: UpdateContentItemInput) {
+export async function updateContentItem(id: number, domainId: number, input: UpdateContentItemInput) {
     const result = await db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(contentItems).where(eq(contentItems.id, id));
+        const [existing] = await tx.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
         if (!existing) return null;
 
         // Archive current version
@@ -71,25 +73,25 @@ export async function updateContentItem(id: number, input: UpdateContentItemInpu
 
         const [updated] = await tx.update(contentItems)
             .set(updateData)
-            .where(eq(contentItems.id, id))
+            .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)))
             .returning();
 
         return updated;
     });
 
     if (result) {
-        await logAudit('update', 'content_item', result.id, input as Record<string, unknown>);
+        await logAudit(domainId, 'update', 'content_item', result.id, input as Record<string, unknown>);
     }
     return result;
 }
 
-export async function deleteContentItem(id: number) {
+export async function deleteContentItem(id: number, domainId: number) {
     const [deleted] = await db.delete(contentItems)
-        .where(eq(contentItems.id, id))
+        .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)))
         .returning();
 
     if (deleted) {
-        await logAudit('delete', 'content_item', deleted.id, deleted as unknown as Record<string, unknown>);
+        await logAudit(domainId, 'delete', 'content_item', deleted.id, deleted as unknown as Record<string, unknown>);
     }
     return deleted ?? null;
 }
@@ -108,9 +110,9 @@ export async function getContentItemVersions(itemId: number) {
  * Throws 'TARGET_VERSION_NOT_FOUND' if the target version doesn't exist.
  * Returns null if the content item doesn't exist.
  */
-export async function rollbackContentItem(id: number, targetVersion: number) {
+export async function rollbackContentItem(id: number, domainId: number, targetVersion: number) {
     const result = await db.transaction(async (tx) => {
-        const [currentItem] = await tx.select().from(contentItems).where(eq(contentItems.id, id));
+        const [currentItem] = await tx.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
         if (!currentItem) return null;
 
         const [target] = await tx.select()
@@ -139,14 +141,14 @@ export async function rollbackContentItem(id: number, targetVersion: number) {
                 version: currentItem.version + 1,
                 updatedAt: new Date(),
             })
-            .where(eq(contentItems.id, id))
+            .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)))
             .returning();
 
         return restored;
     });
 
     if (result) {
-        await logAudit('rollback', 'content_item', result.id, {
+        await logAudit(domainId, 'rollback', 'content_item', result.id, {
             fromVersion: result.version - 1,
             toVersion: targetVersion,
         });

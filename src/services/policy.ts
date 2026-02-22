@@ -4,6 +4,7 @@ import { policyDecisionLogs } from '../db/schema.js';
 export interface OperationContext {
     principal: {
         id?: string;
+        domainId: number;
         scopes: string[];
         roles?: string[];
         source: string;
@@ -12,6 +13,7 @@ export interface OperationContext {
     resource: {
         type: string;
         id?: string;
+        domainId?: number;
         contentTypeId?: string;
     };
     environment: {
@@ -62,15 +64,25 @@ export class PolicyEngine {
     }
 
     private static evaluateSync(context: OperationContext): PolicyDecision {
-        const { principal, operation } = context;
+        const { principal, operation, resource } = context;
 
-        // Admin scope can do everything
-        if (principal.scopes.includes('admin')) {
+        // Admin scope can do everything globally across domains
+        if (principal.scopes.includes('admin') || principal.scopes.includes('tenant:admin')) {
             return {
                 outcome: 'allow',
                 code: 'ALLOWED_ADMIN',
                 policyVersion: POLICY_VERSION
             };
+        }
+
+        // Cross-Tenant Boundary Enforcement
+        if (resource.domainId !== undefined && resource.domainId !== principal.domainId) {
+            return {
+                outcome: 'deny',
+                code: 'TENANT_ISOLATION_VIOLATION',
+                remediation: 'The requested resource belongs to a different domain tenant. Access is strictly forbidden.',
+                policyVersion: POLICY_VERSION
+            }
         }
 
         // Role-based fallbacks based on capability/operation mapping

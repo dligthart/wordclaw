@@ -65,7 +65,10 @@ export const globalL402Options: L402Options = {
             actorId = 'system';
         }
 
+        const domainId = headers['x-wordclaw-domain'] ? Number(headers['x-wordclaw-domain']) : 1;
+
         await db.insert(payments).values({
+            domainId,
             paymentHash: invoice.hash,
             paymentRequest: invoice.paymentRequest,
             amountSatoshis,

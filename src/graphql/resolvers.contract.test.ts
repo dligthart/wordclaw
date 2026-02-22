@@ -182,6 +182,7 @@ describe('GraphQL Resolver Contracts', () => {
 
         expect(result.version).toBe(2);
         expect(mocks.logAuditMock).toHaveBeenCalledWith(
+            1,
             'update',
             'content_item',
             7,

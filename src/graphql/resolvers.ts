@@ -586,8 +586,8 @@ export const resolvers = {
             };
         }),
 
-        webhooks: async () => {
-            const hooks = await listWebhooks();
+        webhooks: async (_parent: unknown, _args: unknown, context?: unknown) => {
+            const hooks = await listWebhooks((context as any)?.principal?.domainId ?? 1);
             return hooks.map((hook) => ({
                 id: hook.id,
                 url: hook.url,
@@ -597,9 +597,9 @@ export const resolvers = {
             }));
         },
 
-        webhook: withPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
+        webhook: withPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
             const numericId = parseId(id);
-            const hook = await getWebhookById(numericId);
+            const hook = await getWebhookById(numericId, (context as any)?.principal?.domainId ?? 1);
             if (!hook) {
                 return null;
             }
@@ -636,13 +636,14 @@ export const resolvers = {
             }
 
             const [newItem] = await db.insert(contentTypes).values({
+                domainId: (context as any)?.principal?.domainId ?? 1,
                 name: args.name,
                 slug: args.slug,
                 description: args.description,
                 schema: schemaStr
             }).returning();
 
-            await logAudit('create', 'content_type', newItem.id, newItem, toActorId(context), toRequestId(context));
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'create', 'content_type', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
         }),
 
@@ -685,7 +686,7 @@ export const resolvers = {
                 throw notFoundContentTypeError(id);
             }
 
-            await logAudit('update', 'content_type', updated.id, updateData, toActorId(context), toRequestId(context));
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'update', 'content_type', updated.id, updateData, toActorId(context), toRequestId(context));
             return updated;
         }),
 
@@ -712,7 +713,7 @@ export const resolvers = {
                 throw notFoundContentTypeError(id);
             }
 
-            await logAudit('delete', 'content_type', deleted.id, deleted, toActorId(context), toRequestId(context));
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'delete', 'content_type', deleted.id, deleted, toActorId(context), toRequestId(context));
 
             return {
                 id: deleted.id,
@@ -748,12 +749,13 @@ export const resolvers = {
             }
 
             const [newItem] = await db.insert(contentItems).values({
+                domainId: (context as any)?.principal?.domainId ?? 1,
                 contentTypeId,
                 data: dataStr,
                 status
             }).returning();
 
-            await logAudit('create', 'content_item', newItem.id, newItem, toActorId(context), toRequestId(context));
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'create', 'content_item', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
         }),
 
@@ -818,6 +820,7 @@ export const resolvers = {
                             }
 
                             const [created] = await tx.insert(contentItems).values({
+                                domainId: (context as any)?.principal?.domainId ?? 1,
                                 contentTypeId: item.contentTypeId,
                                 data: item.data,
                                 status: item.status || 'draft'
@@ -836,7 +839,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('create', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
+                            await logAudit((context as any)?.principal?.domainId ?? 1, 'create', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -879,12 +882,13 @@ export const resolvers = {
                     }
 
                     const [created] = await db.insert(contentItems).values({
+                        domainId: (context as any)?.principal?.domainId ?? 1,
                         contentTypeId: item.contentTypeId,
                         data: item.data,
                         status: item.status || 'draft'
                     }).returning();
 
-                    await logAudit('create', 'content_item', created.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
+                    await logAudit((context as any)?.principal?.domainId ?? 1, 'create', 'content_item', created.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
 
                     results.push({
                         index,
@@ -970,7 +974,7 @@ export const resolvers = {
                 throw notFoundContentItemError(id);
             }
 
-            await logAudit('update', 'content_item', result.id, updateData, toActorId(context), toRequestId(context));
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'update', 'content_item', result.id, updateData, toActorId(context), toRequestId(context));
             return result;
         }),
 
@@ -1076,7 +1080,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('update', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
+                            await logAudit((context as any)?.principal?.domainId ?? 1, 'update', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -1132,7 +1136,7 @@ export const resolvers = {
                     return updated;
                 });
 
-                await logAudit('update', 'content_item', result.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
+                await logAudit((context as any)?.principal?.domainId ?? 1, 'update', 'content_item', result.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
 
                 results.push({
                     index,
@@ -1171,7 +1175,7 @@ export const resolvers = {
                 throw notFoundContentItemError(id);
             }
 
-            await logAudit('delete', 'content_item', deleted.id, deleted, toActorId(context), toRequestId(context));
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'delete', 'content_item', deleted.id, deleted, toActorId(context), toRequestId(context));
 
             return {
                 id: deleted.id,
@@ -1235,7 +1239,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit('delete', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
+                            await logAudit((context as any)?.principal?.domainId ?? 1, 'delete', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -1270,7 +1274,7 @@ export const resolvers = {
                     continue;
                 }
 
-                await logAudit('delete', 'content_item', deleted.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
+                await logAudit((context as any)?.principal?.domainId ?? 1, 'delete', 'content_item', deleted.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
                 results.push({
                     index,
                     ok: true,
@@ -1305,14 +1309,13 @@ export const resolvers = {
             }
 
             const created = await createWebhook({
-                url: args.url,
+                domainId: (context as any)?.principal?.domainId ?? 1, url: args.url,
                 events,
                 secret: args.secret,
                 active: args.active
             });
 
-            await logAudit(
-                'create',
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'create',
                 'webhook',
                 created.id,
                 { url: created.url, events, active: created.active },
@@ -1363,7 +1366,7 @@ export const resolvers = {
                 }
             }
 
-            const updated = await updateWebhook(id, {
+            const updated = await updateWebhook(id, (context as any)?.principal?.domainId ?? 1, {
                 url: args.url,
                 events: normalizedEvents,
                 secret: args.secret,
@@ -1378,8 +1381,7 @@ export const resolvers = {
                 );
             }
 
-            await logAudit(
-                'update',
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'update',
                 'webhook',
                 updated.id,
                 { url: updated.url, events: parseWebhookEvents(updated.events), active: updated.active },
@@ -1398,7 +1400,7 @@ export const resolvers = {
 
         deleteWebhook: withPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, args: DeleteWebhookArgs, context?: unknown) => {
             const id = parseId(args.id);
-            const existing = await getWebhookById(id);
+            const existing = await getWebhookById(id, (context as any)?.principal?.domainId ?? 1);
             if (!existing) {
                 throw toError(
                     'Webhook not found',
@@ -1407,9 +1409,8 @@ export const resolvers = {
                 );
             }
 
-            await deleteWebhook(id);
-            await logAudit(
-                'delete',
+            await deleteWebhook(id, (context as any)?.principal?.domainId ?? 1);
+            await logAudit((context as any)?.principal?.domainId ?? 1, 'delete',
                 'webhook',
                 existing.id,
                 { url: existing.url, events: parseWebhookEvents(existing.events) },
@@ -1497,7 +1498,7 @@ export const resolvers = {
                     throw notFoundContentItemError(id);
                 }
 
-                await logAudit('rollback', 'content_item', result.id, {
+                await logAudit((context as any)?.principal?.domainId ?? 1, 'rollback', 'content_item', result.id, {
                     fromVersion: result.version - 1,
                     toVersion: targetVersion
                 }, toActorId(context), toRequestId(context));

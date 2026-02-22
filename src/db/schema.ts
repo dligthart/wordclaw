@@ -8,8 +8,17 @@ export const users = pgTable('users', {
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+export const domains = pgTable('domains', {
+    id: serial('id').primaryKey(),
+    hostname: text('hostname').notNull().unique(), // e.g., default.com
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export const contentTypes = pgTable('content_types', {
     id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     name: text('name').notNull(),
     slug: text('slug').notNull().unique(),
     description: text('description'),
@@ -21,6 +30,7 @@ export const contentTypes = pgTable('content_types', {
 
 export const contentItems = pgTable('content_items', {
     id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     contentTypeId: integer('content_type_id').notNull().references(() => contentTypes.id),
     data: text('data').notNull(),
     status: text('status').notNull().default('draft'),
@@ -40,6 +50,7 @@ export const contentItemVersions = pgTable('content_item_versions', {
 
 export const auditLogs = pgTable('audit_logs', {
     id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     action: text('action').notNull(), // 'create', 'update', 'delete', 'rollback'
     entityType: text('entity_type').notNull(), // 'content_type', 'content_item'
     entityId: integer('entity_id').notNull(),
@@ -50,6 +61,7 @@ export const auditLogs = pgTable('audit_logs', {
 
 export const apiKeys = pgTable('api_keys', {
     id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     name: text('name').notNull(),
     keyPrefix: text('key_prefix').notNull(),
     keyHash: text('key_hash').notNull().unique(),
@@ -63,6 +75,7 @@ export const apiKeys = pgTable('api_keys', {
 
 export const webhooks = pgTable('webhooks', {
     id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     url: text('url').notNull(),
     events: text('events').notNull(),
     secret: text('secret').notNull(),
@@ -79,6 +92,7 @@ export const supervisors = pgTable('supervisors', {
 });
 export const payments = pgTable('payments', {
     id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     paymentHash: text('payment_hash').notNull().unique(),
     paymentRequest: text('payment_request').notNull(),
     amountSatoshis: integer('amount_satoshis').notNull(),

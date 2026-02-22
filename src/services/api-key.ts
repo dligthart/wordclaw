@@ -10,6 +10,7 @@ export type ApiScope = typeof ALLOWED_SCOPES[number];
 export type ApiKeyRecord = typeof apiKeys.$inferSelect;
 
 type CreateApiKeyInput = {
+    domainId: number;
     name: string;
     scopes: string[];
     createdBy?: number | null;
@@ -63,6 +64,7 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<{ key: Api
     const scopes = serializeScopes(input.scopes);
 
     const [created] = await db.insert(apiKeys).values({
+        domainId: input.domainId,
         name: input.name,
         keyPrefix: apiKeyPrefix(plaintext),
         keyHash,
@@ -74,7 +76,7 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<{ key: Api
     return { key: created, plaintext };
 }
 
-export async function listApiKeys() {
+export async function listApiKeys(domainId: number) {
     return db.select({
         id: apiKeys.id,
         name: apiKeys.name,
@@ -85,7 +87,9 @@ export async function listApiKeys() {
         expiresAt: apiKeys.expiresAt,
         revokedAt: apiKeys.revokedAt,
         lastUsedAt: apiKeys.lastUsedAt
-    }).from(apiKeys).orderBy(sql`${apiKeys.createdAt} desc`);
+    }).from(apiKeys)
+        .where(eq(apiKeys.domainId, domainId))
+        .orderBy(sql`${apiKeys.createdAt} desc`);
 }
 
 export async function getApiKeyByHash(hash: string): Promise<ApiKeyRecord | null> {
@@ -99,18 +103,18 @@ export async function touchApiKeyUsage(id: number): Promise<void> {
         .where(eq(apiKeys.id, id));
 }
 
-export async function revokeApiKey(id: number): Promise<ApiKeyRecord | null> {
+export async function revokeApiKey(id: number, domainId: number): Promise<ApiKeyRecord | null> {
     const [updated] = await db.update(apiKeys)
         .set({ revokedAt: new Date() })
-        .where(and(eq(apiKeys.id, id), isNull(apiKeys.revokedAt)))
+        .where(and(eq(apiKeys.id, id), eq(apiKeys.domainId, domainId), isNull(apiKeys.revokedAt)))
         .returning();
 
     return updated || null;
 }
 
-export async function rotateApiKey(id: number, actorId?: number | null): Promise<{ oldKey: ApiKeyRecord; newKey: ApiKeyRecord; plaintext: string } | null> {
+export async function rotateApiKey(id: number, domainId: number, actorId?: number | null): Promise<{ oldKey: ApiKeyRecord; newKey: ApiKeyRecord; plaintext: string } | null> {
     return db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(apiKeys).where(and(eq(apiKeys.id, id), isNull(apiKeys.revokedAt)));
+        const [existing] = await tx.select().from(apiKeys).where(and(eq(apiKeys.id, id), eq(apiKeys.domainId, domainId), isNull(apiKeys.revokedAt)));
         if (!existing) {
             return null;
         }
@@ -121,6 +125,7 @@ export async function rotateApiKey(id: number, actorId?: number | null): Promise
 
         const plaintext = generatePlaintextApiKey();
         const [created] = await tx.insert(apiKeys).values({
+            domainId: existing.domainId,
             name: `${existing.name} (rotated)`,
             keyPrefix: apiKeyPrefix(plaintext),
             keyHash: hashApiKey(plaintext),

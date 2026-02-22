@@ -71,6 +71,13 @@
       "when": 1771704604741,
       "tag": "0009_bouncy_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1771719124838,
+      "tag": "0010_sloppy_praxagora",
+      "breakpoints": true
     }
   ]
 }
