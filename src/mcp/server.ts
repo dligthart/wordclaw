@@ -188,7 +188,9 @@ server.tool(
     withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ limit: rawLimit, offset: rawOffset }, extra, domainId) => {
         const limit = clampLimit(rawLimit);
         const offset = clampOffset(rawOffset);
-        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes);
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
+            .from(contentTypes)
+            .where(eq(contentTypes.domainId, domainId));
         const types = await db.select()
             .from(contentTypes)
             .limit(limit)
