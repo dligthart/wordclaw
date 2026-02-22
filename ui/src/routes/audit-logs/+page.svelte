@@ -2,6 +2,7 @@
     import { fetchApi } from "$lib/api";
     import { onMount } from "svelte";
     import DataTable from "$lib/components/DataTable.svelte";
+    import { formatJson } from "$lib/utils";
 
     type AuditEvent = {
         id: number;
@@ -270,11 +271,7 @@
                                 </div>
                                 <pre
                                     class="p-4 text-xs text-green-400 font-mono overflow-x-auto"><code
-                                        >{JSON.stringify(
-                                            row.details,
-                                            null,
-                                            2,
-                                        )}</code
+                                        >{formatJson(row.details)}</code
                                     ></pre>
                             </div>
                         {:else}

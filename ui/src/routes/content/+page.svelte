@@ -2,6 +2,7 @@
     import { fetchApi, ApiError } from "$lib/api";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
+    import { formatJson } from "$lib/utils";
 
     type ContentType = {
         id: number;
@@ -297,9 +298,10 @@
                                             class="text-xs text-gray-800 dark:text-gray-200 font-mono line-clamp-2 break-all opacity-80 mb-2"
                                         >
                                             <!-- Simple preview of JSON data -->
-                                            {JSON.stringify(
-                                                item.data,
-                                            ).substring(0, 100)}...
+                                            {formatJson(item.data).substring(
+                                                0,
+                                                100,
+                                            )}...
                                         </div>
 
                                         <div
@@ -404,10 +406,8 @@
                                 >
                                     <pre
                                         class="p-4 text-xs font-mono text-green-400 overflow-x-auto"><code
-                                            >{JSON.stringify(
+                                            >{formatJson(
                                                 selectedItem.data,
-                                                null,
-                                                2,
                                             )}</code
                                         ></pre>
                                 </div>
@@ -455,7 +455,7 @@
                                             <div
                                                 class="text-xs font-mono text-gray-600 dark:text-gray-400 bg-white/50 dark:bg-gray-900/50 p-2 rounded mt-2 max-h-24 overflow-y-auto"
                                             >
-                                                {JSON.stringify(
+                                                {formatJson(
                                                     selectedItem.data,
                                                 ).substring(0, 150)}...
                                             </div>
@@ -491,7 +491,7 @@
                                                 <div
                                                     class="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 p-2 rounded mb-3 max-h-24 overflow-y-auto"
                                                 >
-                                                    {JSON.stringify(
+                                                    {formatJson(
                                                         v.data,
                                                     ).substring(0, 150)}...
                                                 </div>

@@ -2,6 +2,7 @@
     import { fetchApi, ApiError } from "$lib/api";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
+    import { formatJson } from "$lib/utils";
 
     type ContentItem = {
         id: number;
@@ -253,10 +254,7 @@
                                 <div
                                     class="text-xs text-gray-600 dark:text-gray-400 font-mono line-clamp-2 break-all opacity-80 mb-2"
                                 >
-                                    {JSON.stringify(item.data).substring(
-                                        0,
-                                        80,
-                                    )}...
+                                    {formatJson(item.data).substring(0, 80)}...
                                 </div>
 
                                 <div
@@ -388,11 +386,7 @@
                                 title="Copy to clipboard"
                                 onclick={() =>
                                     navigator.clipboard.writeText(
-                                        JSON.stringify(
-                                            selectedItem!.data,
-                                            null,
-                                            2,
-                                        ),
+                                        formatJson(selectedItem!.data),
                                     )}
                             >
                                 Copy JSON
