@@ -4,12 +4,13 @@ import { GraphQLError } from 'graphql';
 import GraphQLJSON from 'graphql-type-json';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
 import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
+import { WorkflowService } from '../services/workflow.js';
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 
@@ -321,7 +322,7 @@ async function validateContentItemUpdateInput(item: {
     contentTypeId?: number;
     data?: string | Record<string, any>;
     status?: string;
-}, index: number): Promise<{
+}, index: number, domainId: number): Promise<{
     ok: true;
     existing: typeof contentItems.$inferSelect;
     updateData: ContentItemUpdateInput;
@@ -367,6 +368,14 @@ async function validateContentItemUpdateInput(item: {
         return {
             ok: false,
             error: buildBatchError(index, contentValidation.code, contentValidation.error)
+        };
+    }
+
+    const activeWorkflow = await WorkflowService.getActiveWorkflow(domainId, targetContentTypeId);
+    if (activeWorkflow && updateData.status && updateData.status !== existing.status) {
+        return {
+            ok: false,
+            error: buildBatchError(index, 'WORKFLOW_TRANSITION_FORBIDDEN', `Content type governed by workflow. Assign 'draft' or submit transitions exclusively.`)
         };
     }
 
@@ -741,6 +750,15 @@ export const resolvers = {
                 throw toErrorFromValidation(contentFailure);
             }
 
+            const activeWorkflow = await WorkflowService.getActiveWorkflow(getDomainId(context), contentTypeId);
+            if (activeWorkflow && status !== 'draft') {
+                throw toError(
+                    'Workflow transition forbidden',
+                    'WORKFLOW_TRANSITION_FORBIDDEN',
+                    `This content type is governed by an active workflow. You cannot manually set the status. Save as a 'draft' and submit for review.`
+                );
+            }
+
             if (args.dryRun) {
                 return {
                     id: 0,
@@ -824,6 +842,11 @@ export const resolvers = {
                                 throw new Error(JSON.stringify(buildBatchError(index, validation.code, validation.error)));
                             }
 
+                            const activeWorkflow = await WorkflowService.getActiveWorkflow(getDomainId(context), item.contentTypeId as number);
+                            if (activeWorkflow && item.status && item.status !== 'draft') {
+                                throw new Error(JSON.stringify(buildBatchError(index, 'WORKFLOW_TRANSITION_FORBIDDEN', `Content type governed by workflow. Assign 'draft' during batch creations.`)));
+                            }
+
                             const [created] = await tx.insert(contentItems).values({
                                 domainId: getDomainId(context),
                                 contentTypeId: item.contentTypeId,
@@ -886,6 +909,12 @@ export const resolvers = {
                         continue;
                     }
 
+                    const activeWorkflow = await WorkflowService.getActiveWorkflow(getDomainId(context), item.contentTypeId as number);
+                    if (activeWorkflow && item.status && item.status !== 'draft') {
+                        results.push(buildBatchError(index, 'WORKFLOW_TRANSITION_FORBIDDEN', `Content type governed by workflow. Assign 'draft' during batch creations.`));
+                        continue;
+                    }
+
                     const [created] = await db.insert(contentItems).values({
                         domainId: getDomainId(context),
                         contentTypeId: item.contentTypeId,
@@ -943,6 +972,15 @@ export const resolvers = {
             const contentFailure = validateContentDataAgainstSchema(contentType.schema, targetData);
             if (contentFailure) {
                 throw toErrorFromValidation(contentFailure);
+            }
+
+            const activeWorkflow = await WorkflowService.getActiveWorkflow(getDomainId(context), targetContentTypeId);
+            if (activeWorkflow && args.status && args.status !== existing.status) {
+                throw toError(
+                    'Workflow transition forbidden',
+                    'WORKFLOW_TRANSITION_FORBIDDEN',
+                    `This content type is governed by an active workflow. You cannot manually set the status. Submit for review instead.`
+                );
             }
 
             if (args.dryRun) {
@@ -1003,7 +1041,7 @@ export const resolvers = {
             if (args.dryRun) {
                 const results: BatchResultRow[] = [];
                 for (const [index, item] of normalizedItems.entries()) {
-                    const validated = await validateContentItemUpdateInput(item, index);
+                    const validated = await validateContentItemUpdateInput(item, index, getDomainId(context));
                     if (!validated.ok) {
                         results.push(validated.error);
                         continue;
@@ -1114,7 +1152,7 @@ export const resolvers = {
 
             const results: BatchResultRow[] = [];
             for (const [index, item] of normalizedItems.entries()) {
-                const validated = await validateContentItemUpdateInput(item, index);
+                const validated = await validateContentItemUpdateInput(item, index, getDomainId(context));
                 if (!validated.ok) {
                     results.push(validated.error);
                     continue;
@@ -1530,6 +1568,58 @@ export const resolvers = {
                 resource
             );
             return PolicyEngine.evaluate(operationContext);
+        }),
+
+        createWorkflow: withPolicy('system.config', () => ({ type: 'system' }), async (_parent: unknown, args: { name: string; contentTypeId: IdValue; active?: boolean }, context?: unknown) => {
+            const [workflow] = await db.insert(workflows).values({
+                domainId: getDomainId(context),
+                name: args.name,
+                contentTypeId: parseId(args.contentTypeId),
+                active: args.active !== undefined ? args.active : true
+            }).returning();
+            return workflow;
+        }),
+
+        createWorkflowTransition: withPolicy('system.config', () => ({ type: 'system' }), async (_parent: unknown, args: { workflowId: IdValue; fromState: string; toState: string; requiredRoles: string[] }) => {
+            const [transition] = await db.insert(workflowTransitions).values({
+                workflowId: parseId(args.workflowId),
+                fromState: args.fromState,
+                toState: args.toState,
+                requiredRoles: args.requiredRoles
+            }).returning();
+            return transition;
+        }),
+
+        submitReviewTask: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.contentItemId }), async (_parent: unknown, args: { contentItemId: IdValue; workflowTransitionId: IdValue; assignee?: string }, context?: unknown) => {
+            const authPrincipal = context && typeof context === 'object' && 'authPrincipal' in context ? (context.authPrincipal as { scopes: Set<string>; domainId: number }) : undefined;
+            return await WorkflowService.submitForReview({
+                domainId: getDomainId(context),
+                contentItemId: parseId(args.contentItemId),
+                workflowTransitionId: parseId(args.workflowTransitionId),
+                assignee: args.assignee,
+                authPrincipal
+            });
+        }),
+
+        decideReviewTask: withPolicy('content.write', () => ({ type: 'system' }), async (_parent: unknown, args: { taskId: IdValue; decision: 'approved' | 'rejected' }, context?: unknown) => {
+            const authPrincipal = context && typeof context === 'object' && 'authPrincipal' in context ? (context.authPrincipal as { scopes: Set<string>; domainId: number }) : { scopes: new Set<string>(), domainId: 0 };
+            return await WorkflowService.decideReviewTask(
+                getDomainId(context),
+                parseId(args.taskId),
+                args.decision,
+                authPrincipal
+            );
+        }),
+
+        addReviewComment: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.contentItemId }), async (_parent: unknown, args: { contentItemId: IdValue; comment: string }, context?: unknown) => {
+            const authorId = typeof (context as any)?.authPrincipal?.keyId === 'number'
+                ? (context as any).authPrincipal.keyId.toString()
+                : 'supervisor';
+            const comment = await WorkflowService.addComment(getDomainId(context), parseId(args.contentItemId), authorId, args.comment);
+            return {
+                ...comment,
+                createdAt: comment.createdAt.toISOString()
+            };
         })
     }
 };

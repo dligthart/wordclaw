@@ -4,11 +4,12 @@ import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
+import { WorkflowService } from '../services/workflow.js';
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
@@ -1502,6 +1503,116 @@ server.tool(
         );
         const decision = await PolicyEngine.evaluate(operationContext);
         return okJson(decision);
+    })
+);
+
+server.tool(
+    'create_workflow',
+    'Create an active workflow for a content type',
+    {
+        name: z.string().describe('Human-readable workflow name'),
+        contentTypeId: z.number().describe('ID of the content type to govern'),
+        active: z.boolean().optional().default(true).describe('Whether the workflow is currently active')
+    },
+    withMCPPolicy('system.config', () => ({ type: 'system' }), async ({ name, contentTypeId, active }, _extra, domainId) => {
+        try {
+            const [workflow] = await db.insert(workflows).values({
+                domainId,
+                name,
+                contentTypeId,
+                active
+            }).returning();
+            return okJson(workflow);
+        } catch (error) {
+            return err(`Error creating workflow: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'create_workflow_transition',
+    'Create a state transition path for a workflow',
+    {
+        workflowId: z.number().describe('ID of the workflow'),
+        fromState: z.string().describe('Initial state (e.g. "draft")'),
+        toState: z.string().describe('Target state (e.g. "in_review")'),
+        requiredRoles: z.array(z.string()).describe('Roles authorized to execute this transition (e.g. ["reviewer"])')
+    },
+    withMCPPolicy('system.config', () => ({ type: 'system' }), async ({ workflowId, fromState, toState, requiredRoles }) => {
+        try {
+            const [transition] = await db.insert(workflowTransitions).values({
+                workflowId,
+                fromState,
+                toState,
+                requiredRoles
+            }).returning();
+            return okJson(transition);
+        } catch (error) {
+            return err(`Error creating transition: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'submit_review_task',
+    'Submit a content item for review via a workflow transition',
+    {
+        contentItemId: z.number().describe('ID of the content item to submit'),
+        workflowTransitionId: z.number().describe('ID of the relevant workflow transition path'),
+        assignee: z.string().optional().describe('Username/ID of the designated reviewer')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.contentItemId.toString() }), async ({ contentItemId, workflowTransitionId, assignee }, _extra, domainId) => {
+        try {
+            const result = await WorkflowService.submitForReview({
+                domainId,
+                contentItemId,
+                workflowTransitionId,
+                assignee,
+                authPrincipal: { scopes: new Set(['admin']), domainId }
+            });
+            return okJson(result);
+        } catch (error) {
+            return err(`Error submitting for review: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'decide_review_task',
+    'Approve or Reject an active review task',
+    {
+        taskId: z.number().describe('ID of the review task to decide upon'),
+        decision: z.enum(['approved', 'rejected']).describe('Decision outcome for the task')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ taskId, decision }, _extra, domainId) => {
+        try {
+            const result = await WorkflowService.decideReviewTask(
+                domainId,
+                taskId,
+                decision,
+                { scopes: new Set(['admin']), domainId }
+            );
+            return okJson(result);
+        } catch (error) {
+            return err(`Error deciding task: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'add_review_comment',
+    'Add a threaded comment to a content item currently under review',
+    {
+        contentItemId: z.number().describe('ID of the relevant content item'),
+        comment: z.string().describe('The review feedback or comment text')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.contentItemId.toString() }), async ({ contentItemId, comment }, _extra, domainId) => {
+        try {
+            const commentObj = await WorkflowService.addComment(domainId, contentItemId, 'mcp-agent', comment);
+            return okJson(commentObj);
+        } catch (error) {
+            return err(`Error adding comment: ${(error as Error).message}`);
+        }
     })
 );
 

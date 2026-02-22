@@ -127,3 +127,41 @@ export const policyDecisionLogs = pgTable('policy_decision_logs', {
         policyCreatedAtIdx: index('policy_created_at_idx').on(table.createdAt)
     };
 });
+
+export const workflows = pgTable('workflows', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    contentTypeId: integer('content_type_id').references(() => contentTypes.id, { onDelete: 'cascade' }).notNull(),
+    active: boolean('active').default(true).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const workflowTransitions = pgTable('workflow_transitions', {
+    id: serial('id').primaryKey(),
+    workflowId: integer('workflow_id').references(() => workflows.id, { onDelete: 'cascade' }).notNull(),
+    fromState: text('from_state').notNull(),
+    toState: text('to_state').notNull(),
+    requiredRoles: jsonb('required_roles').notNull(), // Array of scope strings
+});
+
+export const reviewTasks = pgTable('review_tasks', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    contentItemId: integer('content_item_id').references(() => contentItems.id, { onDelete: 'cascade' }).notNull(),
+    workflowTransitionId: integer('workflow_transition_id').references(() => workflowTransitions.id).notNull(),
+    status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected', 'changes_requested'
+    assignee: text('assignee'), // API Key Hash or Supervisor ID
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const reviewComments = pgTable('review_comments', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    contentItemId: integer('content_item_id').references(() => contentItems.id, { onDelete: 'cascade' }).notNull(),
+    authorId: text('author_id').notNull(), // API Key Hash or Supervisor ID
+    comment: text('comment').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
@@ -15,6 +15,7 @@ import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from '../services/policy-adapters.js';
 import { l402Middleware } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
+import { WorkflowService } from '../services/workflow.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -1198,6 +1199,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 })),
                 400: AIErrorResponse,
                 404: AIErrorResponse,
+                403: AIErrorResponse,
                 402: Type.Any() // Added 402 for L402 Payment Required response
             }
         },
@@ -1216,6 +1218,15 @@ export default async function apiRoutes(server: FastifyInstance) {
         const contentValidation = validateContentDataAgainstSchema(contentType.schema, data.data);
         if (contentValidation) {
             return reply.status(400).send(fromValidationFailure(contentValidation));
+        }
+
+        const activeWorkflow = await WorkflowService.getActiveWorkflow(getDomainId(request), data.contentTypeId);
+        if (activeWorkflow && data.status && data.status !== 'draft') {
+            return reply.status(403).send(toErrorPayload(
+                'Workflow transition forbidden',
+                'WORKFLOW_TRANSITION_FORBIDDEN',
+                `This content type is governed by an active workflow. You cannot manually set the status to '${data.status}'. Save as a 'draft' and use POST /api/content-items/:id/submit to request a transition.`
+            ));
         }
 
         if (isDryRun(mode)) {
@@ -1275,6 +1286,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 })),
                 400: AIErrorResponse,
                 404: AIErrorResponse,
+                403: AIErrorResponse,
                 402: Type.Any()
             }
         },
@@ -1294,6 +1306,15 @@ export default async function apiRoutes(server: FastifyInstance) {
         const contentValidation = validateContentDataAgainstSchema(contentType.schema, data.data);
         if (contentValidation) {
             return reply.status(400).send(fromValidationFailure(contentValidation));
+        }
+
+        const activeWorkflow = await WorkflowService.getActiveWorkflow(getDomainId(request), data.contentTypeId);
+        if (activeWorkflow && data.status && data.status !== 'draft') {
+            return reply.status(403).send(toErrorPayload(
+                'Workflow transition forbidden',
+                'WORKFLOW_TRANSITION_FORBIDDEN',
+                `This content type is governed by an active workflow. You cannot manually set the status to '${data.status}'. Save as a 'draft' and use POST /api/content-items/:id/submit to request a transition.`
+            ));
         }
 
         if (isDryRun(mode)) {
@@ -1473,7 +1494,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     updatedAt: Type.Optional(Type.String())
                 })),
                 400: AIErrorResponse,
-                404: AIErrorResponse
+                404: AIErrorResponse,
+                403: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -1513,6 +1535,15 @@ export default async function apiRoutes(server: FastifyInstance) {
         const contentValidation = validateContentDataAgainstSchema(targetContentType.schema, targetData);
         if (contentValidation) {
             return reply.status(400).send(fromValidationFailure(contentValidation));
+        }
+
+        const activeWorkflow = await WorkflowService.getActiveWorkflow(getDomainId(request), targetContentTypeId);
+        if (activeWorkflow && updateData.status && updateData.status !== existing.status) {
+            return reply.status(403).send(toErrorPayload(
+                'Workflow transition forbidden',
+                'WORKFLOW_TRANSITION_FORBIDDEN',
+                `This content type is governed by an active workflow. You cannot manually change the status to '${updateData.status}'. Use POST /api/content-items/:id/submit to request a transition.`
+            ));
         }
 
         if (isDryRun(mode)) {
@@ -2617,5 +2648,194 @@ export default async function apiRoutes(server: FastifyInstance) {
             data: payment,
             meta: buildMeta('Get a specific payment', ['GET /api/payments/:id'], 'low', 1, false)
         };
+    });
+
+    // --- Workflows & Review Tasks ---
+
+    server.post('/workflows', {
+        schema: {
+            body: Type.Object({
+                name: Type.String(),
+                contentTypeId: Type.Number(),
+                active: Type.Optional(Type.Boolean())
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    name: Type.String(),
+                    contentTypeId: Type.Number(),
+                    active: Type.Boolean()
+                }))
+            }
+        }
+    }, async (request, reply) => {
+        const payload = request.body as any;
+        const [workflow] = await db.insert(workflows).values({
+            domainId: getDomainId(request),
+            name: payload.name,
+            contentTypeId: payload.contentTypeId,
+            active: payload.active !== undefined ? payload.active : true
+        }).returning();
+
+        return reply.status(201).send({
+            data: workflow,
+            meta: buildMeta('Add transitions to this workflow', [`POST /api/workflows/${workflow.id}/transitions`], 'high', 1)
+        });
+    });
+
+    server.post('/workflows/:id/transitions', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                fromState: Type.String(),
+                toState: Type.String(),
+                requiredRoles: Type.Array(Type.String())
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    workflowId: Type.Number(),
+                    fromState: Type.String(),
+                    toState: Type.String()
+                }))
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const payload = request.body as any;
+        const [transition] = await db.insert(workflowTransitions).values({
+            workflowId: id,
+            fromState: payload.fromState,
+            toState: payload.toState,
+            requiredRoles: payload.requiredRoles
+        }).returning();
+
+        return reply.status(201).send({
+            data: transition,
+            meta: buildMeta('Workflow transition mapped', [], 'low', 1)
+        });
+    });
+
+    server.post('/content-items/:id/submit', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                workflowTransitionId: Type.Number(),
+                assignee: Type.Optional(Type.String())
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    status: Type.String()
+                }))
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const payload = request.body as any;
+        const authPrincipal = (request as any).authPrincipal;
+
+        const task = await WorkflowService.submitForReview({
+            domainId: getDomainId(request),
+            contentItemId: id,
+            workflowTransitionId: payload.workflowTransitionId,
+            assignee: payload.assignee,
+            authPrincipal
+        });
+
+        return reply.status(201).send({
+            data: task,
+            meta: buildMeta('Item submitted for review', [`POST /api/review-tasks/${task.id}/decide`], 'high', 1)
+        });
+    });
+
+    server.post('/review-tasks/:id/decide', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                decision: Type.Union([Type.Literal('approved'), Type.Literal('rejected')])
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    status: Type.String()
+                }))
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const payload = request.body as any;
+        const authPrincipal = (request as any).authPrincipal;
+
+        const task = await WorkflowService.decideReviewTask(
+            getDomainId(request),
+            id,
+            payload.decision,
+            authPrincipal
+        );
+
+        return reply.status(200).send({
+            data: task,
+            meta: buildMeta(`Task ${payload.decision}`, [], 'low', 1)
+        });
+    });
+
+    server.get('/content-items/:id/comments', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    authorId: Type.String(),
+                    comment: Type.String(),
+                    createdAt: Type.String() // Typescript requires native String for output serialization
+                })))
+            }
+        }
+    }, async (request) => {
+        const { id } = request.params as { id: number };
+        const comments = await WorkflowService.listComments(getDomainId(request), id);
+        return {
+            data: comments,
+            meta: buildMeta('Add a new comment to thread', [`POST /api/content-items/${id}/comments`], 'medium', 1)
+        };
+    });
+
+    server.post('/content-items/:id/comments', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                comment: Type.String()
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    authorId: Type.String(),
+                    comment: Type.String()
+                }))
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const payload = request.body as any;
+        const authPrincipal = (request as any).authPrincipal;
+        const authorId = authPrincipal?.keyId?.toString() || 'supervisor';
+
+        const comment = await WorkflowService.addComment(getDomainId(request), id, authorId, payload.comment);
+
+        return reply.status(201).send({
+            data: comment,
+            meta: buildMeta('Comment posted successfully', [], 'low', 1)
+        });
     });
 }

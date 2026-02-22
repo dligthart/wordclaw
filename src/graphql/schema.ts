@@ -143,6 +143,45 @@ export const schema = `
     status: String
   }
 
+  """A formalized multi-step editorial process."""
+  type Workflow {
+    id: ID!
+    name: String!
+    contentTypeId: ID!
+    active: Boolean!
+    createdAt: String
+    updatedAt: String
+  }
+
+  """A valid transition path between states within a workflow."""
+  type WorkflowTransition {
+    id: ID!
+    workflowId: ID!
+    fromState: String!
+    toState: String!
+    requiredRoles: [String!]!
+  }
+
+  """An active content review task mapping an item to a transition decision."""
+  type ReviewTask {
+    id: ID!
+    contentItemId: ID!
+    workflowTransitionId: ID!
+    status: String!
+    assignee: String
+    createdAt: String
+    updatedAt: String
+  }
+
+  """A conversational comment attached to a content item's review thread."""
+  type ReviewComment {
+    id: ID!
+    contentItemId: ID!
+    authorId: String!
+    comment: String!
+    createdAt: String
+  }
+
   """Per-item result in batch operations."""
   type BatchItemResult {
     """Index of the input item in the original request."""
@@ -283,5 +322,20 @@ export const schema = `
     rollbackContentItem(id: ID!, version: Int!, dryRun: Boolean = false): RollbackResult!
     """Evaluate a policy decision without side effects."""
     policyEvaluate(operation: String!, resource: ResourceInput!): PolicyDecision!
+    
+    """Create a new Workflow for a given ContentType."""
+    createWorkflow(name: String!, contentTypeId: ID!, active: Boolean): Workflow!
+    
+    """Map a valid transition stage to a Workflow."""
+    createWorkflowTransition(workflowId: ID!, fromState: String!, toState: String!, requiredRoles: [String!]!): WorkflowTransition!
+    
+    """Submit a Content Item into an active Review Task."""
+    submitReviewTask(contentItemId: ID!, workflowTransitionId: ID!, assignee: String): ReviewTask!
+    
+    """Approve or Reject an active Review Task."""
+    decideReviewTask(taskId: ID!, decision: String!): ReviewTask!
+    
+    """Attach a comment to a content item's review thread."""
+    addReviewComment(contentItemId: ID!, comment: String!): ReviewComment!
   }
 `;

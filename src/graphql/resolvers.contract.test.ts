@@ -24,6 +24,7 @@ vi.mock('../services/audit.js', () => ({
 }));
 
 import { resolvers } from './resolvers.js';
+import { WorkflowService } from '../services/workflow.js';
 
 type GraphQLErrorLike = {
     extensions?: {
@@ -139,6 +140,8 @@ describe('GraphQL Resolver Contracts', () => {
     });
 
     it('updateContentItem logs audit on successful update', async () => {
+        const workflowSpy = vi.spyOn(WorkflowService, 'getActiveWorkflow').mockResolvedValue(null as any);
+
         let callCount = 0;
         mocks.dbMock.select.mockImplementation(() => ({
             from: () => ({
@@ -193,6 +196,8 @@ describe('GraphQL Resolver Contracts', () => {
             undefined,
             undefined
         );
+
+        workflowSpy.mockRestore();
     });
 
     it('createContentItemsBatch supports dry-run without writes', async () => {
