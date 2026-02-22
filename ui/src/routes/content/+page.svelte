@@ -28,11 +28,39 @@
         createdAt: string;
     };
 
+    type WorkflowTransition = {
+        id: number;
+        workflowId: number;
+        fromState: string;
+        toState: string;
+        requiredRoles: string[];
+    };
+
+    type ActiveWorkflow = {
+        id: number;
+        name: string;
+        contentTypeId: number;
+        active: boolean;
+        transitions: WorkflowTransition[];
+    };
+
+    type ReviewComment = {
+        id: number;
+        authorId: string;
+        comment: string;
+        createdAt: string;
+    };
+
     let contentTypes = $state<ContentType[]>([]);
     let selectedType = $state<ContentType | null>(null);
     let items = $state<ContentItem[]>([]);
     let selectedItem = $state<ContentItem | null>(null);
     let versions = $state<ContentVersion[]>([]);
+    let comments = $state<ReviewComment[]>([]);
+    let activeWorkflow = $state<ActiveWorkflow | null>(null);
+
+    let newComment = $state("");
+    let submittingReview = $state(false);
 
     let loading = $state(true);
     let loadingItems = $state(false);
@@ -55,6 +83,8 @@
         selectedType = type;
         selectedItem = null;
         versions = [];
+        comments = [];
+        activeWorkflow = null;
         loadingItems = true;
 
         try {
@@ -62,6 +92,15 @@
                 `/content-items?contentTypeId=${type.id}&limit=50`,
             );
             items = res.data;
+
+            try {
+                const wfRes = await fetchApi(
+                    `/content-types/${type.id}/workflows/active`,
+                );
+                if (wfRes.data) activeWorkflow = wfRes.data;
+            } catch (e: any) {
+                // Ignore, no active workflow
+            }
         } catch (err: any) {
             error = err.message || "Failed to load items";
         } finally {
@@ -74,8 +113,15 @@
         try {
             const res = await fetchApi(`/content-items/${item.id}/versions`);
             versions = res.data;
+
+            if (activeWorkflow) {
+                const commentsRes = await fetchApi(
+                    `/content-items/${item.id}/comments`,
+                );
+                comments = commentsRes.data;
+            }
         } catch (err: any) {
-            error = err.message || "Failed to load versions";
+            error = err.message || "Failed to load item context";
         }
     }
 
@@ -124,6 +170,64 @@
                 }
             },
         });
+    }
+
+    async function submitForReview(transitionId: number) {
+        if (!selectedItem) return;
+        submittingReview = true;
+        try {
+            await fetchApi(`/content-items/${selectedItem.id}/submit`, {
+                method: "POST",
+                body: JSON.stringify({ workflowTransitionId: transitionId }),
+            });
+            feedbackStore.pushToast({
+                severity: "success",
+                title: "Submitted",
+                message: "Item submitted for review.",
+            });
+
+            // Re-fetch item to get new status
+            const refreshed = await fetchApi(
+                `/content-items?contentTypeId=${selectedType!.id}&limit=50`,
+            );
+            items = refreshed.data;
+            selectedItem = items.find((i) => i.id === selectedItem!.id) || null;
+            if (selectedItem) await selectItem(selectedItem);
+        } catch (err: any) {
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Failed to submit",
+                message: err.message,
+            });
+        } finally {
+            submittingReview = false;
+        }
+    }
+
+    async function postComment() {
+        if (!newComment.trim() || !selectedItem) return;
+        try {
+            const res = await fetchApi(
+                `/content-items/${selectedItem.id}/comments`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({ comment: newComment }),
+                },
+            );
+            comments = [res.data, ...comments];
+            newComment = "";
+            feedbackStore.pushToast({
+                severity: "success",
+                title: "Comment Posted",
+                message: "Your comment has been added.",
+            });
+        } catch (err: any) {
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Failed to post comment",
+                message: err.message,
+            });
+        }
     }
 </script>
 
@@ -414,6 +518,118 @@
                             </div>
 
                             <hr class="border-gray-200 dark:border-gray-700" />
+
+                            <!-- Workflow Actions (If Active) -->
+                            {#if activeWorkflow}
+                                <div>
+                                    <h4
+                                        class="text-sm font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide"
+                                    >
+                                        Workflow: {activeWorkflow.name}
+                                    </h4>
+
+                                    {#if activeWorkflow.transitions.filter((t) => t.fromState === selectedItem?.status).length > 0}
+                                        <div class="flex flex-wrap gap-2 mb-6">
+                                            {#each activeWorkflow.transitions.filter((t) => t.fromState === selectedItem?.status) as transition}
+                                                <button
+                                                    onclick={() =>
+                                                        submitForReview(
+                                                            transition.id,
+                                                        )}
+                                                    disabled={submittingReview}
+                                                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                                                >
+                                                    {transition.toState ===
+                                                    "published"
+                                                        ? "Publish"
+                                                        : `Submit for ${transition.toState}`}
+                                                </button>
+                                            {/each}
+                                        </div>
+                                    {:else}
+                                        <p
+                                            class="text-xs text-gray-500 mb-6 italic"
+                                        >
+                                            No transitions available from
+                                            current state.
+                                        </p>
+                                    {/if}
+
+                                    <!-- Comments -->
+                                    <div
+                                        class="bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 p-4"
+                                    >
+                                        <h5
+                                            class="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3"
+                                        >
+                                            Discussion
+                                        </h5>
+
+                                        <div
+                                            class="space-y-3 mb-4 max-h-48 overflow-y-auto pr-2"
+                                        >
+                                            {#if comments.length === 0}
+                                                <p
+                                                    class="text-xs text-center text-gray-400 italic"
+                                                >
+                                                    No comments yet.
+                                                </p>
+                                            {:else}
+                                                {#each comments as comment}
+                                                    <div
+                                                        class="bg-white dark:bg-gray-800 p-3 rounded shadow-sm border border-gray-100 dark:border-gray-700"
+                                                    >
+                                                        <div
+                                                            class="flex justify-between items-center mb-1"
+                                                        >
+                                                            <span
+                                                                class="text-xs font-bold text-gray-800 dark:text-gray-200"
+                                                                >{comment.authorId}</span
+                                                            >
+                                                            <span
+                                                                class="text-[0.6rem] text-gray-500"
+                                                                >{new Date(
+                                                                    comment.createdAt,
+                                                                ).toLocaleString()}</span
+                                                            >
+                                                        </div>
+                                                        <p
+                                                            class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap"
+                                                        >
+                                                            {comment.comment}
+                                                        </p>
+                                                    </div>
+                                                {/each}
+                                            {/if}
+                                        </div>
+
+                                        <form
+                                            onsubmit={(e) => {
+                                                e.preventDefault();
+                                                postComment();
+                                            }}
+                                            class="flex gap-2"
+                                        >
+                                            <input
+                                                type="text"
+                                                bind:value={newComment}
+                                                placeholder="Add a comment..."
+                                                class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm dark:bg-gray-800 dark:text-white"
+                                            />
+                                            <button
+                                                type="submit"
+                                                disabled={!newComment.trim()}
+                                                class="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white text-sm font-medium rounded-md transition-colors disabled:opacity-50"
+                                            >
+                                                Post
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                                <hr
+                                    class="border-gray-200 dark:border-gray-700 my-6"
+                                />
+                            {/if}
 
                             <!-- Version History -->
                             <div>

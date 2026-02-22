@@ -4,28 +4,48 @@
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { formatJson } from "$lib/utils";
 
-    type ContentItem = {
-        id: number;
-        contentTypeId: number;
-        status: string;
-        version: number;
-        data: any;
-        createdAt: string;
-        updatedAt: string;
+    type ReviewTaskPayload = {
+        task: {
+            id: number;
+            contentItemId: number;
+            workflowTransitionId: number;
+            status: string;
+            assignee: string | null;
+            createdAt: string;
+            updatedAt: string;
+        };
+        transition: {
+            id: number;
+            workflowId: number;
+            fromState: string;
+            toState: string;
+            requiredRoles: string[];
+        };
+        workflow: {
+            id: number;
+            name: string;
+        };
+        contentItem: {
+            id: number;
+            contentTypeId: number;
+            data: any;
+            status: string;
+            version: number;
+            createdAt: string;
+            updatedAt: string;
+        };
+        contentType: {
+            id: number;
+            name: string;
+            slug: string;
+        };
     };
 
-    type ContentType = {
-        id: number;
-        name: string;
-        slug: string;
-    };
-
-    let pendingItems = $state<ContentItem[]>([]);
-    let contentTypes = $state<Record<number, ContentType>>({});
+    let pendingTasks = $state<ReviewTaskPayload[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
 
-    let selectedItem = $state<ContentItem | null>(null);
+    let selectedTask = $state<ReviewTaskPayload | null>(null);
     let processingItem = $state<number | null>(null);
 
     onMount(async () => {
@@ -36,36 +56,8 @@
         loading = true;
         error = null;
         try {
-            // Fetch content types for reference
-            const typesRes = await fetchApi("/content-types");
-            const typesRecord: Record<number, ContentType> = {};
-            for (const t of typesRes.data) {
-                typesRecord[t.id] = t;
-            }
-            contentTypes = typesRecord;
-
-            // Fetch pending items (we treat 'draft' or 'pending_approval' as pending)
-            // Let's explicitly fetch 'pending_approval' if agents set it, but for our MVP, let's treat anything not 'published' and not 'rejected' and not 'archived' as reviewable. Let's explicitly query 'draft' for now.
-            const res = await fetchApi("/content-items?status=draft&limit=50");
-            pendingItems = res.data;
-
-            // If we also have a specific 'pending_approval' status, fetch that too.
-            const resPending = await fetchApi(
-                "/content-items?status=pending_approval&limit=50",
-            );
-            pendingItems = [...pendingItems, ...resPending.data].sort(
-                (a, b) =>
-                    new Date(b.updatedAt).getTime() -
-                    new Date(a.updatedAt).getTime(),
-            );
-
-            // Deduplicate if any overlap (unlikely if strictly matching statuses)
-            const uniqueIds = new Set();
-            pendingItems = pendingItems.filter((item) => {
-                const isDup = uniqueIds.has(item.id);
-                uniqueIds.add(item.id);
-                return !isDup;
-            });
+            const res = await fetchApi("/review-tasks");
+            pendingTasks = res.data;
         } catch (err: any) {
             error = err.message || "Failed to load approval queue";
         } finally {
@@ -73,42 +65,42 @@
         }
     }
 
-    async function processItem(
-        item: ContentItem,
-        newStatus: "published" | "rejected",
+    async function processTask(
+        payload: ReviewTaskPayload,
+        decision: "approved" | "rejected",
     ) {
         feedbackStore.openConfirm({
             title:
-                newStatus === "published"
-                    ? "Approve Content"
-                    : "Reject Content",
-            message: `Are you sure you want to ${newStatus === "published" ? "publish" : "reject"} item #${item.id}? This action cannot be undone.`,
-            confirmLabel: newStatus === "published" ? "Approve" : "Reject",
-            confirmIntent: newStatus === "published" ? "primary" : "danger",
+                decision === "approved" ? "Approve Content" : "Reject Content",
+            message: `Are you sure you want to ${decision === "approved" ? "approve" : "reject"} task #${payload.task.id}? This action cannot be undone.`,
+            confirmLabel: decision === "approved" ? "Approve" : "Reject",
+            confirmIntent: decision === "approved" ? "primary" : "danger",
             onConfirm: async () => {
-                processingItem = item.id;
+                processingItem = payload.task.id;
                 try {
-                    await fetchApi(`/content-items/${item.id}`, {
-                        method: "PUT",
-                        body: JSON.stringify({ status: newStatus }),
+                    await fetchApi(`/review-tasks/${payload.task.id}/decide`, {
+                        method: "POST",
+                        body: JSON.stringify({ decision }),
                     });
 
-                    pendingItems = pendingItems.filter((i) => i.id !== item.id);
-                    if (selectedItem?.id === item.id) {
-                        selectedItem = null;
+                    pendingTasks = pendingTasks.filter(
+                        (t) => t.task.id !== payload.task.id,
+                    );
+                    if (selectedTask?.task.id === payload.task.id) {
+                        selectedTask = null;
                     }
 
                     feedbackStore.pushToast({
                         severity: "success",
                         title: "Operation Successful",
-                        message: `Item #${item.id} has been ${newStatus}.`,
+                        message: `Task #${payload.task.id} has been ${decision}.`,
                     });
                 } catch (err: any) {
                     const isApiError = err instanceof ApiError;
                     feedbackStore.pushToast({
                         severity: "error",
                         title: "Operation Failed",
-                        message: err.message || `Failed to ${newStatus} item.`,
+                        message: err.message || `Failed to ${decision} task.`,
                         code: isApiError ? err.code : undefined,
                         remediation: isApiError ? err.remediation : undefined,
                     });
@@ -120,8 +112,8 @@
         });
     }
 
-    function viewItem(item: ContentItem) {
-        selectedItem = item;
+    function viewTask(payload: ReviewTaskPayload) {
+        selectedTask = payload;
     }
 </script>
 
@@ -136,10 +128,10 @@
                 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3"
             >
                 Approval Queue
-                {#if pendingItems.length > 0 && !loading}
+                {#if pendingTasks.length > 0 && !loading}
                     <span
                         class="inline-flex items-center justify-center bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 text-xs font-bold w-6 h-6 rounded-full"
-                        >{pendingItems.length}</span
+                        >{pendingTasks.length}</span
                     >
                 {/if}
             </h2>
@@ -178,7 +170,7 @@
     <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
         <!-- Queue List -->
         <div
-            class="w-full md:w-1/3 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedItem
+            class="w-full md:w-1/3 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedTask
                 ? 'hidden md:flex'
                 : 'flex'}"
         >
@@ -199,7 +191,7 @@
                             class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"
                         ></div>
                     </div>
-                {:else if pendingItems.length === 0}
+                {:else if pendingTasks.length === 0}
                     <div
                         class="text-center p-12 text-gray-500 dark:text-gray-400 flex flex-col items-center"
                     >
@@ -222,11 +214,11 @@
                     </div>
                 {:else}
                     <ul class="space-y-2">
-                        {#each pendingItems as item}
+                        {#each pendingTasks as payload}
                             <button
-                                onclick={() => viewItem(item)}
-                                class="w-full text-left bg-white dark:bg-gray-800 border {selectedItem?.id ===
-                                item.id
+                                onclick={() => viewTask(payload)}
+                                class="w-full text-left bg-white dark:bg-gray-800 border {selectedTask
+                                    ?.task.id === payload.task.id
                                     ? 'border-orange-500 ring-1 ring-orange-500 shadow-sm'
                                     : 'border-gray-200 dark:border-gray-700 shadow-sm hover:border-gray-300 dark:hover:border-gray-600'} rounded-lg p-3 transition-all relative"
                             >
@@ -236,25 +228,28 @@
                                     <span
                                         class="inline-flex items-center px-2 py-0.5 rounded text-[0.65rem] font-bold uppercase tracking-wider bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-400"
                                     >
-                                        {item.status}
+                                        {payload.transition.fromState} ➞ {payload
+                                            .transition.toState}
                                     </span>
                                     <span
                                         class="text-[0.65rem] font-mono text-gray-400"
-                                        >v{item.version}</span
+                                        >v{payload.contentItem.version}</span
                                     >
                                 </div>
 
                                 <div
                                     class="text-sm font-medium text-gray-900 dark:text-white mb-1"
                                 >
-                                    {contentTypes[item.contentTypeId]?.name ||
-                                        "Unknown Model"}
+                                    {payload.contentType.name} - #{payload
+                                        .contentItem.id}
                                 </div>
 
                                 <div
                                     class="text-xs text-gray-600 dark:text-gray-400 font-mono line-clamp-2 break-all opacity-80 mb-2"
                                 >
-                                    {formatJson(item.data).substring(0, 80)}...
+                                    {formatJson(
+                                        payload.contentItem.data,
+                                    ).substring(0, 80)}...
                                 </div>
 
                                 <div
@@ -262,13 +257,13 @@
                                 >
                                     <span
                                         title={new Date(
-                                            item.updatedAt,
+                                            payload.task.createdAt,
                                         ).toLocaleString()}
                                         >{new Date(
-                                            item.updatedAt,
+                                            payload.task.createdAt,
                                         ).toLocaleDateString()}</span
                                     >
-                                    <span>ID: {item.id}</span>
+                                    <span>Task: {payload.task.id}</span>
                                 </div>
                             </button>
                         {/each}
@@ -279,11 +274,11 @@
 
         <!-- Review Detail -->
         <div
-            class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {!selectedItem
+            class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {!selectedTask
                 ? 'hidden md:flex'
                 : 'flex'}"
         >
-            {#if !selectedItem}
+            {#if !selectedTask}
                 <div
                     class="flex-1 flex items-center justify-center text-gray-400 italic text-sm p-12 text-center"
                 >
@@ -299,7 +294,7 @@
                             <button
                                 class="md:hidden mr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                                 aria-label="Close review"
-                                onclick={() => (selectedItem = null)}
+                                onclick={() => (selectedTask = null)}
                             >
                                 <svg
                                     class="w-6 h-6"
@@ -317,37 +312,38 @@
                             <h3
                                 class="text-lg font-bold text-gray-900 dark:text-white"
                             >
-                                Reviewing Item #{selectedItem.id}
+                                Reviewing Item #{selectedTask.contentItem.id}
                             </h3>
                             <span
                                 class="text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-300 px-2 py-0.5 rounded"
                             >
-                                {contentTypes[selectedItem.contentTypeId]
-                                    ?.name || "Unknown Model"}
+                                {selectedTask.contentType.name}
                             </span>
                         </div>
                         <p class="text-[0.7rem] text-gray-500 mt-1">
+                            Workflow task: {selectedTask.workflow.name} mapped ➞
+                            "{selectedTask.transition.toState}" state.
                             Submitted: {new Date(
-                                selectedItem.updatedAt,
+                                selectedTask.task.updatedAt,
                             ).toLocaleString()}
                         </p>
                     </div>
                     <div class="flex gap-2">
                         <button
                             onclick={() =>
-                                processItem(selectedItem!, "rejected")}
-                            disabled={processingItem === selectedItem.id}
+                                processTask(selectedTask!, "rejected")}
+                            disabled={processingItem === selectedTask.task.id}
                             class="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 rounded-md transition-colors shadow-sm disabled:opacity-50"
                         >
                             Reject
                         </button>
                         <button
                             onclick={() =>
-                                processItem(selectedItem!, "published")}
-                            disabled={processingItem === selectedItem.id}
+                                processTask(selectedTask!, "approved")}
+                            disabled={processingItem === selectedTask.task.id}
                             class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-500 rounded-md transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
                         >
-                            {#if processingItem === selectedItem.id}
+                            {#if processingItem === selectedTask.task.id}
                                 <div
                                     class="animate-spin rounded-full h-3 w-3 border-b-2 border-white"
                                 ></div>
@@ -386,7 +382,9 @@
                                 title="Copy to clipboard"
                                 onclick={() =>
                                     navigator.clipboard.writeText(
-                                        formatJson(selectedItem!.data),
+                                        formatJson(
+                                            selectedTask!.contentItem.data,
+                                        ),
                                     )}
                             >
                                 Copy JSON
@@ -395,7 +393,7 @@
                         <pre
                             class="p-4 text-sm font-mono text-gray-800 dark:text-green-400 overflow-x-auto whitespace-pre-wrap word-break"><code
                                 >{JSON.stringify(
-                                    selectedItem.data,
+                                    selectedTask!.contentItem.data,
                                     null,
                                     2,
                                 )}</code

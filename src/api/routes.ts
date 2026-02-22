@@ -2718,6 +2718,38 @@ export default async function apiRoutes(server: FastifyInstance) {
         });
     });
 
+    server.get('/content-types/:id/workflows/active', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    name: Type.String(),
+                    contentTypeId: Type.Number(),
+                    active: Type.Boolean(),
+                    transitions: Type.Array(Type.Object({
+                        id: Type.Number(),
+                        workflowId: Type.Number(),
+                        fromState: Type.String(),
+                        toState: Type.String(),
+                        requiredRoles: Type.Array(Type.String())
+                    }))
+                })),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const data = await WorkflowService.getActiveWorkflowWithTransitions(getDomainId(request), id);
+        if (!data) return reply.status(404).send(toErrorPayload('No active workflow', 'WORKFLOW_NOT_FOUND', 'No active workflow found for this content type.'));
+        return {
+            data,
+            meta: buildMeta('Fetched active workflow', [], 'low', 1)
+        };
+    });
+
     server.post('/content-items/:id/submit', {
         schema: {
             params: Type.Object({
@@ -2751,6 +2783,26 @@ export default async function apiRoutes(server: FastifyInstance) {
             data: task,
             meta: buildMeta('Item submitted for review', [`POST /api/review-tasks/${task.id}/decide`], 'high', 1)
         });
+    });
+
+    server.get('/review-tasks', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    task: Type.Any(),
+                    transition: Type.Any(),
+                    workflow: Type.Any(),
+                    contentItem: Type.Any(),
+                    contentType: Type.Any()
+                })))
+            }
+        }
+    }, async (request) => {
+        const tasks = await WorkflowService.listPendingReviewTasks(getDomainId(request));
+        return {
+            data: tasks,
+            meta: buildMeta('List pending review tasks', [], 'low', 1)
+        };
     });
 
     server.post('/review-tasks/:id/decide', {

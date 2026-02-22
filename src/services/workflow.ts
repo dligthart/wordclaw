@@ -4,7 +4,8 @@ import {
     workflowTransitions,
     reviewTasks,
     reviewComments,
-    contentItems
+    contentItems,
+    contentTypes
 } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 
@@ -22,6 +23,20 @@ export class WorkflowService {
             .from(workflows)
             .where(and(eq(workflows.domainId, domainId), eq(workflows.contentTypeId, contentTypeId), eq(workflows.active, true)));
         return results[0] || null;
+    }
+
+    static async getActiveWorkflowWithTransitions(domainId: number, contentTypeId: number) {
+        const workflow = await this.getActiveWorkflow(domainId, contentTypeId);
+        if (!workflow) return null;
+
+        const transitions = await db.select()
+            .from(workflowTransitions)
+            .where(eq(workflowTransitions.workflowId, workflow.id));
+
+        return {
+            ...workflow,
+            transitions
+        };
     }
 
     static async submitForReview(context: WorkflowTransitionContext) {
@@ -127,5 +142,26 @@ export class WorkflowService {
             comment
         }).returning();
         return newComment;
+    }
+
+    static async listPendingReviewTasks(domainId: number) {
+        return await db.select({
+            task: reviewTasks,
+            transition: workflowTransitions,
+            workflow: workflows,
+            contentItem: contentItems,
+            contentType: {
+                id: contentTypes.id,
+                name: contentTypes.name,
+                slug: contentTypes.slug
+            }
+        })
+            .from(reviewTasks)
+            .innerJoin(workflowTransitions, eq(reviewTasks.workflowTransitionId, workflowTransitions.id))
+            .innerJoin(workflows, eq(workflowTransitions.workflowId, workflows.id))
+            .innerJoin(contentItems, eq(reviewTasks.contentItemId, contentItems.id))
+            .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
+            .where(and(eq(reviewTasks.domainId, domainId), eq(reviewTasks.status, 'pending')))
+            .orderBy(desc(reviewTasks.createdAt));
     }
 }
