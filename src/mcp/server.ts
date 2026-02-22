@@ -13,16 +13,17 @@ import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWe
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
 
-function withMCPPolicy<T>(operation: string, extractResource: (args: T) => any, handler: (args: T, extra: any) => Promise<ToolResult>) {
+function withMCPPolicy<T>(operation: string, extractResource: (args: T) => any, handler: (args: T, extra: any, domainId: number) => Promise<ToolResult>) {
     return async (args: T, extra: any) => {
-        const principal = { keyId: 'mcp-local', scopes: new Set(['admin']), source: 'local' };
+        const domainId = Number(process.env.WORDCLAW_DOMAIN_ID) || 1;
+        const principal = { keyId: 'mcp-local', domainId, scopes: new Set(['admin']), source: 'local' };
         const resource = extractResource(args) || { type: 'system' };
         const operationContext = buildOperationContext('mcp', principal, operation, resource);
         const decision = await PolicyEngine.evaluate(operationContext);
         if (decision.outcome !== 'allow') {
             return err(`${decision.code}: Access Denied by Policy. ${decision.remediation || ''}`);
         }
-        return handler(args, extra);
+        return handler(args, extra, domainId);
     };
 }
 
@@ -148,7 +149,7 @@ server.tool(
         schema: z.union([z.string(), z.record(z.string(), z.any())]).describe('JSON schema definition as a string or object'),
         dryRun: z.boolean().optional().describe('If true, simulates the action without making changes')
     },
-    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ name, slug, description, schema, dryRun }) => {
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ name, slug, description, schema, dryRun }, extra, domainId) => {
         try {
             const schemaStr = typeof schema === 'string' ? schema : JSON.stringify(schema);
             const schemaFailure = validateContentTypeSchema(schemaStr);
@@ -161,14 +162,14 @@ server.tool(
             }
 
             const [newItem] = await db.insert(contentTypes).values({
-                domainId: 1,
+                domainId,
                 name,
                 slug,
                 description,
                 schema: schemaStr
             }).returning();
 
-            await logAudit(1, 'create', 'content_type', newItem.id, newItem);
+            await logAudit(domainId, 'create', 'content_type', newItem.id, newItem);
 
             return ok(`Created content type '${newItem.name}' (ID: ${newItem.id})`);
         } catch (error) {
@@ -184,7 +185,7 @@ server.tool(
         limit: z.number().optional().describe('Page size (default 50, max 500)'),
         offset: z.number().optional().describe('Row offset (default 0)')
     },
-    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ limit: rawLimit, offset: rawOffset }) => {
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ limit: rawLimit, offset: rawOffset }, extra, domainId) => {
         const limit = clampLimit(rawLimit);
         const offset = clampOffset(rawOffset);
         const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes);
@@ -210,7 +211,7 @@ server.tool(
         id: z.number().optional().describe('ID of the content type'),
         slug: z.string().optional().describe('Slug of the content type')
     },
-    withMCPPolicy('content.read', (args) => ({ type: 'content_type', id: args.id }), async ({ id, slug }) => {
+    withMCPPolicy('content.read', (args) => ({ type: 'content_type', id: args.id }), async ({ id, slug }, extra, domainId) => {
         if (id === undefined && !slug) {
             return err("Must provide either 'id' or 'slug'");
         }
@@ -238,7 +239,7 @@ server.tool(
         schema: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async ({ id, name, slug, description, schema, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async ({ id, name, slug, description, schema, dryRun }, extra, domainId) => {
         try {
             const schemaStr = schema ? (typeof schema === 'string' ? schema : JSON.stringify(schema)) : undefined;
             const updateData = stripUndefined({ name, slug, description, schema: schemaStr });
@@ -266,7 +267,7 @@ server.tool(
                 return err(`Content type ${id} not found`);
             }
 
-            await logAudit(1, 'update', 'content_type', updated.id, updateData);
+            await logAudit(domainId, 'update', 'content_type', updated.id, updateData);
 
             return ok(`Updated content type '${updated.name}' (ID: ${updated.id})`);
         } catch (error) {
@@ -282,7 +283,7 @@ server.tool(
         id: z.number().describe('ID of the content type to delete'),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async ({ id, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async ({ id, dryRun }, extra, domainId) => {
         try {
             if (dryRun) {
                 return ok(`[Dry Run] Would delete content type ${id}`);
@@ -296,7 +297,7 @@ server.tool(
                 return err(`Content type ${id} not found`);
             }
 
-            await logAudit(1, 'delete', 'content_type', deleted.id, deleted);
+            await logAudit(domainId, 'delete', 'content_type', deleted.id, deleted);
 
             return ok(`Deleted content type '${deleted.name}' (ID: ${deleted.id})`);
         } catch (error) {
@@ -313,7 +314,7 @@ server.tool(
         scopes: z.array(z.string()).describe('Scopes such as content:read|content:write|audit:read|admin'),
         expiresAt: z.string().optional().describe('Optional ISO expiry timestamp')
     },
-    withMCPPolicy('apikey.write', () => ({ type: 'system' }), async ({ name, scopes, expiresAt }) => {
+    withMCPPolicy('apikey.write', () => ({ type: 'system' }), async ({ name, scopes, expiresAt }, extra, domainId) => {
         try {
             let normalizedScopes: string[];
             try {
@@ -331,12 +332,12 @@ server.tool(
             }
 
             const { key, plaintext } = await createApiKey({
-                domainId: 1, name,
+                domainId, name,
                 scopes: normalizedScopes,
                 expiresAt: parsedExpiry
             });
 
-            await logAudit(1, 'create', 'api_key', key.id, {
+            await logAudit(domainId, 'create', 'api_key', key.id, {
                 mcpTool: 'create_api_key',
                 name: key.name,
                 scopes: normalizedScopes
@@ -360,8 +361,8 @@ server.tool(
     'list_api_keys',
     'List API keys and their status',
     {},
-    withMCPPolicy('apikey.list', () => ({ type: 'system' }), async () => {
-        const keys = await listApiKeys(1);
+    withMCPPolicy('apikey.list', () => ({ type: 'system' }), async (_args, _extra, domainId) => {
+        const keys = await listApiKeys(domainId);
         return okJson(keys.map((key) => ({
             id: key.id,
             name: key.name,
@@ -382,13 +383,13 @@ server.tool(
     {
         id: z.number().describe('API key id to revoke')
     },
-    withMCPPolicy('apikey.write', (args) => ({ type: 'apikey', id: args.id }), async ({ id }) => {
-        const revoked = await revokeApiKey(id, 1);
+    withMCPPolicy('apikey.write', (args) => ({ type: 'apikey', id: args.id }), async ({ id }, extra, domainId) => {
+        const revoked = await revokeApiKey(id, domainId);
         if (!revoked) {
             return err(`API key ${id} not found or already revoked`);
         }
 
-        await logAudit(1, 'delete', 'api_key', revoked.id, {
+        await logAudit(domainId, 'delete', 'api_key', revoked.id, {
             mcpTool: 'revoke_api_key',
             keyPrefix: revoked.keyPrefix
         });
@@ -406,7 +407,7 @@ server.tool(
         secret: z.string().describe('Shared secret for HMAC signing'),
         active: z.boolean().optional().describe('Whether webhook is active immediately')
     },
-    withMCPPolicy('webhook.write', () => ({ type: 'system' }), async ({ url, events, secret, active }) => {
+    withMCPPolicy('webhook.write', () => ({ type: 'system' }), async ({ url, events, secret, active }, extra, domainId) => {
         try {
             if (!isValidUrl(url)) {
                 return err('INVALID_WEBHOOK_URL: Provide a valid absolute URL.');
@@ -420,13 +421,13 @@ server.tool(
             }
 
             const created = await createWebhook({
-                domainId: 1, url,
+                domainId, url,
                 events: normalizedEvents,
                 secret,
                 active
             });
 
-            await logAudit(1, 'create', 'webhook', created.id, {
+            await logAudit(domainId, 'create', 'webhook', created.id, {
                 mcpTool: 'create_webhook',
                 url: created.url,
                 events: normalizedEvents,
@@ -450,9 +451,9 @@ server.tool(
     'list_webhooks',
     'List registered webhooks',
     {},
-    withMCPPolicy('webhook.list', () => ({ type: 'system' }), async () => {
+    withMCPPolicy('webhook.list', () => ({ type: 'system' }), async (_args, _extra, domainId) => {
         try {
-            const hooks = await listWebhooks(1);
+            const hooks = await listWebhooks(domainId);
             return okJson(hooks.map((hook) => ({
                 id: hook.id,
                 url: hook.url,
@@ -472,9 +473,9 @@ server.tool(
     {
         id: z.number().describe('Webhook ID')
     },
-    withMCPPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async ({ id }) => {
+    withMCPPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async ({ id }, extra, domainId) => {
         try {
-            const hook = await getWebhookById(id, 1);
+            const hook = await getWebhookById(id, domainId);
             if (!hook) {
                 return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
             }
@@ -502,7 +503,7 @@ server.tool(
         secret: z.string().optional(),
         active: z.boolean().optional()
     },
-    withMCPPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async ({ id, url, events, secret, active }) => {
+    withMCPPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async ({ id, url, events, secret, active }, extra, domainId) => {
         try {
             if (url !== undefined && !isValidUrl(url)) {
                 return err('INVALID_WEBHOOK_URL: Provide a valid absolute URL.');
@@ -521,7 +522,7 @@ server.tool(
                 return err('EMPTY_UPDATE_BODY: Provide at least one update field.');
             }
 
-            const updated = await updateWebhook(id, 1, {
+            const updated = await updateWebhook(id, domainId, {
                 url,
                 events: normalizedEvents,
                 secret,
@@ -532,7 +533,7 @@ server.tool(
                 return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
             }
 
-            await logAudit(1, 'update', 'webhook', updated.id, {
+            await logAudit(domainId, 'update', 'webhook', updated.id, {
                 mcpTool: 'update_webhook',
                 url: updated.url,
                 events: parseWebhookEvents(updated.events),
@@ -558,15 +559,15 @@ server.tool(
     {
         id: z.number().describe('Webhook ID')
     },
-    withMCPPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async ({ id }) => {
+    withMCPPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async ({ id }, extra, domainId) => {
         try {
-            const existing = await getWebhookById(id, 1);
+            const existing = await getWebhookById(id, domainId);
             if (!existing) {
                 return err(`WEBHOOK_NOT_FOUND: Webhook ${id} not found`);
             }
 
-            await deleteWebhook(id, 1);
-            await logAudit(1, 'delete', 'webhook', existing.id, {
+            await deleteWebhook(id, domainId);
+            await logAudit(domainId, 'delete', 'webhook', existing.id, {
                 mcpTool: 'delete_webhook',
                 url: existing.url,
                 events: parseWebhookEvents(existing.events)
@@ -588,7 +589,7 @@ server.tool(
         status: z.enum(['draft', 'published', 'archived']).optional().describe('Status of the item'),
         dryRun: z.boolean().optional().describe('If true, simulates the action without making changes')
     },
-    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.contentTypeId }), async ({ contentTypeId, data, status, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.contentTypeId }), async ({ contentTypeId, data, status, dryRun }, extra, domainId) => {
         try {
             const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, contentTypeId));
             if (!contentType) {
@@ -606,13 +607,13 @@ server.tool(
             }
 
             const [newItem] = await db.insert(contentItems).values({
-                domainId: 1,
+                domainId,
                 contentTypeId,
                 data: dataStr,
                 status: status || 'draft'
             }).returning();
 
-            await logAudit(1, 'create', 'content_item', newItem.id, newItem);
+            await logAudit(domainId, 'create', 'content_item', newItem.id, newItem);
 
             return ok(`Created content item ID: ${newItem.id}`);
         } catch (error) {
@@ -633,7 +634,7 @@ server.tool(
         atomic: z.boolean().optional(),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ items, atomic, dryRun }) => {
+    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ items, atomic, dryRun }, extra, domainId) => {
         if (items.length === 0) {
             return err('EMPTY_BATCH: Provide at least one item.');
         }
@@ -683,7 +684,7 @@ server.tool(
                         }
 
                         const [created] = await tx.insert(contentItems).values({
-                            domainId: 1,
+                            domainId,
                             contentTypeId: item.contentTypeId,
                             data: itemDataStr,
                             status: item.status || 'draft'
@@ -703,7 +704,7 @@ server.tool(
                 for (const row of results) {
                     const id = row.id;
                     if (typeof id === 'number') {
-                        await logAudit(1, 'create', 'content_item', id, { batch: true, mode: 'atomic' });
+                        await logAudit(domainId, 'create', 'content_item', id, { batch: true, mode: 'atomic' });
                     }
                 }
 
@@ -738,13 +739,13 @@ server.tool(
                 }
 
                 const [created] = await db.insert(contentItems).values({
-                    domainId: 1,
+                    domainId,
                     contentTypeId: item.contentTypeId,
                     data: itemDataStr,
                     status: item.status || 'draft'
                 }).returning();
 
-                await logAudit(1, 'create', 'content_item', created.id, { batch: true, mode: 'partial' });
+                await logAudit(domainId, 'create', 'content_item', created.id, { batch: true, mode: 'partial' });
 
                 results.push({
                     index,
@@ -819,7 +820,7 @@ server.tool(
     {
         id: z.number().describe('ID of the content item')
     },
-    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }) => {
+    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, extra, domainId) => {
         const [item] = await db.select().from(contentItems).where(eq(contentItems.id, id));
         if (!item) {
             return err('Content item not found');
@@ -837,7 +838,7 @@ server.tool(
         status: z.enum(['draft', 'published', 'archived']).optional(),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, data, status, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, data, status, dryRun }, extra, domainId) => {
         try {
             const dataStr = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
             const updateData = stripUndefined({ data: dataStr, status });
@@ -895,7 +896,7 @@ server.tool(
                 return err('Content item not found');
             }
 
-            await logAudit(1, 'update', 'content_item', result.id, updateData);
+            await logAudit(domainId, 'update', 'content_item', result.id, updateData);
 
             return ok(`Updated content item ${result.id} to version ${result.version}`);
         } catch (error) {
@@ -917,7 +918,7 @@ server.tool(
         atomic: z.boolean().optional(),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ items, atomic, dryRun }) => {
+    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ items, atomic, dryRun }, extra, domainId) => {
         if (items.length === 0) {
             return err('EMPTY_BATCH: Provide at least one item.');
         }
@@ -1062,7 +1063,7 @@ server.tool(
                 for (const row of results) {
                     const id = row.id;
                     if (typeof id === 'number') {
-                        await logAudit(1, 'update', 'content_item', id, { batch: true, mode: 'atomic' });
+                        await logAudit(domainId, 'update', 'content_item', id, { batch: true, mode: 'atomic' });
                     }
                 }
 
@@ -1109,7 +1110,7 @@ server.tool(
                 return updated;
             });
 
-            await logAudit(1, 'update', 'content_item', result.id, { batch: true, mode: 'partial' });
+            await logAudit(domainId, 'update', 'content_item', result.id, { batch: true, mode: 'partial' });
 
             results.push({
                 index,
@@ -1133,7 +1134,7 @@ server.tool(
         id: z.number().describe('ID of the content item'),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, dryRun }, extra, domainId) => {
         try {
             if (dryRun) {
                 return ok(`[Dry Run] Would delete content item ${id}`);
@@ -1147,7 +1148,7 @@ server.tool(
                 return err('Content item not found');
             }
 
-            await logAudit(1, 'delete', 'content_item', deleted.id, deleted);
+            await logAudit(domainId, 'delete', 'content_item', deleted.id, deleted);
 
             return ok(`Deleted content item ${deleted.id}`);
         } catch (error) {
@@ -1164,7 +1165,7 @@ server.tool(
         atomic: z.boolean().optional(),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ ids, atomic, dryRun }) => {
+    withMCPPolicy('content.write', () => ({ type: 'batch' }), async ({ ids, atomic, dryRun }, extra, domainId) => {
         if (ids.length === 0) {
             return err('EMPTY_BATCH: Provide at least one id.');
         }
@@ -1214,7 +1215,7 @@ server.tool(
                 for (const row of results) {
                     const id = row.id;
                     if (typeof id === 'number') {
-                        await logAudit(1, 'delete', 'content_item', id, { batch: true, mode: 'atomic' });
+                        await logAudit(domainId, 'delete', 'content_item', id, { batch: true, mode: 'atomic' });
                     }
                 }
 
@@ -1240,7 +1241,7 @@ server.tool(
                 continue;
             }
 
-            await logAudit(1, 'delete', 'content_item', deleted.id, { batch: true, mode: 'partial' });
+            await logAudit(domainId, 'delete', 'content_item', deleted.id, { batch: true, mode: 'partial' });
             results.push({
                 index,
                 ok: true,
@@ -1261,7 +1262,7 @@ server.tool(
     {
         id: z.number().describe('ID of the content item')
     },
-    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }) => {
+    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, extra, domainId) => {
         const versions = await db.select()
             .from(contentItemVersions)
             .where(eq(contentItemVersions.contentItemId, id))
@@ -1279,7 +1280,7 @@ server.tool(
         version: z.number().describe('Target version number to rollback to'),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, version, dryRun }) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, version, dryRun }, extra, domainId) => {
         try {
             const [currentItem] = await db.select().from(contentItems).where(eq(contentItems.id, id));
             if (!currentItem) {
@@ -1347,7 +1348,7 @@ server.tool(
                 return err('Content item not found');
             }
 
-            await logAudit(1, 'rollback', 'content_item', result.id, { from: result.version - 1, to: version });
+            await logAudit(domainId, 'rollback', 'content_item', result.id, { from: result.version - 1, to: version });
 
             return ok(`Rolled back item ${result.id} to version ${version} (new version ${result.version})`);
 
@@ -1490,7 +1491,7 @@ server.tool(
         resourceId: z.string().optional().describe('The ID of the resource'),
         contentTypeId: z.string().optional().describe('The content type ID of the resource')
     },
-    withMCPPolicy('policy.read', () => ({ type: 'system' }), async ({ operation, resourceType, resourceId, contentTypeId }) => {
+    withMCPPolicy('policy.read', () => ({ type: 'system' }), async ({ operation, resourceType, resourceId, contentTypeId }, extra, domainId) => {
         const operationContext = buildOperationContext(
             'mcp',
             { keyId: 'mcp-local', scopes: new Set(['admin']), source: 'local' },

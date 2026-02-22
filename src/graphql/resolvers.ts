@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, lt, lte, or } from 'drizzle-orm';
+import { getDomainId } from '../api/auth.js';
 import { GraphQLError } from 'graphql';
 import GraphQLJSON from 'graphql-type-json';
 
@@ -458,18 +459,19 @@ function withPolicy(
 export const resolvers = {
     JSON: GraphQLJSON,
     Query: {
-        contentTypes: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: ContentTypesArgs) => {
+        contentTypes: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: ContentTypesArgs, context: unknown) => {
             const limit = clampLimit(rawLimit);
             const offset = clampOffset(rawOffset);
             return db.select()
                 .from(contentTypes)
+                .where(eq(contentTypes.domainId, getDomainId(context)))
                 .limit(limit)
                 .offset(offset);
         }),
 
-        contentType: withPolicy('content.read', (args) => ({ type: 'content_type', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
+        contentType: withPolicy('content.read', (args) => ({ type: 'content_type', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
             const numericId = parseId(id);
-            const [type] = await db.select().from(contentTypes).where(eq(contentTypes.id, numericId));
+            const [type] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, numericId), eq(contentTypes.domainId, getDomainId(context))));
             return type || null;
         }),
 
@@ -480,7 +482,7 @@ export const resolvers = {
             createdBefore,
             limit: rawLimit,
             offset: rawOffset
-        }: OptionalContentTypeArg) => {
+        }: OptionalContentTypeArg, context: unknown) => {
             const numericTypeId = parseOptionalId(contentTypeId, 'contentTypeId');
             const afterDate = parseDateArg(createdAfter, 'createdAfter');
             const beforeDate = parseDateArg(createdBefore, 'createdBefore');
@@ -488,6 +490,7 @@ export const resolvers = {
             const offset = clampOffset(rawOffset);
 
             const conditions = [
+                eq(contentItems.domainId, getDomainId(context)),
                 numericTypeId !== undefined ? eq(contentItems.contentTypeId, numericTypeId) : undefined,
                 status ? eq(contentItems.status, status) : undefined,
                 afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
@@ -501,9 +504,9 @@ export const resolvers = {
                 .offset(offset);
         }),
 
-        contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
+        contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
             const numericId = parseId(id);
-            const [item] = await db.select().from(contentItems).where(eq(contentItems.id, numericId));
+            const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, numericId), eq(contentItems.domainId, getDomainId(context))));
             return item || null;
         }),
 
@@ -515,7 +518,7 @@ export const resolvers = {
                 .orderBy(desc(contentItemVersions.version));
         }),
 
-        auditLogs: withPolicy('audit.read', () => ({ type: 'system' }), async (_parent: unknown, { entityType, entityId, action, limit: rawLimit, cursor }: AuditLogArgs) => {
+        auditLogs: withPolicy('audit.read', () => ({ type: 'system' }), async (_parent: unknown, { entityType, entityId, action, limit: rawLimit, cursor }: AuditLogArgs, context: unknown) => {
             const numericEntityId = parseOptionalId(entityId, 'entityId');
             const limit = clampLimit(rawLimit);
             const decodedCursor = cursor ? decodeCursor(cursor) : null;
@@ -529,6 +532,7 @@ export const resolvers = {
             }
 
             const baseConditions = [
+                eq(auditLogs.domainId, getDomainId(context)),
                 entityType ? eq(auditLogs.entityType, entityType) : undefined,
                 numericEntityId !== undefined ? eq(auditLogs.entityId, numericEntityId) : undefined,
                 action ? eq(auditLogs.action, action) : undefined,
@@ -560,10 +564,11 @@ export const resolvers = {
                 .limit(limit);
         }),
 
-        payments: withPolicy('payment.read', () => ({ type: 'system' }), async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: { limit?: number; offset?: number }) => {
+        payments: withPolicy('payment.read', () => ({ type: 'system' }), async (_parent: unknown, { limit: rawLimit, offset: rawOffset }: { limit?: number; offset?: number }, context: unknown) => {
             const limit = clampLimit(rawLimit);
             const offset = clampOffset(rawOffset);
             const results = await db.select().from(payments)
+                .where(eq(payments.domainId, getDomainId(context)))
                 .orderBy(desc(payments.createdAt))
                 .limit(limit)
                 .offset(offset);
@@ -575,9 +580,9 @@ export const resolvers = {
             }));
         }),
 
-        payment: withPolicy('payment.read', (args) => ({ type: 'payment', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
+        payment: withPolicy('payment.read', (args) => ({ type: 'payment', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
             const numericId = parseId(id);
-            const [payment] = await db.select().from(payments).where(eq(payments.id, numericId));
+            const [payment] = await db.select().from(payments).where(and(eq(payments.id, numericId), eq(payments.domainId, getDomainId(context))));
             if (!payment) return null;
             return {
                 ...payment,
@@ -587,7 +592,7 @@ export const resolvers = {
         }),
 
         webhooks: async (_parent: unknown, _args: unknown, context?: unknown) => {
-            const hooks = await listWebhooks((context as any)?.principal?.domainId ?? 1);
+            const hooks = await listWebhooks(getDomainId(context));
             return hooks.map((hook) => ({
                 id: hook.id,
                 url: hook.url,
@@ -599,7 +604,7 @@ export const resolvers = {
 
         webhook: withPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
             const numericId = parseId(id);
-            const hook = await getWebhookById(numericId, (context as any)?.principal?.domainId ?? 1);
+            const hook = await getWebhookById(numericId, getDomainId(context));
             if (!hook) {
                 return null;
             }
@@ -636,14 +641,14 @@ export const resolvers = {
             }
 
             const [newItem] = await db.insert(contentTypes).values({
-                domainId: (context as any)?.principal?.domainId ?? 1,
+                domainId: getDomainId(context),
                 name: args.name,
                 slug: args.slug,
                 description: args.description,
                 schema: schemaStr
             }).returning();
 
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'create', 'content_type', newItem.id, newItem, toActorId(context), toRequestId(context));
+            await logAudit(getDomainId(context), 'create', 'content_type', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
         }),
 
@@ -686,7 +691,7 @@ export const resolvers = {
                 throw notFoundContentTypeError(id);
             }
 
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'update', 'content_type', updated.id, updateData, toActorId(context), toRequestId(context));
+            await logAudit(getDomainId(context), 'update', 'content_type', updated.id, updateData, toActorId(context), toRequestId(context));
             return updated;
         }),
 
@@ -713,7 +718,7 @@ export const resolvers = {
                 throw notFoundContentTypeError(id);
             }
 
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'delete', 'content_type', deleted.id, deleted, toActorId(context), toRequestId(context));
+            await logAudit(getDomainId(context), 'delete', 'content_type', deleted.id, deleted, toActorId(context), toRequestId(context));
 
             return {
                 id: deleted.id,
@@ -749,13 +754,13 @@ export const resolvers = {
             }
 
             const [newItem] = await db.insert(contentItems).values({
-                domainId: (context as any)?.principal?.domainId ?? 1,
+                domainId: getDomainId(context),
                 contentTypeId,
                 data: dataStr,
                 status
             }).returning();
 
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'create', 'content_item', newItem.id, newItem, toActorId(context), toRequestId(context));
+            await logAudit(getDomainId(context), 'create', 'content_item', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
         }),
 
@@ -820,7 +825,7 @@ export const resolvers = {
                             }
 
                             const [created] = await tx.insert(contentItems).values({
-                                domainId: (context as any)?.principal?.domainId ?? 1,
+                                domainId: getDomainId(context),
                                 contentTypeId: item.contentTypeId,
                                 data: item.data,
                                 status: item.status || 'draft'
@@ -839,7 +844,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit((context as any)?.principal?.domainId ?? 1, 'create', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
+                            await logAudit(getDomainId(context), 'create', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -882,13 +887,13 @@ export const resolvers = {
                     }
 
                     const [created] = await db.insert(contentItems).values({
-                        domainId: (context as any)?.principal?.domainId ?? 1,
+                        domainId: getDomainId(context),
                         contentTypeId: item.contentTypeId,
                         data: item.data,
                         status: item.status || 'draft'
                     }).returning();
 
-                    await logAudit((context as any)?.principal?.domainId ?? 1, 'create', 'content_item', created.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
+                    await logAudit(getDomainId(context), 'create', 'content_item', created.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
 
                     results.push({
                         index,
@@ -974,7 +979,7 @@ export const resolvers = {
                 throw notFoundContentItemError(id);
             }
 
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'update', 'content_item', result.id, updateData, toActorId(context), toRequestId(context));
+            await logAudit(getDomainId(context), 'update', 'content_item', result.id, updateData, toActorId(context), toRequestId(context));
             return result;
         }),
 
@@ -1080,7 +1085,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit((context as any)?.principal?.domainId ?? 1, 'update', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
+                            await logAudit(getDomainId(context), 'update', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -1136,7 +1141,7 @@ export const resolvers = {
                     return updated;
                 });
 
-                await logAudit((context as any)?.principal?.domainId ?? 1, 'update', 'content_item', result.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
+                await logAudit(getDomainId(context), 'update', 'content_item', result.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
 
                 results.push({
                     index,
@@ -1175,7 +1180,7 @@ export const resolvers = {
                 throw notFoundContentItemError(id);
             }
 
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'delete', 'content_item', deleted.id, deleted, toActorId(context), toRequestId(context));
+            await logAudit(getDomainId(context), 'delete', 'content_item', deleted.id, deleted, toActorId(context), toRequestId(context));
 
             return {
                 id: deleted.id,
@@ -1239,7 +1244,7 @@ export const resolvers = {
 
                     for (const row of results) {
                         if (row.id !== undefined) {
-                            await logAudit((context as any)?.principal?.domainId ?? 1, 'delete', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
+                            await logAudit(getDomainId(context), 'delete', 'content_item', row.id, { batch: true, mode: 'atomic' }, toActorId(context), toRequestId(context));
                         }
                     }
 
@@ -1274,7 +1279,7 @@ export const resolvers = {
                     continue;
                 }
 
-                await logAudit((context as any)?.principal?.domainId ?? 1, 'delete', 'content_item', deleted.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
+                await logAudit(getDomainId(context), 'delete', 'content_item', deleted.id, { batch: true, mode: 'partial' }, toActorId(context), toRequestId(context));
                 results.push({
                     index,
                     ok: true,
@@ -1309,13 +1314,13 @@ export const resolvers = {
             }
 
             const created = await createWebhook({
-                domainId: (context as any)?.principal?.domainId ?? 1, url: args.url,
+                domainId: getDomainId(context), url: args.url,
                 events,
                 secret: args.secret,
                 active: args.active
             });
 
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'create',
+            await logAudit(getDomainId(context), 'create',
                 'webhook',
                 created.id,
                 { url: created.url, events, active: created.active },
@@ -1366,7 +1371,7 @@ export const resolvers = {
                 }
             }
 
-            const updated = await updateWebhook(id, (context as any)?.principal?.domainId ?? 1, {
+            const updated = await updateWebhook(id, getDomainId(context), {
                 url: args.url,
                 events: normalizedEvents,
                 secret: args.secret,
@@ -1381,7 +1386,7 @@ export const resolvers = {
                 );
             }
 
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'update',
+            await logAudit(getDomainId(context), 'update',
                 'webhook',
                 updated.id,
                 { url: updated.url, events: parseWebhookEvents(updated.events), active: updated.active },
@@ -1400,7 +1405,7 @@ export const resolvers = {
 
         deleteWebhook: withPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, args: DeleteWebhookArgs, context?: unknown) => {
             const id = parseId(args.id);
-            const existing = await getWebhookById(id, (context as any)?.principal?.domainId ?? 1);
+            const existing = await getWebhookById(id, getDomainId(context));
             if (!existing) {
                 throw toError(
                     'Webhook not found',
@@ -1409,8 +1414,8 @@ export const resolvers = {
                 );
             }
 
-            await deleteWebhook(id, (context as any)?.principal?.domainId ?? 1);
-            await logAudit((context as any)?.principal?.domainId ?? 1, 'delete',
+            await deleteWebhook(id, getDomainId(context));
+            await logAudit(getDomainId(context), 'delete',
                 'webhook',
                 existing.id,
                 { url: existing.url, events: parseWebhookEvents(existing.events) },
@@ -1498,7 +1503,7 @@ export const resolvers = {
                     throw notFoundContentItemError(id);
                 }
 
-                await logAudit((context as any)?.principal?.domainId ?? 1, 'rollback', 'content_item', result.id, {
+                await logAudit(getDomainId(context), 'rollback', 'content_item', result.id, {
                     fromVersion: result.version - 1,
                     toVersion: targetVersion
                 }, toActorId(context), toRequestId(context));

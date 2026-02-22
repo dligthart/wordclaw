@@ -8,7 +8,7 @@ import { auditLogs, contentItemVersions, contentItems, contentTypes, payments } 
 import { logAudit } from '../services/audit.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
-import { authenticateApiRequest } from './auth.js';
+import { authenticateApiRequest, getDomainId } from './auth.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
 import { PolicyEngine } from '../services/policy.js';
@@ -269,13 +269,13 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const { key, plaintext } = await createApiKey({
-            domainId: (request as any).authPrincipal?.domainId ?? 1, name: body.name,
+            domainId: getDomainId(request), name: body.name,
             scopes,
             createdBy: actorId ?? null,
             expiresAt
         });
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
+        await logAudit(getDomainId(request), 'create',
             'api_key',
             key.id,
             { authKeyCreated: true, scopes, name: key.name },
@@ -318,7 +318,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const keys = await listApiKeys((request as any).authPrincipal?.domainId ?? 1);
+        const keys = await listApiKeys(getDomainId(request));
 
         return {
             data: keys.map((key) => ({
@@ -357,7 +357,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     }, async (request, reply) => {
         const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
         const { id } = request.params as IdParams;
-        const revoked = await revokeApiKey(id, (request as any).authPrincipal?.domainId ?? 1);
+        const revoked = await revokeApiKey(id, getDomainId(request));
         if (!revoked) {
             return reply.status(404).send(toErrorPayload(
                 'API key not found',
@@ -366,7 +366,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
+        await logAudit(getDomainId(request), 'delete',
             'api_key',
             revoked.id,
             { apiKeyRevoked: true, keyPrefix: revoked.keyPrefix },
@@ -407,7 +407,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
         const { id } = request.params as IdParams;
 
-        const rotated = await rotateApiKey(id, (request as any).authPrincipal?.domainId ?? 1, actorId ?? null);
+        const rotated = await rotateApiKey(id, getDomainId(request), actorId ?? null);
         if (!rotated) {
             return reply.status(404).send(toErrorPayload(
                 'API key not found',
@@ -416,7 +416,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
+        await logAudit(getDomainId(request), 'update',
             'api_key',
             rotated.newKey.id,
             { apiKeyRotated: true, oldId: rotated.oldKey.id, newId: rotated.newKey.id },
@@ -545,13 +545,13 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const created = await createWebhook({
-            domainId: (request as any).authPrincipal?.domainId ?? 1, url: body.url,
+            domainId: getDomainId(request), url: body.url,
             events,
             secret: body.secret,
             active: body.active
         });
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
+        await logAudit(getDomainId(request), 'create',
             'webhook',
             created.id,
             { url: created.url, events, active: created.active },
@@ -589,7 +589,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const hooks = await listWebhooks((request as any).authPrincipal?.domainId ?? 1);
+        const hooks = await listWebhooks(getDomainId(request));
         return {
             data: hooks.map((hook) => ({
                 id: hook.id,
@@ -625,7 +625,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
-        const hook = await getWebhookById(id, (request as any).authPrincipal?.domainId ?? 1);
+        const hook = await getWebhookById(id, getDomainId(request));
         if (!hook) {
             return reply.status(404).send(toErrorPayload(
                 'Webhook not found',
@@ -715,7 +715,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
 
-        const existing = await getWebhookById(id, (request as any).authPrincipal?.domainId ?? 1);
+        const existing = await getWebhookById(id, getDomainId(request));
         if (!existing) {
             return reply.status(404).send(toErrorPayload(
                 'Webhook not found',
@@ -743,7 +743,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             };
         }
 
-        const updated = await updateWebhook(id, (request as any).authPrincipal?.domainId ?? 1, {
+        const updated = await updateWebhook(id, getDomainId(request), {
             url: body.url,
             events: normalizedEvents,
             secret: body.secret,
@@ -758,7 +758,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
+        await logAudit(getDomainId(request), 'update',
             'webhook',
             updated.id,
             {
@@ -806,7 +806,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
         const { id } = request.params as IdParams;
 
-        const existing = await getWebhookById(id, (request as any).authPrincipal?.domainId ?? 1);
+        const existing = await getWebhookById(id, getDomainId(request));
         if (!existing) {
             return reply.status(404).send(toErrorPayload(
                 'Webhook not found',
@@ -831,9 +831,9 @@ export default async function apiRoutes(server: FastifyInstance) {
             };
         }
 
-        await deleteWebhook(id, (request as any).authPrincipal?.domainId ?? 1);
+        await deleteWebhook(id, getDomainId(request));
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
+        await logAudit(getDomainId(request), 'delete',
             'webhook',
             existing.id,
             { url: existing.url, events: parseWebhookEvents(existing.events) },
@@ -885,7 +885,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
         const rawBody = request.body as any;
         const schemaStr = typeof rawBody.schema === 'string' ? rawBody.schema : JSON.stringify(rawBody.schema);
-        const data = { ...rawBody, schema: schemaStr } as typeof contentTypes.$inferInsert;
+        const data = { ...rawBody, schema: schemaStr, domainId: getDomainId(request) } as typeof contentTypes.$inferInsert;
         const schemaFailure = validateContentTypeSchema(data.schema);
 
         if (schemaFailure) {
@@ -906,7 +906,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentTypes).values(data).returning();
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
+        await logAudit(getDomainId(request), 'create',
             'content_type',
             newItem.id,
             newItem,
@@ -948,9 +948,10 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { limit: rawLimit, offset: rawOffset } = request.query as PaginationQuery;
         const limit = clampLimit(rawLimit);
         const offset = clampOffset(rawOffset);
-        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes);
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes).where(eq(contentTypes.domainId, getDomainId(request)));
         const types = await db.select()
             .from(contentTypes)
+            .where(eq(contentTypes.domainId, getDomainId(request)))
             .limit(limit)
             .offset(offset);
 
@@ -989,7 +990,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
-        const [type] = await db.select().from(contentTypes).where(eq(contentTypes.id, id));
+        const [type] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))));
 
         if (!type) {
             return reply.status(404).send(notFoundContentType(id));
@@ -1060,7 +1061,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         if (isDryRun(mode)) {
-            const [existing] = await db.select().from(contentTypes).where(eq(contentTypes.id, id));
+            const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))));
             if (!existing) {
                 return reply.status(404).send(notFoundContentType(id));
             }
@@ -1079,14 +1080,14 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         const [updatedType] = await db.update(contentTypes)
             .set(updateData)
-            .where(eq(contentTypes.id, id))
+            .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))))
             .returning();
 
         if (!updatedType) {
             return reply.status(404).send(notFoundContentType(id));
         }
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
+        await logAudit(getDomainId(request), 'update',
             'content_type',
             updatedType.id,
             { ...updateData, previous: 'n/a' },
@@ -1124,7 +1125,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
 
         if (isDryRun(mode)) {
-            const [existing] = await db.select().from(contentTypes).where(eq(contentTypes.id, id));
+            const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))));
             if (!existing) {
                 return reply.status(404).send(notFoundContentType(id));
             }
@@ -1145,14 +1146,14 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [deletedType] = await db.delete(contentTypes)
-            .where(eq(contentTypes.id, id))
+            .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))))
             .returning();
 
         if (!deletedType) {
             return reply.status(404).send(notFoundContentType(id));
         }
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
+        await logAudit(getDomainId(request), 'delete',
             'content_type',
             deletedType.id,
             deletedType,
@@ -1206,7 +1207,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const rawBody = request.body as any;
         const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
         const data = { ...rawBody, data: dataStr } as typeof contentItems.$inferInsert;
-        const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, data.contentTypeId));
+        const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, data.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
 
         if (!contentType) {
             return reply.status(404).send(notFoundContentType(data.contentTypeId));
@@ -1231,7 +1232,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentItems).values(data).returning();
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
+        await logAudit(getDomainId(request), 'create',
             'content_item',
             newItem.id,
             newItem,
@@ -1284,7 +1285,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
         const data = { ...rawBody, data: dataStr, contentTypeId: params.contentTypeId } as typeof contentItems.$inferInsert;
 
-        const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, data.contentTypeId));
+        const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, data.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
 
         if (!contentType) {
             return reply.status(404).send(notFoundContentType(data.contentTypeId));
@@ -1309,7 +1310,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentItems).values(data).returning();
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
+        await logAudit(getDomainId(request), 'create',
             'content_item',
             newItem.id,
             newItem,
@@ -1432,7 +1433,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
-        const [item] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
 
         if (!item) {
             return reply.status(404).send(notFoundContentItem(id));
@@ -1493,7 +1494,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+        const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
         if (!existing) {
             return reply.status(404).send(notFoundContentItem(id));
         }
@@ -1501,7 +1502,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const targetContentTypeId = typeof updateData.contentTypeId === 'number'
             ? updateData.contentTypeId
             : existing.contentTypeId;
-        const [targetContentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+        const [targetContentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, targetContentTypeId), eq(contentTypes.domainId, getDomainId(request))));
         if (!targetContentType) {
             return reply.status(404).send(notFoundContentType(targetContentTypeId));
         }
@@ -1528,7 +1529,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const result = await db.transaction(async (tx) => {
-            const [current] = await tx.select().from(contentItems).where(eq(contentItems.id, id));
+            const [current] = await tx.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
             if (!current) {
                 return null;
             }
@@ -1547,7 +1548,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     version: current.version + 1,
                     updatedAt: new Date()
                 })
-                .where(eq(contentItems.id, id))
+                .where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))))
                 .returning();
 
             return updated;
@@ -1557,7 +1558,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentItem(id));
         }
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
+        await logAudit(getDomainId(request), 'update',
             'content_item',
             result.id,
             updateData,
@@ -1633,7 +1634,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
         const { version } = request.body as { version: number };
 
-        const [currentItem] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+        const [currentItem] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
         if (!currentItem) {
             return reply.status(404).send(notFoundContentItem(id));
         }
@@ -1679,7 +1680,7 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         try {
             const result = await db.transaction(async (tx) => {
-                const [currentItem] = await tx.select().from(contentItems).where(eq(contentItems.id, id));
+                const [currentItem] = await tx.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
                 if (!currentItem) {
                     return null;
                 }
@@ -1707,7 +1708,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                         version: currentItem.version + 1,
                         updatedAt: new Date()
                     })
-                    .where(eq(contentItems.id, id))
+                    .where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))))
                     .returning();
 
                 return restoredItem;
@@ -1717,7 +1718,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 return reply.status(404).send(notFoundContentItem(id));
             }
 
-            await logAudit((request as any).authPrincipal?.domainId ?? 1, 'rollback',
+            await logAudit(getDomainId(request), 'rollback',
                 'content_item',
                 result.id,
                 { fromVersion: result.version - 1, toVersion: version },
@@ -1771,7 +1772,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
 
         if (isDryRun(mode)) {
-            const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+            const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
             if (!existing) {
                 return reply.status(404).send(notFoundContentItem(id));
             }
@@ -1792,14 +1793,14 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [deletedItem] = await db.delete(contentItems)
-            .where(eq(contentItems.id, id))
+            .where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))))
             .returning();
 
         if (!deletedItem) {
             return reply.status(404).send(notFoundContentItem(id));
         }
 
-        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
+        await logAudit(getDomainId(request), 'delete',
             'content_item',
             deletedItem.id,
             deletedItem,
@@ -1870,7 +1871,7 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         if (isDryRun(mode)) {
             const results = await Promise.all(items.map(async (item, index) => {
-                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
                 if (!contentType) {
                     return buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`);
                 }
@@ -1908,7 +1909,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 const created = await db.transaction(async (tx) => {
                     const results: Array<{ index: number; ok: boolean; id?: number; version?: number }> = [];
                     for (const [index, item] of items.entries()) {
-                        const [contentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                        const [contentType] = await tx.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
                         if (!contentType) {
                             throw new Error(JSON.stringify(buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`)));
                         }
@@ -1919,7 +1920,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                         }
 
                         const [newItem] = await tx.insert(contentItems).values({
-                            domainId: (request as any).authPrincipal?.domainId ?? 1,
+                            domainId: getDomainId(request),
                             contentTypeId: item.contentTypeId,
                             data: item.data,
                             status: item.status || 'draft'
@@ -1932,7 +1933,7 @@ export default async function apiRoutes(server: FastifyInstance) {
 
                 for (const entry of created) {
                     if (entry.id !== undefined) {
-                        await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
+                        await logAudit(getDomainId(request), 'create',
                             'content_item',
                             entry.id,
                             { batch: true, mode: 'atomic' },
@@ -1975,7 +1976,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const results: Array<{ index: number; ok: boolean; id?: number; version?: number; code?: string; error?: string }> = [];
         for (const [index, item] of items.entries()) {
             try {
-                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
                 if (!contentType) {
                     results.push(buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`));
                     continue;
@@ -1988,13 +1989,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                 }
 
                 const [newItem] = await db.insert(contentItems).values({
-                    domainId: (request as any).authPrincipal?.domainId ?? 1,
+                    domainId: getDomainId(request),
                     contentTypeId: item.contentTypeId,
                     data: item.data,
                     status: item.status || 'draft'
                 }).returning();
 
-                await logAudit((request as any).authPrincipal?.domainId ?? 1, 'create',
+                await logAudit(getDomainId(request), 'create',
                     'content_item',
                     newItem.id,
                     { batch: true, mode: 'partial' },
@@ -2076,13 +2077,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                 return { ok: false, error: buildError(index, 'EMPTY_UPDATE_BODY', `No update fields provided for item ${item.id}`) } as const;
             }
 
-            const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
+            const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, item.id), eq(contentItems.domainId, getDomainId(request))));
             if (!existing) {
                 return { ok: false, error: buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${item.id} not found`) } as const;
             }
 
             const targetContentTypeId = updateData.contentTypeId ?? existing.contentTypeId;
-            const [targetContentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+            const [targetContentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, targetContentTypeId), eq(contentTypes.domainId, getDomainId(request))));
             if (!targetContentType) {
                 return { ok: false, error: buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${targetContentTypeId} not found`) } as const;
             }
@@ -2138,13 +2139,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             throw new Error(JSON.stringify(buildError(index, 'EMPTY_UPDATE_BODY', `No update fields provided for item ${item.id}`)));
                         }
 
-                        const [existing] = await tx.select().from(contentItems).where(eq(contentItems.id, item.id));
+                        const [existing] = await tx.select().from(contentItems).where(and(eq(contentItems.id, item.id), eq(contentItems.domainId, getDomainId(request))));
                         if (!existing) {
                             throw new Error(JSON.stringify(buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${item.id} not found`)));
                         }
 
                         const targetContentTypeId = updateData.contentTypeId ?? existing.contentTypeId;
-                        const [targetContentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+                        const [targetContentType] = await tx.select().from(contentTypes).where(and(eq(contentTypes.id, targetContentTypeId), eq(contentTypes.domainId, getDomainId(request))));
                         if (!targetContentType) {
                             throw new Error(JSON.stringify(buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${targetContentTypeId} not found`)));
                         }
@@ -2169,7 +2170,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 version: existing.version + 1,
                                 updatedAt: new Date()
                             })
-                            .where(eq(contentItems.id, item.id))
+                            .where(and(eq(contentItems.id, item.id), eq(contentItems.domainId, getDomainId(request))))
                             .returning();
 
                         output.push({ index, ok: true, id: updated.id, version: updated.version });
@@ -2179,7 +2180,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 });
 
                 for (const row of results) {
-                    await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
+                    await logAudit(getDomainId(request), 'update',
                         'content_item',
                         row.id,
                         { batch: true, mode: 'atomic' },
@@ -2247,7 +2248,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 return updated;
             });
 
-            await logAudit((request as any).authPrincipal?.domainId ?? 1, 'update',
+            await logAudit(getDomainId(request), 'update',
                 'content_item',
                 result.id,
                 { batch: true, mode: 'partial' },
@@ -2319,7 +2320,7 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         if (isDryRun(mode)) {
             const results = await Promise.all(ids.map(async (id, index) => {
-                const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+                const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
                 if (!existing) {
                     return buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`);
                 }
@@ -2351,7 +2352,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 const deleted = await db.transaction(async (tx) => {
                     const rows: Array<{ index: number; ok: boolean; id: number }> = [];
                     for (const [index, id] of ids.entries()) {
-                        const [existing] = await tx.delete(contentItems).where(eq(contentItems.id, id)).returning();
+                        const [existing] = await tx.delete(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request)))).returning();
                         if (!existing) {
                             throw new Error(JSON.stringify(buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`)));
                         }
@@ -2361,7 +2362,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 });
 
                 for (const row of deleted) {
-                    await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
+                    await logAudit(getDomainId(request), 'delete',
                         'content_item',
                         row.id,
                         { batch: true, mode: 'atomic' },
@@ -2402,13 +2403,13 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         const results: Array<Record<string, unknown>> = [];
         for (const [index, id] of ids.entries()) {
-            const [deleted] = await db.delete(contentItems).where(eq(contentItems.id, id)).returning();
+            const [deleted] = await db.delete(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request)))).returning();
             if (!deleted) {
                 results.push(buildError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`));
                 continue;
             }
 
-            await logAudit((request as any).authPrincipal?.domainId ?? 1, 'delete',
+            await logAudit(getDomainId(request), 'delete',
                 'content_item',
                 deleted.id,
                 { batch: true, mode: 'partial' },
@@ -2608,7 +2609,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const { id } = request.params as { id: number };
-        const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+        const [payment] = await db.select().from(payments).where(and(eq(payments.id, id), eq(payments.domainId, getDomainId(request))));
         if (!payment) {
             return reply.status(404).send(toErrorPayload('Payment not found', 'PAYMENT_NOT_FOUND', 'Check the payment ID.'));
         }

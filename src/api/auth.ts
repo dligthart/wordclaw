@@ -4,7 +4,7 @@ import { getApiKeyByHash, hashApiKey, isKeyExpired, parseScopes, touchApiKeyUsag
 
 type Scope = ApiScope;
 
-type AuthPrincipal = {
+export type AuthPrincipal = {
     keyId: number | string;
     domainId: number;
     scopes: Set<string>;
@@ -254,4 +254,30 @@ export async function authenticateApiRequest(headers: IncomingHttpHeaders): Prom
         ok: true,
         principal: resolved
     };
+}
+
+export function getDomainId(ctx: unknown): number {
+    if (!ctx || typeof ctx !== 'object') {
+        const err = new Error('Invalid Context') as any;
+        err.statusCode = 401;
+        err.code = 'UNAUTHENTICATED';
+        err.remediation = 'The request context is missing or invalid.';
+        throw err;
+    }
+
+    if ('domainId' in ctx && typeof ctx.domainId === 'number') {
+        return ctx.domainId;
+    }
+    if ('principal' in ctx && ctx.principal && typeof (ctx.principal as any).domainId === 'number') {
+        return (ctx.principal as any).domainId;
+    }
+    if ('authPrincipal' in ctx && ctx.authPrincipal && typeof (ctx.authPrincipal as any).domainId === 'number') {
+        return (ctx.authPrincipal as any).domainId;
+    }
+
+    const err = new Error('Missing Domain Context') as any;
+    err.statusCode = 401;
+    err.code = 'UNAUTHENTICATED';
+    err.remediation = 'The authenticated context is missing a valid domain ID bounds constraint.';
+    throw err;
 }

@@ -51,7 +51,7 @@ describe('GraphQL Resolver Contracts', () => {
             slug: 'dry-run-type',
             schema: '{"type":"object"}',
             dryRun: true
-        }, { authPrincipal: { scopes: new Set(['admin']) } }, {});
+        }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {});
 
         expect(result.id).toBe(0);
         expect(result.name).toBe('Dry Run Type');
@@ -67,7 +67,7 @@ describe('GraphQL Resolver Contracts', () => {
         }));
 
         await expect(
-            resolvers.Mutation.updateContentItem({}, { id: '1' }, { authPrincipal: { scopes: new Set(['admin']) } }, {})
+            resolvers.Mutation.updateContentItem({}, { id: '1' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
         ).rejects.toMatchObject({
             extensions: {
                 code: 'EMPTY_UPDATE_BODY'
@@ -83,7 +83,7 @@ describe('GraphQL Resolver Contracts', () => {
                 name: 'Bad Type',
                 slug: 'bad-type',
                 schema: '{bad-json}'
-            }, { authPrincipal: { scopes: new Set(['admin']) } }, {})
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
         ).rejects.toMatchObject({
             extensions: {
                 code: 'INVALID_CONTENT_SCHEMA_JSON'
@@ -130,7 +130,7 @@ describe('GraphQL Resolver Contracts', () => {
         }));
 
         await expect(
-            resolvers.Mutation.rollbackContentItem({}, { id: '5', version: 99 }, { authPrincipal: { scopes: new Set(['admin']) } }, {})
+            resolvers.Mutation.rollbackContentItem({}, { id: '5', version: 99 }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
         ).rejects.toMatchObject({
             extensions: {
                 code: 'TARGET_VERSION_NOT_FOUND'
@@ -178,7 +178,7 @@ describe('GraphQL Resolver Contracts', () => {
             id: '7',
             data: '{"title":"v2"}',
             status: 'published'
-        }, { authPrincipal: { scopes: new Set(['admin']) } }, {});
+        }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {});
 
         expect(result.version).toBe(2);
         expect(mocks.logAuditMock).toHaveBeenCalledWith(
@@ -213,7 +213,7 @@ describe('GraphQL Resolver Contracts', () => {
                 data: '{"title":"ok"}',
                 status: 'draft'
             }]
-        }, { authPrincipal: { scopes: new Set(['admin']) } }, {});
+        }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {});
 
         expect(result.atomic).toBe(true);
         expect(result.results[0].ok).toBe(true);
@@ -223,7 +223,7 @@ describe('GraphQL Resolver Contracts', () => {
 
     it('contentItems rejects invalid createdAfter filter with deterministic code', async () => {
         await expect(
-            resolvers.Query.contentItems({}, { createdAfter: 'not-a-date' }, { authPrincipal: { scopes: new Set(['admin']) } }, {})
+            resolvers.Query.contentItems({}, { createdAfter: 'not-a-date' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
         ).rejects.toMatchObject({
             extensions: {
                 code: 'INVALID_CREATED_AFTER'

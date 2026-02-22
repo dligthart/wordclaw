@@ -23,7 +23,7 @@ export function buildOperationContext(
     return {
         principal: {
             id: principal?.keyId?.toString() || 'anonymous',
-            domainId: principal?.domainId ?? 1, // Fallback to 1 (default domain)
+            domainId: principal?.domainId ?? (() => { throw new Error('TENANT_ISOLATION_VIOLATION: Operations require explicit domain context.'); })(),
             scopes: scopesArray,
             source: principal?.source || 'anonymous'
         },
