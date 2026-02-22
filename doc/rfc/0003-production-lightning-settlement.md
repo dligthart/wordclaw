@@ -75,3 +75,102 @@ Lightning payments can take 1-15 seconds to route. Relying on synchronous client
 4.  **Phase 4**: Hard-enforce HMAC signature spoofing protection on the Async webhook. Integrate auto-expiration recreation.
 5.  **Phase 5**: Graduate to Mainnet and publish OpenAPI price discovery endpoints.
 
+## 9. Production Gap Analysis (as of 2026-02-22)
+
+A comprehensive audit of the current codebase against this RFC identifies the following gaps between the working MVP skeleton and a production-ready system.
+
+### 9.1 Current State
+
+The L402 protocol flow works end-to-end in development: a `402` challenge is issued with a macaroon+invoice, the client pays and retries with `Authorization: L402 <token>:<preimage>`, and the payment status is tracked in the database (`pending` → `paid` → `consumed`). All components use mock/placeholder implementations.
+
+### 9.2 Gap Details
+
+#### Gap 1: Real Lightning Payment Provider (§5.2)
+
+**Current:** `src/services/mock-payment-provider.ts` generates fake `lnbc_mock_*` invoices and accepts a hardcoded preimage (`mock_preimage_12345`). The config in `src/services/l402-config.ts` actively throws in production unless `PAYMENT_PROVIDER=mock` is set.
+
+**Required:** A real `PaymentProvider` implementation (LNbits recommended for V1). The existing `PaymentProvider` interface (`src/interfaces/payment-provider.ts`) must be extended:
+*   `createInvoice` must return an **expiry timestamp**.
+*   `verifyPayment` should return a **status object** (`paid`/`pending`/`expired`/`failed`), not just a boolean.
+*   Add `getInvoiceStatus(hash)` method for the reconciliation worker.
+*   Add webhook registration callback so the provider can push settlement notifications.
+
+#### Gap 2: Cryptographic Macaroons (§4.2)
+
+**Current:** `src/middleware/l402.ts` uses a simple HMAC-signed base64 payload as a "macaroon placeholder." It embeds only `{ hash, exp }`.
+
+**Required:** Real Macaroons via `macaroons.js` (already installed but unused). Without caveats binding tokens to specific routes and methods, tokens are trivially replayable across different endpoints — a client paying for a `POST` can reuse the token on a `DELETE`.
+
+#### Gap 3: Asynchronous Settlement Webhooks (§5.4)
+
+**Current:** Payment verification in `src/middleware/l402.ts` is synchronous — the middleware calls `provider.verifyPayment()` inline during the HTTP request. This works for mocks but fails for real Lightning where routing takes 1–15 seconds.
+
+**Required:**
+*   `POST /webhooks/payments/:providerName/settled` endpoint.
+*   HMAC signature validation on incoming webhooks (anti-spoofing).
+*   `eventId` uniqueness constraint with 72-hour replay window.
+*   State machine enforcement at the DB level.
+
+#### Gap 4: Invoice Expiry and Recreation (§5.4)
+
+**Current:** The HMAC token has a 1-hour expiry, but there is no handling for expired Lightning invoices. If a client returns with a valid token but the underlying invoice expired, the system has no path to issue a replacement.
+
+**Required:** Detect `INVOICE_EXPIRED` status, auto-fail the expired payment record, mint a fresh L402 challenge with a new invoice, and return remediation text.
+
+#### Gap 5: Reconciliation Worker (§5.4)
+
+**Current:** Nothing exists. If a webhook is dropped or delayed, `pending` payments stay pending forever.
+
+**Required:** A scheduled background job (every 15 minutes) that queries the provider for stale `pending` invoices and updates their status.
+
+#### Gap 6: Payment State Machine
+
+**Current:** Status updates in `src/services/l402-config.ts` are unguarded. Any status can transition to any other status.
+
+**Required:** Enforce valid transitions only:
+```
+pending → paid → consumed
+pending → expired
+pending → failed
+```
+
+#### Gap 7: Domain-Scoped Pricing (Multi-Tenant)
+
+**Current:** The pricing function in `src/services/l402-config.ts` queries `contentTypes` and `contentItems` without domain filtering, allowing cross-tenant pricing leakage.
+
+**Required:** Pass `domainId` into `getPrice()` and scope all content type/item lookups.
+
+#### Gap 8: L402 domainId Header Spoofing
+
+**Current:** The `domainId` used for payment records derives from the raw `x-wordclaw-domain` header rather than from the authenticated principal.
+
+**Required:** Derive `domainId` exclusively from the authenticated principal to prevent spoofing.
+
+### 9.3 Adjacent Systems Required for Viable Economics
+
+| System | RFC | Status | Dependency |
+|--------|-----|--------|------------|
+| Agent Profiles | 0004 | Not implemented | Links API keys to payout addresses for revenue attribution |
+| Offers & Licensing | 0004 | Not implemented | Defines what is being sold (item, subscription, bundle) |
+| Entitlements | 0004 | Not implemented | Proves durable buyer access rights beyond one-shot consumption |
+| Revenue Ledger | 0006 | Not implemented | Tracks gross revenue per payment for payout accounting |
+| Agent Payouts | 0006 | Not implemented | Distributes earnings to content creators via Lightning Address |
+
+### 9.4 Prioritized Implementation Order
+
+| Priority | Work Item | Effort | Blocks |
+|----------|-----------|--------|--------|
+| **P0** | Real `PaymentProvider` (LNbits) | Medium | Everything else |
+| **P0** | Extend `PaymentProvider` interface (expiry, status enum) | Small | Provider impl |
+| **P0** | Settlement webhook endpoint + HMAC validation | Medium | Async payments |
+| **P0** | Payment state machine (DB constraints) | Small | Data integrity |
+| **P1** | Cryptographic Macaroons (replace HMAC tokens) | Medium | Security |
+| **P1** | Invoice expiry detection + auto-recreation | Small | UX |
+| **P1** | Reconciliation worker | Medium | Reliability |
+| **P1** | Domain-scoped pricing + fix header spoofing | Small | Multi-tenant |
+| **P2** | Agent Profiles + Offers (RFC 0004) | Large | Monetization model |
+| **P2** | Revenue ledger + Payouts (RFC 0006) | Large | Creator economics |
+| **P3** | Testnet soak (30 days per §7) | Time | Mainnet launch |
+
+**P0** = minimum to accept a single real Lightning payment. **P1** = production-grade. **P2** = viable marketplace. **P3** = mainnet graduation gate.
+
