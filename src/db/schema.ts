@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer, boolean, jsonb, index } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, boolean, jsonb, index, vector } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
     id: serial('id').primaryKey(),
@@ -165,3 +165,15 @@ export const reviewComments = pgTable('review_comments', {
     comment: text('comment').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const contentItemEmbeddings = pgTable("content_item_embeddings", {
+    id: serial("id").primaryKey(),
+    contentItemId: integer("content_item_id").references(() => contentItems.id, { onDelete: 'cascade' }).notNull(),
+    domainId: integer("domain_id").references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    chunkIndex: integer("chunk_index").notNull(),
+    textChunk: text("text_chunk").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }).notNull(),
+}, (table) => ({
+    embeddingIndex: index("embedding_idx").using("hnsw", table.embedding.op("vector_cosine_ops")),
+    domainIndex: index("embedding_domain_idx").on(table.domainId)
+}));

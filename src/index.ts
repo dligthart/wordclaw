@@ -290,3 +290,17 @@ const start = async () => {
 };
 
 start();
+
+const shutdown = async (signal: string) => {
+    server.log.info(`Received ${signal}, shutting down gracefully...`);
+    try {
+        await server.close();
+        process.exit(0);
+    } catch (err) {
+        server.log.error(err, 'Error during shutdown');
+        process.exit(1);
+    }
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

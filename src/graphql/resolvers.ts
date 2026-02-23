@@ -11,6 +11,7 @@ import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWe
 import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
+import { EmbeddingService } from '../services/embedding.js';
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 
@@ -625,6 +626,10 @@ export const resolvers = {
                 active: hook.active,
                 createdAt: hook.createdAt
             };
+        }),
+
+        semanticSearch: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, args: { query: string, limit?: number }, context: unknown) => {
+            return await EmbeddingService.searchSemanticKnowledge(getDomainId(context), args.query, args.limit);
         })
     },
 
@@ -777,6 +782,12 @@ export const resolvers = {
                 data: dataStr,
                 status
             }).returning();
+
+            if (newItem.status === 'published') {
+                EmbeddingService.syncItemEmbeddings(getDomainId(context), newItem.id).catch(console.error);
+            } else {
+                EmbeddingService.deleteItemEmbeddings(getDomainId(context), newItem.id).catch(console.error);
+            }
 
             await logAudit(getDomainId(context), 'create', 'content_item', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
@@ -1015,6 +1026,12 @@ export const resolvers = {
 
             if (!result) {
                 throw notFoundContentItemError(id);
+            }
+
+            if (result.status === 'published') {
+                EmbeddingService.syncItemEmbeddings(getDomainId(context), result.id).catch(console.error);
+            } else {
+                EmbeddingService.deleteItemEmbeddings(getDomainId(context), result.id).catch(console.error);
             }
 
             await logAudit(getDomainId(context), 'update', 'content_item', result.id, updateData, toActorId(context), toRequestId(context));

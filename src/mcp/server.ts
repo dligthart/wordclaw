@@ -10,6 +10,7 @@ import { ValidationFailure, validateContentDataAgainstSchema, validateContentTyp
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
 import { WorkflowService } from '../services/workflow.js';
+import { EmbeddingService } from '../services/embedding.js';
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
@@ -767,6 +768,23 @@ server.tool(
         });
     }
     ));
+
+server.tool(
+    'search_semantic_knowledge',
+    'Search the WordClaw knowledge base using semantic vector similarity',
+    {
+        query: z.string().describe('The search query or concept to find'),
+        limit: z.number().optional().describe('Maximum number of results to return (default 5)')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ query, limit }, extra, domainId) => {
+        try {
+            const results = await EmbeddingService.searchSemanticKnowledge(domainId, query, limit);
+            return okJson(results);
+        } catch (error) {
+            return err(`Semantic search failed: ${(error as Error).message}`);
+        }
+    })
+);
 
 server.tool(
     'get_content_items',

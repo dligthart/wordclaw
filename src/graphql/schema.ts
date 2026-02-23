@@ -206,7 +206,19 @@ export const schema = `
     results: [BatchItemResult!]!
   }
 
+  type SemanticSearchResult {
+    id: Int!
+    contentItemId: Int!
+    chunkIndex: Int!
+    textChunk: String!
+    similarity: Float!
+    contentItemData: JSON!
+    contentTypeSlug: String!
+  }
+
   type Query {
+    """Search knowledge semantically across embedded content chunks."""
+    semanticSearch(query: String!, limit: Int = 5): [SemanticSearchResult!]!
     """List content types with limit/offset pagination."""
     contentTypes(limit: Int = 50, offset: Int = 0): [ContentType!]!
     """Get one content type by id."""

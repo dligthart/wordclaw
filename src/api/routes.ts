@@ -16,6 +16,7 @@ import { buildOperationContext, resolveRestOperation, resolveRestResource } from
 import { l402Middleware } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
+import { EmbeddingService } from '../services/embedding.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -1243,6 +1244,13 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentItems).values(data).returning();
+
+        if (newItem.status === 'published') {
+            EmbeddingService.syncItemEmbeddings(getDomainId(request), newItem.id).catch(console.error);
+        } else {
+            EmbeddingService.deleteItemEmbeddings(getDomainId(request), newItem.id).catch(console.error);
+        }
+
         await logAudit(getDomainId(request), 'create',
             'content_item',
             newItem.id,
@@ -1331,6 +1339,13 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const [newItem] = await db.insert(contentItems).values(data).returning();
+
+        if (newItem.status === 'published') {
+            EmbeddingService.syncItemEmbeddings(getDomainId(request), newItem.id).catch(console.error);
+        } else {
+            EmbeddingService.deleteItemEmbeddings(getDomainId(request), newItem.id).catch(console.error);
+        }
+
         await logAudit(getDomainId(request), 'create',
             'content_item',
             newItem.id,
@@ -1348,6 +1363,39 @@ export default async function apiRoutes(server: FastifyInstance) {
                 1
             )
         });
+    });
+
+    server.get('/search/semantic', {
+        schema: {
+            querystring: Type.Object({
+                query: Type.String(),
+                limit: Type.Optional(Type.Number({ minimum: 1, maximum: 50, default: 5 }))
+            }),
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    contentItemId: Type.Number(),
+                    chunkIndex: Type.Number(),
+                    textChunk: Type.String(),
+                    similarity: Type.Number(),
+                    contentItemData: Type.Any(),
+                    contentTypeSlug: Type.String()
+                }))),
+                400: AIErrorResponse,
+                500: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { query, limit } = request.query as { query: string, limit?: number };
+        try {
+            const results = await EmbeddingService.searchSemanticKnowledge(getDomainId(request), query, limit);
+            return {
+                data: results,
+                meta: buildMeta('Semantic Search Retrieved', [], 'medium', 1)
+            };
+        } catch (e: any) {
+            return reply.status(500).send(toErrorPayload('Semantic Search Failed', 'EMBEDDING_API_ERROR', e.message));
+        }
     });
 
     server.get('/content-items', {
@@ -1587,6 +1635,12 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         if (!result) {
             return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        if (result.status === 'published') {
+            EmbeddingService.syncItemEmbeddings(getDomainId(request), result.id).catch(console.error);
+        } else {
+            EmbeddingService.deleteItemEmbeddings(getDomainId(request), result.id).catch(console.error);
         }
 
         await logAudit(getDomainId(request), 'update',

@@ -17,6 +17,7 @@ const runMigration = async () => {
 
     console.log("Running migrations with pg driver...");
     try {
+        await pool.query("CREATE EXTENSION IF NOT EXISTS vector;");
         await migrate(db, { migrationsFolder: 'drizzle' });
         console.log("Migrations complete!");
     } catch (e) {

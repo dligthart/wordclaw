@@ -8,6 +8,7 @@ import {
     contentTypes
 } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
+import { EmbeddingService } from './embedding.js';
 
 export interface WorkflowTransitionContext {
     domainId: number;
@@ -121,6 +122,14 @@ export class WorkflowService {
                 await db.update(contentItems)
                     .set({ status: transition.toState })
                     .where(eq(contentItems.id, task.contentItemId));
+
+                // If the target state is published, dynamically generate vector embeddings
+                if (transition.toState === 'published') {
+                    // Fire and forget to avoid stalling the HTTP response
+                    EmbeddingService.syncItemEmbeddings(domainId, task.contentItemId).catch(console.error);
+                } else {
+                    EmbeddingService.deleteItemEmbeddings(domainId, task.contentItemId).catch(console.error);
+                }
             }
         }
 
