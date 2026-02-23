@@ -68,8 +68,10 @@
     PORT=4000
     DATABASE_URL=postgres://postgres:postgres@localhost:5432/wordclaw
     AUTH_REQUIRED=false
+    OPENAI_API_KEY=
     API_KEYS=writer=content:read|content:write|audit:read,reader=content:read|audit:read
     ```
+    `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). If unset, semantic search returns a clear disabled response and write-side embedding sync is skipped.
 
 ## 🗄️ Database Setup
 

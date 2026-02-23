@@ -10,8 +10,39 @@ services:
       POSTGRES_DB: wordclaw
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wordclaw"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  # Optional local API runtime with environment pass-through.
+  # Start with: docker compose --profile app up --build
+  app:
+    image: node:20
+    profiles: ["app"]
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    environment:
+      PORT: "4000"
+      DATABASE_URL: "postgres://postgres:postgres@db:5432/wordclaw"
+      AUTH_REQUIRED: "${AUTH_REQUIRED:-false}"
+      API_KEYS: "${API_KEYS:-writer=content:read|content:write|audit:read,reader=content:read|audit:read}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_EMBEDDING_MODEL: "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
+      OPENAI_EMBEDDING_MAX_PER_MINUTE: "${OPENAI_EMBEDDING_MAX_PER_MINUTE:-30}"
+      OPENAI_EMBEDDING_DAILY_BUDGET: "${OPENAI_EMBEDDING_DAILY_BUDGET:-2000}"
+      OPENAI_EMBEDDING_RETRIES: "${OPENAI_EMBEDDING_RETRIES:-3}"
+      OPENAI_EMBEDDING_RETRY_BASE_MS: "${OPENAI_EMBEDDING_RETRY_BASE_MS:-500}"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    command: sh -lc "npm install && npm run dev"
 
 volumes:
   postgres_data:

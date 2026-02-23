@@ -140,7 +140,7 @@ export class WorkflowService {
         return await db.select()
             .from(reviewComments)
             .where(and(eq(reviewComments.domainId, domainId), eq(reviewComments.contentItemId, contentItemId)))
-            .orderBy(desc(reviewComments.createdAt));
+            .orderBy(desc(reviewComments.createdAt), desc(reviewComments.id));
     }
 
     static async addComment(domainId: number, contentItemId: number, authorId: string, comment: string) {

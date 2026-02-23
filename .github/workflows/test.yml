@@ -36,6 +36,11 @@ jobs:
         
     - name: Install dependencies (Backend)
       run: npm install
+
+    - name: Run Backend Migrations
+      run: npx drizzle-kit migrate
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/wordclaw
       
     - name: Run Backend Tests
       run: npm test
