@@ -176,7 +176,7 @@
         class="fixed inset-0 bg-gray-900/75 flex items-center justify-center z-50"
     >
         <div
-            class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full shadow-2xl border border-gray-200 dark:border-gray-700"
+            class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full mx-4 shadow-2xl border border-gray-200 dark:border-gray-700"
         >
             <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">
                 Save this API Key
@@ -251,7 +251,7 @@
             class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-40"
         >
             <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-gray-200 dark:border-gray-700"
+                class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden border border-gray-200 dark:border-gray-700"
             >
                 <div
                     class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center"

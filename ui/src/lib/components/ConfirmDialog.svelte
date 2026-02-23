@@ -33,7 +33,7 @@
         }}
     >
         <div
-            class="w-full max-w-md bg-white dark:bg-gray-800 rounded-lg shadow-xl overflow-hidden transform transition-all scale-100 opacity-100"
+            class="w-full max-w-md mx-4 bg-white dark:bg-gray-800 rounded-lg shadow-xl overflow-hidden transform transition-all scale-100 opacity-100"
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-headline"
