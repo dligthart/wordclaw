@@ -3,7 +3,9 @@
     import favicon from "$lib/assets/favicon.svg";
     import { page } from "$app/stores";
     import { auth, checkAuth, logout } from "$lib/auth.svelte";
+    import { fetchApi } from "$lib/api";
     import DomainDropdown from "$lib/components/DomainDropdown.svelte";
+    import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
     import Toast from "$lib/components/Toast.svelte";
@@ -44,12 +46,40 @@
     let { children } = $props();
     let isSidebarOpen = $state(false);
     let currentDomain = $state("1");
+    let domainOptions = $state<{ id: string; label: string }[]>([
+        { id: "1", label: "Domain 1" },
+        { id: "2", label: "Domain 2" },
+    ]);
 
     onMount(async () => {
         const stored = localStorage.getItem("__wc_domain_id");
         if (stored) currentDomain = stored;
         await checkAuth();
+        if (auth.user) {
+            await loadDomains();
+        }
     });
+
+    async function loadDomains() {
+        try {
+            const res = await fetchApi("/domains");
+            const fetched = (res.data as Array<{ id: number; name: string; hostname: string }>).map(
+                (domain) => ({
+                    id: String(domain.id),
+                    label: domain.name || domain.hostname || `Domain ${domain.id}`,
+                }),
+            );
+            if (fetched.length > 0) {
+                domainOptions = fetched;
+                if (!fetched.some((domain) => domain.id === currentDomain)) {
+                    currentDomain = fetched[0].id;
+                    localStorage.setItem("__wc_domain_id", currentDomain);
+                }
+            }
+        } catch {
+            // Keep fallback options when domain discovery is unavailable.
+        }
+    }
 
     async function selectDomain(domainId: string) {
         if (domainId === currentDomain) return;
@@ -145,9 +175,7 @@
     <div
         class="h-screen w-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900"
     >
-        <div
-            class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-500"
-        ></div>
+        <LoadingSpinner size="xl" />
     </div>
 {:else if auth.user}
     <div
@@ -172,6 +200,7 @@
                 <DomainDropdown
                     currentDomain={currentDomain}
                     onSelect={selectDomain}
+                    options={domainOptions}
                 />
 
                 <!-- Dark Mode Toggle -->

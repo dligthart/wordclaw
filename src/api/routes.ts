@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
@@ -16,7 +16,7 @@ import { buildOperationContext, resolveRestOperation, resolveRestResource } from
 import { l402Middleware } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
-import { EmbeddingService } from '../services/embedding.js';
+import { EmbeddingService, EmbeddingServiceError } from '../services/embedding.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -178,15 +178,17 @@ function isValidUrl(url: string): boolean {
 
 export default async function apiRoutes(server: FastifyInstance) {
     server.addHook('preHandler', async (request, reply) => {
-        let principal: { keyId: number | string; scopes: Set<string>; source: string } | null = null;
+        let principal: { keyId: number | string; scopes: Set<string>; source: string; domainId?: number } | null = null;
         try {
             await request.jwtVerify({ onlyCookie: true });
             const user = request.user as { sub: number, role: string };
             if (user && user.role === 'supervisor') {
+                const headerDomain = request.headers['x-wordclaw-domain'];
                 principal = {
                     keyId: `supervisor:${user.sub}`,
                     scopes: new Set(['admin']),
-                    source: 'cookie'
+                    source: 'cookie',
+                    ...(headerDomain ? { domainId: parseInt(headerDomain as string, 10) } : {})
                 };
             }
         } catch {
@@ -200,7 +202,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             if (!auth.ok) {
                 return reply.status(auth.statusCode).send(auth.payload);
             }
-            principal = auth.principal as { keyId: number | string; scopes: Set<string>; source: string };
+            principal = auth.principal as { keyId: number | string; scopes: Set<string>; source: string; domainId?: number };
         }
 
         (request as any).authPrincipal = principal;
@@ -857,6 +859,38 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
+    server.get('/domains', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    name: Type.String(),
+                    hostname: Type.String(),
+                    createdAt: Type.String()
+                })))
+            }
+        }
+    }, async (_request) => {
+        const allDomains = await db.select()
+            .from(domains)
+            .orderBy(domains.id);
+
+        return {
+            data: allDomains.map((domain) => ({
+                id: domain.id,
+                name: domain.name,
+                hostname: domain.hostname,
+                createdAt: domain.createdAt.toISOString()
+            })),
+            meta: buildMeta(
+                'Select the active domain context in the supervisor UI',
+                ['GET /api/content-types', 'GET /api/content-items'],
+                'low',
+                1
+            )
+        };
+    });
+
     server.post('/content-types', {
         schema: {
             querystring: DryRunQuery,
@@ -1209,7 +1243,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
         const rawBody = request.body as any;
         const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
-        const data = { ...rawBody, data: dataStr } as typeof contentItems.$inferInsert;
+        const data = { ...rawBody, data: dataStr, domainId: getDomainId(request) } as typeof contentItems.$inferInsert;
         const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, data.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
 
         if (!contentType) {
@@ -1303,7 +1337,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const params = request.params as { contentTypeId: number };
         const rawBody = request.body as any;
         const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
-        const data = { ...rawBody, data: dataStr, contentTypeId: params.contentTypeId } as typeof contentItems.$inferInsert;
+        const data = { ...rawBody, data: dataStr, contentTypeId: params.contentTypeId, domainId: getDomainId(request) } as typeof contentItems.$inferInsert;
 
         const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, data.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
 
@@ -1382,6 +1416,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     contentTypeSlug: Type.String()
                 }))),
                 400: AIErrorResponse,
+                429: AIErrorResponse,
+                503: AIErrorResponse,
                 500: AIErrorResponse
             }
         }
@@ -1394,6 +1430,15 @@ export default async function apiRoutes(server: FastifyInstance) {
                 meta: buildMeta('Semantic Search Retrieved', [], 'medium', 1)
             };
         } catch (e: any) {
+            if (e instanceof EmbeddingServiceError) {
+                return reply.status(e.statusCode).send(
+                    toErrorPayload(
+                        'Semantic Search Failed',
+                        e.code,
+                        e.message
+                    )
+                );
+            }
             return reply.status(500).send(toErrorPayload('Semantic Search Failed', 'EMBEDDING_API_ERROR', e.message));
         }
     });
