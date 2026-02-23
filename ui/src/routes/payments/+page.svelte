@@ -63,9 +63,9 @@
     });
 </script>
 
-<div class="px-4 sm:px-6 lg:px-8">
-    <div class="sm:flex sm:items-center">
-        <div class="sm:flex-auto">
+<div class="px-4 md:px-6 lg:px-8">
+    <div class="md:flex md:items-center">
+        <div class="md:flex-auto">
             <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
                 Payment Flow Tracking
             </h1>
@@ -74,17 +74,17 @@
                 payments and completed settlements across all content resources.
             </p>
         </div>
-        <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <div class="mt-4 md:mt-0 md:ml-16 md:flex-none">
             <button
                 onclick={loadPayments}
-                class="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
+                class="inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 md:w-auto"
             >
                 Refresh
             </button>
         </div>
     </div>
     <div class="mt-8 flex flex-col">
-        <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="-my-2 -mx-4 overflow-x-auto md:-mx-6 lg:-mx-8">
             <div
                 class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8"
             >
