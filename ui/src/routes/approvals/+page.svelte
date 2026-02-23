@@ -3,6 +3,9 @@
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { formatJson } from "$lib/utils";
+    import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+    import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
 
     type ReviewTaskPayload = {
         task: {
@@ -160,11 +163,7 @@
     </div>
 
     {#if error}
-        <div
-            class="bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 mb-6 rounded shadow-sm"
-        >
-            <p class="text-sm text-red-700 dark:text-red-400">{error}</p>
-        </div>
+        <ErrorBanner class="mb-6 shadow-sm" message={error} />
     {/if}
 
     <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
@@ -187,9 +186,7 @@
             <div class="flex-1 overflow-y-auto p-2">
                 {#if loading}
                     <div class="flex justify-center p-8">
-                        <div
-                            class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"
-                        ></div>
+                        <LoadingSpinner size="md" />
                     </div>
                 {:else if pendingTasks.length === 0}
                     <div
@@ -344,9 +341,7 @@
                             class="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-500 rounded-md transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
                         >
                             {#if processingItem === selectedTask.task.id}
-                                <div
-                                    class="animate-spin rounded-full h-3 w-3 border-b-2 border-white"
-                                ></div>
+                                <LoadingSpinner size="sm" color="white" />
                             {:else}
                                 <svg
                                     class="w-4 h-4"
@@ -373,31 +368,11 @@
                     <div
                         class="bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
                     >
-                        <div
-                            class="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex justify-between items-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
-                        >
-                            Payload Data
-                            <button
-                                class="text-blue-600 hover:text-blue-800 dark:text-blue-400"
-                                title="Copy to clipboard"
-                                onclick={() =>
-                                    navigator.clipboard.writeText(
-                                        formatJson(
-                                            selectedTask!.contentItem.data,
-                                        ),
-                                    )}
-                            >
-                                Copy JSON
-                            </button>
-                        </div>
-                        <pre
-                            class="p-4 text-xs font-mono text-green-400 dark:text-green-300 overflow-x-auto whitespace-pre-wrap break-words"><code
-                                >{JSON.stringify(
-                                    selectedTask!.contentItem.data,
-                                    null,
-                                    2,
-                                )}</code
-                            ></pre>
+                        <JsonCodeBlock
+                            value={selectedTask!.contentItem.data}
+                            label="Payload Data"
+                            copyable={true}
+                        />
                     </div>
                 </div>
             {/if}

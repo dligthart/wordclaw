@@ -2,6 +2,7 @@
     import { fetchApi } from "$lib/api";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
+    import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
 
     type ContentType = {
         id: number;
@@ -265,9 +266,7 @@
             <div class="flex-1 overflow-y-auto p-2">
                 {#if loading}
                     <div class="flex justify-center p-4">
-                        <div
-                            class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"
-                        ></div>
+                        <LoadingSpinner size="sm" />
                     </div>
                 {:else if types.length === 0 && !isCreating}
                     <p class="text-center text-sm text-gray-500 p-4">
@@ -451,7 +450,7 @@
                                     id="schema"
                                     bind:value={editingSchemaStr}
                                     disabled={!isEditing}
-                                    class="flex-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-blue-900 dark:text-green-400 font-mono text-xs shadow-inner focus:border-blue-500 focus:ring-blue-500 p-4 disabled:opacity-80 resize-none h-64"
+                                    class="flex-1 block w-full rounded-md border-gray-700 bg-gray-900 text-green-400 dark:text-green-300 font-mono text-xs shadow-inner focus:border-blue-500 focus:ring-blue-500 p-4 disabled:opacity-80 resize-none h-64"
                                     spellcheck="false"
                                 ></textarea>
                                 {#if schemaError}

@@ -3,6 +3,7 @@
     import { onMount } from "svelte";
     import DataTable from "$lib/components/DataTable.svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
+    import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
 
     type ApiKey = {
         id: number;
@@ -334,9 +335,7 @@
                         class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
                     >
                         {#if creating}
-                            <div
-                                class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"
-                            ></div>
+                            <LoadingSpinner size="sm" color="white" />
                             Saving...
                         {:else}
                             Create Key
@@ -361,9 +360,7 @@
     >
         {#if loading}
             <div class="flex-1 flex justify-center items-center p-12">
-                <div
-                    class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"
-                ></div>
+                <LoadingSpinner size="lg" />
             </div>
         {:else if keys.length === 0}
             <div

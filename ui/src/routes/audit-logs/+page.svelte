@@ -2,7 +2,10 @@
     import { fetchApi } from "$lib/api";
     import { onMount } from "svelte";
     import DataTable from "$lib/components/DataTable.svelte";
-    import { formatJson } from "$lib/utils";
+    import ActionBadge from "$lib/components/ActionBadge.svelte";
+    import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+    import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
 
     type AuditEvent = {
         id: number;
@@ -177,11 +180,7 @@
     </div>
 
     {#if error}
-        <div
-            class="bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 mb-6 rounded"
-        >
-            <p class="text-sm text-red-700 dark:text-red-400">{error}</p>
-        </div>
+        <ErrorBanner class="mb-6" message={error} />
     {/if}
 
     <!-- Table -->
@@ -201,20 +200,7 @@
                                 .substring(0, 19)}
                         </span>
                     {:else if column.key === "action"}
-                        <span
-                            class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                            {row.action === 'create'
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                : row.action === 'update'
-                                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                                  : row.action === 'delete'
-                                    ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                                    : row.action === 'rollback'
-                                      ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
-                        >
-                            {row.action.toUpperCase()}
-                        </span>
+                        <ActionBadge action={row.action} />
                     {:else if column.key === "entity"}
                         <span
                             class="font-medium font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
@@ -250,9 +236,7 @@
 
                 <svelte:fragment slot="empty">
                     {#if loading}
-                        <div
-                            class="animate-spin flex-shrink-0 align-middle inline-block rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"
-                        ></div>
+                        <LoadingSpinner size="md" class="mx-auto" />
                     {:else}
                         No audit logs found matching criteria.
                     {/if}
@@ -261,19 +245,10 @@
                 <svelte:fragment slot="expanded" let:row>
                     <div class="px-10 py-4">
                         {#if row.details}
-                            <div
-                                class="rounded-md bg-gray-900 overflow-hidden shadow-inner"
-                            >
-                                <div
-                                    class="px-4 py-2 border-b border-gray-700 bg-gray-800 flex justify-between items-center text-xs text-gray-400 font-mono"
-                                >
-                                    <span>Payload Details</span>
-                                </div>
-                                <pre
-                                    class="p-4 text-xs text-green-400 font-mono overflow-x-auto"><code
-                                        >{formatJson(row.details)}</code
-                                    ></pre>
-                            </div>
+                            <JsonCodeBlock
+                                label="Payload Details"
+                                value={row.details}
+                            />
                         {:else}
                             <p class="text-sm text-gray-500 italic">
                                 No details recorded for this event.
@@ -287,9 +262,7 @@
                 <div
                     class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex items-center justify-center z-20"
                 >
-                    <div
-                        class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"
-                    ></div>
+                    <LoadingSpinner size="lg" />
                 </div>
             {/if}
         </div>

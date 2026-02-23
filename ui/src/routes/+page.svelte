@@ -2,10 +2,8 @@
     import { fetchApi } from "$lib/api";
     import { onMount } from "svelte";
     import {
-        Spinner,
         Alert,
         Card,
-        Badge,
         Table,
         TableBody,
         TableBodyCell,
@@ -13,6 +11,9 @@
         TableHead,
         TableHeadCell,
     } from "flowbite-svelte";
+    import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+    import ActionBadge from "$lib/components/ActionBadge.svelte";
 
     type DashboardData = {
         health: {
@@ -61,18 +62,16 @@
 
     {#if loading}
         <div class="flex justify-center py-12">
-            <Spinner size="10" color="blue" />
+            <LoadingSpinner size="xl" />
         </div>
     {:else if error}
-        <Alert color="red" class="mb-6">
-            <span class="font-medium">Error:</span>
-            {error}
-            <button
-                onclick={() => window.location.reload()}
-                class="ml-2 text-sm text-red-700 font-medium hover:underline"
-                >Retry</button
-            >
-        </Alert>
+        <ErrorBanner
+            class="mb-6"
+            title="Error loading dashboard"
+            message={error}
+            actionLabel="Retry"
+            onAction={() => window.location.reload()}
+        />
     {:else if data}
         <!-- Alerts -->
         {#if data.alerts && data.alerts.length > 0}
@@ -310,19 +309,7 @@
                                 {formatDate(event.createdAt)}
                             </TableBodyCell>
                             <TableBodyCell>
-                                {@const actionColor =
-                                    event.action === "create"
-                                        ? "green"
-                                        : event.action === "update"
-                                          ? "yellow"
-                                          : event.action === "delete"
-                                            ? "red"
-                                            : event.action === "rollback"
-                                              ? "purple"
-                                              : "gray"}
-                                <Badge color={actionColor} rounded>
-                                    {event.action.toUpperCase()}
-                                </Badge>
+                                <ActionBadge action={event.action} />
                             </TableBodyCell>
                             <TableBodyCell
                                 class="font-medium text-gray-900 dark:text-gray-200"

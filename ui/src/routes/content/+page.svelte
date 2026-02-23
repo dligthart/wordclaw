@@ -3,6 +3,9 @@
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { formatJson } from "$lib/utils";
+    import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+    import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
 
     type ContentType = {
         id: number;
@@ -246,11 +249,7 @@
     </div>
 
     {#if error}
-        <div
-            class="bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 mb-6 rounded"
-        >
-            <p class="text-sm text-red-700 dark:text-red-400">{error}</p>
-        </div>
+        <ErrorBanner class="mb-6" message={error} />
     {/if}
 
     <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
@@ -272,9 +271,7 @@
             <div class="flex-1 overflow-y-auto p-2">
                 {#if loading}
                     <div class="flex justify-center p-4">
-                        <div
-                            class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"
-                        ></div>
+                        <LoadingSpinner size="sm" />
                     </div>
                 {:else if contentTypes.length === 0}
                     <p class="text-center text-sm text-gray-500 p-4">
@@ -360,9 +357,7 @@
                     <div class="flex-1 overflow-y-auto p-2">
                         {#if loadingItems}
                             <div class="flex justify-center p-8">
-                                <div
-                                    class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"
-                                ></div>
+                                <LoadingSpinner size="md" />
                             </div>
                         {:else if items.length === 0}
                             <div
@@ -505,16 +500,7 @@
                                 >
                                     Current Data Payload
                                 </h4>
-                                <div
-                                    class="bg-gray-900 rounded-md shadow-inner overflow-hidden border border-gray-700"
-                                >
-                                    <pre
-                                        class="p-4 text-xs font-mono text-green-400 dark:text-green-300 overflow-x-auto"><code
-                                            >{formatJson(
-                                                selectedItem.data,
-                                            )}</code
-                                        ></pre>
-                                </div>
+                                <JsonCodeBlock value={selectedItem.data} />
                             </div>
 
                             <hr class="border-gray-200 dark:border-gray-700" />

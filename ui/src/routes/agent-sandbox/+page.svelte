@@ -1,6 +1,10 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { auth } from "$lib/auth.svelte";
+    import { deepParseJson } from "$lib/utils";
+    import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+    import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
 
     type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -14,29 +18,6 @@
     let responseData = $state<any>(null);
     let responseStatus = $state<number | null>(null);
     let elapsedTime = $state<number | null>(null);
-
-    function tryParseDeep(value: any): any {
-        if (typeof value === "string") {
-            try {
-                const parsed = JSON.parse(value);
-                if (typeof parsed === "object" && parsed !== null) {
-                    return tryParseDeep(parsed);
-                }
-            } catch {
-                // Not JSON
-            }
-            return value;
-        } else if (Array.isArray(value)) {
-            return value.map((item) => tryParseDeep(item));
-        } else if (typeof value === "object" && value !== null) {
-            const result: any = {};
-            for (const key in value) {
-                result[key] = tryParseDeep(value[key]);
-            }
-            return result;
-        }
-        return value;
-    }
 
     function deepStringify(payload: any): any {
         if (!payload || typeof payload !== "object") return payload;
@@ -114,7 +95,7 @@
 
             try {
                 const rawJson = await res.json();
-                responseData = tryParseDeep(rawJson);
+                responseData = deepParseJson(rawJson);
             } catch {
                 responseData = await res.text();
             }
@@ -460,19 +441,12 @@
 
             <div class="flex-1 overflow-auto p-4 flex flex-col">
                 {#if errorMsg}
-                    <div
-                        class="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 p-4 rounded-md border border-red-200 dark:border-red-800 font-mono text-sm"
-                    >
-                        {errorMsg}
-                    </div>
+                    <ErrorBanner message={errorMsg} />
                 {:else if responseData !== null}
-                    <pre
-                        class="bg-gray-800 text-gray-100 p-4 rounded-md overflow-x-auto text-sm font-mono shadow-inner border border-gray-700 m-0 w-full h-full"><code
-                            class="whitespace-pre"
-                            >{typeof responseData === "object"
-                                ? JSON.stringify(responseData, null, 2)
-                                : responseData}</code
-                        ></pre>
+                    <JsonCodeBlock
+                        value={responseData}
+                        class="m-0 w-full h-full"
+                    />
                 {:else if !loading}
                     <div
                         class="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm"
@@ -485,9 +459,7 @@
                     <div
                         class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex items-center justify-center backdrop-blur-sm"
                     >
-                        <div
-                            class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"
-                        ></div>
+                        <LoadingSpinner size="xl" />
                     </div>
                 {/if}
             </div>

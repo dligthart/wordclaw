@@ -2,6 +2,50 @@
     import { feedbackStore } from "$lib/ui-feedback.svelte";
 
     let isSubmitting = $state(false);
+    let cancelButtonRef = $state<HTMLButtonElement | null>(null);
+    let confirmButtonRef = $state<HTMLButtonElement | null>(null);
+
+    $effect(() => {
+        if (!feedbackStore.confirmRequest) return;
+
+        const previousFocus =
+            typeof document !== "undefined"
+                ? (document.activeElement as HTMLElement | null)
+                : null;
+
+        queueMicrotask(() => {
+            confirmButtonRef?.focus();
+        });
+
+        return () => {
+            previousFocus?.focus();
+        };
+    });
+
+    function handleDialogKeydown(event: KeyboardEvent) {
+        if (event.key === "Escape" && !isSubmitting) {
+            feedbackStore.closeConfirm();
+            return;
+        }
+
+        if (event.key !== "Tab") return;
+        const focusable = [cancelButtonRef, confirmButtonRef].filter(
+            Boolean,
+        ) as HTMLElement[];
+        if (focusable.length === 0) return;
+
+        const active = document.activeElement as HTMLElement | null;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && active === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && active === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
 
     async function handleConfirm() {
         if (!feedbackStore.confirmRequest) return;
@@ -31,6 +75,7 @@
         onclick={() => {
             if (!isSubmitting) feedbackStore.closeConfirm();
         }}
+        onkeydown={handleDialogKeydown}
     >
         <div
             class="w-full max-w-md mx-4 bg-white dark:bg-gray-800 rounded-lg shadow-xl overflow-hidden transform transition-all scale-100 opacity-100"
@@ -98,6 +143,7 @@
                 <button
                     type="button"
                     disabled={isSubmitting}
+                    bind:this={cancelButtonRef}
                     class="inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed sm:text-sm"
                     onclick={() => feedbackStore.closeConfirm()}
                 >
@@ -106,6 +152,7 @@
                 <button
                     type="button"
                     disabled={isSubmitting}
+                    bind:this={confirmButtonRef}
                     class={`inline-flex justify-center rounded-md border border-transparent px-4 py-2 text-base font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-50 sm:text-sm disabled:opacity-75 disabled:cursor-wait ${feedbackStore.confirmRequest.confirmIntent === "danger" ? "bg-red-600 hover:bg-red-700 focus:ring-red-500" : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500"} dark:focus:ring-offset-gray-900`}
                     onclick={handleConfirm}
                 >

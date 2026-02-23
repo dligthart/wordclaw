@@ -62,7 +62,7 @@
                 {#each columns as column (column.key)}
                     <th
                         scope="col"
-                        class={`px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${column.sortable ? "group cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800" : ""}`}
+                        class={`px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${column.sortable ? "group cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800" : ""}`}
                         style={column.width ? `width: ${column.width};` : ""}
                         onclick={() => handleSort(column)}
                     >
@@ -146,7 +146,7 @@
                     >
                         {#each columns as column (column.key)}
                             <td
-                                class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100"
+                                class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100"
                             >
                                 {#if column.key === "_expand" && expandable}
                                     <svg
