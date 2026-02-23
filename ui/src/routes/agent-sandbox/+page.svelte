@@ -352,10 +352,12 @@
         </div>
     </div>
 
-    <div class="flex flex-1 gap-6 overflow-hidden min-h-[600px]">
+    <div
+        class="flex flex-col md:flex-row flex-1 gap-6 overflow-hidden min-h-[600px]"
+    >
         <!-- Left Panel: Request -->
         <div
-            class="w-1/2 flex flex-col gap-4 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700 p-5 overflow-y-auto"
+            class="w-full md:w-1/2 flex flex-col gap-4 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700 p-5 overflow-y-auto"
         >
             <h3
                 class="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2"
@@ -427,7 +429,7 @@
 
         <!-- Right Panel: Response -->
         <div
-            class="w-1/2 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
+            class="w-full md:w-1/2 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
         >
             <div
                 class="bg-gray-100 dark:bg-gray-800 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center"

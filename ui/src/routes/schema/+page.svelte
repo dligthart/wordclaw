@@ -248,10 +248,10 @@
         </button>
     </div>
 
-    <div class="flex-1 flex gap-6 overflow-hidden">
+    <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
         <!-- Types List Sidebar -->
         <div
-            class="w-1/4 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+            class="w-full md:w-1/4 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
         >
             <div
                 class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"
@@ -365,9 +365,11 @@
                         </div>
                     </div>
 
-                    <div class="flex-1 overflow-y-auto p-6 flex gap-6">
+                    <div
+                        class="flex-1 overflow-y-auto p-6 flex flex-col md:flex-row gap-6"
+                    >
                         <!-- Form / Schema Code -->
-                        <div class="w-1/2 flex flex-col gap-4">
+                        <div class="w-full md:w-1/2 flex flex-col gap-4">
                             <div>
                                 <label
                                     for="name"
@@ -464,7 +466,7 @@
 
                         <!-- Live Validation Preview Sandbox -->
                         <div
-                            class="w-1/2 flex flex-col gap-4 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700"
+                            class="w-full md:w-1/2 flex flex-col gap-4 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700"
                         >
                             <h4
                                 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2"
