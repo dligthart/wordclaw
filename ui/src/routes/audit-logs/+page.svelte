@@ -123,7 +123,7 @@
     <div
         class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-6 flex flex-wrap gap-4 items-end"
     >
-        <div>
+        <div class="w-full md:w-auto">
             <label
                 for="action-filter"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
@@ -132,7 +132,7 @@
             <select
                 id="action-filter"
                 bind:value={filterAction}
-                class="w-40 block rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3"
+                class="w-full md:w-40 block rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3"
             >
                 <option value="">All Actions</option>
                 {#each ACTIONS as action}
@@ -140,7 +140,7 @@
                 {/each}
             </select>
         </div>
-        <div>
+        <div class="w-full md:w-auto">
             <label
                 for="entity-filter"
                 class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
@@ -149,7 +149,7 @@
             <select
                 id="entity-filter"
                 bind:value={filterEntityType}
-                class="w-48 block rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3"
+                class="w-full md:w-48 block rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3"
             >
                 <option value="">All Entities</option>
                 {#each ENTITIES as entity}
@@ -159,7 +159,7 @@
         </div>
         <button
             onclick={applyFilters}
-            class="px-4 py-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md font-medium text-sm transition-colors border border-gray-300 dark:border-gray-600"
+            class="w-full md:w-auto px-4 py-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md font-medium text-sm transition-colors border border-gray-300 dark:border-gray-600"
         >
             Apply Filters
         </button>
