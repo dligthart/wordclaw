@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f4f6fb;
+  --color-brand-100: #e7ecf7;
+  --color-brand-200: #ced9ed;
+  --color-brand-300: #a4beeb;
+  --color-brand-400: #759ce4;
+  --color-brand-500: #517de0;
+  --color-brand-600: #3b60cc;
+  --color-brand-700: #304eab;
+  --color-brand-800: #29418c;
+  --color-brand-900: #253970;
+  --color-brand-950: #172345;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+@layer base {
+  :root {
+    --background: #fcfcfc;
+    --foreground: #09090b;
+    --card: #ffffff;
+    --card-foreground: #09090b;
+    --border: #e4e4e7;
+    --ring: #517de0;
+  }
+
+  .dark {
+    --background: #09090b;
+    --foreground: #fafafa;
+    --card: #121214;
+    --card-foreground: #fafafa;
+    --border: #27272a;
+    --ring: #759ce4;
+  }
+
+  * {
+    @apply border-[var(--border)];
+  }
+
+  body {
+    @apply bg-[var(--background)] text-[var(--foreground)] antialiased transition-colors duration-300;
+  }
+}
