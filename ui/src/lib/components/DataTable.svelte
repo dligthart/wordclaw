@@ -1,27 +1,56 @@
-<script module lang="ts">
-    export interface Column<T = any> {
+<script lang="ts">
+    import type { Snippet } from "svelte";
+
+    export interface Column<T = Record<string, any>> {
         key: Extract<keyof T, string> | string;
         label: string;
         sortable?: boolean;
         width?: string;
     }
-</script>
 
-<script lang="ts">
-    import { createEventDispatcher } from "svelte";
+    type RowData = Record<string, any>;
 
-    type T = $$Generic<Record<string, any>>;
+    let {
+        columns = [],
+        data = [],
+        keyField,
+        onRowClick = undefined,
+        sortKey = undefined,
+        sortDirection = "asc",
+        expandable = false,
+        onSort = undefined,
+        cell = undefined,
+        expanded = undefined,
+        empty = undefined,
+    }: {
+        columns?: Column<RowData>[];
+        data?: RowData[];
+        keyField: string;
+        onRowClick?: (row: RowData) => void;
+        sortKey?: string;
+        sortDirection?: "asc" | "desc";
+        expandable?: boolean;
+        onSort?: (payload: { key: string; direction: "asc" | "desc" }) => void;
+        cell?: Snippet<
+            [
+                {
+                    row: RowData;
+                    column: Column<RowData>;
+                    value: unknown;
+                },
+            ]
+        >;
+        expanded?: Snippet<
+            [
+                {
+                    row: RowData;
+                },
+            ]
+        >;
+        empty?: Snippet;
+    } = $props();
 
-    export let columns: Column<T>[] = [];
-    export let data: T[] = [];
-    export let keyField: Extract<keyof T, string>;
-    export let onRowClick: ((row: T) => void) | undefined = undefined;
-    export let sortKey: Extract<keyof T, string> | string | undefined =
-        undefined;
-    export let sortDirection: "asc" | "desc" = "asc";
-    export let expandable: boolean = false;
-
-    let expandedRows = new Set<any>();
+    let expandedRows = $state(new Set<any>());
 
     function toggleExpanded(id: any) {
         if (expandedRows.has(id)) {
@@ -32,13 +61,7 @@
         expandedRows = new Set(expandedRows);
     }
 
-    // Check if the component consumer provided a designated render slot
-    // by yielding individual values out matching the column ID.
-    const dispatch = createEventDispatcher<{
-        sort: { key: string; direction: "asc" | "desc" };
-    }>();
-
-    function handleSort(col: Column<T>) {
+    function handleSort(col: Column<RowData>) {
         if (!col.sortable) return;
 
         let newDir: "asc" | "desc" = "asc";
@@ -48,8 +71,7 @@
 
         sortKey = col.key;
         sortDirection = newDir;
-
-        dispatch("sort", { key: col.key, direction: newDir });
+        onSort?.({ key: String(col.key), direction: newDir });
     }
 </script>
 
@@ -128,9 +150,13 @@
                 <tr>
                     <td
                         colspan={columns.length}
-                        class="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400"
+                        class="px-3 sm:px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400"
                     >
-                        <slot name="empty">No data available</slot>
+                        {#if empty}
+                            {@render empty()}
+                        {:else}
+                            No data available
+                        {/if}
                     </td>
                 </tr>
             {:else}
@@ -165,15 +191,14 @@
                                             d="M9 5l7 7-7 7"
                                         ></path></svg
                                     >
+                                {:else if cell}
+                                    {@render cell({
+                                        row,
+                                        column,
+                                        value: row[column.key as string],
+                                    })}
                                 {:else}
-                                    <slot
-                                        name="cell"
-                                        {row}
-                                        {column}
-                                        value={row[column.key]}
-                                    >
-                                        {row[column.key] ?? ""}
-                                    </slot>
+                                    {row[column.key as string] ?? ""}
                                 {/if}
                             </td>
                         {/each}
@@ -184,7 +209,9 @@
                                 colspan={columns.length}
                                 class="p-0 border-b border-gray-100 dark:border-gray-700"
                             >
-                                <slot name="expanded" {row}></slot>
+                                {#if expanded}
+                                    {@render expanded({ row })}
+                                {/if}
                             </td>
                         </tr>
                     {/if}

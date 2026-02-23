@@ -189,7 +189,9 @@
     >
         <div class="overflow-x-auto flex-1 relative">
             <DataTable {columns} data={events} keyField="id" expandable={true}>
-                <svelte:fragment slot="cell" let:row let:column>
+                {#snippet cell(ctx: any)}
+                    {@const row = ctx.row}
+                    {@const column = ctx.column}
                     {#if column.key === "createdAt"}
                         <span
                             class="text-sm text-gray-500 dark:text-gray-400 font-mono"
@@ -232,17 +234,18 @@
                             >
                         {/if}
                     {/if}
-                </svelte:fragment>
+                {/snippet}
 
-                <svelte:fragment slot="empty">
+                {#snippet empty()}
                     {#if loading}
                         <LoadingSpinner size="md" class="mx-auto" />
                     {:else}
                         No audit logs found matching criteria.
                     {/if}
-                </svelte:fragment>
+                {/snippet}
 
-                <svelte:fragment slot="expanded" let:row>
+                {#snippet expanded(ctx: any)}
+                    {@const row = ctx.row}
                     <div class="px-10 py-4">
                         {#if row.details}
                             <JsonCodeBlock
@@ -255,7 +258,7 @@
                             </p>
                         {/if}
                     </div>
-                </svelte:fragment>
+                {/snippet}
             </DataTable>
 
             {#if loading && events.length > 0}

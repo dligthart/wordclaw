@@ -87,7 +87,9 @@
             </div>
         {:else}
             <DataTable {columns} data={payments} keyField="id" expandable={true}>
-                <svelte:fragment slot="cell" let:row let:column>
+                {#snippet cell(ctx: any)}
+                    {@const row = ctx.row}
+                    {@const column = ctx.column}
                     {#if column.key === "id"}
                         <span class="font-medium text-gray-900 dark:text-white"
                             >{row.id}</span
@@ -123,9 +125,10 @@
                             >{new Date(row.createdAt).toLocaleString()}</span
                         >
                     {/if}
-                </svelte:fragment>
+                {/snippet}
 
-                <svelte:fragment slot="expanded" let:row>
+                {#snippet expanded(ctx: any)}
+                    {@const row = ctx.row}
                     <div class="px-6 sm:px-10 py-4">
                         {#if row.details}
                             <JsonCodeBlock
@@ -145,7 +148,7 @@
                             >
                         </div>
                     </div>
-                </svelte:fragment>
+                {/snippet}
             </DataTable>
         {/if}
     </div>

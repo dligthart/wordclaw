@@ -385,7 +385,9 @@
             </div>
         {:else}
             <DataTable {columns} data={keys} keyField="id">
-                <svelte:fragment slot="cell" let:row let:column>
+                {#snippet cell(ctx: any)}
+                    {@const row = ctx.row}
+                    {@const column = ctx.column}
                     {#if column.key === "name"}
                         <div class="flex items-center">
                             {#if row.revokedAt}
@@ -490,7 +492,7 @@
                             >
                         {/if}
                     {/if}
-                </svelte:fragment>
+                {/snippet}
             </DataTable>
         {/if}
     </div>
