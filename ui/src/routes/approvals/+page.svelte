@@ -391,7 +391,7 @@
                             </button>
                         </div>
                         <pre
-                            class="p-4 text-sm font-mono text-gray-800 dark:text-green-400 overflow-x-auto whitespace-pre-wrap word-break"><code
+                            class="p-4 text-xs font-mono text-green-400 dark:text-green-300 overflow-x-auto whitespace-pre-wrap break-words"><code
                                 >{JSON.stringify(
                                     selectedTask!.contentItem.data,
                                     null,

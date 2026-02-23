@@ -293,7 +293,7 @@
                                     class="w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors {selectedType?.id ===
                                         t.id && !isCreating
                                         ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-750'}"
+                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}"
                                 >
                                     <div class="font-medium">{t.name}</div>
                                     <div

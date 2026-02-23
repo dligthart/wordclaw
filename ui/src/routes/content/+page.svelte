@@ -289,7 +289,7 @@
                                     class="w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors {selectedType?.id ===
                                     type.id
                                         ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-750'}"
+                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}"
                                 >
                                     <div class="font-medium">{type.name}</div>
                                     <div
@@ -509,7 +509,7 @@
                                     class="bg-gray-900 rounded-md shadow-inner overflow-hidden border border-gray-700"
                                 >
                                     <pre
-                                        class="p-4 text-xs font-mono text-green-400 overflow-x-auto"><code
+                                        class="p-4 text-xs font-mono text-green-400 dark:text-green-300 overflow-x-auto"><code
                                             >{formatJson(
                                                 selectedItem.data,
                                             )}</code
