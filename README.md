@@ -100,6 +100,24 @@ npm run dev
 
 The server will start at `http://localhost:4000`.
 
+## 🎮 Demos
+
+WordClaw comes with several built-in interactive demos located in the `demos/` and `scripts/` directories to showcase its capabilities:
+
+1. **Headless React Blog (`demos/demo-blog`)**
+   A beautiful Vite + React frontend demonstrating how to fetch and join Content Types (Authors & Posts) using the WordClaw REST API.
+   - Run the seeder: `node scripts/populate-demo.mjs`
+   - Start the blog: `cd demos/demo-blog && npm run dev`
+
+2. **Multi-Tenant Data Isolation (`demos/multi-tenant`)**
+   A vanilla HTML/JS UI that proves WordClaw's strict Domain-level data isolation. It swaps API keys between "Acme Corp" and "Globex Inc" to fetch segmented data.
+   - Run the provisioner: `npx tsx scripts/setup-multi-tenant.ts`
+   - Start the UI: `cd demos/multi-tenant && python3 -m http.server 5175`
+
+3. **L402 Agent Payment Demo (`demos/agent-l402-demo.ts`)**
+   An autonomous TypeScript agent that encounters a `402 Payment Required` L402 invoice when trying to publish a Guest Post. It programmatically parses the Macaroon, dummy-pays the Lightning invoice, and retries the request successfully.
+   - Run the demo: `npx tsx demos/agent-l402-demo.ts`
+
 ## 📚 Documentation
 
 For detailed guides on setting up the Supervisor UI, authentication, testing, and system architecture, please refer to the `doc/` directory:
