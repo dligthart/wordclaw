@@ -3,6 +3,7 @@
     import favicon from "$lib/assets/favicon.svg";
     import { page } from "$app/stores";
     import { auth, checkAuth, logout } from "$lib/auth.svelte";
+    import DomainDropdown from "$lib/components/DomainDropdown.svelte";
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
     import Toast from "$lib/components/Toast.svelte";
@@ -21,8 +22,6 @@
         Bars3,
         MagnifyingGlass,
         Bell,
-        ChevronDown,
-        Check,
     } from "svelte-hero-icons";
     import {
         Navbar,
@@ -52,10 +51,15 @@
         await checkAuth();
     });
 
-    function selectDomain(domainId: string) {
+    async function selectDomain(domainId: string) {
+        if (domainId === currentDomain) return;
         localStorage.setItem("__wc_domain_id", domainId);
         currentDomain = domainId;
-        window.location.reload();
+        await goto($page.url.pathname + $page.url.search, {
+            invalidateAll: true,
+            replaceState: true,
+            noScroll: true,
+        });
     }
 
     $effect(() => {
@@ -142,7 +146,7 @@
         class="h-screen w-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900"
     >
         <div
-            class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 dark:border-primary-500"
+            class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-500"
         ></div>
     </div>
 {:else if auth.user}
@@ -156,7 +160,7 @@
         >
             <NavBrand href="/ui" class="gap-3">
                 <span
-                    class="rounded bg-primary-600 px-2 py-1 text-xs font-bold text-white tracking-widest"
+                    class="rounded bg-blue-600 px-2 py-1 text-xs font-bold text-white tracking-widest"
                     title="WordClaw Supervisor">WC</span
                 >
                 <span
@@ -165,55 +169,10 @@
                 >
             </NavBrand>
             <div class="flex items-center gap-4 md:order-2">
-                <!-- Domain Selector -->
-                <div
-                    class="hidden sm:flex items-center gap-2 pr-4 lg:pr-6 border-r border-gray-200 dark:border-gray-700"
-                >
-                    <span
-                        class="text-sm font-medium text-gray-500 dark:text-gray-400"
-                        >Domain:</span
-                    >
-                    <Button
-                        id="domain-menu"
-                        color="alternative"
-                        size="sm"
-                        class="w-32 justify-between shrink-0"
-                    >
-                        {currentDomain === "1" ? "Domain 1" : "Domain 2"}
-                        <Icon src={ChevronDown} class="w-4 h-4 ml-2" />
-                    </Button>
-                    <Dropdown
-                        triggeredBy="#domain-menu"
-                        class="w-32 shadow-lg z-50"
-                    >
-                        <DropdownItem on:click={() => selectDomain("1")}>
-                            <div
-                                class="flex items-center justify-between w-full"
-                            >
-                                Domain 1
-                                {#if currentDomain === "1"}
-                                    <Icon
-                                        src={Check}
-                                        class="w-4 h-4 text-primary-600 dark:text-primary-500"
-                                    />
-                                {/if}
-                            </div>
-                        </DropdownItem>
-                        <DropdownItem on:click={() => selectDomain("2")}>
-                            <div
-                                class="flex items-center justify-between w-full"
-                            >
-                                Domain 2
-                                {#if currentDomain === "2"}
-                                    <Icon
-                                        src={Check}
-                                        class="w-4 h-4 text-primary-600 dark:text-primary-500"
-                                    />
-                                {/if}
-                            </div>
-                        </DropdownItem>
-                    </Dropdown>
-                </div>
+                <DomainDropdown
+                    currentDomain={currentDomain}
+                    onSelect={selectDomain}
+                />
 
                 <!-- Dark Mode Toggle -->
                 <DarkMode
@@ -235,7 +194,7 @@
                     </DropdownHeader>
                     <DropdownDivider />
                     <DropdownItem
-                        on:click={handleLogout}
+                        onclick={handleLogout}
                         class="text-red-600 dark:text-red-500 font-medium"
                         >Sign out</DropdownItem
                     >
@@ -280,7 +239,7 @@
                                         class="w-5 h-5 text-gray-500 transition duration-75 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white {item.match(
                                             currentPath,
                                         )
-                                            ? 'text-primary-600 dark:text-primary-500'
+                                            ? 'text-blue-600 dark:text-blue-500'
                                             : ''}"
                                     />
                                 {/snippet}

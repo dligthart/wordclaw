@@ -43,7 +43,7 @@
             <div class="px-6 py-5">
                 <div class="flex items-start">
                     <div
-                        class={`flex-shrink-0 flex items-center justify-center h-10 w-10 rounded-full ${feedbackStore.confirmRequest.confirmIntent === "danger" ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" : "bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400"}`}
+                        class={`flex-shrink-0 flex items-center justify-center h-10 w-10 rounded-full ${feedbackStore.confirmRequest.confirmIntent === "danger" ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" : "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"}`}
                     >
                         {#if feedbackStore.confirmRequest.confirmIntent === "danger"}
                             <svg
@@ -98,7 +98,7 @@
                 <button
                     type="button"
                     disabled={isSubmitting}
-                    class="inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed sm:text-sm"
+                    class="inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed sm:text-sm"
                     onclick={() => feedbackStore.closeConfirm()}
                 >
                     Cancel
@@ -106,7 +106,7 @@
                 <button
                     type="button"
                     disabled={isSubmitting}
-                    class={`inline-flex justify-center rounded-md border border-transparent px-4 py-2 text-base font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-50 sm:text-sm disabled:opacity-75 disabled:cursor-wait ${feedbackStore.confirmRequest.confirmIntent === "danger" ? "bg-red-600 hover:bg-red-700 focus:ring-red-500" : "bg-primary-600 hover:bg-primary-700 focus:ring-primary-500"} dark:focus:ring-offset-gray-900`}
+                    class={`inline-flex justify-center rounded-md border border-transparent px-4 py-2 text-base font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-50 sm:text-sm disabled:opacity-75 disabled:cursor-wait ${feedbackStore.confirmRequest.confirmIntent === "danger" ? "bg-red-600 hover:bg-red-700 focus:ring-red-500" : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500"} dark:focus:ring-offset-gray-900`}
                     onclick={handleConfirm}
                 >
                     {#if isSubmitting}

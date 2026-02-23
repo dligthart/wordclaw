@@ -115,7 +115,7 @@
                             <div class="mt-3">
                                 <button
                                     type="button"
-                                    class={`bg-white dark:bg-gray-800 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 ${toast.severity === "error" ? "text-red-600 hover:text-red-500 focus:ring-red-500" : "text-primary-600 hover:text-primary-500 focus:ring-primary-500"}`}
+                                    class={`bg-white dark:bg-gray-800 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 ${toast.severity === "error" ? "text-red-600 hover:text-red-500 focus:ring-red-500" : "text-blue-600 hover:text-blue-500 focus:ring-blue-500"}`}
                                     onclick={() => {
                                         toast.action?.handler();
                                         feedbackStore.dismissToast(toast.id);
@@ -129,7 +129,7 @@
                     <div class="ml-4 flex-shrink-0 flex">
                         <button
                             type="button"
-                            class="bg-transparent rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                            class="bg-transparent rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                             onclick={() => feedbackStore.dismissToast(toast.id)}
                         >
                             <span class="sr-only">Close</span>
