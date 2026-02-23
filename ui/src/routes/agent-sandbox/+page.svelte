@@ -15,6 +15,46 @@
     let responseStatus = $state<number | null>(null);
     let elapsedTime = $state<number | null>(null);
 
+    function tryParseDeep(value: any): any {
+        if (typeof value === "string") {
+            try {
+                const parsed = JSON.parse(value);
+                if (typeof parsed === "object" && parsed !== null) {
+                    return tryParseDeep(parsed);
+                }
+            } catch {
+                // Not JSON
+            }
+            return value;
+        } else if (Array.isArray(value)) {
+            return value.map((item) => tryParseDeep(item));
+        } else if (typeof value === "object" && value !== null) {
+            const result: any = {};
+            for (const key in value) {
+                result[key] = tryParseDeep(value[key]);
+            }
+            return result;
+        }
+        return value;
+    }
+
+    function deepStringify(payload: any): any {
+        if (!payload || typeof payload !== "object") return payload;
+
+        const result = { ...payload };
+
+        // The API expects 'schema' inside ContentTypes and 'data' inside ContentItems to be JSON strings
+        if (result.schema && typeof result.schema === "object") {
+            result.schema = JSON.stringify(result.schema);
+        }
+
+        if (result.data && typeof result.data === "object") {
+            result.data = JSON.stringify(result.data);
+        }
+
+        return result;
+    }
+
     // Custom fetch so we can see structured JSON errors (like remediation) gracefully
     async function executeRequest() {
         if (!endpoint || !endpoint.startsWith("/api")) {
@@ -39,13 +79,21 @@
             return;
         }
 
+        // Auto-inject domain context if available to prevent TENANT_ISOLATION_VIOLATION
+        if (typeof window !== "undefined") {
+            const domainId = localStorage.getItem("__wc_domain_id");
+            if (domainId) {
+                parsedHeaders["x-wordclaw-domain"] = domainId;
+            }
+        }
+
         let bodyPayload = undefined;
         if (["POST", "PUT"].includes(method)) {
             try {
                 if (jsonBody.trim()) {
                     // Try parsing just to ensure it's valid JSON before sending as string
-                    JSON.parse(jsonBody);
-                    bodyPayload = jsonBody;
+                    const rawObj = JSON.parse(jsonBody);
+                    bodyPayload = JSON.stringify(deepStringify(rawObj));
                 }
             } catch (e) {
                 errorMsg = "Invalid JSON in Request Body";
@@ -65,7 +113,8 @@
             responseStatus = res.status;
 
             try {
-                responseData = await res.json();
+                const rawJson = await res.json();
+                responseData = tryParseDeep(rawJson);
             } catch {
                 responseData = await res.text();
             }
@@ -126,7 +175,7 @@
                 {
                     name: "Agent Blog Post",
                     slug: "agent_blog_post",
-                    schema: JSON.stringify({
+                    schema: {
                         type: "object",
                         properties: {
                             title: { type: "string" },
@@ -135,7 +184,7 @@
                             tags: { type: "array", items: { type: "string" } },
                         },
                         required: ["title", "content", "authorAgent"],
-                    }),
+                    },
                 },
                 null,
                 2,
@@ -146,13 +195,13 @@
             jsonBody = JSON.stringify(
                 {
                     contentTypeId: dynamicContentTypeId,
-                    data: JSON.stringify({
+                    data: {
                         title: "First steps as an Agent in WordClaw",
                         content:
                             "Hello world! We are testing the usability of this CMS for agents.",
                         authorAgent: "Agent Alpha",
                         tags: ["intro", "testing"],
-                    }),
+                    },
                     status: "published",
                 },
                 null,
@@ -164,11 +213,11 @@
             jsonBody = JSON.stringify(
                 {
                     contentTypeId: dynamicContentTypeId,
-                    data: JSON.stringify({
+                    data: {
                         title: "Agent B's Thoughts",
                         content: "I forgot to include my name!",
                         tags: ["oops"],
-                    }),
+                    },
                     status: "draft",
                 },
                 null,
@@ -184,11 +233,11 @@
             jsonBody = JSON.stringify(
                 {
                     contentTypeId: dynamicContentTypeId,
-                    data: JSON.stringify({
+                    data: {
                         title: "My paid Guest Post",
                         body: "I am ready to pay for this placement",
                         author: "Agent L402",
-                    }),
+                    },
                     status: "draft",
                 },
                 null,
@@ -206,11 +255,11 @@
             endpoint = "/api/content-items/1"; // Using ID 1 as standard assumption for an item ID
             jsonBody = JSON.stringify(
                 {
-                    data: JSON.stringify({
+                    data: {
                         title: "Updated Title",
                         content: "Updated Content",
                         authorAgent: "Agent Alpha",
-                    }),
+                    },
                     status: "published",
                 },
                 null,
@@ -222,11 +271,11 @@
             jsonBody = JSON.stringify(
                 {
                     contentTypeId: dynamicContentTypeId,
-                    data: JSON.stringify({
+                    data: {
                         title: "Dry run title",
                         content: "Should not be saved",
                         authorAgent: "Agent Gamma",
-                    }),
+                    },
                 },
                 null,
                 2,

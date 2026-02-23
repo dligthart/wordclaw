@@ -7,9 +7,43 @@
     import { goto } from "$app/navigation";
     import Toast from "$lib/components/Toast.svelte";
     import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
+    import { Icon } from "svelte-hero-icons";
+    import {
+        Home,
+        ClipboardDocumentList,
+        Folder,
+        CircleStack,
+        Key,
+        CheckCircle,
+        CodeBracketSquare,
+        CreditCard,
+        XMark,
+        Bars3,
+        MagnifyingGlass,
+        Bell,
+        ChevronDown,
+        Check,
+    } from "svelte-hero-icons";
+    import {
+        Navbar,
+        NavBrand,
+        NavHamburger,
+        Sidebar,
+        SidebarGroup,
+        SidebarItem,
+        SidebarWrapper,
+        Select,
+        Button,
+        Dropdown,
+        DropdownItem,
+        DropdownHeader,
+        DropdownDivider,
+        Avatar,
+        DarkMode,
+    } from "flowbite-svelte";
 
     let { children } = $props();
-    let isMobileMenuOpen = $state(false);
+    let isSidebarOpen = $state(false);
     let currentDomain = $state("1");
 
     onMount(async () => {
@@ -18,11 +52,9 @@
         await checkAuth();
     });
 
-    function handleDomainChange(e: Event) {
-        const target = e.target as HTMLSelectElement;
-        localStorage.setItem("__wc_domain_id", target.value);
-        currentDomain = target.value;
-        // Securely flush layouts forcing re-query over bounds
+    function selectDomain(domainId: string) {
+        localStorage.setItem("__wc_domain_id", domainId);
+        currentDomain = domainId;
         window.location.reload();
     }
 
@@ -40,6 +72,65 @@
         await logout();
         goto("/ui/login");
     }
+
+    // Nav Definitions mapping route substrings to Heroicons & names
+    const navItems = [
+        {
+            name: "Dashboard",
+            href: "/ui",
+            icon: Home,
+            match: (p: string) => p === "/ui" || p === "/ui/",
+        },
+        {
+            name: "Audit Logs",
+            href: "/ui/audit-logs",
+            icon: ClipboardDocumentList,
+            match: (p: string) => p.includes("/audit-logs"),
+        },
+        {
+            name: "Content Browser",
+            href: "/ui/content",
+            icon: Folder,
+            match: (p: string) => p.includes("/content"),
+        },
+        {
+            name: "Schema Manager",
+            href: "/ui/schema",
+            icon: CircleStack,
+            match: (p: string) => p.includes("/schema"),
+        },
+        {
+            name: "Agent Keys",
+            href: "/ui/keys",
+            icon: Key,
+            match: (p: string) => p.includes("/keys"),
+        },
+        {
+            name: "Approval Queue",
+            href: "/ui/approvals",
+            icon: CheckCircle,
+            match: (p: string) => p.includes("/approvals"),
+        },
+        {
+            name: "Agent Sandbox",
+            href: "/ui/agent-sandbox",
+            icon: CodeBracketSquare,
+            match: (p: string) => p.includes("/agent-sandbox"),
+        },
+        {
+            name: "Payments",
+            href: "/ui/payments",
+            icon: CreditCard,
+            match: (p: string) => p.includes("/payments"),
+        },
+    ];
+
+    let currentPath = $derived($page.url.pathname);
+
+    // Active drawer function
+    const toggleSidebar = () => {
+        isSidebarOpen = !isSidebarOpen;
+    };
 </script>
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
@@ -51,275 +142,165 @@
         class="h-screen w-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900"
     >
         <div
-            class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"
+            class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 dark:border-primary-500"
         ></div>
     </div>
 {:else if auth.user}
     <div
-        class="flex h-screen overflow-hidden bg-gray-100 dark:bg-gray-900 font-sans text-gray-900 dark:text-gray-100"
+        class="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans text-gray-900 dark:text-white"
     >
-        <!-- Off-canvas menu for mobile -->
-        {#if isMobileMenuOpen}
-            <div
-                class="fixed inset-0 flex z-40 md:hidden"
-                role="dialog"
-                aria-modal="true"
-            >
-                <div
-                    class="fixed inset-0 bg-gray-600 bg-opacity-75"
-                    aria-hidden="true"
-                    onclick={() => (isMobileMenuOpen = false)}
-                ></div>
-                <div
-                    class="relative flex-1 flex flex-col max-w-xs w-full bg-white dark:bg-gray-800"
-                >
-                    <div class="absolute top-0 right-0 -mr-12 pt-2">
-                        <button
-                            type="button"
-                            class="ml-1 flex items-center justify-center h-10 w-10 rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
-                            onclick={() => (isMobileMenuOpen = false)}
-                        >
-                            <span class="sr-only">Close sidebar</span>
-                            <svg
-                                class="h-6 w-6 text-white"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                aria-hidden="true"
-                            >
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    stroke-width="2"
-                                    d="M6 18L18 6M6 6l12 12"
-                                />
-                            </svg>
-                        </button>
-                    </div>
-                    <div
-                        class="h-16 flex items-center px-6 border-b border-gray-200 dark:border-gray-700"
-                    >
-                        <h1
-                            class="text-xl font-bold text-gray-800 dark:text-white"
-                        >
-                            WordClaw
-                        </h1>
-                        <span
-                            class="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                            >Supervisor</span
-                        >
-                    </div>
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-                    <nav
-                        class="flex-1 px-4 py-6 space-y-1 overflow-y-auto"
-                        onclick={() => (isMobileMenuOpen = false)}
-                    >
-                        <!-- Navigation links will be injected here using a helper block -->
-                        {@render NavLinks()}
-                    </nav>
-                    <div
-                        class="p-4 border-t border-gray-200 dark:border-gray-700"
-                    >
-                        <div
-                            class="flex items-center text-sm mb-4 truncate text-gray-500 dark:text-gray-400"
-                        >
-                            Signed in as <br /><strong
-                                class="ml-1 text-gray-900 dark:text-white truncate"
-                                >{auth.user.email}</strong
-                            >
-                        </div>
-                        <button
-                            onclick={handleLogout}
-                            class="w-full text-left px-2 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                            >Sign out</button
-                        >
-                    </div>
-                </div>
-                <div class="flex-shrink-0 w-14" aria-hidden="true"></div>
-            </div>
-        {/if}
-
-        <!-- Static sidebar for desktop -->
-        <aside class="hidden md:flex md:flex-shrink-0">
-            <div
-                class="flex flex-col w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700"
-            >
-                <div
-                    class="h-16 flex items-center px-6 border-b border-gray-200 dark:border-gray-700 mt-0"
-                >
-                    <h1 class="text-xl font-bold text-gray-800 dark:text-white">
-                        WordClaw
-                    </h1>
-                    <span
-                        class="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                        >Supervisor</span
-                    >
-                    <select
-                        class="ml-auto text-sm border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-blue-500 focus:border-blue-500 py-1 pl-2 pr-8 focus:outline-none"
-                        title="Active Domain Context"
-                        value={currentDomain}
-                        onchange={handleDomainChange}
-                    >
-                        <option value="1">Domain 1 (Default)</option>
-                        <option value="2">Domain 2 (Sub-Tenant)</option>
-                    </select>
-                </div>
-                <!-- Navigation links -->
-                <nav class="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-                    {@render NavLinks()}
-                </nav>
-                <div class="p-4 border-t border-gray-200 dark:border-gray-700">
-                    <div
-                        class="flex items-center text-sm mb-4 truncate text-gray-500 dark:text-gray-400"
-                    >
-                        Signed in as <br /><strong
-                            class="ml-1 text-gray-900 dark:text-white truncate"
-                            >{auth.user.email}</strong
-                        >
-                    </div>
-                    <button
-                        onclick={handleLogout}
-                        class="w-full text-left px-2 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                        >Sign out</button
-                    >
-                </div>
-            </div>
-        </aside>
-
-        <!-- Main Content -->
-        <main
-            class="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-900"
+        <!-- Navbar Header -->
+        <Navbar
+            fluid={true}
+            class="fixed w-full z-50 top-0 left-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5"
         >
-            <!-- Mobile header sticky -->
-            <div
-                class="md:hidden flex items-center justify-between h-16 px-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0"
-            >
-                <div class="flex items-center">
-                    <h1 class="text-lg font-bold text-gray-800 dark:text-white">
-                        WordClaw
-                    </h1>
+            <NavBrand href="/ui" class="gap-3">
+                <span
+                    class="rounded bg-primary-600 px-2 py-1 text-xs font-bold text-white tracking-widest"
+                    title="WordClaw Supervisor">WC</span
+                >
+                <span
+                    class="self-center whitespace-nowrap text-xl font-semibold dark:text-white hidden sm:block"
+                    >WordClaw SUPV</span
+                >
+            </NavBrand>
+            <div class="flex items-center gap-4 md:order-2">
+                <!-- Domain Selector -->
+                <div
+                    class="hidden sm:flex items-center gap-2 pr-4 lg:pr-6 border-r border-gray-200 dark:border-gray-700"
+                >
                     <span
-                        class="ml-2 px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                        >SUPV</span
+                        class="text-sm font-medium text-gray-500 dark:text-gray-400"
+                        >Domain:</span
                     >
+                    <Button
+                        id="domain-menu"
+                        color="alternative"
+                        size="sm"
+                        class="w-32 justify-between shrink-0"
+                    >
+                        {currentDomain === "1" ? "Domain 1" : "Domain 2"}
+                        <Icon src={ChevronDown} class="w-4 h-4 ml-2" />
+                    </Button>
+                    <Dropdown
+                        triggeredBy="#domain-menu"
+                        class="w-32 shadow-lg z-50"
+                    >
+                        <DropdownItem on:click={() => selectDomain("1")}>
+                            <div
+                                class="flex items-center justify-between w-full"
+                            >
+                                Domain 1
+                                {#if currentDomain === "1"}
+                                    <Icon
+                                        src={Check}
+                                        class="w-4 h-4 text-primary-600 dark:text-primary-500"
+                                    />
+                                {/if}
+                            </div>
+                        </DropdownItem>
+                        <DropdownItem on:click={() => selectDomain("2")}>
+                            <div
+                                class="flex items-center justify-between w-full"
+                            >
+                                Domain 2
+                                {#if currentDomain === "2"}
+                                    <Icon
+                                        src={Check}
+                                        class="w-4 h-4 text-primary-600 dark:text-primary-500"
+                                    />
+                                {/if}
+                            </div>
+                        </DropdownItem>
+                    </Dropdown>
                 </div>
-                <select
-                    class="ml-auto mr-4 text-xs border-gray-300 rounded-md py-1 pl-2 pr-6 dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    title="Active Domain Context"
-                    value={currentDomain}
-                    onchange={handleDomainChange}
-                >
-                    <option value="1">D1</option>
-                    <option value="2">D2</option>
-                </select>
-                <button
-                    type="button"
-                    class="-mr-2 inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500"
-                    onclick={() => (isMobileMenuOpen = true)}
-                >
-                    <span class="sr-only">Open sidebar</span>
-                    <svg
-                        class="h-6 w-6"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        aria-hidden="true"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M4 6h16M4 12h16M4 18h16"
-                        />
-                    </svg>
-                </button>
-            </div>
 
-            <div class="flex-1 overflow-y-auto p-4 md:p-8">
-                <div class="max-w-7xl mx-auto w-full">
+                <!-- Dark Mode Toggle -->
+                <DarkMode
+                    class="text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded-lg text-sm p-2"
+                />
+
+                <!-- Profile dropdown -->
+                <Avatar id="user-menu" class="cursor-pointer" />
+                <Dropdown triggeredBy="#user-menu">
+                    <DropdownHeader class="px-4 py-3">
+                        <span
+                            class="block text-sm font-semibold text-gray-900 dark:text-white"
+                            >{auth.user?.email}</span
+                        >
+                        <span
+                            class="block truncate text-sm font-medium text-gray-500 dark:text-gray-400"
+                            >WordClaw Supervisor</span
+                        >
+                    </DropdownHeader>
+                    <DropdownDivider />
+                    <DropdownItem
+                        on:click={handleLogout}
+                        class="text-red-600 dark:text-red-500 font-medium"
+                        >Sign out</DropdownItem
+                    >
+                </Dropdown>
+
+                <NavHamburger onclick={toggleSidebar} class="ml-2 md:hidden" />
+            </div>
+        </Navbar>
+
+        <div class="flex overflow-hidden pt-16">
+            <!-- Mobile Backdrop -->
+            {#if isSidebarOpen}
+                <div
+                    class="fixed inset-0 z-30 bg-gray-900/50 dark:bg-gray-900/80 md:hidden"
+                    onclick={toggleSidebar}
+                    aria-hidden="true"
+                ></div>
+            {/if}
+
+            <!-- Sidebar Component -->
+            <Sidebar
+                isOpen={isSidebarOpen}
+                disableBreakpoints={true}
+                class="fixed left-0 top-0 z-40 w-64 h-screen pt-16 bg-white border-r border-gray-200 transition-transform {isSidebarOpen
+                    ? 'translate-x-0'
+                    : '-translate-x-full'} md:translate-x-0 dark:bg-gray-800 dark:border-gray-700"
+            >
+                <SidebarWrapper
+                    class="bg-transparent dark:bg-transparent px-3 py-4 overflow-y-auto"
+                >
+                    <SidebarGroup class="space-y-2">
+                        {#each navItems as item}
+                            <SidebarItem
+                                label={item.name}
+                                href={item.href}
+                                active={item.match(currentPath)}
+                                class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group"
+                            >
+                                {#snippet icon()}
+                                    <Icon
+                                        src={item.icon}
+                                        class="w-5 h-5 text-gray-500 transition duration-75 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white {item.match(
+                                            currentPath,
+                                        )
+                                            ? 'text-primary-600 dark:text-primary-500'
+                                            : ''}"
+                                    />
+                                {/snippet}
+                            </SidebarItem>
+                        {/each}
+                    </SidebarGroup>
+                </SidebarWrapper>
+            </Sidebar>
+
+            <!-- Main Content Area -->
+            <main
+                class="relative w-full h-[calc(100vh-4rem)] overflow-y-auto bg-gray-50 dark:bg-gray-900 md:ml-64 p-4 pt-8 lg:p-8 lg:pt-10 transition-all"
+            >
+                <div class="max-w-7xl mx-auto h-full">
                     {@render children()}
                 </div>
-            </div>
-        </main>
+            </main>
+        </div>
     </div>
 
-    <!-- Feedback Store Mounts -->
     <Toast />
     <ConfirmDialog />
-
-    {#snippet NavLinks()}
-        {@const currentPath = $page.url.pathname}
-        <a
-            href="/ui"
-            class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {currentPath ===
-            '/'
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-            >Dashboard</a
-        >
-        <a
-            href="/ui/audit-logs"
-            class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {currentPath.includes(
-                '/audit-logs',
-            )
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-            >Audit Logs</a
-        >
-        <a
-            href="/ui/content"
-            class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {currentPath.includes(
-                '/content',
-            )
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-            >Content Browser</a
-        >
-        <a
-            href="/ui/schema"
-            class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {currentPath.includes(
-                '/schema',
-            )
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-            >Schema Manager</a
-        >
-        <a
-            href="/ui/keys"
-            class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {currentPath.includes(
-                '/keys',
-            )
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-            >Agent Keys</a
-        >
-        <a
-            href="/ui/approvals"
-            class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {currentPath.includes(
-                '/approvals',
-            )
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-            >Approval Queue</a
-        >
-        <a
-            href="/ui/agent-sandbox"
-            class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {currentPath.includes(
-                '/agent-sandbox',
-            )
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-            >Agent Sandbox</a
-        >
-        <a
-            href="/ui/payments"
-            class="group flex items-center px-2 py-2 text-sm font-medium rounded-md {currentPath.includes(
-                '/payments',
-            )
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-            >Payments</a
-        >
-    {/snippet}
 {/if}

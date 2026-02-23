@@ -1,6 +1,18 @@
 <script lang="ts">
     import { fetchApi } from "$lib/api";
     import { onMount } from "svelte";
+    import {
+        Spinner,
+        Alert,
+        Card,
+        Badge,
+        Table,
+        TableBody,
+        TableBodyCell,
+        TableBodyRow,
+        TableHead,
+        TableHeadCell,
+    } from "flowbite-svelte";
 
     type DashboardData = {
         health: {
@@ -49,53 +61,35 @@
 
     {#if loading}
         <div class="flex justify-center py-12">
-            <div
-                class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"
-            ></div>
+            <Spinner size="10" color="blue" />
         </div>
     {:else if error}
-        <div
-            class="bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 mb-6 rounded"
-        >
-            <p class="text-sm text-red-700 dark:text-red-400">{error}</p>
+        <Alert color="red" class="mb-6">
+            <span class="font-medium">Error:</span>
+            {error}
             <button
                 onclick={() => window.location.reload()}
-                class="mt-2 text-sm text-red-700 font-medium hover:underline"
+                class="ml-2 text-sm text-red-700 font-medium hover:underline"
                 >Retry</button
             >
-        </div>
+        </Alert>
     {:else if data}
         <!-- Alerts -->
         {#if data.alerts && data.alerts.length > 0}
             <div class="mb-8 space-y-3">
                 {#each data.alerts as alert}
-                    <div
-                        class="p-4 rounded-md flex items-center shadow-sm {alert.type ===
-                        'critical'
-                            ? 'bg-red-50 border-l-4 border-red-500 text-red-800 dark:bg-red-900/30 dark:text-red-200'
-                            : 'bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'}"
-                    >
-                        <svg
-                            class="h-5 w-5 mr-3"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                        >
-                            <path
-                                fill-rule="evenodd"
-                                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                clip-rule="evenodd"
-                            />
-                        </svg>
-                        <span class="text-sm font-medium">{alert.message}</span>
-                    </div>
+                    <Alert color={alert.type === "critical" ? "red" : "yellow"}>
+                        <span class="font-medium">{alert.message}</span>
+                    </Alert>
                 {/each}
             </div>
         {/if}
 
         <!-- System Health Strip -->
         <div class="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow px-5 py-4 flex items-center justify-between border border-gray-100 dark:border-gray-700"
+            <Card
+                size="md"
+                class="px-5 py-4 flex flex-row items-center justify-between border border-gray-100 dark:border-gray-700"
             >
                 <div>
                     <h3
@@ -120,18 +114,20 @@
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
-                        ><path
+                    >
+                        <path
                             stroke-linecap="round"
                             stroke-linejoin="round"
                             stroke-width="2"
                             d="M5 13l4 4L19 7"
-                        /></svg
-                    >
+                        />
+                    </svg>
                 </div>
-            </div>
+            </Card>
 
-            <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow px-5 py-4 flex items-center justify-between border border-gray-100 dark:border-gray-700"
+            <Card
+                size="md"
+                class="px-5 py-4 flex flex-row items-center justify-between border border-gray-100 dark:border-gray-700"
             >
                 <div>
                     <h3
@@ -156,18 +152,20 @@
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
-                        ><path
+                    >
+                        <path
                             stroke-linecap="round"
                             stroke-linejoin="round"
                             stroke-width="2"
                             d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
-                        /></svg
-                    >
+                        />
+                    </svg>
                 </div>
-            </div>
+            </Card>
 
-            <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow px-5 py-4 flex items-center justify-between border border-gray-100 dark:border-gray-700"
+            <Card
+                size="md"
+                class="px-5 py-4 flex flex-row items-center justify-between border border-gray-100 dark:border-gray-700"
             >
                 <div>
                     <h3
@@ -189,15 +187,16 @@
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
-                        ><path
+                    >
+                        <path
                             stroke-linecap="round"
                             stroke-linejoin="round"
                             stroke-width="2"
                             d="M13 10V3L4 14h7v7l9-11h-7z"
-                        /></svg
-                    >
+                        />
+                    </svg>
                 </div>
-            </div>
+            </Card>
         </div>
 
         <!-- Activity Summary (Last 24h) -->
@@ -205,8 +204,9 @@
             Activity (Last 24h)
         </h3>
         <div class="mb-8 grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
+            <Card
+                size="md"
+                class="px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
             >
                 <p
                     class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -218,9 +218,10 @@
                 >
                     {data.activitySummary.creates}
                 </p>
-            </div>
-            <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
+            </Card>
+            <Card
+                size="md"
+                class="px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
             >
                 <p
                     class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -232,9 +233,10 @@
                 >
                     {data.activitySummary.updates}
                 </p>
-            </div>
-            <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
+            </Card>
+            <Card
+                size="md"
+                class="px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
             >
                 <p
                     class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -246,9 +248,10 @@
                 >
                     {data.activitySummary.deletes}
                 </p>
-            </div>
-            <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
+            </Card>
+            <Card
+                size="md"
+                class="px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
             >
                 <p
                     class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -260,9 +263,10 @@
                 >
                     {data.activitySummary.rollbacks}
                 </p>
-            </div>
-            <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
+            </Card>
+            <Card
+                size="md"
+                class="px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
             >
                 <p
                     class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -274,102 +278,79 @@
                 >
                     {data.activitySummary.totalAgentsActive}
                 </p>
-            </div>
+            </Card>
         </div>
 
         <!-- Recent Audit Events -->
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
             Recent Audit Events
         </h3>
+
         <div
-            class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden border border-gray-100 dark:border-gray-700"
+            class="bg-white dark:bg-gray-800 shadow rounded-lg mb-8 overflow-hidden border border-gray-100 dark:border-gray-700"
         >
-            <div class="overflow-x-auto">
-                <table
-                    class="min-w-full divide-y divide-gray-200 dark:divide-gray-700"
-                >
-                    <thead class="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Timestamp</th
+            <Table
+                hoverable={true}
+                class="mt-0 ring-0 sm:mt-0 !border-0 mb-0 shadow-none"
+            >
+                <TableHead>
+                    <TableHeadCell>Timestamp</TableHeadCell>
+                    <TableHeadCell>Action</TableHeadCell>
+                    <TableHeadCell>Entity</TableHeadCell>
+                    <TableHeadCell>Agent/User</TableHeadCell>
+                </TableHead>
+                <TableBody>
+                    {#each data.recentEvents as event}
+                        <TableBodyRow>
+                            <TableBodyCell
+                                class="text-gray-500 dark:text-gray-400"
                             >
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Action</th
+                                {formatDate(event.createdAt)}
+                            </TableBodyCell>
+                            <TableBodyCell>
+                                {@const actionColor =
+                                    event.action === "create"
+                                        ? "green"
+                                        : event.action === "update"
+                                          ? "yellow"
+                                          : event.action === "delete"
+                                            ? "red"
+                                            : event.action === "rollback"
+                                              ? "purple"
+                                              : "gray"}
+                                <Badge color={actionColor} rounded>
+                                    {event.action.toUpperCase()}
+                                </Badge>
+                            </TableBodyCell>
+                            <TableBodyCell
+                                class="font-medium text-gray-900 dark:text-gray-200"
                             >
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Entity</th
-                            >
-                            <th
-                                scope="col"
-                                class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                                >Agent/User</th
-                            >
-                        </tr>
-                    </thead>
-                    <tbody
-                        class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700"
-                    >
-                        {#each data.recentEvents as event}
-                            <tr
-                                class="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
-                            >
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"
+                                {event.entityType}
+                                <span
+                                    class="text-gray-500 dark:text-gray-400 font-normal"
+                                    >#{event.entityId}</span
                                 >
-                                    {formatDate(event.createdAt)}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span
-                                        class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                                        {event.action === 'create'
-                                            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                            : event.action === 'update'
-                                              ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                                              : event.action === 'delete'
-                                                ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                                                : event.action === 'rollback'
-                                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-                                                  : 'bg-gray-100 text-gray-800 dark:bg-gray-300 dark:text-gray-400'}"
-                                    >
-                                        {event.action.toUpperCase()}
-                                    </span>
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200 font-medium"
-                                >
-                                    {event.entityType}
-                                    <span
-                                        class="text-gray-500 dark:text-gray-400 font-normal"
-                                        >#{event.entityId}</span
-                                    >
-                                </td>
-                                <td
-                                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"
-                                >
-                                    {event.userId
-                                        ? `ID: ${event.userId}`
-                                        : "Unknown"}
-                                </td>
-                            </tr>
-                        {:else}
-                            <tr>
-                                <td
-                                    colspan="4"
-                                    class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
-                                >
-                                    No recent events found.
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
+                            </TableBodyCell>
+                            <TableBodyCell
+                                class="text-gray-500 dark:text-gray-400"
+                            >
+                                {event.userId
+                                    ? `ID: ${event.userId}`
+                                    : "Unknown"}
+                            </TableBodyCell>
+                        </TableBodyRow>
+                    {:else}
+                        <TableBodyRow>
+                            <TableBodyCell
+                                colspan={4}
+                                class="text-center text-gray-500 dark:text-gray-400 py-8"
+                            >
+                                No recent events found.
+                            </TableBodyCell>
+                        </TableBodyRow>
+                    {/each}
+                </TableBody>
+            </Table>
             <div
                 class="bg-gray-50 dark:bg-gray-700/50 px-6 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end"
             >
@@ -383,13 +364,14 @@
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
-                        ><path
+                    >
+                        <path
                             stroke-linecap="round"
                             stroke-linejoin="round"
                             stroke-width="2"
                             d="M9 5l7 7-7 7"
-                        /></svg
-                    >
+                        />
+                    </svg>
                 </a>
             </div>
         </div>

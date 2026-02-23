@@ -37,6 +37,7 @@
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-headline"
+            tabindex="-1"
             onclick={(e) => e.stopPropagation()}
         >
             <div class="px-6 py-5">
