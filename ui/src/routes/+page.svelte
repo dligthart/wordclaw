@@ -203,7 +203,9 @@
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
             Activity (Last 24h)
         </h3>
-        <div class="mb-8 grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div
+            class="mb-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"
+        >
             <Card
                 size="md"
                 class="px-4 py-3 border border-gray-100 dark:border-gray-700 text-center flex flex-col items-center justify-center"
