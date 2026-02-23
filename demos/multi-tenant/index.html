@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordClaw - Multi-Tenant Data Isolation</title>
+    <!-- Use Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg: #09090b;
+            --card-bg: #18181b;
+            --text-main: #fafafa;
+            --text-muted: #a1a1aa;
+            --border: #27272a;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.4);
+            
+            --acme-color: #ef4444;
+            --acme-glow: rgba(239, 68, 68, 0.2);
+            --globex-color: #10b981;
+            --globex-glow: rgba(16, 185, 129, 0.2);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            padding: 4rem 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* Toggle Area */
+        .tenant-selector {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+            position: relative;
+        }
+        
+        .tenant-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 1rem 2rem;
+            border-radius: 9999px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+
+        .tenant-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .tenant-btn.active[data-tenant="acme"] {
+            border-color: var(--acme-color);
+            color: white;
+            background: rgba(239, 68, 68, 0.1);
+            box-shadow: 0 0 20px var(--acme-glow);
+        }
+        
+        .tenant-btn.active[data-tenant="globex"] {
+            border-color: var(--globex-color);
+            color: white;
+            background: rgba(16, 185, 129, 0.1);
+            box-shadow: 0 0 20px var(--globex-glow);
+        }
+
+        /* Products Grid */
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 2rem;
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+        
+        .products-grid.loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .product-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .product-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .product-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        
+        .product-card:hover::before {
+            opacity: 1;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1.5rem;
+        }
+
+        .badge.acme {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--acme-color);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .badge.globex {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--globex-color);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .product-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text-main);
+        }
+
+        .product-price {
+            font-size: 1.25rem;
+            color: var(--accent);
+            font-weight: 400;
+            margin-bottom: 1.5rem;
+        }
+
+        .product-desc {
+            color: var(--text-muted);
+            line-height: 1.5;
+            font-size: 0.95rem;
+        }
+
+        /* Dynamic info box */
+        .info-box {
+            margin-top: 4rem;
+            padding: 2rem;
+            background: rgba(99, 102, 241, 0.05);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .info-text {
+            color: var(--text-muted);
+            font-weight: 300;
+        }
+        
+        .info-text strong {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .api-key-display {
+            font-family: monospace;
+            background: #000;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            color: var(--accent);
+            border: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+        
+        /* Loader */
+        .loader {
+            display: none;
+            justify-content: center;
+            padding: 3rem 0;
+            color: var(--text-muted);
+            font-size: 1.2rem;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Multi-Tenant Isolation</h1>
+            <p class="subtitle">WordClaw isolates content strictly by Domain ID automatically. Try switching the tenant to see how the active API Key guarantees strict data segmentation for Content Types and Items.</p>
+        </header>
+
+        <div class="tenant-selector">
+            <button class="tenant-btn active" data-tenant="acme" onclick="switchTenant('acme')">Acme Corp</button>
+            <button class="tenant-btn" data-tenant="globex" onclick="switchTenant('globex')">Globex Inc</button>
+        </div>
+
+        <div class="loader" id="loader">Fetching data securely via REST API...</div>
+        
+        <div class="products-grid" id="grid">
+            <!-- Cards injected via JS -->
+        </div>
+
+        <div class="info-box">
+            <div class="info-text">
+                Currently fetching <strong>Content Items</strong> using the API key for <strong id="info-tenant-name">Acme Corp</strong>. 
+                <br>The database only permits returning rows where <code>domain_id</code> matches the API Key's assigned Domain.
+            </div>
+            <div class="api-key-display" id="info-api-key">
+                wcak_***
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:4000/api';
+        
+        // Use the actual keys generated from the setup script
+        const TENANTS = {
+            acme: {
+                name: 'Acme Corp',
+                key: 'wcak_af23deeabd2d0e3e5a7706c9b9b2b1d370b6d643b9910855',
+                class: 'acme'
+            },
+            globex: {
+                name: 'Globex Inc',
+                key: 'wcak_34ec69d34b8f74a9b04cdcfeeb43b855a81c037ffd9b5021',
+                class: 'globex'
+            }
+        };
+
+        let currentTenant = 'acme';
+
+        // Helper fetch wrapper
+        async function fetchAPI(path, apiKey) {
+            const res = await fetch(`${API_URL}${path}`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey
+                }
+            });
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            return await res.json();
+        }
+
+        async function loadContent() {
+            const grid = document.getElementById('grid');
+            const loader = document.getElementById('loader');
+            const infoTenantName = document.getElementById('info-tenant-name');
+            const infoApiKey = document.getElementById('info-api-key');
+
+            const tenant = TENANTS[currentTenant];
+            
+            // Update UI
+            grid.classList.add('loading');
+            infoTenantName.innerText = tenant.name;
+            infoApiKey.innerText = tenant.key.substring(0, 10) + '...' + tenant.key.substring(tenant.key.length - 4);
+            
+            try {
+                // Fetch Content Types for current tenant
+                // WordClaw automatically filters by the Domain attached to the API key!
+                const ctRes = await fetchAPI('/content-types', tenant.key);
+                
+                // Content types logic (tenant-specific slugs in this demo)
+                const productCt = ctRes.data.find(ct => ct.slug.includes('product'));
+                
+                if (!productCt) {
+                    grid.innerHTML = '<p style="color:var(--text-muted); text-align:center; grid-column:1/-1;">No Product content type found. Please run the setup script.</p>';
+                    return;
+                }
+
+                // Fetch Content Items
+                const itemsRes = await fetchAPI(`/content-items?contentTypeId=${productCt.id}`, tenant.key);
+                const items = itemsRes.data;
+
+                // Render
+                grid.innerHTML = '';
+                
+                if (items.length === 0) {
+                    grid.innerHTML = '<p style="color:var(--text-muted); text-align:center; grid-column:1/-1;">No products found for this tenant.</p>';
+                } else {
+                    items.forEach(item => {
+                        const product = JSON.parse(item.data);
+                        
+                        // Formatting currency
+                        const formatter = new Intl.NumberFormat('en-US', {
+                            style: 'currency',
+                            currency: 'USD',
+                        });
+
+                        const card = document.createElement('div');
+                        card.className = 'product-card';
+                        card.innerHTML = `
+                            <span class="badge ${tenant.class}">${tenant.name} Product</span>
+                            <h3 class="product-name">${product.name}</h3>
+                            <div class="product-price">${formatter.format(product.price)}</div>
+                            <p class="product-desc">${product.description}</p>
+                        `;
+                        grid.appendChild(card);
+                    });
+                }
+
+            } catch (err) {
+                console.error(err);
+                grid.innerHTML = '<p style="color:#ef4444; text-align:center; grid-column:1/-1;">Failed to load data. Is the WordClaw server running?</p>';
+            } finally {
+                grid.classList.remove('loading');
+            }
+        }
+
+        // Switcher logic
+        function switchTenant(tenantId) {
+            if (currentTenant === tenantId) return; // Ignore if identical
+
+            currentTenant = tenantId;
+            
+            // Update buttons visually
+            document.querySelectorAll('.tenant-btn').forEach(btn => {
+                if (btn.dataset.tenant === tenantId) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+
+            // Reload data
+            loadContent();
+        }
+
+        // Initial Load
+        document.addEventListener('DOMContentLoaded', loadContent);
+
+    </script>
+
+</body>
+</html>
