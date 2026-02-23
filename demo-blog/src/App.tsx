@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { LayoutDashboard, ArrowLeft, Clock, User, ChevronRight } from 'lucide-react'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 // Types
 interface Author {
@@ -283,6 +285,8 @@ const PostDetail = () => {
 }
 
 const GetStarted = () => {
+  const [activeTab, setActiveTab] = useState<'humans' | 'agents'>('humans')
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -294,44 +298,105 @@ const GetStarted = () => {
           Integrating with WordClaw
         </h1>
         <p className="text-xl text-gray-600 dark:text-gray-400">
-          Learn how this demo blog uses WordClaw as a Headless CMS to deliver content dynamically.
+          WordClaw is built from the ground up to serve both human developers and autonomous AI agents. Select your integration mode below.
         </p>
       </div>
 
+      <div className="flex border-b border-[var(--border)] mb-12 overflow-x-auto">
+        <button
+          className={`px-6 py-3 font-semibold text-sm focus:outline-none whitespace-nowrap transition-colors ${activeTab === 'humans' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-gray-500 hover:text-[var(--foreground)]'}`}
+          onClick={() => setActiveTab('humans')}
+        >
+          For Human Developers
+        </button>
+        <button
+          className={`px-6 py-3 font-semibold text-sm focus:outline-none whitespace-nowrap transition-colors ${activeTab === 'agents' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-gray-500 hover:text-[var(--foreground)]'}`}
+          onClick={() => setActiveTab('agents')}
+        >
+          For AI Agents (MCP)
+        </button>
+      </div>
+
       <div className="space-y-12">
-        <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-          <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">1. Defining Schemas</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-            In WordClaw, you define the structure of your data using JSON Schema. For this blog, we created two Content Types via the WordClaw API: <strong>Demo Author</strong> and <strong>Demo Blog Post</strong>.
-          </p>
-          <ul className="list-disc pl-6 text-gray-600 dark:text-gray-400 space-y-2 mb-6">
-            <li><strong>Demo Author:</strong> Has fields for name, slug, bio, and avatarUrl.</li>
-            <li><strong>Demo Blog Post:</strong> Has fields for title, slug, excerpt, content, coverImage, category, tags, and crucially, an <code>authorId</code>.</li>
-          </ul>
-          <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono text-gray-800 dark:text-gray-200">
-            {`// Example: Relating Post to Author in Schema\n{\n  "authorId": { \n    "type": "number", \n    "description": "Reference to Author Content Item ID" \n  }\n}`}
-          </div>
-        </section>
+        {activeTab === 'humans' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12">
+            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">1. Defining Schemas</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
+                In WordClaw, you define the structure of your data using JSON Schema. For this blog, we created two Content Types via the WordClaw API: <strong>Demo Author</strong> and <strong>Demo Blog Post</strong>.
+              </p>
+              <ul className="list-disc pl-6 text-gray-600 dark:text-gray-400 space-y-2 mb-6">
+                <li><strong>Demo Author:</strong> Has fields for name, slug, bio, and avatarUrl.</li>
+                <li><strong>Demo Blog Post:</strong> Has fields for title, slug, excerpt, content, coverImage, category, tags, and crucially, an <code>authorId</code>.</li>
+              </ul>
+              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
+                <SyntaxHighlighter language="json" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
+                  {`// Example: Relating Post to Author in Schema\n{\n  "authorId": { \n    "type": "number", \n    "description": "Reference to Author Content Item ID" \n  }\n}`}
+                </SyntaxHighlighter>
+              </div>
+            </section>
 
-        <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-          <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">2. Fetching Content</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-            Since WordClaw provides a REST API, getting your content is as simple as making HTTP requests. This demo uses a custom React hook to fetch the Content Types first, then fetches the underlying Content Items to build relationships.
-          </p>
-          <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono text-gray-800 dark:text-gray-200">
-            {`// 1. Get the list of all Content Types\nconst types = await fetch('/api/content-types').then(r => r.json())\nconst postType = types.data.find(t => t.slug === 'demo-blog-post')\n\n// 2. Fetch the corresponding items using the ContentType ID\nconst posts = await fetch('/api/content-items?contentTypeId=' + postType.id)`}
-          </div>
-        </section>
+            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">2. Fetching Content</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
+                Since WordClaw provides a REST API, getting your content is as simple as making HTTP requests. This demo uses a custom React hook to fetch the Content Types first, then fetches the underlying Content Items to build relationships.
+              </p>
+              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
+                <SyntaxHighlighter language="javascript" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
+                  {`// 1. Get the list of all Content Types\nconst types = await fetch('/api/content-types').then(r => r.json())\nconst postType = types.data.find(t => t.slug === 'demo-blog-post')\n\n// 2. Fetch the corresponding items using the ContentType ID\nconst posts = await fetch('/api/content-items?contentTypeId=' + postType.id)`}
+                </SyntaxHighlighter>
+              </div>
+            </section>
 
-        <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-          <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">3. Normalizing Data</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-            WordClaw stores dynamic content inside a JSONB column on the backend. When consuming the REST API directly, you need to parse the <code>data</code> field back into an object in your frontend state.
-          </p>
-          <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono text-gray-800 dark:text-gray-200">
-            {`// The item.data comes back as a stringified JSON payload\nconst parsedPosts = fetchedPosts.data.map(item => ({\n  ...item,\n  data: JSON.parse(item.data)\n}))`}
-          </div>
-        </section>
+            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">3. Normalizing Data</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
+                WordClaw stores dynamic content inside a JSONB column on the backend. When consuming the REST API directly, you need to parse the <code>data</code> field back into an object in your frontend state.
+              </p>
+              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
+                <SyntaxHighlighter language="javascript" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
+                  {`// The item.data comes back as a stringified JSON payload\nconst parsedPosts = fetchedPosts.data.map(item => ({\n  ...item,\n  data: JSON.parse(item.data)\n}))`}
+                </SyntaxHighlighter>
+              </div>
+            </section>
+          </motion.div>
+        )}
+
+        {activeTab === 'agents' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12">
+            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">1. Model Context Protocol (MCP)</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
+                AI Agents don't need to write raw HTTP requests to integrate. WordClaw runs a deeply integrated <strong>MCP Server</strong>, allowing agents to natively discover and interact with the semantic rules of your content models.
+              </p>
+              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
+                <SyntaxHighlighter language="json" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
+                  {`// In your Claude Desktop config (claude_desktop_config.json)\n{\n  "mcpServers": {\n    "wordclaw": {\n      "command": "node",\n      "args": ["/path/to/wordclaw/dist/mcp/index.js"]\n    }\n  }\n}`}
+                </SyntaxHighlighter>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 mt-4 leading-relaxed">Once connected, the agent gets immediate access to tools like <code>list_content_types</code> and <code>create_content_item</code>.</p>
+            </section>
+
+            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">2. Dry-Run Validation</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
+                As an agent, mutating records in a CMS can be destructive. WordClaw exposes a <code>?mode=dry_run</code> parameter across all state-mutating endpoints, letting the agent validate schemas strictly without affecting production data.
+              </p>
+              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
+                <SyntaxHighlighter language="bash" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
+                  {`# The agent tests its payload generation against the JSON Schema\ncurl -X POST "http://localhost:4000/api/content-items?mode=dry_run" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "contentTypeId": 12, \n    "data": {"title": "Test", "authorId": "Bob"} \n  }'\n\n# The API replies securely with an intuitive 400 error \n# catching hallucinations instantly if authorId was expected to be a number.`}
+                </SyntaxHighlighter>
+              </div>
+            </section>
+
+            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">3. Vector Generation</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
+                WordClaw natively hooks into semantic generation endpoints. Every time content is published, an AI agent operates synchronously in the backend to index the content into vector space for RAG retrievals automatically.
+              </p>
+            </section>
+          </motion.div>
+        )}
 
         <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
           <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">Next Steps</h2>

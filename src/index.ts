@@ -132,16 +132,35 @@ server.register(mercurius, {
     graphiql: true,
     path: '/graphql',
     context: async (request) => {
-        const auth = await authenticateApiRequest(request.headers);
-        if (!auth.ok) {
-            const err = new Error(auth.payload.error) as any;
-            err.statusCode = auth.statusCode;
-            err.code = auth.payload.code;
-            throw err;
+        let principal: any = null;
+        try {
+            await request.jwtVerify({ onlyCookie: true });
+            const user = request.user as { sub: number, role: string };
+            if (user && user.role === 'supervisor') {
+                const headerDomain = request.headers['x-wordclaw-domain'];
+                principal = {
+                    keyId: `supervisor:${user.sub}`,
+                    scopes: new Set(['admin']),
+                    source: 'cookie',
+                    ...(headerDomain ? { domainId: parseInt(headerDomain as string, 10) } : {})
+                };
+            }
+        } catch { }
+
+        if (!principal) {
+            const auth = await authenticateApiRequest(request.headers);
+            if (!auth.ok) {
+                const err = new Error(auth.payload.error) as any;
+                err.statusCode = auth.statusCode;
+                err.code = auth.payload.code;
+                throw err;
+            }
+            principal = auth.principal;
         }
+
         return {
             requestId: request.id,
-            authPrincipal: auth.principal
+            authPrincipal: principal
         };
     }
 });
