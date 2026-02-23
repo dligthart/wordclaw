@@ -6,6 +6,13 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import {
+        Icon,
+        ArrowPath,
+        CheckCircle,
+        ChevronLeft,
+        Check,
+    } from "svelte-hero-icons";
 
     type ReviewTaskPayload = {
         task: {
@@ -147,18 +154,7 @@
             class="text-gray-500 hover:text-blue-600 dark:text-gray-400 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition shadow-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
             title="Refresh"
         >
-            <svg
-                class="w-5 h-5 flex-shrink-0"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                ><path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                ></path></svg
-            >
+            <Icon src={ArrowPath} class="w-5 h-5 flex-shrink-0" />
         </button>
     </div>
 
@@ -192,18 +188,10 @@
                     <div
                         class="text-center p-12 text-gray-500 dark:text-gray-400 flex flex-col items-center"
                     >
-                        <svg
+                        <Icon
+                            src={CheckCircle}
                             class="w-12 h-12 text-gray-300 dark:text-gray-600 mb-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            ><path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="1.5"
-                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                            ></path></svg
-                        >
+                        />
                         <p class="text-sm font-medium">All caught up!</p>
                         <p class="text-xs mt-1">
                             No items require approval right now.
@@ -293,18 +281,7 @@
                                 aria-label="Close review"
                                 onclick={() => (selectedTask = null)}
                             >
-                                <svg
-                                    class="w-6 h-6"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    ><path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M15 19l-7-7 7-7"
-                                    ></path></svg
-                                >
+                                <Icon src={ChevronLeft} class="w-6 h-6" />
                             </button>
                             <h3
                                 class="text-lg font-bold text-gray-900 dark:text-white"
@@ -343,18 +320,7 @@
                             {#if processingItem === selectedTask.task.id}
                                 <LoadingSpinner size="sm" color="white" />
                             {:else}
-                                <svg
-                                    class="w-4 h-4"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    ><path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M5 13l4 4L19 7"
-                                    ></path></svg
-                                >
+                                <Icon src={Check} class="w-4 h-4" />
                             {/if}
                             Approve
                         </button>

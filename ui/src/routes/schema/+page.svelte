@@ -3,6 +3,14 @@
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import {
+        Icon,
+        Plus,
+        ArchiveBox,
+        CheckCircle,
+        Check,
+        ExclamationCircle,
+    } from "svelte-hero-icons";
 
     type ContentType = {
         id: number;
@@ -233,18 +241,7 @@
             disabled={isCreating}
             class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
-            <svg
-                class="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                ><path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 4v16m8-8H4"
-                ></path></svg
-            >
+            <Icon src={Plus} class="w-5 h-5" />
             New Content Model
         </button>
     </div>
@@ -314,18 +311,10 @@
                 <div
                     class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center text-gray-400 italic text-sm p-12 text-center"
                 >
-                    <svg
+                    <Icon
+                        src={ArchiveBox}
                         class="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        ><path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="1.5"
-                            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                        ></path></svg
-                    >
+                    />
                     Select a content model to view its schema or create a new one.
                 </div>
             {:else}
@@ -470,18 +459,10 @@
                             <h4
                                 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2"
                             >
-                                <svg
+                                <Icon
+                                    src={CheckCircle}
                                     class="w-4 h-4 text-blue-500"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    ><path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    ></path></svg
-                                >
+                                />
                                 Validation Sandbox
                             </h4>
                             <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -517,36 +498,20 @@
                                         <div
                                             class="flex gap-2 items-center font-bold"
                                         >
-                                            <svg
+                                            <Icon
+                                                src={Check}
                                                 class="w-5 h-5 text-green-500"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                                ><path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    stroke-width="2"
-                                                    d="M5 13l4 4L19 7"
-                                                ></path></svg
-                                            >
+                                            />
                                             Schema accepts payload
                                         </div>
                                     {:else}
                                         <div
                                             class="flex gap-2 items-start font-bold mb-1"
                                         >
-                                            <svg
+                                            <Icon
+                                                src={ExclamationCircle}
                                                 class="w-5 h-5 text-red-500 shrink-0"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                                ><path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    stroke-width="2"
-                                                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                                ></path></svg
-                                            >
+                                            />
                                             Validation Failed
                                         </div>
                                         <p

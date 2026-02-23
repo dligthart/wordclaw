@@ -14,6 +14,13 @@
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import ActionBadge from "$lib/components/ActionBadge.svelte";
+    import {
+        Icon,
+        Check,
+        CircleStack,
+        Bolt,
+        ChevronRight,
+    } from "svelte-hero-icons";
 
     type DashboardData = {
         health: {
@@ -108,19 +115,7 @@
                         ? 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400'
                         : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400'}"
                 >
-                    <svg
-                        class="h-6 w-6"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M5 13l4 4L19 7"
-                        />
-                    </svg>
+                    <Icon src={Check} class="h-6 w-6" />
                 </div>
             </Card>
 
@@ -146,19 +141,7 @@
                         ? 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400'
                         : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400'}"
                 >
-                    <svg
-                        class="h-6 w-6"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
-                        />
-                    </svg>
+                    <Icon src={CircleStack} class="h-6 w-6" />
                 </div>
             </Card>
 
@@ -181,19 +164,7 @@
                 <div
                     class="h-10 w-10 rounded-full flex items-center justify-center bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"
                 >
-                    <svg
-                        class="h-6 w-6"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M13 10V3L4 14h7v7l9-11h-7z"
-                        />
-                    </svg>
+                    <Icon src={Bolt} class="h-6 w-6" />
                 </div>
             </Card>
         </div>
@@ -348,19 +319,10 @@
                     class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500 group flex items-center transition-colors"
                 >
                     View all logs
-                    <svg
+                    <Icon
+                        src={ChevronRight}
                         class="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M9 5l7 7-7 7"
-                        />
-                    </svg>
+                    />
                 </a>
             </div>
         </div>

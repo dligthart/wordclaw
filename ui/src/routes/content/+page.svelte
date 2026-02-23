@@ -6,6 +6,7 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import { Icon, ChevronLeft, XMark } from "svelte-hero-icons";
 
     type ContentType = {
         id: number;
@@ -330,18 +331,7 @@
                                 aria-label="Back to models"
                                 onclick={() => (selectedType = null)}
                             >
-                                <svg
-                                    class="w-5 h-5"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    ><path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M15 19l-7-7 7-7"
-                                    ></path></svg
-                                >
+                                <Icon src={ChevronLeft} class="w-5 h-5" />
                             </button>
                             <h3
                                 class="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider"
@@ -439,18 +429,10 @@
                                         aria-label="Close detail"
                                         onclick={() => (selectedItem = null)}
                                     >
-                                        <svg
+                                        <Icon
+                                            src={ChevronLeft}
                                             class="w-5 h-5"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            viewBox="0 0 24 24"
-                                            ><path
-                                                stroke-linecap="round"
-                                                stroke-linejoin="round"
-                                                stroke-width="2"
-                                                d="M15 19l-7-7 7-7"
-                                            ></path></svg
-                                        >
+                                        />
                                     </button>
                                     <h2
                                         class="text-lg font-bold text-gray-900 dark:text-white"
@@ -475,18 +457,7 @@
                                 onclick={() => (selectedItem = null)}
                                 class="text-gray-400 hover:text-gray-500"
                             >
-                                <svg
-                                    class="w-5 h-5"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    ><path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M6 18L18 6M6 6l12 12"
-                                    ></path></svg
-                                >
+                                <Icon src={XMark} class="w-5 h-5" />
                             </button>
                         </div>
 
