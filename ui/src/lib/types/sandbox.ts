@@ -1,0 +1,30 @@
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+export type ScenarioStep = {
+    title: string;
+    narration: string;
+    method: HttpMethod;
+    endpoint: string;
+    body?: Record<string, any>;
+    headers?: Record<string, string>;
+    expectedStatus?: number;
+    captureFromResponse?: {
+        [varName: string]: string; // JSONPath-like, e.g., "data.id"
+    };
+    narrativeOnly?: boolean;
+};
+
+export type Scenario = {
+    id: string;
+    title: string;
+    icon: string;
+    tagline: string;
+    differentiator: string;
+    steps: ScenarioStep[];
+};
+
+export type StepResult = {
+    status: number;
+    data: any;
+    elapsed: number;
+};

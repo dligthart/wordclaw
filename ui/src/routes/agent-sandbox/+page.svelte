@@ -4,6 +4,12 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import ScenarioSidebar from "$lib/components/sandbox/ScenarioSidebar.svelte";
+    import StepTimeline from "$lib/components/sandbox/StepTimeline.svelte";
+    import NarrationBlock from "$lib/components/sandbox/NarrationBlock.svelte";
+    import StatusBadge from "$lib/components/sandbox/StatusBadge.svelte";
+    import { engine } from "$lib/sandbox/engine.svelte";
+    import { SCENARIOS } from "$lib/sandbox/scenarios";
 
     type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -61,6 +67,7 @@
     let responseInsight = $state<ResponseInsight | null>(null);
     let templateGuide = $state<string | null>(null);
     let sandboxContext = $state<SandboxContext>({});
+    let activeTab = $state<"guided" | "advanced">("guided");
 
     function readNumber(value: unknown): number | undefined {
         const parsed = Number(value);
@@ -265,13 +272,19 @@
                 nextContext.workflowId = readNumber(firstTask?.workflow?.id);
             }
             if (!nextContext.transitionId) {
-                nextContext.transitionId = readNumber(firstTask?.transition?.id);
+                nextContext.transitionId = readNumber(
+                    firstTask?.transition?.id,
+                );
             }
             if (!nextContext.contentItemId) {
-                nextContext.contentItemId = readNumber(firstTask?.contentItem?.id);
+                nextContext.contentItemId = readNumber(
+                    firstTask?.contentItem?.id,
+                );
             }
             if (!nextContext.contentTypeId) {
-                nextContext.contentTypeId = readNumber(firstTask?.contentType?.id);
+                nextContext.contentTypeId = readNumber(
+                    firstTask?.contentType?.id,
+                );
             }
         }
 
@@ -312,9 +325,7 @@
             }
 
             const parsed =
-                key === "contentTypeSlug"
-                    ? String(value)
-                    : readNumber(value);
+                key === "contentTypeSlug" ? String(value) : readNumber(value);
 
             if (parsed === undefined || parsed === null) {
                 return;
@@ -498,9 +509,14 @@
         };
     }
 
-    function buildTemplates(ctx: SandboxContext): Record<string, TemplatePreset> {
+    function buildTemplates(
+        ctx: SandboxContext,
+    ): Record<string, TemplatePreset> {
         const contentTypeId = resolveId(ctx.contentTypeId, 1);
-        const paidContentTypeId = resolveId(ctx.paidContentTypeId, contentTypeId);
+        const paidContentTypeId = resolveId(
+            ctx.paidContentTypeId,
+            contentTypeId,
+        );
         const contentItemId = resolveId(ctx.contentItemId, 1);
         const workflowId = resolveId(ctx.workflowId, 1);
         const transitionId = resolveId(ctx.transitionId, 1);
@@ -995,96 +1011,97 @@
         };
     }
 
-    const scenarioTemplateMap: Record<string, { base: string; guide: string }> = {
-        "scenario-lifecycle-1": {
-            base: "create-blog-type",
-            guide: "Scenario 1/5 (Full Content Lifecycle): Create a content type first.",
-        },
-        "scenario-lifecycle-2": {
-            base: "create-blog-post",
-            guide: "Scenario 2/5: Create a content item using the type from step 1.",
-        },
-        "scenario-lifecycle-3": {
-            base: "update-blog-post",
-            guide: "Scenario 3/5: Update the item to generate a new version.",
-        },
-        "scenario-lifecycle-4": {
-            base: "view-item-versions",
-            guide: "Scenario 4/5: List version history and pick rollback target.",
-        },
-        "scenario-lifecycle-5": {
-            base: "rollback-item",
-            guide: "Scenario 5/5: Roll back to a previous version.",
-        },
-        "scenario-workflow-1": {
-            base: "create-workflow",
-            guide: "Scenario 1/7 (Editorial Workflow): Create workflow for active content type.",
-        },
-        "scenario-workflow-2": {
-            base: "add-workflow-transition-draft-review",
-            guide: "Scenario 2/7: Add draft -> in_review transition.",
-        },
-        "scenario-workflow-3": {
-            base: "add-workflow-transition-review-published",
-            guide: "Scenario 3/7: Add in_review -> published transition.",
-        },
-        "scenario-workflow-4": {
-            base: "create-blog-post-draft",
-            guide: "Scenario 4/7: Create draft content item.",
-        },
-        "scenario-workflow-5": {
-            base: "submit-for-review",
-            guide: "Scenario 5/7: Submit draft for review with transition ID.",
-        },
-        "scenario-workflow-6": {
-            base: "add-comment",
-            guide: "Scenario 6/7: Add review feedback comment.",
-        },
-        "scenario-workflow-7": {
-            base: "decide-review-task",
-            guide: "Scenario 7/7: Decide review task (approve/reject).",
-        },
-        "scenario-l402-1": {
-            base: "create-paid-content-type",
-            guide: "Scenario 1/3 (L402): Create a paid content type with basePrice.",
-        },
-        "scenario-l402-2": {
-            base: "l402-payment-required",
-            guide: "Scenario 2/3: Attempt write without L402 auth and inspect 402 payload.",
-        },
-        "scenario-l402-3": {
-            base: "list-payments",
-            guide: "Scenario 3/3: Inspect payment records/status updates.",
-        },
-        "scenario-webhook-1": {
-            base: "register-webhook",
-            guide: "Scenario 1/4 (Webhook Integration): Register webhook endpoint.",
-        },
-        "scenario-webhook-2": {
-            base: "create-blog-post",
-            guide: "Scenario 2/4: Trigger content event that should dispatch webhook.",
-        },
-        "scenario-webhook-3": {
-            base: "list-webhooks",
-            guide: "Scenario 3/4: Verify webhook registration state.",
-        },
-        "scenario-webhook-4": {
-            base: "delete-webhook",
-            guide: "Scenario 4/4: Delete webhook registration.",
-        },
-        "scenario-batch-1": {
-            base: "batch-create-items",
-            guide: "Scenario 1/3 (Batch Operations): Batch-create items.",
-        },
-        "scenario-batch-2": {
-            base: "batch-update-items",
-            guide: "Scenario 2/3: Batch-update selected items.",
-        },
-        "scenario-batch-3": {
-            base: "batch-delete-items",
-            guide: "Scenario 3/3: Batch-delete selected items.",
-        },
-    };
+    const scenarioTemplateMap: Record<string, { base: string; guide: string }> =
+        {
+            "scenario-lifecycle-1": {
+                base: "create-blog-type",
+                guide: "Scenario 1/5 (Full Content Lifecycle): Create a content type first.",
+            },
+            "scenario-lifecycle-2": {
+                base: "create-blog-post",
+                guide: "Scenario 2/5: Create a content item using the type from step 1.",
+            },
+            "scenario-lifecycle-3": {
+                base: "update-blog-post",
+                guide: "Scenario 3/5: Update the item to generate a new version.",
+            },
+            "scenario-lifecycle-4": {
+                base: "view-item-versions",
+                guide: "Scenario 4/5: List version history and pick rollback target.",
+            },
+            "scenario-lifecycle-5": {
+                base: "rollback-item",
+                guide: "Scenario 5/5: Roll back to a previous version.",
+            },
+            "scenario-workflow-1": {
+                base: "create-workflow",
+                guide: "Scenario 1/7 (Editorial Workflow): Create workflow for active content type.",
+            },
+            "scenario-workflow-2": {
+                base: "add-workflow-transition-draft-review",
+                guide: "Scenario 2/7: Add draft -> in_review transition.",
+            },
+            "scenario-workflow-3": {
+                base: "add-workflow-transition-review-published",
+                guide: "Scenario 3/7: Add in_review -> published transition.",
+            },
+            "scenario-workflow-4": {
+                base: "create-blog-post-draft",
+                guide: "Scenario 4/7: Create draft content item.",
+            },
+            "scenario-workflow-5": {
+                base: "submit-for-review",
+                guide: "Scenario 5/7: Submit draft for review with transition ID.",
+            },
+            "scenario-workflow-6": {
+                base: "add-comment",
+                guide: "Scenario 6/7: Add review feedback comment.",
+            },
+            "scenario-workflow-7": {
+                base: "decide-review-task",
+                guide: "Scenario 7/7: Decide review task (approve/reject).",
+            },
+            "scenario-l402-1": {
+                base: "create-paid-content-type",
+                guide: "Scenario 1/3 (L402): Create a paid content type with basePrice.",
+            },
+            "scenario-l402-2": {
+                base: "l402-payment-required",
+                guide: "Scenario 2/3: Attempt write without L402 auth and inspect 402 payload.",
+            },
+            "scenario-l402-3": {
+                base: "list-payments",
+                guide: "Scenario 3/3: Inspect payment records/status updates.",
+            },
+            "scenario-webhook-1": {
+                base: "register-webhook",
+                guide: "Scenario 1/4 (Webhook Integration): Register webhook endpoint.",
+            },
+            "scenario-webhook-2": {
+                base: "create-blog-post",
+                guide: "Scenario 2/4: Trigger content event that should dispatch webhook.",
+            },
+            "scenario-webhook-3": {
+                base: "list-webhooks",
+                guide: "Scenario 3/4: Verify webhook registration state.",
+            },
+            "scenario-webhook-4": {
+                base: "delete-webhook",
+                guide: "Scenario 4/4: Delete webhook registration.",
+            },
+            "scenario-batch-1": {
+                base: "batch-create-items",
+                guide: "Scenario 1/3 (Batch Operations): Batch-create items.",
+            },
+            "scenario-batch-2": {
+                base: "batch-update-items",
+                guide: "Scenario 2/3: Batch-update selected items.",
+            },
+            "scenario-batch-3": {
+                base: "batch-delete-items",
+                guide: "Scenario 3/3: Batch-delete selected items.",
+            },
+        };
 
     const templateGroups: TemplateGroup[] = [
         {
@@ -1336,7 +1353,10 @@
         refreshingContext = false;
     }
 
-    function resolveTemplate(name: string, context: SandboxContext): TemplatePreset | null {
+    function resolveTemplate(
+        name: string,
+        context: SandboxContext,
+    ): TemplatePreset | null {
         const templates = buildTemplates(context);
 
         if (templates[name]) {
@@ -1357,6 +1377,65 @@
             ...baseTemplate,
             guide: scenario.guide,
         };
+    }
+
+    async function executeScenarioStep() {
+        if (!engine.currentStep) return;
+
+        loading = true;
+        errorMsg = null;
+
+        let parsedHeaders: Record<string, string> = {
+            ...cloneDefaultHeaders(),
+        };
+        if (engine.currentStep.headers) {
+            parsedHeaders = { ...parsedHeaders, ...engine.currentStep.headers };
+        }
+        if (typeof window !== "undefined") {
+            const domainId = localStorage.getItem("__wc_domain_id");
+            if (domainId && !parsedHeaders["x-wordclaw-domain"]) {
+                parsedHeaders["x-wordclaw-domain"] = domainId;
+            }
+        }
+
+        if (!engine.capturedVars.has("timestamp")) {
+            engine.capturedVars.set("timestamp", String(Date.now()));
+        }
+
+        const method = engine.currentStep.method;
+        const endpoint = engine.interpolatedEndpoint;
+        const bodyObj = engine.interpolatedBody;
+
+        let bodyPayload = undefined;
+        if (bodyObj) {
+            bodyPayload = JSON.stringify(bodyObj);
+        }
+
+        const start = performance.now();
+        try {
+            const res = await fetch(endpoint, {
+                method,
+                headers: parsedHeaders,
+                body: bodyPayload,
+                credentials: "include",
+            });
+
+            let data = null;
+            try {
+                const rawJson = await res.json();
+                data = deepParseJson(rawJson);
+            } catch {
+                data = await res.text();
+            }
+
+            const elapsed = Math.round(performance.now() - start);
+            engine.recordResult(res.status, data, elapsed);
+            engine.advanceStep();
+        } catch (err: any) {
+            errorMsg = err.message || "Network Error";
+        } finally {
+            loading = false;
+        }
     }
 
     async function executeRequest() {
@@ -1467,6 +1546,18 @@
 
     onMount(async () => {
         sandboxContext = await hydrateSandboxContext();
+        if (SCENARIOS.length > 0) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const requestedScenario = urlParams.get("scenario");
+            const match = SCENARIOS.find((s) => s.id === requestedScenario);
+
+            if (match) {
+                engine.startScenario(match);
+                activeTab = "guided";
+            } else {
+                engine.startScenario(SCENARIOS[0]);
+            }
+        }
     });
 </script>
 
@@ -1503,7 +1594,9 @@
                     {#each templateGroups as group}
                         <optgroup label={group.label}>
                             {#each group.options as option}
-                                <option value={option.value}>{option.label}</option>
+                                <option value={option.value}
+                                    >{option.label}</option
+                                >
                             {/each}
                         </optgroup>
                     {/each}
@@ -1566,156 +1659,339 @@
         </div>
     </div>
 
-    <div
-        class="flex flex-col md:flex-row flex-1 gap-6 overflow-hidden min-h-[600px]"
-    >
-        <div
-            class="w-full md:w-1/2 flex flex-col gap-4 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700 p-5 overflow-y-auto"
+    <div class="mb-4 flex gap-4 border-b border-gray-200 dark:border-gray-700">
+        <button
+            class="pb-2 px-1 text-sm font-medium border-b-2 {activeTab ===
+            'guided'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}"
+            onclick={() => (activeTab = "guided")}
         >
-            <h3
-                class="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2"
+            Guided Scenarios
+        </button>
+        <button
+            class="pb-2 px-1 text-sm font-medium border-b-2 {activeTab ===
+            'advanced'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}"
+            onclick={() => (activeTab = "advanced")}
+        >
+            Advanced (Free-form)
+        </button>
+    </div>
+
+    {#if activeTab === "guided"}
+        <div
+            class="flex flex-col md:flex-row flex-1 gap-6 overflow-hidden min-h-[600px] pb-6"
+        >
+            <ScenarioSidebar
+                scenarios={SCENARIOS}
+                activeScenarioId={engine.activeScenario?.id || null}
+                onSelect={(s) => engine.startScenario(s)}
+            />
+
+            <div
+                class="w-full md:w-1/2 flex flex-col gap-4 overflow-y-auto pr-2"
             >
-                Request Formulation
-            </h3>
+                {#if engine.activeScenario && engine.currentStep}
+                    <NarrationBlock
+                        title={engine.currentStep.title}
+                        narration={engine.currentStep.narration}
+                    />
 
-            <div class="flex gap-3">
-                <select
-                    bind:value={method}
-                    aria-label="HTTP Method"
-                    class="block w-32 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
-                >
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PUT">PUT</option>
-                    <option value="DELETE">DELETE</option>
-                </select>
-                <input
-                    type="text"
-                    bind:value={endpoint}
-                    placeholder="/api/..."
-                    aria-label="API Endpoint"
-                    class="block flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm font-mono"
-                />
-            </div>
-
-            <div class="flex flex-col flex-1 gap-4">
-                <div class="flex flex-col">
-                    <label
-                        for="headers-input"
-                        class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                        >Headers (JSON)</label
+                    <div
+                        class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700 p-5 flex flex-col gap-4"
                     >
-                    <textarea
-                        id="headers-input"
-                        bind:value={headersText}
-                        rows="4"
-                        class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm font-mono"
-                    ></textarea>
-                </div>
-
-                {#if method !== "GET"}
-                    <div class="flex flex-col flex-1">
-                        <label
-                            for="body-input"
-                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-                            >Body (JSON)</label
+                        <h3
+                            class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-2"
                         >
-                        <textarea
-                            id="body-input"
-                            bind:value={jsonBody}
-                            class="block w-full flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm font-mono resize-none"
-                        ></textarea>
+                            Execute Request
+                        </h3>
+
+                        <div class="flex gap-3 text-sm font-mono items-center">
+                            <span
+                                class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded font-semibold text-gray-800 dark:text-gray-200"
+                                >{engine.currentStep.method}</span
+                            >
+                            <span
+                                class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded flex-1 truncate text-gray-600 dark:text-gray-300"
+                                >{engine.interpolatedEndpoint}</span
+                            >
+                        </div>
+
+                        {#if engine.interpolatedBody}
+                            <div class="mt-2 text-sm">
+                                <label
+                                    class="block text-xs font-semibold text-gray-500 mb-1"
+                                    >PAYLOAD</label
+                                >
+                                <JsonCodeBlock
+                                    value={engine.interpolatedBody}
+                                    class="m-0 !bg-gray-50 dark:!bg-gray-900 border border-gray-200 dark:border-gray-800"
+                                />
+                            </div>
+                        {/if}
+
+                        <div class="pt-4 mt-auto">
+                            <button
+                                onclick={executeScenarioStep}
+                                disabled={loading}
+                                class="w-full py-2.5 px-4 shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 transition-colors"
+                            >
+                                {loading ? "Executing Step..." : "Run Step"}
+                            </button>
+                        </div>
+                    </div>
+                {:else if engine.isComplete && engine.activeScenario}
+                    <div
+                        class="flex flex-col items-center justify-center p-12 text-center h-full bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700"
+                    >
+                        <div
+                            class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4"
+                        >
+                            <svg
+                                class="w-8 h-8"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                ><path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M5 13l4 4L19 7"
+                                ></path></svg
+                            >
+                        </div>
+                        <h2
+                            class="text-2xl font-bold mb-2 text-gray-800 dark:text-white"
+                        >
+                            Scenario Complete
+                        </h2>
+                        <p class="text-gray-500 dark:text-gray-400 mb-6">
+                            You successfully completed all steps in "{engine
+                                .activeScenario.title}".
+                        </p>
+                        <button
+                            onclick={() => engine.resetScenario()}
+                            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >Play Again</button
+                        >
+                    </div>
+                {:else}
+                    <div
+                        class="flex items-center justify-center h-full text-gray-400 dark:text-gray-500"
+                    >
+                        Select a scenario from the sidebar to begin.
                     </div>
                 {/if}
             </div>
 
-            <div class="pt-2">
-                <button
-                    onclick={executeRequest}
-                    disabled={loading}
-                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                    {loading ? "Sending..." : "Send Request"}
-                </button>
+            <div
+                class="w-full md:w-[35%] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
+            >
+                {#if engine.activeScenario}
+                    <div class="p-6 overflow-y-auto flex-1">
+                        <StepTimeline
+                            scenario={engine.activeScenario}
+                            currentIndex={engine.currentStepIndex}
+                            results={engine.stepResults}
+                        />
+                    </div>
+                    {#if engine.stepResults.size > 0 && engine.currentStepIndex > 0}
+                        {@const lastResult = engine.stepResults.get(
+                            engine.currentStepIndex - 1,
+                        )}
+                        <div
+                            class="border-t border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 mt-auto"
+                        >
+                            <div class="flex items-center justify-between mb-2">
+                                <h4
+                                    class="font-semibold text-sm text-gray-700 dark:text-gray-300"
+                                >
+                                    Last Response Output
+                                </h4>
+                                <StatusBadge
+                                    expectedStatus={engine.activeScenario.steps[
+                                        engine.currentStepIndex - 1
+                                    ].expectedStatus}
+                                    actualStatus={lastResult?.status}
+                                />
+                            </div>
+                            <div
+                                class="mt-3 max-h-[300px] overflow-auto border border-gray-100 dark:border-gray-700 rounded"
+                            >
+                                <JsonCodeBlock
+                                    value={lastResult?.data}
+                                    class="m-0 text-xs !bg-gray-50 dark:!bg-gray-900"
+                                />
+                            </div>
+                        </div>
+                    {/if}
+                {/if}
             </div>
         </div>
-
+    {:else}
         <div
-            class="w-full md:w-1/2 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
+            class="flex flex-col md:flex-row flex-1 gap-6 overflow-hidden min-h-[600px]"
         >
             <div
-                class="bg-gray-100 dark:bg-gray-800 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center"
+                class="w-full md:w-1/2 flex flex-col gap-4 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700 p-5 overflow-y-auto"
             >
-                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Response
+                <h3
+                    class="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2"
+                >
+                    Request Formulation
                 </h3>
-                <div class="flex items-center gap-3">
-                    {#if responseStatus !== null}
-                        <span
-                            class="text-xs font-bold px-2 py-0.5 rounded {responseStatus >=
-                                200 && responseStatus < 300
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
-                                : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400'}"
+
+                <div class="flex gap-3">
+                    <select
+                        bind:value={method}
+                        aria-label="HTTP Method"
+                        class="block w-32 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                    >
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="DELETE">DELETE</option>
+                    </select>
+                    <input
+                        type="text"
+                        bind:value={endpoint}
+                        placeholder="/api/..."
+                        aria-label="API Endpoint"
+                        class="block flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm font-mono"
+                    />
+                </div>
+
+                <div class="flex flex-col flex-1 gap-4">
+                    <div class="flex flex-col">
+                        <label
+                            for="headers-input"
+                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                            >Headers (JSON)</label
                         >
-                            {responseStatus}
-                        </span>
+                        <textarea
+                            id="headers-input"
+                            bind:value={headersText}
+                            rows="4"
+                            class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm font-mono"
+                        ></textarea>
+                    </div>
+
+                    {#if method !== "GET"}
+                        <div class="flex flex-col flex-1">
+                            <label
+                                for="body-input"
+                                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                >Body (JSON)</label
+                            >
+                            <textarea
+                                id="body-input"
+                                bind:value={jsonBody}
+                                class="block w-full flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm font-mono resize-none"
+                            ></textarea>
+                        </div>
                     {/if}
-                    {#if elapsedTime !== null}
-                        <span class="text-xs text-gray-500 dark:text-gray-400"
-                            >{elapsedTime}ms</span
-                        >
-                    {/if}
+                </div>
+
+                <div class="pt-2">
+                    <button
+                        onclick={executeRequest}
+                        disabled={loading}
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                    >
+                        {loading ? "Sending..." : "Send Request"}
+                    </button>
                 </div>
             </div>
 
-            <div class="flex-1 overflow-auto p-4 flex flex-col">
-                {#if responseInsight}
-                    <div
-                        class="mb-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 p-3 text-xs text-amber-900 dark:text-amber-200"
+            <div
+                class="w-full md:w-1/2 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
+            >
+                <div
+                    class="bg-gray-100 dark:bg-gray-800 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center"
+                >
+                    <h3
+                        class="text-sm font-semibold text-gray-700 dark:text-gray-300"
                     >
-                        {#if responseInsight.code}
-                            <p><strong>Code:</strong> {responseInsight.code}</p>
+                        Response
+                    </h3>
+                    <div class="flex items-center gap-3">
+                        {#if responseStatus !== null}
+                            <span
+                                class="text-xs font-bold px-2 py-0.5 rounded {responseStatus >=
+                                    200 && responseStatus < 300
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
+                                    : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400'}"
+                            >
+                                {responseStatus}
+                            </span>
                         {/if}
-                        {#if responseInsight.message}
-                            <p>
-                                <strong>Message:</strong> {responseInsight.message}
-                            </p>
-                        {/if}
-                        {#if responseInsight.remediation}
-                            <p>
-                                <strong>Remediation:</strong>
-                                {responseInsight.remediation}
-                            </p>
-                        {/if}
-                        {#if responseInsight.recommendedNextAction}
-                            <p>
-                                <strong>Recommended Next Action:</strong>
-                                {responseInsight.recommendedNextAction}
-                            </p>
+                        {#if elapsedTime !== null}
+                            <span
+                                class="text-xs text-gray-500 dark:text-gray-400"
+                                >{elapsedTime}ms</span
+                            >
                         {/if}
                     </div>
-                {/if}
+                </div>
 
-                {#if errorMsg}
-                    <ErrorBanner message={errorMsg} />
-                {:else if responseData !== null}
-                    <JsonCodeBlock value={responseData} class="m-0 w-full h-full" />
-                {:else if !loading}
-                    <div
-                        class="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm"
-                    >
-                        Submit a request to see the response payload.
-                    </div>
-                {/if}
+                <div class="flex-1 overflow-auto p-4 flex flex-col">
+                    {#if responseInsight}
+                        <div
+                            class="mb-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 p-3 text-xs text-amber-900 dark:text-amber-200"
+                        >
+                            {#if responseInsight.code}
+                                <p>
+                                    <strong>Code:</strong>
+                                    {responseInsight.code}
+                                </p>
+                            {/if}
+                            {#if responseInsight.message}
+                                <p>
+                                    <strong>Message:</strong>
+                                    {responseInsight.message}
+                                </p>
+                            {/if}
+                            {#if responseInsight.remediation}
+                                <p>
+                                    <strong>Remediation:</strong>
+                                    {responseInsight.remediation}
+                                </p>
+                            {/if}
+                            {#if responseInsight.recommendedNextAction}
+                                <p>
+                                    <strong>Recommended Next Action:</strong>
+                                    {responseInsight.recommendedNextAction}
+                                </p>
+                            {/if}
+                        </div>
+                    {/if}
 
-                {#if loading}
-                    <div
-                        class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex items-center justify-center backdrop-blur-sm"
-                    >
-                        <LoadingSpinner size="xl" />
-                    </div>
-                {/if}
+                    {#if errorMsg}
+                        <ErrorBanner message={errorMsg} />
+                    {:else if responseData !== null}
+                        <JsonCodeBlock
+                            value={responseData}
+                            class="m-0 w-full h-full"
+                        />
+                    {:else if !loading}
+                        <div
+                            class="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm"
+                        >
+                            Submit a request to see the response payload.
+                        </div>
+                    {/if}
+
+                    {#if loading}
+                        <div
+                            class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex items-center justify-center backdrop-blur-sm"
+                        >
+                            <LoadingSpinner size="xl" />
+                        </div>
+                    {/if}
+                </div>
             </div>
         </div>
-    </div>
+    {/if}
 </div>

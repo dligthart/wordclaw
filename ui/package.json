@@ -20,11 +20,13 @@
 		"@tailwindcss/vite": "^4.1.18",
 		"@testing-library/jest-dom": "^6.9.1",
 		"@testing-library/svelte": "^5.3.1",
+		"@types/marked": "^5.0.2",
 		"clsx": "^2.1.1",
 		"flowbite": "^3.0.0-beta.1",
 		"flowbite-mcp": "^1.1.5",
 		"flowbite-svelte": "^2.0.0-next.9",
 		"jsdom": "^28.1.0",
+		"lucide-svelte": "^0.575.0",
 		"svelte": "^5.51.0",
 		"svelte-check": "^4.3.6",
 		"svelte-hero-icons": "^5.2.0",
@@ -35,6 +37,7 @@
 		"vitest": "^4.0.18"
 	},
 	"dependencies": {
-		"@fastify/static": "^9.0.0"
+		"@fastify/static": "^9.0.0",
+		"marked": "^17.0.3"
 	}
 }
