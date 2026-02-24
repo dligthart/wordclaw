@@ -89,4 +89,46 @@ describe('L402 Middleware', () => {
     expect(reply2.status).not.toHaveBeenCalled();
     expect(reply2.send).not.toHaveBeenCalled();
   });
+
+  it('should reject token replay on a different path due to macaroon caveats', async () => {
+    const request1 = {
+      headers: {},
+      url: '/premium/a'
+    } as FastifyRequest;
+
+    let macaroon = '';
+    const reply1 = {
+      status: vi.fn().mockReturnThis(),
+      header: vi.fn((key, value) => {
+        if (key === 'WWW-Authenticate') {
+          const macaroonMatch = value.match(/macaroon=\"([^\"]+)\"/);
+          if (macaroonMatch) macaroon = macaroonMatch[1];
+        }
+      }),
+      send: vi.fn()
+    } as unknown as FastifyReply;
+
+    await middleware(request1, reply1);
+    expect(macaroon).toBeTruthy();
+
+    const replayRequest = {
+      headers: {
+        authorization: `L402 ${macaroon}:${MockPaymentProvider.MOCK_PREIMAGE}`
+      },
+      url: '/premium/b'
+    } as FastifyRequest;
+
+    const replayReply = {
+      status: vi.fn().mockReturnThis(),
+      header: vi.fn(),
+      send: vi.fn(),
+      raw: { on: vi.fn() },
+      statusCode: 200
+    } as unknown as FastifyReply;
+
+    await middleware(replayRequest, replayReply);
+
+    expect(replayReply.status).toHaveBeenCalledWith(402);
+    expect(replayReply.header).toHaveBeenCalledWith('WWW-Authenticate', expect.stringContaining('L402 macaroon='));
+  });
 });

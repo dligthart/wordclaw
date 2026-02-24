@@ -25,6 +25,7 @@ import { schema } from './graphql/schema.js';
 import { idempotencyPlugin } from './middleware/idempotency.js';
 import { type AuditEventPayload, auditEventBus } from './services/event-bus.js';
 import { accessEventsWorker } from './workers/access-events.js';
+import { paymentReconciliationWorker } from './workers/payment-reconciliation.js';
 
 dotenv.config();
 
@@ -310,6 +311,7 @@ const start = async () => {
         console.log(`Server listening at http://${host}:${port}`);
 
         accessEventsWorker.start(); // Start the background worker
+        paymentReconciliationWorker.start();
     } catch (err) {
         server.log.error(err);
         process.exit(1);
@@ -322,6 +324,7 @@ const shutdown = async (signal: string) => {
     server.log.info(`Received ${signal}, shutting down gracefully...`);
     try {
         accessEventsWorker.stop();
+        paymentReconciliationWorker.stop();
         await server.close();
         process.exit(0);
     } catch (err) {

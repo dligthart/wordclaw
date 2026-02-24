@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer, boolean, jsonb, index, vector } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, vector } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
     id: serial('id').primaryKey(),
@@ -94,9 +94,15 @@ export const payments = pgTable('payments', {
     id: serial('id').primaryKey(),
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     paymentHash: text('payment_hash').notNull().unique(),
+    provider: text('provider').notNull().default('mock'),
+    providerInvoiceId: text('provider_invoice_id'),
     paymentRequest: text('payment_request').notNull(),
     amountSatoshis: integer('amount_satoshis').notNull(),
-    status: text('status').notNull().default('pending'), // 'pending' or 'paid'
+    status: text('status').notNull().default('pending'), // 'pending', 'paid', 'consumed', 'expired', 'failed'
+    expiresAt: timestamp('expires_at'),
+    settledAt: timestamp('settled_at'),
+    failureReason: text('failure_reason'),
+    lastEventId: text('last_event_id'),
     resourcePath: text('resource_path').notNull(),
     actorId: text('actor_id'),
     details: jsonb('details'),
@@ -105,7 +111,24 @@ export const payments = pgTable('payments', {
 }, (table) => {
     return {
         paymentStatusIdx: index('payment_status_idx').on(table.status),
-        paymentCreatedAtIdx: index('payment_created_at_idx').on(table.createdAt)
+        paymentCreatedAtIdx: index('payment_created_at_idx').on(table.createdAt),
+        paymentProviderIdx: index('payment_provider_idx').on(table.provider)
+    };
+});
+
+export const paymentProviderEvents = pgTable('payment_provider_events', {
+    id: serial('id').primaryKey(),
+    provider: text('provider').notNull(),
+    eventId: text('event_id').notNull(),
+    paymentHash: text('payment_hash').notNull(),
+    status: text('status').notNull(),
+    signature: text('signature'),
+    payload: jsonb('payload').notNull(),
+    receivedAt: timestamp('received_at').defaultNow().notNull()
+}, (table) => {
+    return {
+        providerEventUniqueIdx: uniqueIndex('payment_provider_events_provider_event_idx').on(table.provider, table.eventId),
+        paymentHashIdx: index('payment_provider_events_payment_hash_idx').on(table.paymentHash)
     };
 });
 

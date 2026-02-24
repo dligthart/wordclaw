@@ -417,7 +417,14 @@ function withPolicy(
                 globalL402Options,
                 pricingContext,
                 context?.headers?.authorization,
-                { path: context?.url || '/graphql', headers: context?.headers || {} }
+                {
+                    path: context?.url || '/graphql',
+                    domainId: getDomainId(context),
+                    requestInfo: {
+                        method: 'POST',
+                        headers: context?.headers || {}
+                    }
+                }
             );
 
             if (!l402Result.ok) {
@@ -436,10 +443,16 @@ function withPolicy(
                         }
                     );
                 } else if (l402Result.errorPayload) {
+                    const l402ErrorPayload = l402Result.errorPayload as {
+                        error?: {
+                            code?: string;
+                            message?: string;
+                        };
+                    };
                     throw toError(
                         'Payment Error',
-                        l402Result.errorPayload.error?.code || 'PAYMENT_ERROR',
-                        l402Result.errorPayload.error?.message || 'Payment processing failed.'
+                        l402ErrorPayload.error?.code || 'PAYMENT_ERROR',
+                        l402ErrorPayload.error?.message || 'Payment processing failed.'
                     );
                 } else {
                     throw toError('Payment Required', 'PAYMENT_REQUIRED', 'L402 payment required');

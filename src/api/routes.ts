@@ -1,10 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import crypto from 'crypto';
 import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
@@ -13,11 +12,14 @@ import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey 
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from '../services/policy-adapters.js';
-import { l402Middleware } from '../middleware/l402.js';
+import { createL402Challenge, l402Middleware } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService, EmbeddingServiceError } from '../services/embedding.js';
 import { LicensingService } from '../services/licensing.js';
+import { transitionPaymentStatus } from '../services/payment-ledger.js';
+import { paymentFlowMetrics } from '../services/payment-metrics.js';
+import { parsePaymentWebhookEvent, verifyPaymentWebhookSignature } from '../services/payment-webhook.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -189,6 +191,11 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const path = request.url.split('?')[0];
+
+        // Provider webhooks authenticate via signed payload, not API key/cookie principal.
+        if (path.startsWith('/api/payments/webhooks/')) {
+            return undefined;
+        }
 
         if (!principal) {
             const auth = await authenticateApiRequest(request.headers);
@@ -1670,7 +1677,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             response: {
                 402: AIErrorResponse,
                 404: AIErrorResponse,
-                403: AIErrorResponse
+                403: AIErrorResponse,
+                503: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -1692,24 +1700,39 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(toErrorPayload('Offer not found', 'OFFER_NOT_FOUND', 'The offer ID does not exist or is inactive.'));
         }
 
-        const invoice = await globalL402Options.provider.createInvoice(offer.priceSats, `Purchase offer ${offer.name}`);
-
-        if (globalL402Options.onInvoiceCreated) {
-            await globalL402Options.onInvoiceCreated(
-                invoice,
-                { path: `/api/offers/${id}/purchase`, requestInfo: { method: 'POST', headers: request.headers } },
-                offer.priceSats
+        try {
+            const challenge = await createL402Challenge(
+                globalL402Options,
+                {
+                    resourceType: 'offer',
+                    operation: 'purchase',
+                    resourceId: offer.id,
+                    domainId
+                },
+                {
+                    path: `/api/offers/${id}/purchase`,
+                    domainId,
+                    requestInfo: { method: 'POST', headers: request.headers as Record<string, string | string[] | undefined> }
+                },
+                offer.priceSats,
+                'initial'
             );
+
+            paymentFlowMetrics.increment('invoice_create_success_total');
+            await LicensingService.provisionEntitlementForSale(domainId, offer.id, profile.id, challenge.invoice.hash);
+
+            for (const [header, value] of Object.entries(challenge.headers)) {
+                reply.header(header, value);
+            }
+            return reply.status(402).send(challenge.payload);
+        } catch (error) {
+            paymentFlowMetrics.increment('invoice_create_failure_total');
+            return reply.status(503).send(toErrorPayload(
+                'Invoice creation failed',
+                'PAYMENT_PROVIDER_UNAVAILABLE',
+                `Unable to create Lightning invoice: ${(error as Error).message}`
+            ));
         }
-
-        await LicensingService.provisionEntitlementForSale(domainId, offer.id, profile.id, invoice.hash);
-
-        const tokenPayload = Buffer.from(JSON.stringify({ hash: invoice.hash, exp: Date.now() + 3600000 })).toString('base64url');
-        const signature = crypto.createHmac('sha256', globalL402Options.secretKey).update(tokenPayload).digest('base64url');
-        const token = `${tokenPayload}.${signature}`;
-
-        reply.header('WWW-Authenticate', `L402 macaroon="${token}", invoice="${invoice.paymentRequest}"`);
-        return reply.status(402).send(toErrorPayload('Payment Required', 'PAYMENT_REQUIRED', 'Pay the lightning invoice to activate the entitlement.'));
     });
 
     server.post('/entitlements/:id/delegate', {
@@ -2868,6 +2891,154 @@ export default async function apiRoutes(server: FastifyInstance) {
                     hasMore,
                     nextCursor
                 }
+            )
+        };
+    });
+
+    server.post('/payments/webhooks/:provider/settled', {
+        schema: {
+            params: Type.Object({
+                provider: Type.String()
+            }),
+            body: Type.Object({}, { additionalProperties: true }),
+            response: {
+                200: Type.Object({
+                    accepted: Type.Boolean(),
+                    eventId: Type.String(),
+                    paymentHash: Type.String(),
+                    status: Type.String()
+                }),
+                202: Type.Object({
+                    accepted: Type.Boolean(),
+                    duplicate: Type.Optional(Type.Boolean()),
+                    unknownPayment: Type.Optional(Type.Boolean())
+                }),
+                400: AIErrorResponse,
+                401: AIErrorResponse,
+                409: AIErrorResponse,
+                503: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const webhookSecret = process.env.PAYMENT_WEBHOOK_SECRET;
+        const provider = (request.params as { provider: string }).provider.toLowerCase();
+        const signatureRaw = request.headers['x-wordclaw-payment-signature'] ?? request.headers['x-lnbits-signature'];
+        const signature = typeof signatureRaw === 'string'
+            ? signatureRaw
+            : Array.isArray(signatureRaw)
+                ? signatureRaw[0]
+                : undefined;
+
+        if (!webhookSecret) {
+            return reply.status(503).send(toErrorPayload(
+                'Payment webhook not configured',
+                'PAYMENT_WEBHOOK_NOT_CONFIGURED',
+                'Set PAYMENT_WEBHOOK_SECRET before enabling settlement webhooks.'
+            ));
+        }
+
+        if (!signature || !verifyPaymentWebhookSignature(request.body, signature, webhookSecret)) {
+            paymentFlowMetrics.increment('webhook_verify_fail_total');
+            return reply.status(401).send(toErrorPayload(
+                'Invalid webhook signature',
+                'INVALID_PAYMENT_WEBHOOK_SIGNATURE',
+                'Ensure the provider signs webhook payloads with the shared PAYMENT_WEBHOOK_SECRET.'
+            ));
+        }
+
+        const event = parsePaymentWebhookEvent(provider, request.body);
+        if (!event) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid webhook payload',
+                'INVALID_PAYMENT_WEBHOOK_PAYLOAD',
+                'Provide eventId, paymentHash, and status in the webhook body.'
+            ));
+        }
+
+        const [storedEvent] = await db.insert(paymentProviderEvents).values({
+            provider: event.provider,
+            eventId: event.eventId,
+            paymentHash: event.paymentHash,
+            status: event.status,
+            signature,
+            payload: event.payload
+        }).onConflictDoNothing({
+            target: [paymentProviderEvents.provider, paymentProviderEvents.eventId]
+        }).returning();
+
+        if (!storedEvent) {
+            return reply.status(202).send({
+                accepted: true,
+                duplicate: true
+            });
+        }
+
+        const [payment] = await db.select().from(payments).where(eq(payments.paymentHash, event.paymentHash));
+        if (!payment) {
+            return reply.status(202).send({
+                accepted: true,
+                unknownPayment: true
+            });
+        }
+
+        try {
+            const updated = await transitionPaymentStatus(event.paymentHash, event.status, {
+                providerName: event.provider,
+                providerInvoiceId: event.providerInvoiceId ?? null,
+                providerEventId: event.eventId,
+                expiresAt: event.expiresAt ?? null,
+                settledAt: event.settledAt ?? null,
+                failureReason: event.failureReason ?? null,
+                detailsPatch: {
+                    webhookStatus: event.status,
+                    webhookEventId: event.eventId,
+                    webhookProvider: event.provider,
+                    webhookReceivedAt: new Date().toISOString()
+                }
+            });
+
+            if (updated && event.status === 'paid') {
+                const latency = updated.updatedAt.getTime() - payment.createdAt.getTime();
+                paymentFlowMetrics.increment('challenge_to_paid_latency_ms_total', Math.max(0, latency));
+                paymentFlowMetrics.increment('challenge_to_paid_latency_samples_total');
+            }
+
+            if (updated && (event.status === 'expired' || event.status === 'failed' || event.status === 'paid')) {
+                paymentFlowMetrics.increment('reconciliation_corrections_total');
+            }
+        } catch (error) {
+            return reply.status(409).send(toErrorPayload(
+                'Invalid payment transition',
+                'INVALID_PAYMENT_TRANSITION',
+                (error as Error).message
+            ));
+        }
+
+        return {
+            accepted: true,
+            eventId: event.eventId,
+            paymentHash: event.paymentHash,
+            status: event.status
+        };
+    });
+
+    server.get('/payments/metrics', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Object({
+                    counters: Type.Record(Type.String(), Type.Number()),
+                    gauges: Type.Record(Type.String(), Type.Number())
+                }))
+            }
+        }
+    }, async () => {
+        return {
+            data: paymentFlowMetrics.snapshot(),
+            meta: buildMeta(
+                'Inspect payment flow health indicators',
+                ['GET /api/payments', 'GET /api/payments/metrics'],
+                'low',
+                1
             )
         };
     });
