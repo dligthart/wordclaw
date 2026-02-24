@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { Icon, Check } from "svelte-hero-icons";
     import type { Scenario, ScenarioEngineSnapshot } from "$lib/types/sandbox";
     import { deepParseJson } from "$lib/utils";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
@@ -1608,11 +1609,12 @@
             });
 
             let data = null;
+            const rawText = await res.text();
             try {
-                const rawJson = await res.json();
+                const rawJson = JSON.parse(rawText);
                 data = deepParseJson(rawJson);
             } catch {
-                data = await res.text();
+                data = rawText;
             }
 
             const elapsed = Math.round(performance.now() - start);
@@ -1702,15 +1704,15 @@
 
             responseStatus = res.status;
 
+            const rawText = await res.text();
             try {
-                const rawJson = await res.json();
+                const rawJson = JSON.parse(rawText);
                 const parsed = deepParseJson(rawJson);
                 responseData = parsed;
                 responseInsight = extractResponseInsight(parsed);
                 captureResponseContext(endpoint, parsed);
             } catch {
-                const textPayload = await res.text();
-                responseData = textPayload;
+                responseData = rawText;
                 responseInsight = null;
             }
         } catch (err: any) {
@@ -1997,18 +1999,7 @@
                         <div
                             class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4"
                         >
-                            <svg
-                                class="w-8 h-8"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                ><path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    stroke-width="2"
-                                    d="M5 13l4 4L19 7"
-                                ></path></svg
-                            >
+                            <Icon src={Check} class="w-8 h-8" />
                         </div>
                         <h2
                             class="text-2xl font-bold mb-2 text-gray-800 dark:text-white"

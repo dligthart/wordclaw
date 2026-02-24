@@ -1635,7 +1635,8 @@ server.resource(
     'content-types',
     'content://types',
     async (uri) => {
-        const types = await db.select().from(contentTypes);
+        const domainId = Number(process.env.WORDCLAW_DOMAIN_ID) || 1;
+        const types = await db.select().from(contentTypes).where(eq(contentTypes.domainId, domainId));
         return {
             contents: [{
                 uri: uri.href,

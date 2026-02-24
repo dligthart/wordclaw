@@ -19,7 +19,7 @@ import { authenticateApiRequest } from './api/auth.js';
 import { PolicyEngine } from './services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from './services/policy-adapters.js';
 import { errorHandler } from './api/error-handler.js';
-import { db } from './db/index.js';
+import { db, pool } from './db/index.js';
 import { resolvers } from './graphql/resolvers.js';
 import { schema } from './graphql/schema.js';
 import { idempotencyPlugin } from './middleware/idempotency.js';
@@ -326,6 +326,7 @@ const shutdown = async (signal: string) => {
         accessEventsWorker.stop();
         paymentReconciliationWorker.stop();
         await server.close();
+        await pool.end();
         process.exit(0);
     } catch (err) {
         server.log.error(err, 'Error during shutdown');

@@ -145,10 +145,46 @@ export class EmbeddingService {
             flatText = String(data);
         }
 
-        // Chunk by arbitrary length as fallback, but keep intact if possible
+        // Chunk on sentence/newline boundaries, falling back to word boundaries
         const chunkSize = 1000;
-        for (let i = 0; i < flatText.length; i += chunkSize) {
-            chunks.push(flatText.slice(i, i + chunkSize));
+        if (flatText.length <= chunkSize) {
+            chunks.push(flatText);
+        } else {
+            let remaining = flatText;
+            while (remaining.length > 0) {
+                if (remaining.length <= chunkSize) {
+                    chunks.push(remaining);
+                    break;
+                }
+
+                let splitAt = -1;
+                // Try to split at a sentence boundary (.\n or .\s)
+                for (let i = chunkSize; i > chunkSize * 0.5; i--) {
+                    const ch = remaining[i];
+                    if (ch === '\n' || (ch === ' ' && i > 0 && '.!?'.includes(remaining[i - 1]))) {
+                        splitAt = i + 1;
+                        break;
+                    }
+                }
+
+                // Fall back to word boundary
+                if (splitAt === -1) {
+                    for (let i = chunkSize; i > chunkSize * 0.5; i--) {
+                        if (remaining[i] === ' ' || remaining[i] === '\n') {
+                            splitAt = i + 1;
+                            break;
+                        }
+                    }
+                }
+
+                // Last resort: hard split at chunkSize
+                if (splitAt === -1) {
+                    splitAt = chunkSize;
+                }
+
+                chunks.push(remaining.slice(0, splitAt).trimEnd());
+                remaining = remaining.slice(splitAt).trimStart();
+            }
         }
 
         return chunks;
