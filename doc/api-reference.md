@@ -202,6 +202,33 @@ DELETE /api/auth/keys/:id
 
 ---
 
+## Licensing & Entitlements (RFC 0004)
+
+### Discover Offers
+```
+GET /api/content-items/:id/offers
+```
+Returns available purchasing options for a specific content item.
+
+### Purchase Offer
+```
+POST /api/offers/:id/purchase
+```
+Initiates a purchase and returns a `402 Payment Required` with an L402 challenge (macaroon + invoice). Paying the invoice activates the entitlement.
+
+### Delegate Entitlement
+```
+POST /api/entitlements/:id/delegate
+```
+Allows an agent to fork a subset of their remaining reads to a subordinate agent.
+
+| Field            | Type   | Required | Description                     |
+|------------------|--------|----------|---------------------------------|
+| `targetApiKeyId` | number | yes      | ID of the subordinate API key   |
+| `readsAmount`    | number | yes      | Number of reads to delegate     |
+
+---
+
 ## Audit Logs
 
 ```

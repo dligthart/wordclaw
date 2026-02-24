@@ -39,9 +39,16 @@ sequenceDiagram
     Server->>Server: Verify Macaroon/HMAC Signature
     Server->>Payment: Verify Payment (Hash, Preimage)
     Payment-->>Server: Payment Verified
-    Server->>Server: Create Content Item in DB
-    Server-->>Client: 201 Created (Success)
+    Server->>Server: Atomically Decrement Entitlement Reads
+    Server->>Server: Create Content Item in DB / Return Content
+    Server-->>Client: 2xx Success
 ```
+
+## Agentic Content Licensing (RFC 0004)
+
+The L402 middleware interacts seamlessly with **Entitlements**. When an invoice is created via `POST /api/offers/:id/purchase`, an inert entitlement is provisioned. Once the client satisfies the L402 challenge on a read endpoint, the middleware locates the matching entitlement and executes an atomic decrement on `remainingReads`.
+
+If an entitlement is exhausted, expired, or revoked, the L402 middleware will intercept the request and prompt the agent to purchase a new offer.
 
 ## Future Enhancements (Phase 6 Roadmap)
 
