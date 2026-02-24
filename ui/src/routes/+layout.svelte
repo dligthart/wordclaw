@@ -85,11 +85,8 @@
         if (domainId === currentDomain) return;
         localStorage.setItem("__wc_domain_id", domainId);
         currentDomain = domainId;
-        await goto($page.url.pathname + $page.url.search, {
-            invalidateAll: true,
-            replaceState: true,
-            noScroll: true,
-        });
+        // Force a full page reload so all pages that fetch onMount rehydrate against the new domain.
+        window.location.assign($page.url.pathname + $page.url.search + $page.url.hash);
     }
 
     $effect(() => {
