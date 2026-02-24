@@ -14,6 +14,35 @@ The L402 integration in Wordclaw acts as a metering and monetization layer for A
     *   **Challenge**: Intercepts requests without a valid L402 header. It requests an invoice from the Payment Provider, generates a token (currently HMAC-based, acting as a Macaroon placeholder), and returns a `402` status with the `WWW-Authenticate` header containing the Macaroon and Invoice.
     *   **Verification**: Parses the `Authorization: L402 <macaroon>:<preimage>` header. It validates the Macaroon's authenticity (using the server's secret) and verifies the payment preimage against the Payment Provider.
 
+## L402 Payment Flow Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant Client as AI Agent / Client
+    participant Server as WordClaw API
+    participant Payment as Payment Provider (LND/Mock)
+    participant Wallet as Lightning Wallet
+
+    %% 1. Unauthenticated Request
+    Client->>Server: POST /api/content-items (No L402 Auth)
+    Server->>Payment: Create Invoice for Required Price
+    Payment-->>Server: Return Lightning Invoice & Hash
+    Server->>Server: Generate Macaroon/HMAC token with Hash signed by Secret
+    Server-->>Client: 402 Payment Required <br> (Header: WWW-Authenticate: L402 macaroon="...", invoice="...")
+
+    %% 2. Payment
+    Client->>Wallet: Pay Lightning Invoice
+    Wallet-->>Client: Return Cryptographic Preimage
+
+    %% 3. Authenticated Request
+    Client->>Server: POST /api/content-items <br> (Header: Authorization: L402 <macaroon>:<preimage>)
+    Server->>Server: Verify Macaroon/HMAC Signature
+    Server->>Payment: Verify Payment (Hash, Preimage)
+    Payment-->>Server: Payment Verified
+    Server->>Server: Create Content Item in DB
+    Server-->>Client: 201 Created (Success)
+```
+
 ## Future Enhancements (Phase 6 Roadmap)
 
 *   **Full Macaroon Support**: Replace the HMAC token placeholder with full Macaroon implementation using the `macaroons.js` library to support caveats (e.g., rate limits, specific endpoint access).
