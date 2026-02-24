@@ -22,24 +22,6 @@
 -   **Developer Ready**: Built with Fastify, TypeScript, and Drizzle ORM.
 -   **Database Agnostic**: Supports PostgreSQL (production) and others via Drizzle.
 
-### System Architecture
-
-<p align="center">
-    <picture>
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/diagrams/architecture-system-diagram.svg">
-        <img src="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/diagrams/architecture-system-diagram.svg" alt="WordClaw System Diagram" width="800">
-    </picture>
-</p>
-
-### Data Model
-
-<p align="center">
-    <picture>
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/diagrams/data-model-entity-relationship-diagram.svg">
-        <img src="https://raw.githubusercontent.com/dligthart/wordclaw/main/doc/images/diagrams/data-model-entity-relationship-diagram.svg" alt="WordClaw Entity Relationship Diagram" width="800">
-    </picture>
-</p>
-
 ## 🛠️ Prerequisites
 
 -   **Node.js**: v20 or higher
