@@ -60,6 +60,9 @@ Introduce four UI primitives and migrate all pages to use them:
   * use structured validation feedback (field path + reason) rather than raw error strings.
 * **Payments/Audit Logs/Keys**:
   * standardize filtering, pagination controls, and row expansion interaction.
+* **Supervisor Dashboard**:
+  * **[Implemented]** Added L402 Earnings metrics.
+  * Visualize total and pending payouts derived from `payments` table.
 
 ### 5.4 Accessibility and Interaction Contracts
 * Replace clickable non-interactive elements (`tr` click targets) with explicit buttons/links.
@@ -87,11 +90,12 @@ Introduce four UI primitives and migrate all pages to use them:
 * Error panels should redact sensitive fields while preserving remediation guidance from policy and API layers.
 
 ## 8. Rollout Plan / Milestones
-1. **Phase 1:** Add shared feedback primitives (toast, confirm dialog, inline error component) and wire into keys/content/approvals pages.
+1. **Phase 1 [Partially Implemented]:** Add shared feedback primitives (toast, confirm dialog, inline error component) and wire into keys/content/approvals pages. `Toast`, `ConfirmDialog`, `ErrorBanner` are complete.
 2. **Phase 2:** Implement responsive shell and mobile-safe navigation behavior.
-3. **Phase 3:** Replace page-local table/list states with shared `DataTable` + standard pagination/filter contracts.
+3. **Phase 3 [Partially Implemented]:** Replace page-local table/list states with shared `DataTable` + standard pagination/filter contracts. Shared `DataTable` component created.
 4. **Phase 4:** Implement approval and rollback safety flows (reason capture + confirmation + post-action navigation shortcuts).
 5. **Phase 5:** Add accessibility checks in CI and collect baseline-to-post metrics for operator efficiency.
+6. **Phase 6 [Implemented]:** Supervisor Dashboard L402 Earnings Metrics.
 
 ## 9. Success Criteria
 * 0 direct `alert()` calls in production UI code paths.

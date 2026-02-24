@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { sql, desc, eq, gt } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { auditLogs, contentItems, contentTypes } from '../db/schema.js';
+import { auditLogs, contentItems, contentTypes, payments } from '../db/schema.js';
 
 export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: FastifyInstance) => {
     // Shared authenticaton hook for these routes
@@ -46,6 +46,25 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
             totalAgentsActive: new Set(recentLogs.filter(l => l.userId).map(l => l.userId)).size
         };
 
+        // 3. Earnings Summary
+        const allPaid = await db
+            .select()
+            .from(payments)
+            .where(eq(payments.status, 'paid'));
+        const totalEarnings = allPaid.reduce((acc, curr) => acc + curr.amountSatoshis, 0);
+
+        const pendingPayments = await db
+            .select()
+            .from(payments)
+            .where(eq(payments.status, 'pending'));
+        const pendingEarnings = pendingPayments.reduce((acc, curr) => acc + curr.amountSatoshis, 0);
+
+        const earningsSummary = {
+            total: totalEarnings,
+            pending: pendingEarnings,
+            pendingCount: pendingPayments.length
+        };
+
         // 3. Recent Audit Events Feed (Last 20)
         const recentEvents = await db
             .select()
@@ -75,6 +94,7 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
         return {
             health,
             activitySummary,
+            earningsSummary,
             recentEvents,
             alerts
         };
