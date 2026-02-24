@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordClaw - The AI-Native Content Engine</title>
+    <meta name="description" content="WordClaw is a headless CMS built ground-up for autonomous AI agents, featuring native Vector RAG, lightning network (L402) micropayments, and an intelligent MCP server.">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="glow-bg"></div>
+
+    <header class="navbar">
+        <div class="container nav-container">
+            <div class="logo">
+                <span class="logo-icon">▲</span>
+                WordClaw
+            </div>
+            <nav class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#architecture">Architecture</a>
+                <a href="https://github.com/dligthart/wordclaw" target="_blank" rel="noopener noreferrer" class="btn btn-outline">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <div class="hero-content">
+                    <div class="badge fade-in-up">v1.0 Ready for Production</div>
+                    <h1 class="fade-in-up delay-1">The Headless CMS for <span class="text-gradient">Agentic Workflows</span></h1>
+                    <p class="hero-subtitle fade-in-up delay-2">
+                        Designed explicitly for AI. WordClaw combines a bleeding-edge MCP server, native Vector RAG pipelines, and L402 Lightning Network micropayments into a single, headless architecture.
+                    </p>
+                    <div class="hero-actions fade-in-up delay-3">
+                        <a href="https://github.com/dligthart/wordclaw/tree/main/docs" class="btn btn-primary">Read Documentation</a>
+                        <a href="https://github.com/dligthart/wordclaw" class="btn btn-secondary">View Source</a>
+                    </div>
+                </div>
+                
+                <div class="hero-visual fade-in-up delay-4">
+                    <div class="code-window">
+                        <div class="window-header">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <div class="window-body">
+<pre><code><span class="keyword">const</span> <span class="variable">wordclaw</span> = <span class="keyword">await</span> <span class="function">AgentSandbox</span>.<span class="property">init</span>({
+  <span class="property">mcp</span>: <span class="string">'enabled'</span>,
+  <span class="property">vectorRag</span>: <span class="boolean">true</span>,
+  <span class="property">l402</span>: {
+    <span class="property">provider</span>: <span class="string">'lnbits'</span>,
+    <span class="property">costPerToken</span>: <span class="number">1</span>
+  }
+});
+
+<span class="comment">// 🤖 Agent immediately begins creating via MCP</span>
+<span class="keyword">const</span> <span class="variable">draft</span> = <span class="keyword">await</span> <span class="variable">wordclaw</span>.<span class="function">draft</span>(<span class="string">"Explain L402."</span>);</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="features section">
+            <div class="container">
+                <div class="section-header fade-in-up">
+                    <h2>Core Capabilities</h2>
+                    <p>WordClaw acts as the ultimate bridge between LLMs and your content repository.</p>
+                </div>
+
+                <div class="feature-grid">
+                    <div class="feature-card fade-in-up">
+                        <div class="feature-icon">🔌</div>
+                        <h3>MCP Server Native</h3>
+                        <p>Exposes all CMS functionality via the Model Context Protocol (MCP). Agents can perform semantic searches, draft content, and run workflow transitions autonomously.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up delay-1">
+                        <div class="feature-icon">⚡</div>
+                        <h3>L402 Lightning Billing</h3>
+                        <p>Monetize agent access seamlessly. Built-in support for Lightning Network micropayments (L402) enforcing access controls via macaroons without traditional accounts.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up delay-2">
+                        <div class="feature-icon">🧠</div>
+                        <h3>Vector RAG Pipeline</h3>
+                        <p>Built-in pgvector support. Upload documents and WordClaw automatically chunks, embeds, and serves them for rapid semantic retrieval by downstream agents.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up">
+                        <div class="feature-icon">🛡️</div>
+                        <h3>Agent Sandbox</h3>
+                        <p>Safely isolate agent activity. Supervisor UI tracks agent actions, approvals, and dry-run outputs before they hit the live content repository.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up delay-1">
+                        <div class="feature-icon">🌐</div>
+                        <h3>Multi-Tenant Architecture</h3>
+                        <p>Host multiple projects or organizations on a single WordClaw instance. Robust domain-based scoping secures content and configurations.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up delay-2">
+                        <div class="feature-icon">📝</div>
+                        <h3>Supervisor UI</h3>
+                        <p>A beautiful SvelteKit dashboard providing human oversight. Approve agent drafts, track audit logs, manage schemas, and configure L402 instances.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="architecture" class="architecture section">
+             <div class="container">
+                 <div class="arch-content">
+                     <div class="arch-text fade-in-up">
+                         <h2>Built for the Future of Automation</h2>
+                         <p>WordClaw leverages a modern, high-performance stack designed for scale and developer ergonomics.</p>
+                         <ul class="arch-list">
+                             <li><strong>Backend:</strong> Node.js, Fastify, Drizzle ORM</li>
+                             <li><strong>Database:</strong> PostgreSQL with pgvector</li>
+                             <li><strong>Frontend:</strong> SvelteKit, TailwindCSS</li>
+                             <li><strong>Integration:</strong> Model Context Protocol (MCP)</li>
+                         </ul>
+                     </div>
+                     <div class="arch-visual fade-in-up delay-2">
+                         <div class="glass-panel">
+                            <h3>Ready to integrate?</h3>
+                            <p>Check out the open source repository to start building your agentic content engine today.</p>
+                            <a href="https://github.com/dligthart/wordclaw" class="btn btn-primary mt-4">Fork on GitHub</a>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container footer-container">
+            <div class="logo">
+                <span class="logo-icon">▲</span> WordClaw
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/dligthart/wordclaw/issues" target="_blank">Issues</a>
+                <a href="https://github.com/dligthart/wordclaw/discussions" target="_blank">Discussions</a>
+                <a href="https://github.com/dligthart/wordclaw/pulls" target="_blank">Pull Requests</a>
+            </div>
+            <div class="copyright">
+                &copy; 2026 Dave Ligthart. Open Source under MIT License.
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
