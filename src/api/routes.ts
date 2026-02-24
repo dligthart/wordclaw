@@ -10,7 +10,7 @@ import { validateContentDataAgainstSchema, validateContentTypeSchema, Validation
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authenticateApiRequest, getDomainId } from './auth.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
-import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
+import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from '../services/policy-adapters.js';
 import { l402Middleware } from '../middleware/l402.js';
@@ -166,15 +166,7 @@ function decodeCursor(cursor: string): { createdAt: Date; id: number } | null {
     }
 }
 
-function isValidUrl(url: string): boolean {
-    try {
-        // eslint-disable-next-line no-new
-        new URL(url);
-        return true;
-    } catch {
-        return false;
-    }
-}
+// Removed isValidUrl in favor of isSafeWebhookUrl
 
 export default async function apiRoutes(server: FastifyInstance) {
     server.addHook('preHandler', async (request, reply) => {
@@ -510,7 +502,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
         const body = request.body as { url: string; events: string[]; secret: string; active?: boolean };
 
-        if (!isValidUrl(body.url)) {
+        if (!await isSafeWebhookUrl(body.url)) {
             return reply.status(400).send(toErrorPayload(
                 'Invalid webhook URL',
                 'INVALID_WEBHOOK_URL',
@@ -698,7 +690,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        if (body.url !== undefined && !isValidUrl(body.url)) {
+        if (body.url !== undefined && !await isSafeWebhookUrl(body.url)) {
             return reply.status(400).send(toErrorPayload(
                 'Invalid webhook URL',
                 'INVALID_WEBHOOK_URL',
@@ -1431,7 +1423,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             };
         } catch (e: any) {
             if (e instanceof EmbeddingServiceError) {
-                return reply.status(e.statusCode).send(
+                return reply.status(e.statusCode as any).send(
                     toErrorPayload(
                         'Semantic Search Failed',
                         e.code,
@@ -1726,11 +1718,12 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { id } = request.params as IdParams;
         const versions = await db.select()
             .from(contentItemVersions)
-            .where(eq(contentItemVersions.contentItemId, id))
+            .innerJoin(contentItems, eq(contentItemVersions.contentItemId, contentItems.id))
+            .where(and(eq(contentItemVersions.contentItemId, id), eq(contentItems.domainId, getDomainId(request))))
             .orderBy(desc(contentItemVersions.version));
 
         return {
-            data: versions,
+            data: versions.map((v) => v.content_item_versions),
             meta: buildMeta(
                 'Review history or rollback',
                 ['POST /api/content-items/:id/rollback'],
@@ -2603,6 +2596,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const baseConditions = [
+            eq(auditLogs.domainId, getDomainId(request)),
             entityType ? eq(auditLogs.entityType, entityType) : undefined,
             entityId !== undefined ? eq(auditLogs.entityId, entityId) : undefined,
             action ? eq(auditLogs.action, action) : undefined,
@@ -2687,7 +2681,9 @@ export default async function apiRoutes(server: FastifyInstance) {
         const limit = clampLimit(rawLimit);
         const offset = clampOffset(rawOffset);
 
-        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(payments);
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
+            .from(payments)
+            .where(eq(payments.domainId, getDomainId(request)));
         const results = await db.select({
             id: payments.id,
             paymentHash: payments.paymentHash,
@@ -2699,6 +2695,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             createdAt: payments.createdAt
         })
             .from(payments)
+            .where(eq(payments.domainId, getDomainId(request)))
             .orderBy(desc(payments.createdAt))
             .limit(limit)
             .offset(offset);

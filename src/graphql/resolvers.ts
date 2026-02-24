@@ -7,7 +7,7 @@ import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
-import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
+import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
@@ -272,15 +272,7 @@ function parseDateArg(value: string | undefined, fieldName: string): Date | null
     return parsed;
 }
 
-function isValidUrl(url: string): boolean {
-    try {
-        // eslint-disable-next-line no-new
-        new URL(url);
-        return true;
-    } catch {
-        return false;
-    }
-}
+// Removed isValidUrl in favor of isSafeWebhookUrl
 
 function notFoundContentTypeError(id: number): GraphQLError {
     return toError(
@@ -601,7 +593,7 @@ export const resolvers = {
             };
         }),
 
-        webhooks: async (_parent: unknown, _args: unknown, context?: unknown) => {
+        webhooks: withPolicy('webhook.list', () => ({ type: 'system' }), async (_parent: unknown, _args: unknown, context?: unknown) => {
             const hooks = await listWebhooks(getDomainId(context));
             return hooks.map((hook) => ({
                 id: hook.id,
@@ -610,7 +602,7 @@ export const resolvers = {
                 active: hook.active,
                 createdAt: hook.createdAt
             }));
-        },
+        }),
 
         webhook: withPolicy('webhook.list', (args) => ({ type: 'webhook', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
             const numericId = parseId(id);
@@ -688,7 +680,7 @@ export const resolvers = {
             }
 
             if (args.dryRun) {
-                const [existing] = await db.select().from(contentTypes).where(eq(contentTypes.id, id));
+                const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(context))));
                 if (!existing) {
                     throw notFoundContentTypeError(id);
                 }
@@ -698,7 +690,7 @@ export const resolvers = {
 
             const [updated] = await db.update(contentTypes)
                 .set(updateData)
-                .where(eq(contentTypes.id, id))
+                .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(context))))
                 .returning();
 
             if (!updated) {
@@ -713,7 +705,7 @@ export const resolvers = {
             const id = parseId(args.id);
 
             if (args.dryRun) {
-                const [existing] = await db.select().from(contentTypes).where(eq(contentTypes.id, id));
+                const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(context))));
                 if (!existing) {
                     throw notFoundContentTypeError(id);
                 }
@@ -725,7 +717,7 @@ export const resolvers = {
             }
 
             const [deleted] = await db.delete(contentTypes)
-                .where(eq(contentTypes.id, id))
+                .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(context))))
                 .returning();
 
             if (!deleted) {
@@ -745,7 +737,7 @@ export const resolvers = {
             const status = args.status || 'draft';
             const now = new Date();
             const dataStr = typeof args.data === 'string' ? args.data : JSON.stringify(args.data);
-            const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, contentTypeId));
+            const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, contentTypeId), eq(contentTypes.domainId, getDomainId(context))));
             if (!contentType) {
                 throw notFoundContentTypeError(contentTypeId);
             }
@@ -812,7 +804,7 @@ export const resolvers = {
             if (args.dryRun) {
                 const results: BatchResultRow[] = [];
                 for (const [index, item] of normalizedItems.entries()) {
-                    const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                    const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(context))));
                     if (!contentType) {
                         results.push(buildBatchError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`));
                         continue;
@@ -843,7 +835,7 @@ export const resolvers = {
                     const results = await db.transaction(async (tx) => {
                         const createdRows: BatchResultRow[] = [];
                         for (const [index, item] of normalizedItems.entries()) {
-                            const [contentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                            const [contentType] = await tx.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(context))));
                             if (!contentType) {
                                 throw new Error(JSON.stringify(buildBatchError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`)));
                             }
@@ -966,7 +958,7 @@ export const resolvers = {
                 throw emptyUpdateBodyError('contentTypeId, data, status');
             }
 
-            const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+            const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))));
             if (!existing) {
                 throw notFoundContentItemError(id);
             }
@@ -999,7 +991,7 @@ export const resolvers = {
             }
 
             const result = await db.transaction(async (tx) => {
-                const [current] = await tx.select().from(contentItems).where(eq(contentItems.id, id));
+                const [current] = await tx.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))));
                 if (!current) {
                     return null;
                 }
@@ -1018,7 +1010,7 @@ export const resolvers = {
                         version: current.version + 1,
                         updatedAt: new Date()
                     })
-                    .where(eq(contentItems.id, id))
+                    .where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))))
                     .returning();
 
                 return updated;
@@ -1093,7 +1085,7 @@ export const resolvers = {
                                 throw new Error(JSON.stringify(buildBatchError(index, 'EMPTY_UPDATE_BODY', `No update fields provided for item ${item.id}`)));
                             }
 
-                            const [existing] = await tx.select().from(contentItems).where(eq(contentItems.id, item.id));
+                            const [existing] = await tx.select().from(contentItems).where(and(eq(contentItems.id, item.id), eq(contentItems.domainId, getDomainId(context))));
                             if (!existing) {
                                 throw new Error(JSON.stringify(buildBatchError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${item.id} not found`)));
                             }
@@ -1216,7 +1208,7 @@ export const resolvers = {
             const id = parseId(args.id);
 
             if (args.dryRun) {
-                const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+                const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))));
                 if (!existing) {
                     throw notFoundContentItemError(id);
                 }
@@ -1228,7 +1220,7 @@ export const resolvers = {
             }
 
             const [deleted] = await db.delete(contentItems)
-                .where(eq(contentItems.id, id))
+                .where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))))
                 .returning();
 
             if (!deleted) {
@@ -1258,7 +1250,7 @@ export const resolvers = {
             if (args.dryRun) {
                 const results: BatchResultRow[] = [];
                 for (const [index, id] of ids.entries()) {
-                    const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+                    const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))));
                     if (!existing) {
                         results.push(buildBatchError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`));
                         continue;
@@ -1282,7 +1274,7 @@ export const resolvers = {
                     const results = await db.transaction(async (tx) => {
                         const rows: BatchResultRow[] = [];
                         for (const [index, id] of ids.entries()) {
-                            const [deleted] = await tx.delete(contentItems).where(eq(contentItems.id, id)).returning();
+                            const [deleted] = await tx.delete(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context)))).returning();
                             if (!deleted) {
                                 throw new Error(JSON.stringify(buildBatchError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`)));
                             }
@@ -1328,7 +1320,7 @@ export const resolvers = {
 
             const results: BatchResultRow[] = [];
             for (const [index, id] of ids.entries()) {
-                const [deleted] = await db.delete(contentItems).where(eq(contentItems.id, id)).returning();
+                const [deleted] = await db.delete(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context)))).returning();
                 if (!deleted) {
                     results.push(buildBatchError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`));
                     continue;
@@ -1349,7 +1341,7 @@ export const resolvers = {
         }),
 
         createWebhook: withPolicy('webhook.write', () => ({ type: 'system' }), async (_parent: unknown, args: CreateWebhookArgs, context?: unknown) => {
-            if (!isValidUrl(args.url)) {
+            if (!await isSafeWebhookUrl(args.url)) {
                 throw toError(
                     'Invalid webhook URL',
                     'INVALID_WEBHOOK_URL',
@@ -1405,7 +1397,7 @@ export const resolvers = {
                 throw emptyUpdateBodyError('url, events, secret, active');
             }
 
-            if (typeof args.url === 'string' && !isValidUrl(args.url)) {
+            if (typeof args.url === 'string' && !await isSafeWebhookUrl(args.url)) {
                 throw toError(
                     'Invalid webhook URL',
                     'INVALID_WEBHOOK_URL',
@@ -1487,7 +1479,7 @@ export const resolvers = {
         rollbackContentItem: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, args: RollbackContentItemArgs, context?: unknown) => {
             const id = parseId(args.id);
             const targetVersion = args.version;
-            const [currentItem] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+            const [currentItem] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))));
             if (!currentItem) {
                 throw notFoundContentItemError(id);
             }
@@ -1520,7 +1512,7 @@ export const resolvers = {
 
             try {
                 const result = await db.transaction(async (tx) => {
-                    const [current] = await tx.select().from(contentItems).where(eq(contentItems.id, id));
+                    const [current] = await tx.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))));
                     if (!current) {
                         return null;
                     }
@@ -1548,7 +1540,7 @@ export const resolvers = {
                             version: current.version + 1,
                             updatedAt: new Date()
                         })
-                        .where(eq(contentItems.id, id))
+                        .where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(context))))
                         .returning();
 
                     return restored;

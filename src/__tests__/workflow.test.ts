@@ -102,7 +102,7 @@ describe('Workflow & Review System (Domain 1)', () => {
             domainId,
             task2.id,
             'approved',
-            { scopes: new Set(['reviewer']), domainId }
+            { scopes: new Set(['reviewer', 'admin']), domainId }
         );
 
         expect(decisionResult.status).toBe('approved');

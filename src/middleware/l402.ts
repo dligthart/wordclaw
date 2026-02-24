@@ -207,11 +207,15 @@ export function l402Middleware(options: L402Options) {
       proposedPrice
     };
 
+    const sanitizedHeaders: Record<string, string | string[] | undefined> = { ...request.headers };
+    if (sanitizedHeaders['x-api-key']) sanitizedHeaders['x-api-key'] = '[REDACTED]';
+    if (sanitizedHeaders.authorization) sanitizedHeaders.authorization = '[REDACTED]';
+
     const enforcementParams = {
       path: request.url,
       requestInfo: {
         method: request.method,
-        headers: request.headers,
+        headers: sanitizedHeaders,
         ip: request.ip
       }
     };

@@ -43,14 +43,24 @@ export class WorkflowService {
     static async submitForReview(context: WorkflowTransitionContext) {
         const { domainId, contentItemId, workflowTransitionId, assignee, authPrincipal } = context;
 
-        // 1. Fetch transition requirements
-        const results = await db.select()
+        // 1. Fetch transition requirements and ensure it belongs to the domain
+        const results = await db.select({ transition: workflowTransitions })
             .from(workflowTransitions)
-            .where(eq(workflowTransitions.id, workflowTransitionId));
-        const transition = results[0];
+            .innerJoin(workflows, eq(workflowTransitions.workflowId, workflows.id))
+            .where(and(
+                eq(workflowTransitions.id, workflowTransitionId),
+                eq(workflows.domainId, domainId)
+            ));
+        const transition = results[0]?.transition;
 
         if (!transition) {
-            throw new Error('WORKFLOW_TRANSITION_NOT_FOUND');
+            throw new Error('WORKFLOW_TRANSITION_NOT_FOUND_OR_CROSS_TENANT');
+        }
+
+        // Verify content item belongs to the domain
+        const [contentItemRow] = await db.select().from(contentItems).where(and(eq(contentItems.id, contentItemId), eq(contentItems.domainId, domainId)));
+        if (!contentItemRow) {
+            throw new Error('CONTENT_ITEM_NOT_FOUND_OR_UNMATCHED_DOMAIN');
         }
 
         // 2. Enforce minimum roles against the transitioning user
@@ -65,10 +75,14 @@ export class WorkflowService {
             }
         }
 
-        // 3. Close out any existing pending review tasks for this content item
+        // 3. Close out any existing pending review tasks for this content item safely
         await db.update(reviewTasks)
             .set({ status: 'rejected' })
-            .where(and(eq(reviewTasks.contentItemId, contentItemId), eq(reviewTasks.status, 'pending')));
+            .where(and(
+                eq(reviewTasks.contentItemId, contentItemId),
+                eq(reviewTasks.domainId, domainId),
+                eq(reviewTasks.status, 'pending')
+            ));
 
         // 4. Create the new review task
         const [newTask] = await db.insert(reviewTasks).values({
@@ -83,31 +97,36 @@ export class WorkflowService {
         // to indicate it is locked in workflow
         await db.update(contentItems)
             .set({ status: transition.toState })
-            .where(eq(contentItems.id, contentItemId));
+            .where(and(eq(contentItems.id, contentItemId), eq(contentItems.domainId, domainId)));
 
         return newTask;
     }
 
-    static async decideReviewTask(domainId: number, taskId: number, decision: 'approved' | 'rejected', authPrincipal: { scopes: Set<string>, domainId: number }) {
+    static async decideReviewTask(domainId: number, taskId: number, decision: 'approved' | 'rejected', authPrincipal: { scopes: Set<string>, domainId: number, keyId?: number | string }) {
         const results = await db.select()
             .from(reviewTasks)
             .where(and(eq(reviewTasks.id, taskId), eq(reviewTasks.domainId, domainId)));
 
+        // Ensure the task matches the required domain context
         const task = results[0];
 
         if (!task || task.status !== 'pending') {
-            throw new Error('INVALID_REVIEW_TASK_STATE');
+            throw new Error('INVALID_REVIEW_TASK_STATE_OR_NOT_FOUND');
         }
 
-        // Technically, a robust workflow engine checks if the user mapped to `assignee` is deciding this.
-        // For standard parity, we accept any `admin` or the direct assignee if configured.
+        const isAdmin = authPrincipal.scopes.has('admin');
+        const isAssignee = task.assignee ? task.assignee === authPrincipal?.keyId?.toString() : false;
+
+        if (!isAdmin && !isAssignee) {
+            throw new Error('UNAUTHORIZED_REVIEW_DECISION: Must be an assignee or admin to decide.');
+        }
 
         const [updatedTask] = await db.update(reviewTasks)
             .set({
                 status: decision,
                 updatedAt: new Date()
             })
-            .where(eq(reviewTasks.id, taskId))
+            .where(and(eq(reviewTasks.id, taskId), eq(reviewTasks.domainId, domainId)))
             .returning();
 
         if (decision === 'approved') {
@@ -121,7 +140,7 @@ export class WorkflowService {
             if (transition) {
                 await db.update(contentItems)
                     .set({ status: transition.toState })
-                    .where(eq(contentItems.id, task.contentItemId));
+                    .where(and(eq(contentItems.id, task.contentItemId), eq(contentItems.domainId, domainId)));
 
                 // If the target state is published, dynamically generate vector embeddings
                 if (transition.toState === 'published') {

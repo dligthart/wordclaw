@@ -1,5 +1,39 @@
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
 import { and, eq } from 'drizzle-orm';
+
+export async function isSafeWebhookUrl(urlStr: string): Promise<boolean> {
+    try {
+        const parsed = new URL(urlStr);
+        if (parsed.protocol !== 'https:') return false;
+
+        const hostname = parsed.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return false;
+        if (hostname.endsWith('.local') || hostname.endsWith('.internal')) return false;
+
+        const ips = await dns.resolve(hostname).catch(() => []);
+        if (ips.length === 0) return false;
+
+        for (const ip of ips) {
+            if (ip === '169.254.169.254') return false;
+            if (ip.startsWith('127.')) return false;
+            if (ip.startsWith('10.')) return false;
+            if (ip.startsWith('192.168.')) return false;
+            const parts = ip.split('.');
+            if (parts.length === 4 && parts[0] === '172') {
+                const second = parseInt(parts[1], 10);
+                if (second >= 16 && second <= 31) return false;
+            }
+            if (ip === '::1') return false;
+            if (ip.toLowerCase().startsWith('fe80:')) return false;
+            if (ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd')) return false;
+        }
+
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 import { db } from '../db/index.js';
 import { webhooks } from '../db/schema.js';

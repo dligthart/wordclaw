@@ -8,7 +8,7 @@ import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, w
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
-import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook } from '../services/webhook.js';
+import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
 
@@ -102,15 +102,7 @@ function parseDateArg(value: string | undefined, fieldName: string): Date | null
     return parsed;
 }
 
-function isValidUrl(url: string): boolean {
-    try {
-        // eslint-disable-next-line no-new
-        new URL(url);
-        return true;
-    } catch {
-        return false;
-    }
-}
+// Removed isValidUrl in favor of isSafeWebhookUrl
 
 function encodeCursor(createdAt: Date, id: number): string {
     return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id }), 'utf8').toString('base64url');
@@ -413,7 +405,7 @@ server.tool(
     },
     withMCPPolicy('webhook.write', () => ({ type: 'system' }), async ({ url, events, secret, active }, extra, domainId) => {
         try {
-            if (!isValidUrl(url)) {
+            if (!await isSafeWebhookUrl(url)) {
                 return err('INVALID_WEBHOOK_URL: Provide a valid absolute URL.');
             }
 
@@ -509,7 +501,7 @@ server.tool(
     },
     withMCPPolicy('webhook.write', (args) => ({ type: 'webhook', id: args.id }), async ({ id, url, events, secret, active }, extra, domainId) => {
         try {
-            if (url !== undefined && !isValidUrl(url)) {
+            if (url !== undefined && !await isSafeWebhookUrl(url)) {
                 return err('INVALID_WEBHOOK_URL: Provide a valid absolute URL.');
             }
 
@@ -797,7 +789,7 @@ server.tool(
         limit: z.number().optional().describe('Page size (default 50, max 500)'),
         offset: z.number().optional().describe('Row offset (default 0)')
     },
-    async ({ contentTypeId, status, createdAfter, createdBefore, limit: rawLimit, offset: rawOffset }) => {
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, createdAfter, createdBefore, limit: rawLimit, offset: rawOffset }, extra, domainId) => {
         try {
             const limit = clampLimit(rawLimit);
             const offset = clampOffset(rawOffset);
@@ -805,6 +797,7 @@ server.tool(
             const beforeDate = parseDateArg(createdBefore, 'createdBefore');
 
             const conditions = [
+                eq(contentItems.domainId, domainId),
                 contentTypeId !== undefined ? eq(contentItems.contentTypeId, contentTypeId) : undefined,
                 status ? eq(contentItems.status, status) : undefined,
                 afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
@@ -832,7 +825,7 @@ server.tool(
         } catch (error) {
             return err(`Error listing content items: ${(error as Error).message}`);
         }
-    }
+    })
 );
 
 server.tool(
@@ -842,7 +835,7 @@ server.tool(
         id: z.number().describe('ID of the content item')
     },
     withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, extra, domainId) => {
-        const [item] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
         if (!item) {
             return err('Content item not found');
         }
@@ -867,7 +860,7 @@ server.tool(
                 return err('At least one update field is required (data, status).');
             }
 
-            const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+            const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
             if (!existing) {
                 return err('Content item not found');
             }
@@ -964,7 +957,7 @@ server.tool(
                 } as const;
             }
 
-            const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
+            const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, item.id), eq(contentItems.domainId, domainId)));
             if (!existing) {
                 return {
                     ok: false,
@@ -1036,7 +1029,7 @@ server.tool(
                             throw new Error(JSON.stringify(buildItemError(index, 'EMPTY_UPDATE_BODY', `No update fields provided for item ${item.id}`)));
                         }
 
-                        const [existing] = await tx.select().from(contentItems).where(eq(contentItems.id, item.id));
+                        const [existing] = await tx.select().from(contentItems).where(and(eq(contentItems.id, item.id), eq(contentItems.domainId, domainId)));
                         if (!existing) {
                             throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${item.id} not found`)));
                         }
@@ -1162,7 +1155,7 @@ server.tool(
             }
 
             const [deleted] = await db.delete(contentItems)
-                .where(eq(contentItems.id, id))
+                .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)))
                 .returning();
 
             if (!deleted) {
@@ -1196,7 +1189,7 @@ server.tool(
 
         if (dryRun) {
             const results = await Promise.all(ids.map(async (id, index) => {
-                const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+                const [existing] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
                 if (!existing) {
                     return buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`);
                 }
@@ -1219,7 +1212,7 @@ server.tool(
                 const results = await db.transaction(async (tx) => {
                     const rows: Array<Record<string, unknown>> = [];
                     for (const [index, id] of ids.entries()) {
-                        const [deleted] = await tx.delete(contentItems).where(eq(contentItems.id, id)).returning();
+                        const [deleted] = await tx.delete(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId))).returning();
                         if (!deleted) {
                             throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`)));
                         }
@@ -1256,7 +1249,7 @@ server.tool(
 
         const results: Array<Record<string, unknown>> = [];
         for (const [index, id] of ids.entries()) {
-            const [deleted] = await db.delete(contentItems).where(eq(contentItems.id, id)).returning();
+            const [deleted] = await db.delete(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId))).returning();
             if (!deleted) {
                 results.push(buildItemError(index, 'CONTENT_ITEM_NOT_FOUND', `Content item ${id} not found`));
                 continue;
@@ -1286,10 +1279,11 @@ server.tool(
     withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, extra, domainId) => {
         const versions = await db.select()
             .from(contentItemVersions)
-            .where(eq(contentItemVersions.contentItemId, id))
+            .innerJoin(contentItems, eq(contentItemVersions.contentItemId, contentItems.id))
+            .where(and(eq(contentItemVersions.contentItemId, id), eq(contentItems.domainId, domainId)))
             .orderBy(desc(contentItemVersions.version));
 
-        return okJson(versions);
+        return okJson(versions.map((v) => v.content_item_versions));
     }
     ));
 
@@ -1303,7 +1297,7 @@ server.tool(
     },
     withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, version, dryRun }, extra, domainId) => {
         try {
-            const [currentItem] = await db.select().from(contentItems).where(eq(contentItems.id, id));
+            const [currentItem] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
             if (!currentItem) {
                 return err('Content item not found');
             }
@@ -1331,7 +1325,7 @@ server.tool(
             }
 
             const result = await db.transaction(async (tx) => {
-                const [currentItem] = await tx.select().from(contentItems).where(eq(contentItems.id, id));
+                const [currentItem] = await tx.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
                 if (!currentItem) {
                     return null;
                 }
@@ -1393,7 +1387,7 @@ server.tool(
         action: z.string().optional(),
         cursor: z.string().optional().describe('Opaque cursor from previous call')
     },
-    async ({ limit: rawLimit, entityType, entityId, action, cursor }) => {
+    withMCPPolicy('audit.read', () => ({ type: 'system' }), async ({ limit: rawLimit, entityType, entityId, action, cursor }, extra, domainId) => {
         try {
             const limit = clampLimit(rawLimit);
             const decodedCursor = cursor ? decodeCursor(cursor) : null;
@@ -1402,6 +1396,7 @@ server.tool(
             }
 
             const baseConditions = [
+                eq(auditLogs.domainId, domainId),
                 entityType ? eq(auditLogs.entityType, entityType) : undefined,
                 entityId !== undefined ? eq(auditLogs.entityId, entityId) : undefined,
                 action ? eq(auditLogs.action, action) : undefined,
@@ -1453,7 +1448,7 @@ server.tool(
             return err(`Error listing audit logs: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'list_payments',
@@ -1462,9 +1457,10 @@ server.tool(
         limit: z.number().min(1).max(500).default(50).describe('Maximum number of items to return'),
         offset: z.number().min(0).default(0).describe('Number of items to skip for pagination')
     },
-    async ({ limit, offset }) => {
+    withMCPPolicy('payment.read', () => ({ type: 'system' }), async ({ limit, offset }, extra, domainId) => {
         try {
             const results = await db.select().from(payments)
+                .where(eq(payments.domainId, domainId))
                 .orderBy(desc(payments.createdAt))
                 .limit(limit)
                 .offset(offset);
@@ -1477,7 +1473,7 @@ server.tool(
             return err(`Error listing payments: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'get_payment',
@@ -1485,9 +1481,9 @@ server.tool(
     {
         id: z.number().describe('The numeric ID of the payment to retrieve')
     },
-    async ({ id }) => {
+    withMCPPolicy('payment.read', (args) => ({ type: 'payment', id: args.id }), async ({ id }, extra, domainId) => {
         try {
-            const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+            const [payment] = await db.select().from(payments).where(and(eq(payments.id, id), eq(payments.domainId, domainId)));
 
             if (!payment) {
                 return err(`Payment with ID ${id} not found.`);
@@ -1501,7 +1497,7 @@ server.tool(
             return err(`Error retrieving payment: ${(error as Error).message}`);
         }
     }
-);
+    ));
 
 server.tool(
     'evaluate_policy',
