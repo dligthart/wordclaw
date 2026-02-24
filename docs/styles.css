@@ -66,8 +66,14 @@ body {
 .container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 0 24px;
+    padding: 0 16px;
     width: 100%;
+}
+
+@media (min-width: 768px) {
+    .container {
+        padding: 0 24px;
+    }
 }
 
 @media (min-width: 1200px) {
@@ -124,6 +130,7 @@ h3 {
 .logo-icon {
     background: var(--accent-gradient);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
     font-size: 1.5rem;
 }
@@ -260,7 +267,7 @@ h3 {
 }
 
 .hero h1 {
-    font-size: clamp(3rem, 5vw, 4.5rem);
+    font-size: clamp(2.25rem, 8vw, 4.5rem);
     letter-spacing: -0.02em;
     margin-bottom: 24px;
 }
@@ -370,8 +377,14 @@ h3 {
 /* Features */
 .feature-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: 1fr;
     gap: 24px;
+}
+
+@media (min-width: 600px) {
+    .feature-grid {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
 }
 
 .feature-card {
@@ -543,7 +556,20 @@ footer {
         display: none;
     }
 
+    .hero {
+        padding-top: calc(var(--nav-height) + 40px);
+        padding-bottom: 40px;
+    }
+
     .section {
-        padding: 80px 0;
+        padding: 60px 0;
+    }
+
+    .window-body {
+        padding: 16px;
+    }
+
+    .glass-panel {
+        padding: 32px 24px;
     }
 }
