@@ -187,6 +187,7 @@ server.tool(
             .where(eq(contentTypes.domainId, domainId));
         const types = await db.select()
             .from(contentTypes)
+            .where(eq(contentTypes.domainId, domainId))
             .limit(limit)
             .offset(offset);
 
@@ -213,8 +214,8 @@ server.tool(
         }
 
         const [type] = id !== undefined
-            ? await db.select().from(contentTypes).where(eq(contentTypes.id, id))
-            : await db.select().from(contentTypes).where(eq(contentTypes.slug, slug!));
+            ? await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, domainId)))
+            : await db.select().from(contentTypes).where(and(eq(contentTypes.slug, slug!), eq(contentTypes.domainId, domainId)));
 
         if (!type) {
             return err('Content type not found');
@@ -256,7 +257,7 @@ server.tool(
 
             const [updated] = await db.update(contentTypes)
                 .set(updateData)
-                .where(eq(contentTypes.id, id))
+                .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, domainId)))
                 .returning();
 
             if (!updated) {
@@ -286,7 +287,7 @@ server.tool(
             }
 
             const [deleted] = await db.delete(contentTypes)
-                .where(eq(contentTypes.id, id))
+                .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, domainId)))
                 .returning();
 
             if (!deleted) {
@@ -587,7 +588,7 @@ server.tool(
     },
     withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.contentTypeId }), async ({ contentTypeId, data, status, dryRun }, extra, domainId) => {
         try {
-            const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, contentTypeId));
+            const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, contentTypeId), eq(contentTypes.domainId, domainId)));
             if (!contentType) {
                 return err(`Content type ${contentTypeId} not found`);
             }
@@ -640,7 +641,7 @@ server.tool(
 
         if (dryRun) {
             const results = await Promise.all(items.map(async (item, index) => {
-                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, domainId)));
                 if (!contentType) {
                     return buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`);
                 }
@@ -668,7 +669,7 @@ server.tool(
                     const output: Array<Record<string, unknown>> = [];
 
                     for (const [index, item] of items.entries()) {
-                        const [contentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                        const [contentType] = await tx.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, domainId)));
                         if (!contentType) {
                             throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`)));
                         }
@@ -721,7 +722,7 @@ server.tool(
         const results: Array<Record<string, unknown>> = [];
         for (const [index, item] of items.entries()) {
             try {
-                const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, domainId)));
                 if (!contentType) {
                     results.push(buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`));
                     continue;
@@ -865,7 +866,7 @@ server.tool(
                 return err('Content item not found');
             }
 
-            const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, existing.contentTypeId));
+            const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, existing.contentTypeId), eq(contentTypes.domainId, domainId)));
             if (!contentType) {
                 return err(`Content type ${existing.contentTypeId} not found`);
             }
@@ -881,7 +882,7 @@ server.tool(
             }
 
             const result = await db.transaction(async (tx) => {
-                const [existing] = await tx.select().from(contentItems).where(eq(contentItems.id, id));
+                const [existing] = await tx.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
                 if (!existing) {
                     return null;
                 }
@@ -900,7 +901,7 @@ server.tool(
                         version: existing.version + 1,
                         updatedAt: new Date()
                     })
-                    .where(eq(contentItems.id, id))
+                    .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)))
                     .returning();
 
                 return updated;
@@ -966,7 +967,7 @@ server.tool(
             }
 
             const targetContentTypeId = item.contentTypeId ?? existing.contentTypeId;
-            const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+            const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, targetContentTypeId), eq(contentTypes.domainId, domainId)));
             if (!contentType) {
                 return {
                     ok: false,
@@ -1035,7 +1036,7 @@ server.tool(
                         }
 
                         const targetContentTypeId = item.contentTypeId ?? existing.contentTypeId;
-                        const [contentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+                        const [contentType] = await tx.select().from(contentTypes).where(and(eq(contentTypes.id, targetContentTypeId), eq(contentTypes.domainId, domainId)));
                         if (!contentType) {
                             throw new Error(JSON.stringify(buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${targetContentTypeId} not found`)));
                         }
@@ -1060,7 +1061,7 @@ server.tool(
                                 version: existing.version + 1,
                                 updatedAt: new Date()
                             })
-                            .where(eq(contentItems.id, item.id))
+                            .where(and(eq(contentItems.id, item.id), eq(contentItems.domainId, domainId)))
                             .returning();
 
                         output.push({
@@ -1118,7 +1119,7 @@ server.tool(
                         version: validated.existing.version + 1,
                         updatedAt: new Date()
                     })
-                    .where(eq(contentItems.id, validated.existing.id))
+                    .where(and(eq(contentItems.id, validated.existing.id), eq(contentItems.domainId, domainId)))
                     .returning();
 
                 return updated;
@@ -1310,7 +1311,7 @@ server.tool(
                 return err(TARGET_VERSION_NOT_FOUND);
             }
 
-            const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, currentItem.contentTypeId));
+            const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, currentItem.contentTypeId), eq(contentTypes.domainId, domainId)));
             if (!contentType) {
                 return err(`Content type ${currentItem.contentTypeId} not found`);
             }
@@ -1353,7 +1354,7 @@ server.tool(
                         version: currentItem.version + 1,
                         updatedAt: new Date()
                     })
-                    .where(eq(contentItems.id, id))
+                    .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)))
                     .returning();
 
                 return restored;
@@ -1653,7 +1654,8 @@ server.prompt(
     },
     async ({ contentTypeId, topic }) => {
         const id = Number.parseInt(contentTypeId, 10);
-        const [type] = await db.select().from(contentTypes).where(eq(contentTypes.id, id));
+        const domainId = Number(process.env.WORDCLAW_DOMAIN_ID) || 1;
+        const [type] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, domainId)));
 
         if (!type) {
             return {

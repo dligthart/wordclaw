@@ -14,12 +14,17 @@ const SAFE_PAYMENT_HEADER_ALLOWLIST = new Set([
     'accept-language',
     'x-request-id'
 ]);
+const SENSITIVE_HEADER_KEY_PATTERN = /(authorization|cookie|token|secret|key)/i;
 
 function pickSafePaymentHeaders(rawHeaders: Record<string, unknown>): Record<string, string | string[]> {
     const safe: Record<string, string | string[]> = {};
 
     for (const [key, value] of Object.entries(rawHeaders)) {
         const normalizedKey = key.toLowerCase();
+        if (SENSITIVE_HEADER_KEY_PATTERN.test(normalizedKey)) {
+            continue;
+        }
+
         if (!SAFE_PAYMENT_HEADER_ALLOWLIST.has(normalizedKey)) {
             continue;
         }
