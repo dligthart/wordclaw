@@ -34,7 +34,8 @@ const ENV_API_KEYS = 'API_KEYS';
 const HEADER_API_KEY = 'x-api-key';
 
 function isAuthRequired(): boolean {
-    return (process.env[ENV_AUTH_REQUIRED] || 'false').toLowerCase() === 'true';
+    // SECURITY HARDENING: Default to true. Only explicit "false" allows bypass, and we may restrict that further.
+    return (process.env[ENV_AUTH_REQUIRED] || 'true').toLowerCase() === 'true';
 }
 
 function parseApiKeyConfig(raw: string | undefined): Map<string, Set<string>> {
@@ -175,7 +176,7 @@ export async function authorizeApiRequest(method: string, routePath: string, hea
     const mustAuthenticate = isAuthRequired();
 
     if (!key) {
-        if (mustAuthenticate) {
+        if (mustAuthenticate || process.env.NODE_ENV === 'production') {
             return authError(
                 401,
                 'Missing API key',
@@ -184,6 +185,7 @@ export async function authorizeApiRequest(method: string, routePath: string, hea
             );
         }
 
+        console.warn(`[WARNING] INSECURE FALLBACK: Proceeding as anonymous admin without an API key because AUTH_REQUIRED is false and NODE_ENV is not production.`);
         return {
             ok: true,
             principal: {
@@ -225,7 +227,7 @@ export async function authenticateApiRequest(headers: IncomingHttpHeaders): Prom
     const mustAuthenticate = isAuthRequired();
 
     if (!key) {
-        if (mustAuthenticate) {
+        if (mustAuthenticate || process.env.NODE_ENV === 'production') {
             return authError(
                 401,
                 'Missing API key',
@@ -234,6 +236,7 @@ export async function authenticateApiRequest(headers: IncomingHttpHeaders): Prom
             );
         }
 
+        console.warn(`[WARNING] INSECURE FALLBACK: Proceeding as anonymous admin without an API key because AUTH_REQUIRED is false and NODE_ENV is not production.`);
         return {
             ok: true,
             principal: {

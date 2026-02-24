@@ -89,10 +89,15 @@ const server: FastifyInstance = Fastify({
 server.register(cors);
 server.register(idempotencyPlugin, { ttlMs: 5 * 60 * 1000 });
 server.setErrorHandler(errorHandler);
-server.register(import('@fastify/swagger'));
-server.register(import('@fastify/swagger-ui'), {
-    routePrefix: '/documentation',
-});
+const enableDocs = process.env.ENABLE_DOCS === 'true' || process.env.NODE_ENV !== 'production';
+const enableGraphiql = process.env.ENABLE_GRAPHIQL === 'true' || process.env.NODE_ENV !== 'production';
+
+if (enableDocs) {
+    server.register(import('@fastify/swagger'));
+    server.register(import('@fastify/swagger-ui'), {
+        routePrefix: '/documentation',
+    });
+}
 server.register(import('@fastify/websocket'));
 import crypto from 'crypto';
 
@@ -129,7 +134,7 @@ server.register(fastifyCookie, {
 server.register(mercurius, {
     schema,
     resolvers,
-    graphiql: true,
+    graphiql: enableGraphiql,
     path: '/graphql',
     context: async (request) => {
         let principal: any = null;

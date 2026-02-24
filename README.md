@@ -67,7 +67,7 @@
     ```env
     PORT=4000
     DATABASE_URL=postgres://postgres:postgres@localhost:5432/wordclaw
-    AUTH_REQUIRED=false
+    AUTH_REQUIRED=true
     OPENAI_API_KEY=
     API_KEYS=writer=content:read|content:write|audit:read,reader=content:read|audit:read
     ```
