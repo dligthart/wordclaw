@@ -11,6 +11,12 @@
         currentIndex: number;
         results: Map<number, StepResult>;
     } = $props();
+
+    function resolveProtocolLabel(step: Scenario["steps"][number]): string {
+        if (step.protocol) return step.protocol;
+        if (step.endpoint === "/api/graphql") return "GRAPHQL";
+        return "REST";
+    }
 </script>
 
 <div class="flex flex-col space-y-4">
@@ -67,6 +73,11 @@
                         <div
                             class="mt-1 flex items-center gap-2 text-xs font-mono"
                         >
+                            <span
+                                class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                            >
+                                {resolveProtocolLabel(step)}
+                            </span>
                             <span
                                 class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
                             >

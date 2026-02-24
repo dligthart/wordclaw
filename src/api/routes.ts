@@ -219,6 +219,70 @@ export default async function apiRoutes(server: FastifyInstance) {
         return undefined;
     });
 
+    server.post('/sandbox/mcp/execute', {
+        schema: {
+            body: Type.Object({
+                tool: Type.String(),
+                args: Type.Optional(Type.Object({}, { additionalProperties: true }))
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    tool: Type.String(),
+                    protocol: Type.Literal('mcp'),
+                    result: Type.Unknown()
+                })),
+                400: AIErrorResponse,
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as {
+            tool: string;
+            args?: Record<string, unknown>;
+        };
+        const args = body.args ?? {};
+
+        if (body.tool !== 'get_content_item') {
+            return reply.status(400).send(toErrorPayload(
+                'Unsupported MCP tool',
+                'UNSUPPORTED_MCP_TOOL',
+                'Use tool=get_content_item for sandbox protocol parity checks.'
+            ));
+        }
+
+        const rawId = args.id ?? args.contentItemId;
+        const contentItemId = Number(rawId);
+        if (!Number.isInteger(contentItemId) || contentItemId <= 0) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid content item ID',
+                'INVALID_CONTENT_ITEM_ID',
+                'Provide args.id (or args.contentItemId) as a positive integer.'
+            ));
+        }
+
+        const [item] = await db.select()
+            .from(contentItems)
+            .where(and(eq(contentItems.id, contentItemId), eq(contentItems.domainId, getDomainId(request))));
+
+        if (!item) {
+            return reply.status(404).send(notFoundContentItem(contentItemId));
+        }
+
+        return reply.status(200).send({
+            data: {
+                tool: body.tool,
+                protocol: 'mcp',
+                result: item
+            },
+            meta: buildMeta(
+                'Compare this MCP tool result with REST and GraphQL reads of the same content item.',
+                ['GET /api/content-items/:id', 'POST /api/graphql'],
+                'low',
+                1
+            )
+        });
+    });
+
     server.post('/auth/keys', {
         schema: {
             body: Type.Object({

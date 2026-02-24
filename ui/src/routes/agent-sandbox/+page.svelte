@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import type { Scenario, ScenarioEngineSnapshot } from "$lib/types/sandbox";
     import { deepParseJson } from "$lib/utils";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
@@ -49,6 +50,7 @@
     };
 
     const CONTEXT_KEY = "__wc_agent_sandbox_context";
+    const SCENARIO_STATE_KEY = "__wc_agent_sandbox_state_v1";
     const DEFAULT_HEADERS = {
         "Content-Type": "application/json",
     };
@@ -68,6 +70,7 @@
     let templateGuide = $state<string | null>(null);
     let sandboxContext = $state<SandboxContext>({});
     let activeTab = $state<"guided" | "advanced">("guided");
+    let scenarioStateReady = $state(false);
 
     function readNumber(value: unknown): number | undefined {
         const parsed = Number(value);
@@ -85,6 +88,160 @@
 
     function cloneDefaultHeaders() {
         return { ...DEFAULT_HEADERS };
+    }
+
+    function findScenarioById(
+        scenarioId: string | null | undefined,
+    ): Scenario | null {
+        if (!scenarioId) return null;
+        return SCENARIOS.find((scenario) => scenario.id === scenarioId) ?? null;
+    }
+
+    function extractTemplateVars(input: string): string[] {
+        const vars: string[] = [];
+        for (const match of input.matchAll(/\{\{\s*([^}]+)\s*\}\}/g)) {
+            vars.push(match[1].trim());
+        }
+        return vars;
+    }
+
+    function collectUnresolvedTemplateVars(payload: unknown): string[] {
+        const unresolved = new Set<string>();
+
+        const visit = (value: unknown) => {
+            if (typeof value === "string") {
+                for (const token of extractTemplateVars(value)) {
+                    unresolved.add(token);
+                }
+                return;
+            }
+
+            if (Array.isArray(value)) {
+                for (const child of value) {
+                    visit(child);
+                }
+                return;
+            }
+
+            if (value && typeof value === "object") {
+                for (const child of Object.values(
+                    value as Record<string, unknown>,
+                )) {
+                    visit(child);
+                }
+            }
+        };
+
+        visit(payload);
+        return Array.from(unresolved);
+    }
+
+    function loadScenarioSnapshot(): ScenarioEngineSnapshot | null {
+        if (typeof window === "undefined") {
+            return null;
+        }
+
+        try {
+            const raw = localStorage.getItem(SCENARIO_STATE_KEY);
+            if (!raw) return null;
+
+            const parsed = JSON.parse(raw);
+            const snapshot = parsed?.snapshot ?? parsed;
+            if (!snapshot || typeof snapshot !== "object") {
+                return null;
+            }
+
+            if (typeof snapshot.scenarioId !== "string") {
+                return null;
+            }
+
+            return snapshot as ScenarioEngineSnapshot;
+        } catch {
+            return null;
+        }
+    }
+
+    function persistScenarioSnapshot() {
+        if (typeof window === "undefined") {
+            return;
+        }
+
+        const snapshot = engine.toSnapshot();
+        if (!snapshot) {
+            localStorage.removeItem(SCENARIO_STATE_KEY);
+            return;
+        }
+
+        localStorage.setItem(
+            SCENARIO_STATE_KEY,
+            JSON.stringify({
+                version: 1,
+                snapshot,
+            }),
+        );
+    }
+
+    function syncScenarioUrl(scenarioId: string, stepIndex: number) {
+        if (typeof window === "undefined") {
+            return;
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.set("scenario", scenarioId);
+        url.searchParams.set("step", String(stepIndex));
+
+        const nextSearch = url.searchParams.toString();
+        const nextPath = `${url.pathname}${nextSearch ? `?${nextSearch}` : ""}${url.hash}`;
+        const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+        if (nextPath !== currentPath) {
+            window.history.replaceState(window.history.state, "", nextPath);
+        }
+    }
+
+    function parseStepParam(rawStep: string | null, maxStepIndex: number): number {
+        if (rawStep === null) {
+            return 0;
+        }
+
+        const parsedStep = Number.parseInt(rawStep, 10);
+        if (
+            !Number.isInteger(parsedStep) ||
+            parsedStep < 0 ||
+            parsedStep > maxStepIndex
+        ) {
+            return 0;
+        }
+
+        return parsedStep;
+    }
+
+    function seedCapturedVarsFromContext() {
+        const variableEntries = Object.entries(sandboxContext).filter(
+            ([, value]) => value !== undefined && value !== null,
+        );
+        if (variableEntries.length === 0) return;
+
+        let changed = false;
+        const next = new Map(engine.capturedVars);
+        for (const [key, value] of variableEntries) {
+            if (!next.has(key)) {
+                next.set(key, value);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            engine.capturedVars = next;
+        }
+    }
+
+    function resolveStepProtocolLabel(): string {
+        const step = engine.currentStep;
+        if (!step) return "REST";
+        if (step.protocol) return step.protocol;
+        if (step.endpoint === "/api/graphql") return "GRAPHQL";
+        return "REST";
     }
 
     function deepStringify(payload: any): any {
@@ -1350,6 +1507,7 @@
     async function refreshTemplateContext() {
         refreshingContext = true;
         sandboxContext = await hydrateSandboxContext();
+        seedCapturedVarsFromContext();
         refreshingContext = false;
     }
 
@@ -1379,17 +1537,31 @@
         };
     }
 
+    function selectScenario(scenario: Scenario) {
+        engine.startScenario(scenario);
+        seedCapturedVarsFromContext();
+        activeTab = "guided";
+    }
+
     async function executeScenarioStep() {
         if (!engine.currentStep) return;
 
         loading = true;
         errorMsg = null;
 
+        seedCapturedVarsFromContext();
+
         let parsedHeaders: Record<string, string> = {
             ...cloneDefaultHeaders(),
         };
         if (engine.currentStep.headers) {
-            parsedHeaders = { ...parsedHeaders, ...engine.currentStep.headers };
+            const interpolatedHeaders = Object.fromEntries(
+                Object.entries(engine.currentStep.headers).map(([key, value]) => [
+                    key,
+                    engine.interpolateString(value),
+                ]),
+            );
+            parsedHeaders = { ...parsedHeaders, ...interpolatedHeaders };
         }
         if (typeof window !== "undefined") {
             const domainId = localStorage.getItem("__wc_domain_id");
@@ -1405,6 +1577,21 @@
         const method = engine.currentStep.method;
         const endpoint = engine.interpolatedEndpoint;
         const bodyObj = engine.interpolatedBody;
+        const unresolvedVars = new Set([
+            ...collectUnresolvedTemplateVars(endpoint),
+            ...collectUnresolvedTemplateVars(bodyObj),
+            ...collectUnresolvedTemplateVars(parsedHeaders),
+        ]);
+
+        if (unresolvedVars.size > 0) {
+            errorMsg = `Scenario prerequisites missing (${Array.from(
+                unresolvedVars,
+            ).join(
+                ", ",
+            )}). Run prerequisite steps or click Refresh IDs, then retry.`;
+            loading = false;
+            return;
+        }
 
         let bodyPayload = undefined;
         if (bodyObj) {
@@ -1430,12 +1617,33 @@
 
             const elapsed = Math.round(performance.now() - start);
             engine.recordResult(res.status, data, elapsed);
+            captureResponseContext(endpoint, data);
             engine.advanceStep();
         } catch (err: any) {
             errorMsg = err.message || "Network Error";
         } finally {
             loading = false;
         }
+    }
+
+    async function replayCurrentScenarioStep() {
+        if (!engine.activeScenario || loading) {
+            return;
+        }
+
+        const replayIndex = engine.isComplete
+            ? engine.activeScenario.steps.length - 1
+            : engine.currentStepIndex;
+
+        if (replayIndex < 0) {
+            return;
+        }
+
+        if (!engine.prepareReplayAt(replayIndex)) {
+            return;
+        }
+
+        await executeScenarioStep();
     }
 
     async function executeRequest() {
@@ -1546,18 +1754,47 @@
 
     onMount(async () => {
         sandboxContext = await hydrateSandboxContext();
+        seedCapturedVarsFromContext();
         if (SCENARIOS.length > 0) {
             const urlParams = new URLSearchParams(window.location.search);
-            const requestedScenario = urlParams.get("scenario");
-            const match = SCENARIOS.find((s) => s.id === requestedScenario);
+            const requestedScenarioId = urlParams.get("scenario");
+            const requestedScenario = findScenarioById(requestedScenarioId);
+            const persistedSnapshot = loadScenarioSnapshot();
+            const persistedScenario = findScenarioById(
+                persistedSnapshot?.scenarioId,
+            );
 
-            if (match) {
-                engine.startScenario(match);
+            if (requestedScenario) {
+                engine.startScenario(requestedScenario);
+                const requestedStep = parseStepParam(
+                    urlParams.get("step"),
+                    requestedScenario.steps.length,
+                );
+                engine.setStepIndex(requestedStep);
                 activeTab = "guided";
+            } else if (persistedSnapshot && persistedScenario) {
+                engine.startScenario(persistedScenario);
+                engine.restoreFromSnapshot(persistedSnapshot);
             } else {
                 engine.startScenario(SCENARIOS[0]);
             }
         }
+        scenarioStateReady = true;
+    });
+
+    $effect(() => {
+        if (!scenarioStateReady || typeof window === "undefined") {
+            return;
+        }
+
+        const snapshot = engine.toSnapshot();
+        if (!snapshot) {
+            localStorage.removeItem(SCENARIO_STATE_KEY);
+            return;
+        }
+
+        persistScenarioSnapshot();
+        syncScenarioUrl(snapshot.scenarioId, snapshot.currentStepIndex);
     });
 </script>
 
@@ -1687,7 +1924,7 @@
             <ScenarioSidebar
                 scenarios={SCENARIOS}
                 activeScenarioId={engine.activeScenario?.id || null}
-                onSelect={(s) => engine.startScenario(s)}
+                onSelect={selectScenario}
             />
 
             <div
@@ -1711,6 +1948,10 @@
                         <div class="flex gap-3 text-sm font-mono items-center">
                             <span
                                 class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded font-semibold text-gray-800 dark:text-gray-200"
+                                >{resolveStepProtocolLabel()}</span
+                            >
+                            <span
+                                class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded font-semibold text-gray-800 dark:text-gray-200"
                                 >{engine.currentStep.method}</span
                             >
                             <span
@@ -1732,13 +1973,20 @@
                             </div>
                         {/if}
 
-                        <div class="pt-4 mt-auto">
+                        <div class="pt-4 mt-auto grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <button
                                 onclick={executeScenarioStep}
                                 disabled={loading}
                                 class="w-full py-2.5 px-4 shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 transition-colors"
                             >
                                 {loading ? "Executing Step..." : "Run Step"}
+                            </button>
+                            <button
+                                onclick={replayCurrentScenarioStep}
+                                disabled={loading}
+                                class="w-full py-2.5 px-4 shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-md disabled:opacity-50 transition-colors"
+                            >
+                                Replay Step
                             </button>
                         </div>
                     </div>
@@ -1771,11 +2019,18 @@
                             You successfully completed all steps in "{engine
                                 .activeScenario.title}".
                         </p>
-                        <button
-                            onclick={() => engine.resetScenario()}
-                            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-                            >Play Again</button
-                        >
+                        <div class="flex flex-wrap gap-2 justify-center">
+                            <button
+                                onclick={replayCurrentScenarioStep}
+                                class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                >Replay Last Step</button
+                            >
+                            <button
+                                onclick={() => engine.resetScenario()}
+                                class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                >Play Again</button
+                            >
+                        </div>
                     </div>
                 {:else}
                     <div

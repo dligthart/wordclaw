@@ -1,4 +1,10 @@
-import type { Scenario, ScenarioStep, StepResult } from "$lib/types/sandbox";
+import type {
+    Scenario,
+    ScenarioEngineSnapshot,
+    ScenarioStep,
+    ScenarioStepResultSnapshot,
+    StepResult,
+} from "$lib/types/sandbox";
 
 export class ScenarioEngine {
     activeScenario = $state<Scenario | null>(null);
@@ -76,6 +82,43 @@ export class ScenarioEngine {
         }
     }
 
+    setStepIndex(index: number) {
+        if (!this.activeScenario) return;
+        const maxIndex = this.activeScenario.steps.length;
+        if (!Number.isInteger(index) || index < 0 || index > maxIndex) {
+            this.currentStepIndex = 0;
+            return;
+        }
+        this.currentStepIndex = index;
+    }
+
+    removeStepResultsFrom(startIndex: number) {
+        if (!this.activeScenario) return;
+        let changed = false;
+        const next = new Map(this.stepResults);
+        for (const index of next.keys()) {
+            if (index >= startIndex) {
+                next.delete(index);
+                changed = true;
+            }
+        }
+        if (changed) {
+            this.stepResults = next;
+            this.rebuildCapturedVarsFromResults();
+        }
+    }
+
+    prepareReplayAt(stepIndex: number): boolean {
+        if (!this.activeScenario) return false;
+        const maxStep = this.activeScenario.steps.length - 1;
+        if (maxStep < 0) return false;
+
+        const clamped = Math.max(0, Math.min(stepIndex, maxStep));
+        this.setStepIndex(clamped);
+        this.removeStepResultsFrom(clamped);
+        return true;
+    }
+
     advanceStep() {
         if (this.activeScenario && this.currentStepIndex < this.activeScenario.steps.length) {
             this.currentStepIndex++;
@@ -129,6 +172,91 @@ export class ScenarioEngine {
         const step = this.currentStep;
         if (!step || !step.body) return undefined;
         return this.interpolateObject(step.body);
+    }
+
+    toSnapshot(): ScenarioEngineSnapshot | null {
+        if (!this.activeScenario) return null;
+        const stepResults: ScenarioStepResultSnapshot[] = Array.from(this.stepResults.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(([index, result]) => ({ index, result }));
+        return {
+            scenarioId: this.activeScenario.id,
+            currentStepIndex: this.currentStepIndex,
+            stepResults,
+            capturedVars: Array.from(this.capturedVars.entries()),
+        };
+    }
+
+    restoreFromSnapshot(snapshot: Partial<ScenarioEngineSnapshot>) {
+        if (!this.activeScenario) return;
+        const maxIndex = this.activeScenario.steps.length;
+
+        const restoredResults = new Map<number, StepResult>();
+        if (Array.isArray(snapshot.stepResults)) {
+            for (const candidate of snapshot.stepResults) {
+                const index = Number(candidate?.index);
+                if (!Number.isInteger(index) || index < 0 || index >= maxIndex) {
+                    continue;
+                }
+                const result = candidate?.result;
+                if (!result || typeof result !== "object") {
+                    continue;
+                }
+                restoredResults.set(index, {
+                    status: Number(result.status),
+                    data: result.data,
+                    elapsed: Number(result.elapsed),
+                });
+            }
+        }
+        this.stepResults = restoredResults;
+
+        if (Array.isArray(snapshot.capturedVars)) {
+            const nextCaptured = new Map<string, any>();
+            for (const entry of snapshot.capturedVars) {
+                if (!Array.isArray(entry) || entry.length !== 2) continue;
+                const key = String(entry[0]);
+                nextCaptured.set(key, entry[1]);
+            }
+            this.capturedVars = nextCaptured;
+        } else {
+            this.rebuildCapturedVarsFromResults();
+        }
+
+        const maybeIndex = Number(snapshot.currentStepIndex);
+        if (Number.isInteger(maybeIndex) && maybeIndex >= 0 && maybeIndex <= maxIndex) {
+            this.currentStepIndex = maybeIndex;
+        } else {
+            this.currentStepIndex = 0;
+        }
+    }
+
+    private rebuildCapturedVarsFromResults() {
+        if (!this.activeScenario) {
+            this.capturedVars = new Map();
+            return;
+        }
+
+        const timestamp = this.capturedVars.get("timestamp");
+        const nextCaptured = new Map<string, any>();
+        for (const [index, result] of Array.from(this.stepResults.entries()).sort(
+            (a, b) => a[0] - b[0],
+        )) {
+            const step = this.activeScenario.steps[index];
+            if (!step?.captureFromResponse) continue;
+            for (const [varName, path] of Object.entries(step.captureFromResponse)) {
+                const value = this.resolvePath(result.data, path);
+                if (value !== undefined) {
+                    nextCaptured.set(varName, value);
+                }
+            }
+        }
+
+        if (timestamp !== undefined) {
+            nextCaptured.set("timestamp", timestamp);
+        }
+
+        this.capturedVars = nextCaptured;
     }
 }
 

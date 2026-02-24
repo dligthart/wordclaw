@@ -90,12 +90,36 @@ export const SCENARIOS: Scenario[] = [
         differentiator: "AI Usability",
         steps: [
             {
+                title: "Create Scenario Content Type",
+                narration: "Create a deterministic schema fixture so the error flow does not depend on hardcoded IDs.",
+                method: "POST",
+                endpoint: "/api/content-types",
+                body: {
+                    name: "Scenario Error Fixture",
+                    slug: "scenario_error_fixture_{{timestamp}}",
+                    description: "Error remediation scenario fixture",
+                    schema: {
+                        type: "object",
+                        properties: {
+                            title: { type: "string" },
+                            content: { type: "string" },
+                            author: { type: "string" }
+                        },
+                        required: ["title", "content"]
+                    }
+                },
+                expectedStatus: 201,
+                captureFromResponse: {
+                    "contentTypeId": "data.id"
+                }
+            },
+            {
                 title: "Trigger Schema Validation Error",
                 narration: "Unlike traditional CMSes that return opaque 400 errors, WordClaw returns structured `remediation` metadata. Let's omit the required `content` field.",
                 method: "POST",
                 endpoint: "/api/content-items",
                 body: {
-                    contentTypeId: 1, // Fallback safe ID for demo
+                    contentTypeId: "{{contentTypeId}}",
                     data: {
                         title: "Missing Content Property",
                         author: "Agent Sandbox"
@@ -124,7 +148,7 @@ export const SCENARIOS: Scenario[] = [
                 method: "POST",
                 endpoint: "/api/content-items?mode=dry_run",
                 body: {
-                    contentTypeId: 1,
+                    contentTypeId: "{{contentTypeId}}",
                     data: {
                         title: "Safe Dry Run Test",
                         content: "This content is perfectly valid, but will not be saved."
@@ -143,11 +167,50 @@ export const SCENARIOS: Scenario[] = [
         differentiator: "Governance",
         steps: [
             {
-                title: "List Available Workflows",
-                narration: "Agents can discover available state machines required for publication.",
-                method: "GET",
+                title: "Create Workflow Content Type",
+                narration: "Create a dedicated content type for this scenario so workflow behavior is deterministic.",
+                method: "POST",
+                endpoint: "/api/content-types",
+                body: {
+                    name: "Scenario Workflow Post",
+                    slug: "scenario_workflow_post_{{timestamp}}",
+                    schema: {
+                        type: "object",
+                        properties: {
+                            title: { type: "string" },
+                            content: { type: "string" }
+                        },
+                        required: ["title", "content"]
+                    }
+                },
+                expectedStatus: 201,
+                captureFromResponse: { "workflowContentTypeId": "data.id" }
+            },
+            {
+                title: "Create Editorial Workflow",
+                narration: "Attach a workflow to the scenario content type.",
+                method: "POST",
                 endpoint: "/api/workflows",
-                expectedStatus: 200
+                body: {
+                    name: "Scenario Editorial Workflow {{timestamp}}",
+                    contentTypeId: "{{workflowContentTypeId}}",
+                    active: true
+                },
+                expectedStatus: 201,
+                captureFromResponse: { "workflowId": "data.id" }
+            },
+            {
+                title: "Add Draft to Review Transition",
+                narration: "Define the transition an agent must use when submitting draft content.",
+                method: "POST",
+                endpoint: "/api/workflows/{{workflowId}}/transitions",
+                body: {
+                    fromState: "draft",
+                    toState: "in_review",
+                    requiredRoles: ["content:write"]
+                },
+                expectedStatus: 201,
+                captureFromResponse: { "workflowTransitionId": "data.id" }
             },
             {
                 title: "Create Item in Draft Context",
@@ -155,7 +218,7 @@ export const SCENARIOS: Scenario[] = [
                 method: "POST",
                 endpoint: "/api/content-items",
                 body: {
-                    contentTypeId: 1,
+                    contentTypeId: "{{workflowContentTypeId}}",
                     data: {
                         title: "A controversial take",
                         content: "Needs human review."
@@ -170,8 +233,11 @@ export const SCENARIOS: Scenario[] = [
                 narration: "Agents submit content to the next transition state, enqueuing it in the Supervisor UI's task board.",
                 method: "POST",
                 endpoint: "/api/content-items/{{draftItemId}}/submit",
-                body: { assignee: "editor" },
-                expectedStatus: 422 // We expect 422 if workflow isn't configured, which is a good learning moment, or 201 if it is. The sandbox template logic uses transitionId. Let's make it more robust. For showcase, usually 201 or 400 structure.
+                body: {
+                    workflowTransitionId: "{{workflowTransitionId}}",
+                    assignee: "editor"
+                },
+                expectedStatus: 201
             }
         ]
     },
@@ -251,12 +317,33 @@ export const SCENARIOS: Scenario[] = [
         differentiator: "Architecture",
         steps: [
             {
+                title: "Create Shared Fixture via REST",
+                narration: "Create a deterministic content type used by all protocol calls in this scenario.",
+                method: "POST",
+                endpoint: "/api/content-types",
+                protocol: "REST",
+                body: {
+                    name: "Scenario Parity Type",
+                    slug: "scenario_parity_type_{{timestamp}}",
+                    schema: {
+                        type: "object",
+                        properties: {
+                            title: { type: "string" }
+                        },
+                        required: ["title"]
+                    }
+                },
+                expectedStatus: 201,
+                captureFromResponse: { "parityContentTypeId": "data.id" }
+            },
+            {
                 title: "Create via REST",
                 narration: "Agents can interact using standard REST endpoints.",
                 method: "POST",
                 endpoint: "/api/content-items",
+                protocol: "REST",
                 body: {
-                    contentTypeId: 1,
+                    contentTypeId: "{{parityContentTypeId}}",
                     data: { title: "REST created item" },
                     status: "draft"
                 },
@@ -268,8 +355,23 @@ export const SCENARIOS: Scenario[] = [
                 narration: "The same item is instantly available via the GraphQL endpoint.",
                 method: "POST",
                 endpoint: "/api/graphql",
+                protocol: "GRAPHQL",
                 body: {
                     query: "{ contentItem(id: {{parityItemId}}) { id data } }"
+                },
+                expectedStatus: 200
+            },
+            {
+                title: "Fetch via MCP Tool",
+                narration: "Use the sandbox MCP bridge to execute the same read operation through a tool-style call.",
+                method: "POST",
+                endpoint: "/api/sandbox/mcp/execute",
+                protocol: "MCP",
+                body: {
+                    tool: "get_content_item",
+                    args: {
+                        id: "{{parityItemId}}"
+                    }
                 },
                 expectedStatus: 200
             }
@@ -283,22 +385,56 @@ export const SCENARIOS: Scenario[] = [
         differentiator: "Enterprise",
         steps: [
             {
-                title: "Write to Domain 1",
-                narration: "Operations are scoped to domains. This query hits the domain configured in the Sandbox environment.",
+                title: "Discover Available Domains",
+                narration: "Capture available domain IDs. If `domainBId` is missing, create a second domain before running the final isolation check.",
                 method: "GET",
-                endpoint: "/api/content-types",
+                endpoint: "/api/domains",
                 expectedStatus: 200,
-                captureFromResponse: { "sandboxDomainId": "data[0].domainId" }
+                captureFromResponse: {
+                    "domainBId": "data[1].id"
+                }
             },
             {
-                title: "Probe Other Domain",
-                narration: "Passing a different `x-wordclaw-domain` header strictly isolates the context. Items owned by one domain are invisible to another.",
-                method: "GET",
+                title: "Create Type in Active Domain",
+                narration: "Create a domain-scoped fixture in the active tenant and capture both type ID and owning domain.",
+                method: "POST",
                 endpoint: "/api/content-types",
+                body: {
+                    name: "Scenario Tenant Fixture",
+                    slug: "scenario_tenant_fixture_{{timestamp}}",
+                    schema: {
+                        type: "object",
+                        properties: {
+                            title: { type: "string" }
+                        },
+                        required: ["title"]
+                    }
+                },
+                expectedStatus: 201,
+                captureFromResponse: {
+                    "tenantScopedTypeId": "data.id",
+                    "domainAId": "data.domainId"
+                }
+            },
+            {
+                title: "Read Fixture in Domain A",
+                narration: "The fixture must be visible when querying with the owning domain context.",
+                method: "GET",
+                endpoint: "/api/content-types/{{tenantScopedTypeId}}",
                 headers: {
-                    "x-wordclaw-domain": "9999"
+                    "x-wordclaw-domain": "{{domainAId}}"
                 },
                 expectedStatus: 200
+            },
+            {
+                title: "Verify Domain B Isolation",
+                narration: "The same fixture should not be visible in a different tenant context.",
+                method: "GET",
+                endpoint: "/api/content-types/{{tenantScopedTypeId}}",
+                headers: {
+                    "x-wordclaw-domain": "{{domainBId}}"
+                },
+                expectedStatus: 404
             }
         ]
     },

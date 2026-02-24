@@ -54,6 +54,9 @@ export function resolveRestOperation(method: string, routePath: string): string 
     if (routePath.startsWith('/api/policy/evaluate')) {
         return 'policy.read';
     }
+    if (routePath.startsWith('/api/sandbox/mcp')) {
+        return 'content.read';
+    }
 
     if (upperMethod === 'GET' || upperMethod === 'HEAD' || upperMethod === 'OPTIONS') {
         return 'content.read';
