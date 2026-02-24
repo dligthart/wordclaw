@@ -512,8 +512,16 @@ export const resolvers = {
             return item || null;
         }),
 
-        contentItemVersions: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg) => {
+        contentItemVersions: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
             const numericId = parseId(id);
+            const [item] = await db.select({ id: contentItems.id })
+                .from(contentItems)
+                .where(and(eq(contentItems.id, numericId), eq(contentItems.domainId, getDomainId(context))));
+
+            if (!item) {
+                return [];
+            }
+
             return db.select()
                 .from(contentItemVersions)
                 .where(eq(contentItemVersions.contentItemId, numericId))

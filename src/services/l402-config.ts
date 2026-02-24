@@ -7,6 +7,36 @@ import { MockPaymentProvider } from './mock-payment-provider.js';
 import { entitlements, agentProfiles } from '../db/schema.js';
 import { LicensingService } from './licensing.js';
 
+const SAFE_PAYMENT_HEADER_ALLOWLIST = new Set([
+    'user-agent',
+    'content-type',
+    'accept',
+    'accept-language',
+    'x-request-id'
+]);
+
+function pickSafePaymentHeaders(rawHeaders: Record<string, unknown>): Record<string, string | string[]> {
+    const safe: Record<string, string | string[]> = {};
+
+    for (const [key, value] of Object.entries(rawHeaders)) {
+        const normalizedKey = key.toLowerCase();
+        if (!SAFE_PAYMENT_HEADER_ALLOWLIST.has(normalizedKey)) {
+            continue;
+        }
+
+        if (typeof value === 'string') {
+            safe[normalizedKey] = value;
+            continue;
+        }
+
+        if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+            safe[normalizedKey] = value;
+        }
+    }
+
+    return safe;
+}
+
 function reqDetailsToOperation(requestDetails: any): string {
     const method = requestDetails?.requestInfo?.method || 'GET';
     return `${method} ${requestDetails?.path || '/api'}`;
@@ -64,15 +94,17 @@ export const globalL402Options: L402Options = {
     },
 
     onInvoiceCreated: async (invoice: any, reqDetails: any, amountSatoshis: any) => {
-        const headers = reqDetails.requestInfo?.headers || {};
+        const headers = (reqDetails.requestInfo?.headers || {}) as Record<string, unknown>;
         const method = reqDetails.requestInfo?.method || 'UNKNOWN';
+        const safeHeaders = pickSafePaymentHeaders(headers);
 
         let actorId = null;
-        if (headers.authorization && headers.authorization.startsWith('Bearer ')) {
+        if (typeof headers.authorization === 'string') {
             actorId = 'system';
         }
 
-        const domainId = headers['x-wordclaw-domain'] ? Number(headers['x-wordclaw-domain']) : 1;
+        const domainHeader = headers['x-wordclaw-domain'];
+        const domainId = typeof domainHeader === 'string' ? Number(domainHeader) : 1;
 
         await db.insert(payments).values({
             domainId,
@@ -84,7 +116,7 @@ export const globalL402Options: L402Options = {
             actorId,
             details: {
                 method,
-                headers: { ...headers, authorization: '[REDACTED]', cookie: '[REDACTED]' }
+                headers: safeHeaders
             }
         });
     },

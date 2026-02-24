@@ -1,5 +1,8 @@
 # RFC 0012: Native Vector RAG (Retrieval-Augmented Generation) Endpoints
 
+**Author:** AI Assistant  
+**Status:** Implemented  
+**Date:** 2026-02-22  
 ## 1. Summary
 
 This proposal introduces a native RAG (Retrieval-Augmented Generation) engine directly into the WordClaw CMS database layer. By seamlessly generating and storing vector embeddings for all `Published` content items, WordClaw will expose unified semantic search endpoints across REST, GraphQL, and the Model Context Protocol (MCP).

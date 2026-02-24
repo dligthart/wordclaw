@@ -1,7 +1,7 @@
 # RFC 0010: Supervisor UI Usability and Accessibility Hardening
 
 **Author:** AI Assistant  
-**Status:** Proposed  
+**Status:** Partially Implemented  
 **Date:** 2026-02-21  
 
 ## 1. Summary
