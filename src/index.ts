@@ -15,6 +15,7 @@ import fastifyCookie from '@fastify/cookie';
 import apiRoutes from './api/routes.js';
 import { supervisorAuthRoutes } from './api/supervisor-auth.js';
 import { supervisorDashboardRoutes } from './api/supervisor-dashboard.js';
+import { l402ReadinessRoutes } from './api/l402-readiness.js';
 import { authenticateApiRequest } from './api/auth.js';
 import { PolicyEngine } from './services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from './services/policy-adapters.js';
@@ -268,6 +269,7 @@ server.get('/ws/events', { websocket: true }, (connection, request) => {
 server.register(apiRoutes, { prefix: '/api' });
 server.register(supervisorAuthRoutes, { prefix: '/api/supervisors' });
 server.register(supervisorDashboardRoutes, { prefix: '/api/supervisors' });
+server.register(l402ReadinessRoutes, { prefix: '/api/supervisors/l402-readiness' });
 
 // Serve SvelteKit UI
 server.register(fastifyStatic, {

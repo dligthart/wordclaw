@@ -77,7 +77,7 @@ Send an `Idempotency-Key` header on any POST/PUT/DELETE. If the same key is seen
 
 ## L402 Micropayments
 
-Optional HTTP 402 payment gate using Lightning Network invoices. The middleware challenges unauthenticated requests, accepts payment preimages, and validates them against a pluggable payment provider. See [l402-protocol.md](l402-protocol.md) for details.
+Optional HTTP 402 payment gate using Lightning Network invoices. The system challenges unauthenticated requests, supports real payment provider webhooks (e.g. LNbits), performs automated stale pending payment reconciliation, and validates preimages against the provider state machine (`pending` -> `paid`). See [l402-protocol.md](l402-protocol.md) for details.
 
 ## Rate Limiting
 

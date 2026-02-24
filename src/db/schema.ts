@@ -255,3 +255,14 @@ export const accessEvents = pgTable('access_events', {
     reason: text('reason'), // E.g., 'remaining_reads_exhausted'
     createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const l402OperatorConfigs = pgTable('l402_operator_configs', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull().unique(),
+    architecture: text('architecture').notNull().default('mock'), // 'mock', 'lnbits', 'lnd'
+    webhookEndpoint: text('webhook_endpoint'),
+    secretManagerPath: text('secret_manager_path'),
+    checklistApprovals: jsonb('checklist_approvals').notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});

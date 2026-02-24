@@ -24,6 +24,7 @@
         Bars3,
         MagnifyingGlass,
         Bell,
+        CheckBadge,
     } from "svelte-hero-icons";
     import {
         Navbar,
@@ -63,12 +64,16 @@
     async function loadDomains() {
         try {
             const res = await fetchApi("/domains");
-            const fetched = (res.data as Array<{ id: number; name: string; hostname: string }>).map(
-                (domain) => ({
-                    id: String(domain.id),
-                    label: domain.name || domain.hostname || `Domain ${domain.id}`,
-                }),
-            );
+            const fetched = (
+                res.data as Array<{
+                    id: number;
+                    name: string;
+                    hostname: string;
+                }>
+            ).map((domain) => ({
+                id: String(domain.id),
+                label: domain.name || domain.hostname || `Domain ${domain.id}`,
+            }));
             if (fetched.length > 0) {
                 domainOptions = fetched;
                 if (!fetched.some((domain) => domain.id === currentDomain)) {
@@ -86,7 +91,9 @@
         localStorage.setItem("__wc_domain_id", domainId);
         currentDomain = domainId;
         // Force a full page reload so all pages that fetch onMount rehydrate against the new domain.
-        window.location.assign($page.url.pathname + $page.url.search + $page.url.hash);
+        window.location.assign(
+            $page.url.pathname + $page.url.search + $page.url.hash,
+        );
     }
 
     $effect(() => {
@@ -154,6 +161,12 @@
             icon: CreditCard,
             match: (p: string) => p.includes("/payments"),
         },
+        {
+            name: "L402 Readiness",
+            href: "/ui/l402-readiness",
+            icon: CheckBadge,
+            match: (p: string) => p.includes("/l402-readiness"),
+        },
     ];
 
     let currentPath = $derived($page.url.pathname);
@@ -195,7 +208,7 @@
             </NavBrand>
             <div class="flex items-center gap-4 md:order-2">
                 <DomainDropdown
-                    currentDomain={currentDomain}
+                    {currentDomain}
                     onSelect={selectDomain}
                     options={domainOptions}
                 />

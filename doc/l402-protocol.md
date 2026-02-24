@@ -8,11 +8,10 @@ The L402 integration in Wordclaw acts as a metering and monetization layer for A
 
 ### Components
 
-1.  **Payment Provider (`src/interfaces/payment-provider.ts`)**: An interface defining the contract for generating Lightning invoices and verifying payments. This allows swapping out the underlying Lightning node implementation (e.g., LND, Core Lightning, Alby).
-2.  **Mock Payment Provider (`src/services/mock-payment-provider.ts`)**: A mock implementation used for testing and development. It generates static invoices and accepts a known preimage (`mock-preimage-123`).
-3.  **L402 Middleware (`src/middleware/l402.ts`)**: A Fastify middleware that handles the core L402 logic:
-    *   **Challenge**: Intercepts requests without a valid L402 header. It requests an invoice from the Payment Provider, generates a token (currently HMAC-based, acting as a Macaroon placeholder), and returns a `402` status with the `WWW-Authenticate` header containing the Macaroon and Invoice.
-    *   **Verification**: Parses the `Authorization: L402 <macaroon>:<preimage>` header. It validates the Macaroon's authenticity (using the server's secret) and verifies the payment preimage against the Payment Provider.
+1.  **Payment Provider (`src/interfaces/payment-provider.ts`)**: An interface defining the contract for generating Lightning invoices and returning explicit states (`pending`, `paid`, `expired`, `failed`). This enables switching underlying Lightning backends.
+2.  **Payment Providers (`src/services/*-payment-provider.ts`)**: We implement both a test/dev `mock-payment-provider.ts` and a production `lnbits-payment-provider.ts` which connects to real Lightning backends.
+3.  **L402 Middleware (`src/middleware/l402.ts`)**: A Fastify middleware that handles the core L402 logic. It generates true Macaroons (with tenant and route caveats) and challenges requests lacking payments.
+4.  **Payment Settlement & Reconciliation**: Support is built for asynchronous settlement webhooks (e.g. `LNbits`) and a timed background reconciliation worker (`PaymentReconciliationWorker`) that cleans up stale pending payments deterministically.
 
 ## L402 Payment Flow Sequence Diagram
 
@@ -52,10 +51,9 @@ If an entitlement is exhausted, expired, or revoked, the L402 middleware will in
 
 ## Future Enhancements (Phase 6 Roadmap)
 
-*   **Full Macaroon Support**: Replace the HMAC token placeholder with full Macaroon implementation using the `macaroons.js` library to support caveats (e.g., rate limits, specific endpoint access).
-*   **Real Lightning Node Integration**: Implement a `PaymentProvider` that connects to a real Lightning node (e.g., via LND's REST API or gRPC) or a Lightning Service Provider (LSP) like Alby.
-*   **Agent SDK Integration**: Update the Wordclaw Agent SDK to automatically handle L402 challenges, pay invoices, and append the required `Authorization` header to subsequent requests.
+*   **LND gRPC Native Support**: Add an additional production payment provider communicating natively over gRPC with LND implementations instead of standard REST.
+*   **Agent SDK Integration**: Update the Wordclaw Agent SDK to automatically handle L402 challenges, pay invoices, and append the required `Authorization` header to subsequent requests natively.
 
 ## Testing
 
-Unit tests for the middleware are located in `src/middleware/__tests__/l402.test.ts`. They verify the challenge generation and the successful verification of valid L402 credentials using the mock payment provider.
+Unit and integration tests for the middleware and reconciliation verify the challenge generation, the caveat parsing, and the state-machine transition handling. Test files correspond with `src/middleware/__tests__/`, `src/services/__tests__/`, and the `L402` integration tests.

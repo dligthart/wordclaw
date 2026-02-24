@@ -90,8 +90,8 @@ Introduce four UI primitives and migrate all pages to use them:
 * Error panels should redact sensitive fields while preserving remediation guidance from policy and API layers.
 
 ## 8. Rollout Plan / Milestones
-1. **Phase 1 [Partially Implemented]:** Add shared feedback primitives (toast, confirm dialog, inline error component) and wire into keys/content/approvals pages. `Toast`, `ConfirmDialog`, `ErrorBanner` are complete.
-2. **Phase 2:** Implement responsive shell and mobile-safe navigation behavior.
+1. **Phase 1 [Implemented]:** Add shared feedback primitives (toast, confirm dialog, inline error component) and wire into keys/content/approvals pages. `Toast`, `ConfirmDialog`, `ErrorBanner` are complete.
+2. **Phase 2 [Implemented]:** Implement responsive shell and mobile-safe navigation behavior.
 3. **Phase 3 [Partially Implemented]:** Replace page-local table/list states with shared `DataTable` + standard pagination/filter contracts. Shared `DataTable` component created.
 4. **Phase 4:** Implement approval and rollback safety flows (reason capture + confirmation + post-action navigation shortcuts).
 5. **Phase 5:** Add accessibility checks in CI and collect baseline-to-post metrics for operator efficiency.
