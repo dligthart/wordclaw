@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, payments, workflows, workflowTransitions } from '../db/schema.js';
+import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
@@ -17,6 +17,7 @@ import { l402Middleware } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService, EmbeddingServiceError } from '../services/embedding.js';
+import { LicensingService } from '../services/licensing.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -1520,6 +1521,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     });
 
     server.get('/content-items/:id', {
+        preHandler: globalL402Middleware,
         schema: {
             params: Type.Object({
                 id: Type.Number()
@@ -1554,6 +1556,156 @@ export default async function apiRoutes(server: FastifyInstance) {
                 1
             )
         };
+    });
+
+    server.get('/content-items/:id/offers', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    domainId: Type.Number(),
+                    slug: Type.String(),
+                    name: Type.String(),
+                    scopeType: Type.String(),
+                    scopeRef: Type.Union([Type.Number(), Type.Null()]),
+                    priceSats: Type.Number(),
+                    active: Type.Boolean()
+                }))),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
+
+        if (!item) {
+            return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        const availableOffers = await LicensingService.getOffers(getDomainId(request), 'item', id);
+
+        return {
+            data: availableOffers,
+            meta: buildMeta(
+                availableOffers.length > 0 ? 'Purchase an offer' : 'No offers currently available',
+                ['POST /api/offers/:id/purchase'],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.post('/offers/:id/purchase', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                402: AIErrorResponse,
+                404: AIErrorResponse,
+                403: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const domainId = getDomainId(request);
+        const pKeyId = (request as any).authPrincipal?.keyId;
+
+        if (typeof pKeyId !== 'number') {
+            return reply.status(403).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can hold entitlements and purchase offers.'));
+        }
+
+        let [profile] = await db.select().from(agentProfiles).where(eq(agentProfiles.apiKeyId, pKeyId));
+        if (!profile) {
+            [profile] = await db.insert(agentProfiles).values({ domainId, apiKeyId: pKeyId }).returning();
+        }
+
+        const [offer] = await db.select().from(offers).where(and(eq(offers.id, id), eq(offers.domainId, domainId), eq(offers.active, true)));
+        if (!offer) {
+            return reply.status(404).send(toErrorPayload('Offer not found', 'OFFER_NOT_FOUND', 'The offer ID does not exist or is inactive.'));
+        }
+
+        const invoice = await globalL402Options.provider.createInvoice(offer.priceSats, `Purchase offer ${offer.name}`);
+
+        if (globalL402Options.onInvoiceCreated) {
+            await globalL402Options.onInvoiceCreated(
+                invoice,
+                { path: `/api/offers/${id}/purchase`, requestInfo: { method: 'POST', headers: request.headers } },
+                offer.priceSats
+            );
+        }
+
+        await LicensingService.provisionEntitlementForSale(domainId, offer.id, profile.id, invoice.hash);
+
+        const tokenPayload = Buffer.from(JSON.stringify({ hash: invoice.hash, exp: Date.now() + 3600000 })).toString('base64url');
+        const signature = crypto.createHmac('sha256', globalL402Options.secretKey).update(tokenPayload).digest('base64url');
+        const token = `${tokenPayload}.${signature}`;
+
+        reply.header('WWW-Authenticate', `L402 macaroon="${token}", invoice="${invoice.paymentRequest}"`);
+        return reply.status(402).send(toErrorPayload('Payment Required', 'PAYMENT_REQUIRED', 'Pay the lightning invoice to activate the entitlement.'));
+    });
+
+    server.post('/entitlements/:id/delegate', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                targetApiKeyId: Type.Number(),
+                readsAmount: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    domainId: Type.Number(),
+                    offerId: Type.Number(),
+                    policyId: Type.Number(),
+                    policyVersion: Type.Number(),
+                    agentProfileId: Type.Number(),
+                    paymentHash: Type.String(),
+                    status: Type.String(),
+                    remainingReads: Type.Union([Type.Number(), Type.Null()]),
+                    expiresAt: Type.Optional(Type.String()),
+                    delegatedFrom: Type.Union([Type.Number(), Type.Null()])
+                })),
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const { targetApiKeyId, readsAmount } = request.body as { targetApiKeyId: number, readsAmount: number };
+        const domainId = getDomainId(request);
+
+        const pKeyId = (request as any).authPrincipal?.keyId;
+        if (typeof pKeyId !== 'number') {
+            return reply.status(403).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Supervisors cannot delegate entitlements.'));
+        }
+
+        const [sourceProfile] = await db.select().from(agentProfiles).where(eq(agentProfiles.apiKeyId, pKeyId));
+        if (!sourceProfile) return reply.status(403).send(toErrorPayload('Profile missing', 'PROFILE_MISSING', 'You do not have any entitlements.'));
+
+        const [entitlement] = await db.select().from(entitlements).where(and(eq(entitlements.id, id), eq(entitlements.agentProfileId, sourceProfile.id), eq(entitlements.domainId, domainId)));
+        if (!entitlement) return reply.status(404).send(toErrorPayload('Entitlement missing', 'ENTITLEMENT_NOT_FOUND', 'Could not locate the parent entitlement.'));
+
+        let [targetProfile] = await db.select().from(agentProfiles).where(eq(agentProfiles.apiKeyId, targetApiKeyId));
+        if (!targetProfile) {
+            [targetProfile] = await db.insert(agentProfiles).values({ domainId, apiKeyId: targetApiKeyId }).returning();
+        }
+
+        try {
+            const delegated = await LicensingService.delegateEntitlement(domainId, entitlement.id, targetProfile.id, readsAmount);
+            return {
+                data: delegated,
+                meta: buildMeta('Share entitlement token', [], 'low', 0)
+            };
+        } catch (e: any) {
+            return reply.status(400).send(toErrorPayload(e.message, 'DELEGATION_FAILED', 'Check delegation rules.'));
+        }
     });
 
     server.put('/content-items/:id', {

@@ -177,3 +177,58 @@ export const contentItemEmbeddings = pgTable("content_item_embeddings", {
     embeddingIndex: index("embedding_idx").using("hnsw", table.embedding.op("vector_cosine_ops")),
     domainIndex: index("embedding_domain_idx").on(table.domainId)
 }));
+
+export const agentProfiles = pgTable('agent_profiles', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'cascade' }).notNull(),
+    payoutAddress: text('payout_address'), // RFC 0006 lightning address
+});
+
+export const offers = pgTable('offers', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    scopeType: text('scope_type').notNull(), // 'item', 'type', 'subscription'
+    scopeRef: integer('scope_ref'), // Nullable
+    priceSats: integer('price_sats').notNull(),
+    active: boolean('active').default(true).notNull(),
+});
+
+export const licensePolicies = pgTable('license_policies', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    offerId: integer('offer_id').references(() => offers.id, { onDelete: 'cascade' }).notNull(),
+    version: integer('version').notNull().default(1),
+    maxReads: integer('max_reads'), // Null means unlimited
+    expiresAt: timestamp('expires_at'), // Null means never
+    allowedChannels: jsonb('allowed_channels').notNull().default([]), // Array of strings
+    allowRedistribution: boolean('allow_redistribution').notNull().default(false),
+    termsJson: jsonb('terms_json'), // Human/Machine readable extra terms
+});
+
+export const entitlements = pgTable('entitlements', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    offerId: integer('offer_id').references(() => offers.id, { onDelete: 'cascade' }).notNull(),
+    policyId: integer('policy_id').references(() => licensePolicies.id, { onDelete: 'cascade' }).notNull(),
+    policyVersion: integer('policy_version').notNull(),
+    agentProfileId: integer('agent_profile_id').references(() => agentProfiles.id, { onDelete: 'cascade' }).notNull(),
+    paymentHash: text('payment_hash').notNull().unique(), // Linked to payment completion
+    status: text('status').notNull().default('active'), // 'active', 'revoked', 'expired'
+    expiresAt: timestamp('expires_at'),
+    remainingReads: integer('remaining_reads'),
+    delegatedFrom: integer('delegated_from'), // Self-referencing FK added after export
+});
+
+export const accessEvents = pgTable('access_events', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    entitlementId: integer('entitlement_id').references(() => entitlements.id, { onDelete: 'cascade' }).notNull(),
+    resourcePath: text('resource_path').notNull(),
+    action: text('action').notNull(),
+    granted: boolean('granted').notNull(),
+    reason: text('reason'), // E.g., 'remaining_reads_exhausted'
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});

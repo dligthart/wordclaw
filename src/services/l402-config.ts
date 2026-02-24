@@ -4,6 +4,13 @@ import { contentItems, contentTypes, payments } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import { MockPaymentProvider } from './mock-payment-provider.js';
+import { entitlements, agentProfiles } from '../db/schema.js';
+import { LicensingService } from './licensing.js';
+
+function reqDetailsToOperation(requestDetails: any): string {
+    const method = requestDetails?.requestInfo?.method || 'GET';
+    return `${method} ${requestDetails?.path || '/api'}`;
+}
 
 let mockPaymentProvider: MockPaymentProvider;
 if (process.env.NODE_ENV === 'production' && process.env.PAYMENT_PROVIDER !== 'mock') {
@@ -88,13 +95,50 @@ export const globalL402Options: L402Options = {
             .where(eq(payments.paymentHash, paymentHash));
     },
 
-    onPaymentConsumed: async (paymentHash: string) => {
+    onPaymentConsumed: async (paymentHash: string, requestDetails: any) => {
+        // First try to consume as an entitlement
+        const [entitlement] = await db.select().from(entitlements).where(eq(entitlements.paymentHash, paymentHash));
+
+        if (entitlement) {
+            const domainId = requestDetails?.headers?.['x-wordclaw-domain'] ? Number(requestDetails.headers['x-wordclaw-domain']) : 1;
+            const res = await LicensingService.atomicallyDecrementRead(domainId, entitlement.id);
+
+            await LicensingService.recordAccessEvent(
+                domainId,
+                entitlement.id,
+                requestDetails?.path || '/api',
+                reqDetailsToOperation(requestDetails),
+                res.granted,
+                res.reason
+            );
+
+            if (!res.granted) {
+                // If it fails to consume (exhausted), update DB
+                await db.update(payments).set({ status: 'consumed', updatedAt: new Date() }).where(eq(payments.paymentHash, paymentHash));
+                throw new Error(res.reason);
+            }
+            return;
+        }
+
+        // Fallback to legacy single-use payment
         await db.update(payments)
             .set({ status: 'consumed', updatedAt: new Date() })
             .where(eq(payments.paymentHash, paymentHash));
     },
 
-    getPaymentStatus: async (paymentHash: string) => {
+    getPaymentStatus: async (paymentHash: string, requestDetails: any) => {
+        const [entitlement] = await db.select().from(entitlements).where(eq(entitlements.paymentHash, paymentHash));
+
+        if (entitlement) {
+            if (entitlement.status === 'revoked' || entitlement.status === 'expired') return 'consumed';
+            if (entitlement.expiresAt && new Date() > entitlement.expiresAt) return 'consumed';
+            if (entitlement.remainingReads !== null && entitlement.remainingReads <= 0) return 'consumed';
+
+            // If the payment is not settled in the provider, we still return pending
+            const [payment] = await db.select().from(payments).where(eq(payments.paymentHash, paymentHash));
+            return (payment?.status as 'pending' | 'paid' | 'consumed') || 'pending';
+        }
+
         const [payment] = await db.select().from(payments).where(eq(payments.paymentHash, paymentHash));
         return (payment?.status as 'pending' | 'paid' | 'consumed') || 'pending';
     }
