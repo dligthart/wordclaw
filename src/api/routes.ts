@@ -1670,15 +1670,137 @@ export default async function apiRoutes(server: FastifyInstance) {
                     createdAt: Type.String(),
                     updatedAt: Type.String()
                 })),
+                400: AIErrorResponse,
+                402: AIErrorResponse,
+                403: AIErrorResponse,
                 404: AIErrorResponse
+                ,
+                409: AIErrorResponse
             }
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
-        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
+        const domainId = getDomainId(request);
+        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
 
         if (!item) {
             return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        const matchingOffers = await LicensingService.getActiveOffersForItemRead(domainId, id, item.contentTypeId);
+        if (matchingOffers.length > 0) {
+            const pKeyId = (request as any).authPrincipal?.keyId;
+            if (typeof pKeyId !== 'number') {
+                return reply.status(402).send(toErrorPayload(
+                    'Offer purchase required',
+                    'OFFER_REQUIRED',
+                    `This content item is licensed by offer. List offers with GET /api/content-items/${id}/offers and complete POST /api/offers/:id/purchase.`
+                ));
+            }
+
+            const [profile] = await db.select().from(agentProfiles).where(and(
+                eq(agentProfiles.apiKeyId, pKeyId),
+                eq(agentProfiles.domainId, domainId)
+            ));
+
+            if (!profile) {
+                return reply.status(402).send(toErrorPayload(
+                    'Offer purchase required',
+                    'OFFER_REQUIRED',
+                    `You do not have an entitlement for this item. Discover offers with GET /api/content-items/${id}/offers and purchase one first.`
+                ));
+            }
+
+            const entitlementHeader = readSingleHeaderValue(request.headers['x-entitlement-id']);
+            const requestedEntitlementId = entitlementHeader ? parsePositiveIntHeader(entitlementHeader) : null;
+            if (entitlementHeader && !requestedEntitlementId) {
+                return reply.status(400).send(toErrorPayload(
+                    'Invalid entitlement header',
+                    'INVALID_ENTITLEMENT_ID',
+                    'Provide x-entitlement-id as a positive integer.'
+                ));
+            }
+
+            const eligibleEntitlements = await LicensingService.getEligibleEntitlementsForItemRead(
+                domainId,
+                profile.id,
+                item.id,
+                item.contentTypeId
+            );
+
+            let selectedEntitlement = null as typeof eligibleEntitlements[number] | null;
+            if (requestedEntitlementId) {
+                selectedEntitlement = eligibleEntitlements.find((entry) => entry.id === requestedEntitlementId) ?? null;
+                if (!selectedEntitlement) {
+                    const existing = await LicensingService.getEntitlementForAgentById(domainId, profile.id, requestedEntitlementId);
+                    if (!existing) {
+                        return reply.status(404).send(toErrorPayload(
+                            'Entitlement not found',
+                            'ENTITLEMENT_NOT_FOUND',
+                            'Provide a valid entitlement ID owned by this API key and domain.'
+                        ));
+                    }
+                    return reply.status(403).send(toErrorPayload(
+                        'Entitlement not active',
+                        'ENTITLEMENT_NOT_ACTIVE',
+                        'Use an active entitlement or purchase a new offer.'
+                    ));
+                }
+            } else {
+                if (eligibleEntitlements.length === 0) {
+                    return reply.status(402).send(toErrorPayload(
+                        'Offer purchase required',
+                        'OFFER_REQUIRED',
+                        `No eligible entitlement was found. Purchase an offer via POST /api/offers/:id/purchase.`
+                    ));
+                }
+
+                if (eligibleEntitlements.length > 1) {
+                    return reply.status(409).send({
+                        ...toErrorPayload(
+                            'Multiple entitlements eligible',
+                            'ENTITLEMENT_AMBIGUOUS',
+                            'Retry with x-entitlement-id set to the entitlement you want to consume.'
+                        ),
+                        context: {
+                            candidateEntitlementIds: eligibleEntitlements.map((entry) => entry.id)
+                        }
+                    });
+                }
+                selectedEntitlement = eligibleEntitlements[0];
+            }
+
+            const consumeResult = await LicensingService.atomicallyDecrementRead(domainId, selectedEntitlement.id);
+            await LicensingService.recordAccessEvent(
+                domainId,
+                selectedEntitlement.id,
+                request.url.split('?')[0],
+                `${request.method.toUpperCase()} /api/content-items/:id`,
+                consumeResult.granted,
+                consumeResult.reason
+            );
+
+            if (!consumeResult.granted) {
+                if (consumeResult.reason === 'entitlement_expired') {
+                    return reply.status(403).send(toErrorPayload(
+                        'Entitlement expired',
+                        'ENTITLEMENT_EXPIRED',
+                        'Purchase a new offer or use another active entitlement.'
+                    ));
+                }
+                if (consumeResult.reason === 'remaining_reads_exhausted' || consumeResult.reason === 'race_condition_exhaustion') {
+                    return reply.status(403).send(toErrorPayload(
+                        'Entitlement exhausted',
+                        'ENTITLEMENT_EXHAUSTED',
+                        'Purchase a new offer or use another entitlement with remaining reads.'
+                    ));
+                }
+                return reply.status(403).send(toErrorPayload(
+                    'Entitlement not active',
+                    'ENTITLEMENT_NOT_ACTIVE',
+                    'Use an active entitlement or purchase a new offer.'
+                ));
+            }
         }
 
         return {
@@ -1713,13 +1835,15 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
-        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, getDomainId(request))));
+        const domainId = getDomainId(request);
+        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
 
         if (!item) {
             return reply.status(404).send(notFoundContentItem(id));
         }
 
-        const availableOffers = await LicensingService.getOffers(getDomainId(request), 'item', id);
+        const availableOffers = await LicensingService.getActiveOffersForItemRead(domainId, id, item.contentTypeId);
+        availableOffers.sort((left, right) => offerScopeRank(left.scopeType) - offerScopeRank(right.scopeType));
 
         return {
             data: availableOffers,
@@ -1737,23 +1861,43 @@ export default async function apiRoutes(server: FastifyInstance) {
             params: Type.Object({
                 id: Type.Number()
             }),
+            body: Type.Optional(Type.Object({
+                paymentMethod: Type.Optional(Type.Union([
+                    Type.Literal('lightning'),
+                    Type.Literal('ap2')
+                ]))
+            })),
             response: {
                 402: AIErrorResponse,
                 404: AIErrorResponse,
+                400: AIErrorResponse,
                 403: AIErrorResponse,
                 503: AIErrorResponse
             }
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
+        const body = (request.body ?? {}) as { paymentMethod?: PaymentMethod };
         const domainId = getDomainId(request);
         const pKeyId = (request as any).authPrincipal?.keyId;
+        const paymentMethod: PaymentMethod = body.paymentMethod ?? 'lightning';
+
+        if (paymentMethod !== 'lightning') {
+            return reply.status(400).send(toErrorPayload(
+                'Unsupported payment method',
+                'PAYMENT_METHOD_UNSUPPORTED',
+                'Only paymentMethod=lightning is currently enabled. AP2 settlement is tracked separately.'
+            ));
+        }
 
         if (typeof pKeyId !== 'number') {
             return reply.status(403).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can hold entitlements and purchase offers.'));
         }
 
-        let [profile] = await db.select().from(agentProfiles).where(eq(agentProfiles.apiKeyId, pKeyId));
+        let [profile] = await db.select().from(agentProfiles).where(and(
+            eq(agentProfiles.apiKeyId, pKeyId),
+            eq(agentProfiles.domainId, domainId)
+        ));
         if (!profile) {
             [profile] = await db.insert(agentProfiles).values({ domainId, apiKeyId: pKeyId }).returning();
         }
@@ -1782,12 +1926,20 @@ export default async function apiRoutes(server: FastifyInstance) {
             );
 
             paymentFlowMetrics.increment('invoice_create_success_total');
-            await LicensingService.provisionEntitlementForSale(domainId, offer.id, profile.id, challenge.invoice.hash);
+            const entitlement = await LicensingService.provisionEntitlementForSale(domainId, offer.id, profile.id, challenge.invoice.hash);
 
             for (const [header, value] of Object.entries(challenge.headers)) {
                 reply.header(header, value);
             }
-            return reply.status(402).send(challenge.payload);
+
+            const payload = {
+                ...challenge.payload,
+                paymentHash: challenge.invoice.hash,
+                entitlementId: entitlement.id,
+                paymentMethod
+            };
+
+            return reply.status(402).send(payload);
         } catch (error) {
             paymentFlowMetrics.increment('invoice_create_failure_total');
             return reply.status(503).send(toErrorPayload(
@@ -1796,6 +1948,318 @@ export default async function apiRoutes(server: FastifyInstance) {
                 `Unable to create Lightning invoice: ${(error as Error).message}`
             ));
         }
+    });
+
+    server.post('/offers/:id/purchase/confirm', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    domainId: Type.Number(),
+                    offerId: Type.Number(),
+                    policyId: Type.Number(),
+                    policyVersion: Type.Number(),
+                    agentProfileId: Type.Number(),
+                    paymentHash: Type.String(),
+                    status: Type.String(),
+                    remainingReads: Type.Union([Type.Number(), Type.Null()]),
+                    expiresAt: Type.Union([Type.String(), Type.Null()]),
+                    activatedAt: Type.Union([Type.String(), Type.Null()])
+                })),
+                400: AIErrorResponse,
+                402: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const domainId = getDomainId(request);
+        const pKeyId = (request as any).authPrincipal?.keyId;
+
+        if (typeof pKeyId !== 'number') {
+            return reply.status(403).send(toErrorPayload(
+                'API Key required',
+                'API_KEY_REQUIRED',
+                'Only autonomous agents (via API key) can confirm offer purchases.'
+            ));
+        }
+
+        const credentials = parseL402AuthorizationHeader(
+            typeof request.headers.authorization === 'string' ? request.headers.authorization : undefined
+        );
+        if (!credentials) {
+            return reply.status(400).send(toErrorPayload(
+                'Missing L402 credentials',
+                'PAYMENT_CONFIRMATION_REQUIRED',
+                'Provide Authorization: L402 <macaroon>:<preimage> for purchase confirmation.'
+            ));
+        }
+
+        const [profile] = await db.select().from(agentProfiles).where(and(
+            eq(agentProfiles.apiKeyId, pKeyId),
+            eq(agentProfiles.domainId, domainId)
+        ));
+        if (!profile) {
+            return reply.status(404).send(toErrorPayload(
+                'Profile missing',
+                'PROFILE_MISSING',
+                'No entitlement-capable profile exists for this API key in the selected domain.'
+            ));
+        }
+
+        const [offer] = await db.select().from(offers).where(and(
+            eq(offers.id, id),
+            eq(offers.domainId, domainId)
+        ));
+        if (!offer) {
+            return reply.status(404).send(toErrorPayload(
+                'Offer not found',
+                'OFFER_NOT_FOUND',
+                'The offer does not exist in this domain.'
+            ));
+        }
+
+        const paymentHashHeader = readSingleHeaderValue(request.headers['x-payment-hash']);
+        const pendingEntitlements = await LicensingService.getPendingEntitlementsForOffer(domainId, offer.id, profile.id);
+
+        if (pendingEntitlements.length === 0) {
+            const [activeEntitlement] = await db.select().from(entitlements).where(and(
+                eq(entitlements.domainId, domainId),
+                eq(entitlements.offerId, offer.id),
+                eq(entitlements.agentProfileId, profile.id),
+                eq(entitlements.status, 'active')
+            )).orderBy(desc(entitlements.id));
+
+            if (activeEntitlement) {
+                return {
+                    data: {
+                        ...activeEntitlement,
+                        expiresAt: activeEntitlement.expiresAt ? activeEntitlement.expiresAt.toISOString() : null,
+                        activatedAt: activeEntitlement.activatedAt ? activeEntitlement.activatedAt.toISOString() : null
+                    },
+                    meta: buildMeta('Use this entitlement to consume paid content', ['GET /api/content-items/:id'], 'low', 1)
+                };
+            }
+
+            return reply.status(404).send(toErrorPayload(
+                'Pending purchase not found',
+                'PAYMENT_CONFIRMATION_REQUIRED',
+                'Start a purchase via POST /api/offers/:id/purchase before confirming settlement.'
+            ));
+        }
+
+        let targetEntitlement = null as typeof pendingEntitlements[number] | null;
+        if (paymentHashHeader) {
+            targetEntitlement = pendingEntitlements.find((entry) => entry.paymentHash === paymentHashHeader) ?? null;
+            if (!targetEntitlement) {
+                return reply.status(404).send(toErrorPayload(
+                    'Entitlement not found',
+                    'ENTITLEMENT_NOT_FOUND',
+                    'x-payment-hash did not match a pending purchase for this offer.'
+                ));
+            }
+        } else if (pendingEntitlements.length === 1) {
+            targetEntitlement = pendingEntitlements[0];
+        } else {
+            return reply.status(409).send({
+                ...toErrorPayload(
+                    'Multiple pending entitlements',
+                    'ENTITLEMENT_AMBIGUOUS',
+                    'Provide x-payment-hash to select which pending purchase to confirm.'
+                ),
+                context: {
+                    candidatePaymentHashes: pendingEntitlements.map((entry) => entry.paymentHash),
+                    candidateEntitlementIds: pendingEntitlements.map((entry) => entry.id)
+                }
+            });
+        }
+
+        const verification = await globalL402Options.provider.verifyPayment(targetEntitlement.paymentHash, credentials.preimage);
+        if (verification.status === 'pending') {
+            return reply.status(402).send(toErrorPayload(
+                'Payment settlement pending',
+                'PAYMENT_SETTLEMENT_PENDING',
+                'Complete settlement and retry confirmation, or wait for provider webhook reconciliation.'
+            ));
+        }
+
+        if (verification.status === 'expired' || verification.status === 'failed') {
+            await transitionPaymentStatus(targetEntitlement.paymentHash, verification.status, {
+                providerName: globalL402Options.provider.providerName,
+                providerInvoiceId: verification.providerInvoiceId ?? null,
+                expiresAt: verification.expiresAt ?? null,
+                settledAt: verification.settledAt ?? null,
+                failureReason: verification.failureReason ?? null,
+                detailsPatch: {
+                    purchaseConfirmStatus: verification.status,
+                    purchaseConfirmAt: new Date().toISOString()
+                }
+            });
+
+            return reply.status(402).send(toErrorPayload(
+                'Payment verification failed',
+                'PAYMENT_VERIFICATION_FAILED',
+                'The invoice is no longer payable. Start a new purchase to receive a fresh challenge.'
+            ));
+        }
+
+        await transitionPaymentStatus(targetEntitlement.paymentHash, 'paid', {
+            providerName: globalL402Options.provider.providerName,
+            providerInvoiceId: verification.providerInvoiceId ?? null,
+            expiresAt: verification.expiresAt ?? null,
+            settledAt: verification.settledAt ?? null,
+            failureReason: null,
+            detailsPatch: {
+                purchaseConfirmStatus: 'paid',
+                purchaseConfirmAt: new Date().toISOString()
+            }
+        });
+
+        const entitlement = await LicensingService.activateEntitlementForPayment(domainId, targetEntitlement.paymentHash);
+        if (!entitlement || entitlement.status !== 'active') {
+            return reply.status(409).send(toErrorPayload(
+                'Entitlement not active',
+                'ENTITLEMENT_NOT_ACTIVE',
+                'Payment settled but entitlement activation failed. Retry confirmation with the same payment hash.'
+            ));
+        }
+
+        return {
+            data: {
+                ...entitlement,
+                expiresAt: entitlement.expiresAt ? entitlement.expiresAt.toISOString() : null,
+                activatedAt: entitlement.activatedAt ? entitlement.activatedAt.toISOString() : null
+            },
+            meta: buildMeta('Use this entitlement to consume paid content', ['GET /api/content-items/:id'], 'low', 1)
+        };
+    });
+
+    server.get('/entitlements/me', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    domainId: Type.Number(),
+                    offerId: Type.Number(),
+                    policyId: Type.Number(),
+                    policyVersion: Type.Number(),
+                    agentProfileId: Type.Number(),
+                    paymentHash: Type.String(),
+                    status: Type.String(),
+                    remainingReads: Type.Union([Type.Number(), Type.Null()]),
+                    expiresAt: Type.Union([Type.String(), Type.Null()]),
+                    activatedAt: Type.Union([Type.String(), Type.Null()]),
+                    terminatedAt: Type.Union([Type.String(), Type.Null()])
+                }))),
+                403: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const domainId = getDomainId(request);
+        const pKeyId = (request as any).authPrincipal?.keyId;
+        if (typeof pKeyId !== 'number') {
+            return reply.status(403).send(toErrorPayload(
+                'API Key required',
+                'API_KEY_REQUIRED',
+                'Use an API key principal to list entitlement ownership.'
+            ));
+        }
+
+        const [profile] = await db.select().from(agentProfiles).where(and(
+            eq(agentProfiles.apiKeyId, pKeyId),
+            eq(agentProfiles.domainId, domainId)
+        ));
+
+        if (!profile) {
+            return {
+                data: [],
+                meta: buildMeta('No entitlements yet', ['POST /api/offers/:id/purchase'], 'low', 0)
+            };
+        }
+
+        const rows = await LicensingService.getEntitlementsForAgent(domainId, profile.id);
+        return {
+            data: rows.map((row) => ({
+                ...row,
+                expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+                activatedAt: row.activatedAt ? row.activatedAt.toISOString() : null,
+                terminatedAt: row.terminatedAt ? row.terminatedAt.toISOString() : null
+            })),
+            meta: buildMeta('Inspect your entitlement access grants', ['GET /api/content-items/:id/offers'], 'low', 1)
+        };
+    });
+
+    server.get('/entitlements/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    domainId: Type.Number(),
+                    offerId: Type.Number(),
+                    policyId: Type.Number(),
+                    policyVersion: Type.Number(),
+                    agentProfileId: Type.Number(),
+                    paymentHash: Type.String(),
+                    status: Type.String(),
+                    remainingReads: Type.Union([Type.Number(), Type.Null()]),
+                    expiresAt: Type.Union([Type.String(), Type.Null()]),
+                    activatedAt: Type.Union([Type.String(), Type.Null()]),
+                    terminatedAt: Type.Union([Type.String(), Type.Null()])
+                })),
+                403: AIErrorResponse,
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const domainId = getDomainId(request);
+        const pKeyId = (request as any).authPrincipal?.keyId;
+        if (typeof pKeyId !== 'number') {
+            return reply.status(403).send(toErrorPayload(
+                'API Key required',
+                'API_KEY_REQUIRED',
+                'Use an API key principal to inspect entitlement ownership.'
+            ));
+        }
+
+        const [profile] = await db.select().from(agentProfiles).where(and(
+            eq(agentProfiles.apiKeyId, pKeyId),
+            eq(agentProfiles.domainId, domainId)
+        ));
+        if (!profile) {
+            return reply.status(404).send(toErrorPayload(
+                'Entitlement not found',
+                'ENTITLEMENT_NOT_FOUND',
+                'No entitlement profile exists for this API key in the selected domain.'
+            ));
+        }
+
+        const entitlement = await LicensingService.getEntitlementForAgentById(domainId, profile.id, id);
+        if (!entitlement) {
+            return reply.status(404).send(toErrorPayload(
+                'Entitlement not found',
+                'ENTITLEMENT_NOT_FOUND',
+                'Provide a valid entitlement ID owned by this API key and domain.'
+            ));
+        }
+
+        return {
+            data: {
+                ...entitlement,
+                expiresAt: entitlement.expiresAt ? entitlement.expiresAt.toISOString() : null,
+                activatedAt: entitlement.activatedAt ? entitlement.activatedAt.toISOString() : null,
+                terminatedAt: entitlement.terminatedAt ? entitlement.terminatedAt.toISOString() : null
+            },
+            meta: buildMeta('Use this entitlement for paid-content reads', ['GET /api/content-items/:id'], 'low', 1)
+        };
     });
 
     server.post('/entitlements/:id/delegate', {
@@ -1836,13 +2300,19 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(403).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Supervisors cannot delegate entitlements.'));
         }
 
-        const [sourceProfile] = await db.select().from(agentProfiles).where(eq(agentProfiles.apiKeyId, pKeyId));
+        const [sourceProfile] = await db.select().from(agentProfiles).where(and(
+            eq(agentProfiles.apiKeyId, pKeyId),
+            eq(agentProfiles.domainId, domainId)
+        ));
         if (!sourceProfile) return reply.status(403).send(toErrorPayload('Profile missing', 'PROFILE_MISSING', 'You do not have any entitlements.'));
 
         const [entitlement] = await db.select().from(entitlements).where(and(eq(entitlements.id, id), eq(entitlements.agentProfileId, sourceProfile.id), eq(entitlements.domainId, domainId)));
         if (!entitlement) return reply.status(404).send(toErrorPayload('Entitlement missing', 'ENTITLEMENT_NOT_FOUND', 'Could not locate the parent entitlement.'));
 
-        let [targetProfile] = await db.select().from(agentProfiles).where(eq(agentProfiles.apiKeyId, targetApiKeyId));
+        let [targetProfile] = await db.select().from(agentProfiles).where(and(
+            eq(agentProfiles.apiKeyId, targetApiKeyId),
+            eq(agentProfiles.domainId, domainId)
+        ));
         if (!targetProfile) {
             [targetProfile] = await db.insert(agentProfiles).values({ domainId, apiKeyId: targetApiKeyId }).returning();
         }

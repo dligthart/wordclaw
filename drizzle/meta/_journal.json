@@ -113,6 +113,13 @@
       "when": 1771976465187,
       "tag": "0015_curved_zzzax",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1772000001000,
+      "tag": "0016_human_paid_consumption",
+      "breakpoints": true
     }
   ]
 }

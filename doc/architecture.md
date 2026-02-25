@@ -21,7 +21,8 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  ┌────────────────────────────────────────────────────────────────┐ │
 │  │                     MIDDLEWARE CHAIN                            │ │
 │  │                                                                │ │
-│  │  Request ID ─► Rate Limit ─► Idempotency ─► Auth ─► L402      │ │
+│  │  Request ID ─► Rate Limit ─► Idempotency ─► Auth ─► Payment    │ │
+│  │                                                     (L402/AP2) │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 │                              │                                      │
 │         ┌────────────────────┼────────────────────┐                 │
@@ -42,7 +43,7 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  │                                                                │ │
 │  │  Policy Engine ── Context Adapters ── Content Schema Validation│ │
 │  │  Content Types ── Content Items ─── Event Bus ── Webhooks      │ │
-│  │  API Keys ─────── Audit Logging ───── Payment Provider         │ │
+│  │  Embedding Svc ── API Keys ────── Audit Logging ─ Payment Prov │ │
 │  │  Revenue Allocator ─ Payout Worker ── Allocation State Worker  │ │
 │  └────────────────────────────┬───────────────────────────────────┘ │
 │                               ▼                                     │
@@ -50,9 +51,11 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  │                     DATA LAYER (Drizzle ORM)                   │ │
 │  │                                                                │ │
 │  │  content_types ── content_items ── content_item_versions       │ │
-│  │  audit_logs ───── api_keys ─────── webhooks ─── users          │ │
-│  │  payments ─────── policy_decision_logs ── agent_profiles       │ │
-│  │  revenue_events ─ revenue_allocations ── payout_batches        │ │
+│  │  content_item_embeddings ───────── api_keys ─────── webhooks   │ │
+│  │  users ────────── payments ─────── policy_decision_logs        │ │
+│  │  agent_profiles ─ ap2_mandates ─── ap2_settlement_events       │ │
+│  │  entitlements ─── revenue_events ─ revenue_allocations         │ │
+│  │  payout_batches ─ audit_logs                                   │ │
 │  └────────────────────────────┬───────────────────────────────────┘ │
 │                               │                                     │
 └───────────────────────────────┼─────────────────────────────────────┘
@@ -79,7 +82,7 @@ Every incoming HTTP request passes through a shared middleware pipeline before r
 | **Rate Limit**   | Fastify rate-limit plugin, per-IP throttling                |
 | **Idempotency**  | Caches POST/PUT/DELETE responses keyed by `Idempotency-Key` |
 | **Auth**         | Validates `x-api-key` or `Authorization: Bearer` headers   |
-| **L402**         | Optional micropayment gate using Lightning invoices         |
+| **Payment Gate** | Optional Agentic Monetization gate (L402 or AP2 mandates)   |
 
 ### API Layer
 
@@ -98,6 +101,9 @@ Business logic lives in isolated service modules. No API handler accesses the da
 
 #### Policy Engine & Context Adapters
 The `PolicyEngine` enforces rigorous cross-protocol parity. A request from REST, GraphQL, or MCP traverses through a `ContextAdapter` to map into a flat, protocol-agnostic `OperationContext`. The engine parses the active rules against the principal's scope and produces an immutable `PolicyDecision` (allow/deny) and automatically populates the `policy_decision_logs` database table.
+
+#### Embedding Service (Vector RAG)
+An asynchronous `EmbeddingService` listens to the WordClaw `EventBus` for `content_item.published` events. It chunks the document payload, hits an external LLM Embeddings Provider (e.g. OpenAI), and stores vectors in a `pgvector` enabled Postgres table. This powers out-of-the-box semantic search endpoints for AI agents.
 
 ### Data Layer
 

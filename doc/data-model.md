@@ -14,6 +14,18 @@
 │ updatedAt        │       │ createdAt            │       │ createdAt                │
 └──────────────────┘       │ updatedAt            │       └───────────────────────────┘
                            └──────────────────────┘
+                               │
+                               │ 1:1
+                               ▼
+                           ┌───────────────────────────┐
+                           │ content_item_embeddings   │
+                           ├───────────────────────────┤
+                           │ id                PK      │
+                           │ contentItemId     FK      │
+                           │ domainId                  │
+                           │ textChunk                 │
+                           │ embedding        vector   │
+                           └───────────────────────────┘
 
 ┌──────────────────┐       ┌──────────────────────┐
 │     users        │       │     api_keys         │
@@ -43,21 +55,31 @@
 │ createdAt        │       └──────────────────────┘
 └──────────────────┘
 
-┌──────────────────┐       ┌──────────────────────┐
-│    payments      │       │ policy_decision_logs │
-├──────────────────┤       ├──────────────────────┤
-│ id          PK   │       │ id             PK    │
-│ paymentHash UQ   │       │ principalId          │
-│ paymentRequest   │       │ operation            │
-│ amountSatoshis   │       │ resourceType         │
-│ status           │       │ resourceId           │
-│ resourcePath     │       │ environment          │
-│ actorId          │       │ outcome              │
-│ details          │       │ remediation          │
-│ createdAt        │       │ policyVersion        │
-│ updatedAt        │       │ evaluationDurationMs │
-└──────────────────┘       │ createdAt            │
-                           └──────────────────────┘
+┌──────────────────┐       ┌──────────────────────┐       ┌──────────────────────┐
+│    payments      │──1:1──│   entitlements       │       │ policy_decision_logs │
+├──────────────────┤       ├──────────────────────┤       ├──────────────────────┤
+│ id          PK   │       │ id             PK    │       │ id             PK    │
+│ paymentHash UQ   │       │ agentProfileId FK    │       │ principalId          │
+│ paymentMethod    │       │ paymentHash    FK    │       │ operation            │
+│ amountSatoshis   │       │ status               │       │ resourceType         │
+│ status           │       │ remainingReads       │       │ resourceId           │
+│ resourcePath     │       │ expiresAt            │       │ environment          │
+│ actorId          │       │ createdAt            │       │ outcome              │
+│ details          │       └──────────────────────┘       │ remediation          │
+│ createdAt        │                                      │ policyVersion        │
+│ updatedAt        │       ┌──────────────────────┐       │ evaluationDurationMs │
+└──────────────────┘       │   ap2_mandates       │       │ createdAt            │
+      │ 1:*                ├──────────────────────┤       └──────────────────────┘
+      ▼                    │ id             PK    │
+┌──────────────────┐       │ paymentId      FK    │
+│ ap2_settlement_  │       │ mandateDigest        │
+│ events           │       │ maxAmountMinor       │
+├──────────────────┤       │ status               │
+│ id          PK   │       │ signature            │
+│ providerEventId  │       └──────────────────────┘
+│ paymentId   FK   │
+│ eventType        │
+└──────────────────┘
 ```
 
 Rendered image:
@@ -105,6 +127,19 @@ Immutable snapshots created before every content item update. Cascade-deleted wh
 | `status`        | text      | Snapshot of status at version  |
 | `version`       | integer   | Version number                 |
 | `createdAt`     | timestamp |                                |
+
+### content_item_embeddings (RFC 0012)
+
+Vector embeddings generated from published content payload chunks.
+
+| Column          | Type      | Notes                                  |
+|-----------------|-----------|----------------------------------------|
+| `id`            | serial PK |                                        |
+| `contentItemId` | integer   | FK → `content_items.id`               |
+| `domainId`      | integer   | Used for tenant isolation              |
+| `chunkIndex`    | integer   | Order index of chunk                   |
+| `textChunk`     | text      | Raw extracted string chunk             |
+| `embedding`     | vector    | `pgvector` stored float array          |
 
 ### audit_logs
 
@@ -154,20 +189,61 @@ Event delivery endpoints with HMAC signing.
 
 ### payments
 
-Tracks Lightning Network (L402) invoice states across API interactions.
+Tracks payment states (L402 or AP2) across API interactions.
 
 | Column           | Type      | Notes                                |
 |------------------|-----------|--------------------------------------|
 | `id`             | serial PK |                                      |
-| `paymentHash`    | text      | Unique hash of the LN invoice        |
-| `paymentRequest` | text      | The BOLT11 invoice string            |
+| `paymentHash`    | text      | Unique hash of the LN invoice / auth |
+| `paymentMethod`  | text      | `lightning` or `ap2`                 |
+| `paymentRequest` | text      | The BOLT11 invoice string (if L402)  |
 | `amountSatoshis` | integer   | Cost in satoshis                     |
-| `status`         | text      | `pending`, `paid`, or `consumed`     |
+| `status`         | text      | `pending`, `paid`, `consumed`, `failed` |
 | `resourcePath`   | text      | The API route triggering the payment |
 | `actorId`        | text      | Identity of the caller               |
 | `details`        | jsonb     | Request context and agent headers    |
 | `createdAt`      | timestamp |                                      |
 | `updatedAt`      | timestamp |                                      |
+
+### entitlements (RFC 0015)
+
+Durable buyer access grants tied to an agent profile and payment hash.
+
+| Column           | Type      | Notes                                |
+|------------------|-----------|--------------------------------------|
+| `id`             | serial PK |                                      |
+| `agentProfileId` | integer   | Buyer identity                       |
+| `paymentHash`    | text      | Link to the authorizing payment      |
+| `status`         | text      | `pending_payment`, `active`, `exhausted` |
+| `remainingReads` | integer   | Nullable (if infinite)               |
+| `expiresAt`      | timestamp | Nullable                             |
+| `createdAt`      | timestamp |                                      |
+
+### ap2_mandates (RFC 0016)
+
+Append-only ledger of verified AP2 signed mandates.
+
+| Column           | Type      | Notes                                |
+|------------------|-----------|--------------------------------------|
+| `id`             | serial PK |                                      |
+| `domainId`       | integer   |                                      |
+| `paymentId`      | integer   | FK → `payments.id`                   |
+| `mandateDigest`  | text      | Hash of mandate                      |
+| `status`         | text      | `verified`, `partially_used`, etc.   |
+| `signature`      | text      | Cryptographic proof                  |
+| `maxAmountMinor` | integer   | Enforced budget ceiling              |
+
+### ap2_settlement_events (RFC 0016)
+
+Append-only webhook event receipt table for reconciling completed AP2 purchases.
+
+| Column            | Type      | Notes                                |
+|-------------------|-----------|--------------------------------------|
+| `id`              | serial PK |                                      |
+| `providerEventId` | text      | Unique for replay protection         |
+| `paymentId`       | integer   | FK → `payments.id`                   |
+| `eventType`       | text      | E.g. `payment.settled`               |
+| `payloadHash`     | text      |                                      |
 
 ### policy_decision_logs
 
