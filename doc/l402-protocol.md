@@ -45,9 +45,20 @@ sequenceDiagram
 
 ## Agentic Content Licensing (RFC 0004)
 
-The L402 middleware interacts seamlessly with **Entitlements**. When an invoice is created via `POST /api/offers/:id/purchase`, an inert entitlement is provisioned. Once the client satisfies the L402 challenge on a read endpoint, the middleware locates the matching entitlement and executes an atomic decrement on `remainingReads`.
+For paid content purchases, L402 is used as the currently enabled settlement rail in RFC 0015 flow:
 
-If an entitlement is exhausted, expired, or revoked, the L402 middleware will intercept the request and prompt the agent to purchase a new offer.
+1. `POST /api/offers/:id/purchase` creates:
+- `payments` in `pending`
+- `entitlements` in `pending_payment`
+- a `402` challenge (`WWW-Authenticate: L402 ...`)
+
+2. `POST /api/offers/:id/purchase/confirm` verifies `Authorization: L402 <macaroon>:<preimage>` and transitions:
+- `payments` to `paid`
+- `entitlements` to `active`
+
+3. `GET /api/content-items/:id` enforces offer-first entitlement reads when active offers exist; entitlement metering and denial reasons are handled in the content route logic (`ENTITLEMENT_EXPIRED`, `ENTITLEMENT_EXHAUSTED`, etc.).
+
+Legacy L402 pay-per-request behavior remains for routes/items where no active offers are present.
 
 ## Future Enhancements (Phase 6 Roadmap)
 

@@ -216,33 +216,53 @@ DELETE /api/auth/keys/:id
 
 ## Licensing, Entitlements & Paid Consumption (RFC 0004 & RFC 0015)
 
-WordClaw supports Paid Content Consumption where purchases create durable `Entitlements`. Purchases can be funded via Lightning Network (L402).
+WordClaw supports Paid Content Consumption where purchases create durable `Entitlements`.
+
+Current runtime support:
+- `lightning` (L402) is enabled.
+- `ap2` is tracked in RFC 0016 and currently returns `PAYMENT_METHOD_UNSUPPORTED` if requested.
 
 ### Discover Offers
 ```
 GET /api/content-items/:id/offers
 ```
-Returns available purchasing options for a specific content item.
+Returns active offers that apply to the item (`item`, `type`, and `subscription` scope precedence).
 
 ### Purchase Offer
 ```
 POST /api/offers/:id/purchase
 ```
-Initiates a purchase. 
-Returns a `402 Payment Required` with `paymentHash`, `entitlementId`, and the payment rail challenge (e.g. L402 macaroon + invoice).
+Initiates a purchase.
+
+Request body (optional):
+- `paymentMethod`: `"lightning"` or `"ap2"` (only `"lightning"` is currently enabled at runtime)
+
+Returns:
+- `402 Payment Required`
+- `paymentHash`
+- `entitlementId`
+- payment challenge payload (L402 macaroon + invoice)
+
+Entitlement is created in `pending_payment` and only becomes `active` after successful confirmation.
 
 ### Confirm Purchase (L402 / Lightning)
 ```
 POST /api/offers/:id/purchase/confirm
 ```
-Requires `Authorization: L402 <macaroon>:<preimage>`. Verifies the payment and transitions the entitlement to `active`.
+Requires:
+- `Authorization: L402 <macaroon>:<preimage>`
+- optional `x-payment-hash` when multiple pending purchases exist for the same offer
+
+Verifies settlement and transitions:
+- `payments`: `pending -> paid`
+- `entitlements`: `pending_payment -> active`
 
 ### View Entitlements
 ```
 GET /api/entitlements/me
 GET /api/entitlements/:id
 ```
-Lists active or historical entitlements bound to the authenticated agent.
+Lists active and historical entitlements bound to the authenticated agent profile.
 
 ### Delegate Entitlement
 ```
@@ -254,6 +274,16 @@ Allows an agent to fork a subset of their remaining reads to a subordinate agent
 |------------------|--------|----------|---------------------------------|
 | `targetApiKeyId` | number | yes      | ID of the subordinate API key   |
 | `readsAmount`    | number | yes      | Number of reads to delegate     |
+
+### Offer-First Read Enforcement
+
+When active offers exist for `GET /api/content-items/:id`, reads are entitlement-gated.
+
+Selection behavior:
+- If `x-entitlement-id` is provided, that entitlement is validated.
+- If exactly one eligible entitlement exists, it is auto-selected.
+- If multiple are eligible, API returns `409 ENTITLEMENT_AMBIGUOUS`.
+- If none are eligible, API returns `402 OFFER_REQUIRED`.
 
 ---
 
@@ -302,7 +332,7 @@ All errors follow a structured envelope:
 }
 ```
 
-Common codes: `EMPTY_UPDATE_BODY`, `CONTENT_TYPE_NOT_FOUND`, `CONTENT_ITEM_NOT_FOUND`, `INVALID_CONTENT_SCHEMA_JSON`, `CONTENT_SCHEMA_VALIDATION_FAILED`, `TARGET_VERSION_NOT_FOUND`, `AUTH_MISSING_API_KEY`, `AUTH_INSUFFICIENT_SCOPE`.
+Common codes: `EMPTY_UPDATE_BODY`, `CONTENT_TYPE_NOT_FOUND`, `CONTENT_ITEM_NOT_FOUND`, `INVALID_CONTENT_SCHEMA_JSON`, `CONTENT_SCHEMA_VALIDATION_FAILED`, `TARGET_VERSION_NOT_FOUND`, `AUTH_MISSING_API_KEY`, `AUTH_INSUFFICIENT_SCOPE`, `OFFER_REQUIRED`, `ENTITLEMENT_AMBIGUOUS`, `ENTITLEMENT_NOT_FOUND`, `ENTITLEMENT_NOT_ACTIVE`, `ENTITLEMENT_EXPIRED`, `ENTITLEMENT_EXHAUSTED`, `PAYMENT_CONFIRMATION_REQUIRED`, `PAYMENT_SETTLEMENT_PENDING`, `PAYMENT_METHOD_UNSUPPORTED`.
 
 ---
 

@@ -88,8 +88,10 @@ Send an `Idempotency-Key` header on any POST/PUT/DELETE. If the same key is seen
 ## Agentic Monetization (L402)
 
 WordClaw implements a unified Paid Content Consumption Contract (RFC 0015):
-- **Offer / Entitlement Licensing**: Rather than solely pay-per-request gates, users buy logical Entitlements (`active`, `exhausted`, `expired`) attached to a purchase payment hash.
-- **Lightning Network (L402)**: Standard HTTP 402 payment gates utilizing Macaroon tokens and preimages verified against provider states.
+- **Offer / Entitlement Licensing**: Offer purchases create entitlements in `pending_payment`, then activate on successful payment verification. Active entitlements are metered with deterministic transitions (`active`, `exhausted`, `expired`, `revoked`).
+- **Offer-First Read Gating**: If active offers exist for an item, reads require entitlement resolution (`x-entitlement-id`, single auto-select, or explicit ambiguity error).
+- **Lightning Network (L402)**: Runtime-enabled payment rail using HTTP 402 challenges and Macaroon + preimage verification.
+- **AP2 Boundary**: AP2 is specified in RFC 0016 and tracked for implementation, but not enabled in current runtime payment paths.
 
 ## Revenue Attribution & Agent Payouts
 

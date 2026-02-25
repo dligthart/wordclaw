@@ -181,32 +181,45 @@ Event delivery endpoints with HMAC signing.
 
 Tracks Lightning Network (L402) invoice states across API interactions.
 
-| Column           | Type      | Notes                                |
-|------------------|-----------|--------------------------------------|
-| `id`             | serial PK |                                      |
-| `paymentHash`    | text      | Unique hash of the LN invoice        |
-| `paymentRequest` | text      | The BOLT11 invoice string            |
-| `amountSatoshis` | integer   | Cost in satoshis                     |
-| `status`         | text      | `pending`, `paid`, `consumed`, `failed` |
-| `resourcePath`   | text      | The API route triggering the payment |
-| `actorId`        | text      | Identity of the caller               |
-| `details`        | jsonb     | Request context and agent headers    |
-| `createdAt`      | timestamp |                                      |
-| `updatedAt`      | timestamp |                                      |
+| Column              | Type      | Notes                                              |
+|---------------------|-----------|----------------------------------------------------|
+| `id`                | serial PK |                                                    |
+| `domainId`          | integer   | Tenant boundary                                    |
+| `paymentHash`       | text      | Unique invoice/payment lookup hash                 |
+| `provider`          | text      | Payment provider (`mock`, `lnbits`, etc.)         |
+| `providerInvoiceId` | text      | Provider-side invoice identifier                   |
+| `paymentRequest`    | text      | BOLT11 invoice string                              |
+| `amountSatoshis`    | integer   | Cost in satoshis                                   |
+| `status`            | text      | `pending`, `paid`, `consumed`, `expired`, `failed` |
+| `expiresAt`         | timestamp | Invoice expiry timestamp                           |
+| `settledAt`         | timestamp | Settlement timestamp                               |
+| `failureReason`     | text      | Provider failure reason                            |
+| `lastEventId`       | text      | Last applied provider webhook event id             |
+| `resourcePath`      | text      | API route linked to the payment                    |
+| `actorId`           | text      | Identity of caller                                 |
+| `details`           | jsonb     | Request context and safe headers                   |
+| `createdAt`         | timestamp |                                                    |
+| `updatedAt`         | timestamp |                                                    |
 
 ### entitlements (RFC 0015)
 
 Durable buyer access grants tied to an agent profile and payment hash.
 
-| Column           | Type      | Notes                                |
-|------------------|-----------|--------------------------------------|
-| `id`             | serial PK |                                      |
-| `agentProfileId` | integer   | Buyer identity                       |
-| `paymentHash`    | text      | Link to the authorizing payment      |
-| `status`         | text      | `pending_payment`, `active`, `exhausted` |
-| `remainingReads` | integer   | Nullable (if infinite)               |
-| `expiresAt`      | timestamp | Nullable                             |
-| `createdAt`      | timestamp |                                      |
+| Column           | Type      | Notes                                                                |
+|------------------|-----------|----------------------------------------------------------------------|
+| `id`             | serial PK |                                                                      |
+| `domainId`       | integer   | Tenant boundary                                                      |
+| `offerId`        | integer   | Purchased offer                                                      |
+| `policyId`       | integer   | Pinned policy snapshot                                               |
+| `policyVersion`  | integer   | Pinned policy version                                                |
+| `agentProfileId` | integer   | Buyer identity                                                       |
+| `paymentHash`    | text      | Linked payment hash (unique)                                         |
+| `status`         | text      | `pending_payment`, `active`, `exhausted`, `expired`, `revoked`      |
+| `remainingReads` | integer   | Nullable (`null` means unlimited)                                    |
+| `expiresAt`      | timestamp | Entitlement expiry                                                   |
+| `activatedAt`    | timestamp | Set when payment confirmation activates entitlement                  |
+| `terminatedAt`   | timestamp | Set when entitlement enters terminal state (`exhausted/expired/revoked`) |
+| `delegatedFrom`  | integer   | Parent entitlement id for delegated grants                           |
 
 
 
