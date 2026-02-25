@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
     title: "WordClaw",
     base: "/wordclaw/docs/",
+    outDir: ".vitepress/dist/docs",
     description: "Documentation for WordClaw Content API and Supervisor UI",
     themeConfig: {
         nav: [
