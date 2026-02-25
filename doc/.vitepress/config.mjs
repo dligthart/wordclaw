@@ -23,6 +23,7 @@ export default withMermaid(defineConfig({
                 text: 'Guides',
                 items: [
                     { text: 'Documentation Standards', link: '/guides/documentation-standards' },
+                    { text: 'CI Migrations and Tests Troubleshooting', link: '/guides/ci-migrations-troubleshooting' },
                     { text: 'Blog Integration', link: '/guides/blog-integration-guide' },
                     { text: 'MCP Integration', link: '/guides/mcp-integration' }
                 ]

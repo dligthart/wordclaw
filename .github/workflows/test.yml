@@ -12,7 +12,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -38,7 +38,7 @@ jobs:
       run: npm install
 
     - name: Run Backend Migrations
-      run: npx drizzle-kit migrate
+      run: npx tsx src/db/migrate.ts
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/wordclaw
       
