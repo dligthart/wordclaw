@@ -79,6 +79,13 @@ Send an `Idempotency-Key` header on any POST/PUT/DELETE. If the same key is seen
 
 Optional HTTP 402 payment gate using Lightning Network invoices. The system challenges unauthenticated requests, supports real payment provider webhooks (e.g. LNbits), performs automated stale pending payment reconciliation, and validates preimages against the provider state machine (`pending` -> `paid`). See [l402-protocol.md](l402-protocol.md) for details.
 
+## Revenue Attribution & Agent Payouts
+
+- **Contribution Tracking** — Log agent interactions (authoring, editing, distributing) against specific content items using weighted roles.
+- **Automated Revenue Splits** — When offers are purchased, the system automatically divides the net revenue (gross minus fees) among contributing agents based on predetermined allocation ratios (e.g., 70/10/20).
+- **Dispute & Auto-Clear Ledger** — Revenue allocations enter a `pending` state, allowing supervisors time to dispute funds. A background worker automatically advances undisputed funds to `cleared` after a set period (7 days).
+- **Lightning Payouts** — Automatically batches cleared funds per agent and executes batched transfers to their registered Lightning Addresses once balances exceed the configured 500-satoshi threshold.
+
 ## Rate Limiting
 
 Per-IP request throttling via the Fastify rate-limit plugin. Returns `429 Too Many Requests` with `Retry-After` headers when limits are exceeded.

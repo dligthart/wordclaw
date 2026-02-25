@@ -82,7 +82,34 @@ export async function transitionPaymentStatus(
     .where(eq(payments.paymentHash, paymentHash))
     .returning();
 
-  return updated ?? null;
+  const result = updated ?? null;
+
+  if (result && currentStatus === 'pending' && nextStatus === 'paid') {
+    try {
+      // Lazy import to avoid circular dependency issues if any
+      const { entitlements, offers } = await import('../db/schema.js');
+      const { RevenueAllocatorService } = await import('./revenue-allocator.service.js');
+
+      const [entitlement] = await db.select().from(entitlements).where(eq(entitlements.paymentHash, paymentHash));
+      if (entitlement) {
+        const [offer] = await db.select().from(offers).where(eq(offers.id, entitlement.offerId));
+        if (offer && offer.scopeType === 'item' && offer.scopeRef !== null) {
+          await RevenueAllocatorService.allocateRevenue(
+            result.domainId,
+            offer.scopeRef,
+            'offer_purchase',
+            result.paymentHash,
+            result.amountSatoshis,
+            0
+          );
+        }
+      }
+    } catch (e) {
+      console.error(`[PaymentLedger] Failed to allocate revenue for payment ${paymentHash}`, e);
+    }
+  }
+
+  return result;
 }
 
 export function mapProviderStatusToPersisted(status: ProviderPaymentStatus): PersistedPaymentStatus {

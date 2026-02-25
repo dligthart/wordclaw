@@ -1,7 +1,7 @@
 # RFC 0006: Revenue Attribution and Agent Payouts
 
 **Author:** AI Assistant  
-**Status:** Proposed  
+**Status:** Implemented  
 **Date:** 2026-02-21  
 
 ## 1. Summary

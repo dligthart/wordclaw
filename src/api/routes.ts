@@ -3373,4 +3373,65 @@ export default async function apiRoutes(server: FastifyInstance) {
             meta: buildMeta('Comment posted successfully', [], 'low', 1)
         });
     });
+
+    server.get('/agents/me/earnings', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Object({
+                    pending: Type.Number(),
+                    cleared: Type.Number(),
+                    disputed: Type.Number()
+                })),
+                401: AIErrorResponse,
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const authPrincipal = (request as any).authPrincipal;
+        const pKeyId = authPrincipal?.keyId;
+
+        if (typeof pKeyId !== 'number') {
+            return reply.status(401).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can view earnings.'));
+        }
+
+        const domainId = getDomainId(request);
+        const [profile] = await db.select().from(agentProfiles).where(and(eq(agentProfiles.apiKeyId, pKeyId), eq(agentProfiles.domainId, domainId)));
+
+        if (!profile) {
+            return reply.status(404).send(toErrorPayload('Profile not found', 'PROFILE_NOT_FOUND', 'Agent profile does not exist.'));
+        }
+
+        const latestEvents = await db.execute(sql`
+            WITH LatestStatus AS (
+                SELECT DISTINCT ON (allocation_id) allocation_id, status 
+                FROM allocation_status_events 
+                ORDER BY allocation_id, created_at DESC
+            )
+            SELECT ls.status, SUM(ra.amount_sats) as total
+            FROM revenue_allocations ra
+            JOIN LatestStatus ls ON ls.allocation_id = ra.id
+            WHERE ra.agent_profile_id = ${profile.id}
+            GROUP BY ls.status
+        `);
+
+        const rows: any[] = (latestEvents as any).rows || latestEvents;
+        const earnings = {
+            pending: 0,
+            cleared: 0,
+            disputed: 0
+        };
+
+        for (const row of rows) {
+            const status = row.status as keyof typeof earnings;
+            const total = parseInt(row.total || '0', 10);
+            if (status in earnings) {
+                earnings[status] = total;
+            }
+        }
+
+        return reply.status(200).send({
+            data: earnings,
+            meta: buildMeta('View your agent earnings', [], 'low', 1)
+        });
+    });
 }

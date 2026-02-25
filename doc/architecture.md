@@ -43,6 +43,7 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  │  Policy Engine ── Context Adapters ── Content Schema Validation│ │
 │  │  Content Types ── Content Items ─── Event Bus ── Webhooks      │ │
 │  │  API Keys ─────── Audit Logging ───── Payment Provider         │ │
+│  │  Revenue Allocator ─ Payout Worker ── Allocation State Worker  │ │
 │  └────────────────────────────┬───────────────────────────────────┘ │
 │                               ▼                                     │
 │  ┌────────────────────────────────────────────────────────────────┐ │
@@ -50,7 +51,8 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  │                                                                │ │
 │  │  content_types ── content_items ── content_item_versions       │ │
 │  │  audit_logs ───── api_keys ─────── webhooks ─── users          │ │
-│  │  payments ─────── policy_decision_logs                         │ │
+│  │  payments ─────── policy_decision_logs ── agent_profiles       │ │
+│  │  revenue_events ─ revenue_allocations ── payout_batches        │ │
 │  └────────────────────────────┬───────────────────────────────────┘ │
 │                               │                                     │
 └───────────────────────────────┼─────────────────────────────────────┘
@@ -113,7 +115,12 @@ content_types 1───* content_items 1───* content_item_versions
                           │ (event matching)
                      webhooks
 
-users 1───* api_keys
+users 1───* api_keys 1───1 agent_profiles 1───* revenue_allocations
+                                                     │
+                                                     ▼
+                                              payout_transfers
+
+revenue_events 1───* revenue_allocations 1───* allocation_status_events
 ```
 
 Rendered image:
@@ -126,6 +133,7 @@ Key relationships:
 - Every update to a content item creates an immutable **version** snapshot.
 - All mutations emit **audit logs**; matching **webhooks** receive HMAC-signed delivery.
 - **API keys** carry scopes (`content:read`, `content:write`, `audit:read`, `admin`).
+- An **API key** maps to an **agent profile**, which receives fractions of **revenue events** via **revenue allocations** based on their content contributions.
 
 ## Request Lifecycle
 

@@ -4,7 +4,7 @@ import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
+import { agentProfiles, auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
@@ -1680,6 +1680,55 @@ server.prompt(
             }]
         };
     }
+);
+
+server.tool(
+    'get_my_earnings',
+    'Get agent earnings including pending, cleared, and disputed balances',
+    {
+        apiKeyId: z.number().describe('Your API Key ID')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ apiKeyId }, extra, domainId) => {
+        try {
+            const [profile] = await db.select().from(agentProfiles).where(and(eq(agentProfiles.apiKeyId, apiKeyId), eq(agentProfiles.domainId, domainId)));
+
+            if (!profile) {
+                return err('Agent profile not found for this API key');
+            }
+
+            const latestEvents = await db.execute(sql`
+                WITH LatestStatus AS (
+                    SELECT DISTINCT ON (allocation_id) allocation_id, status 
+                    FROM allocation_status_events 
+                    ORDER BY allocation_id, created_at DESC
+                )
+                SELECT ls.status, SUM(ra.amount_sats) as total
+                FROM revenue_allocations ra
+                JOIN LatestStatus ls ON ls.allocation_id = ra.id
+                WHERE ra.agent_profile_id = ${profile.id}
+                GROUP BY ls.status
+            `);
+
+            const rows: any[] = (latestEvents as any).rows || latestEvents;
+            const earnings = {
+                pending: 0,
+                cleared: 0,
+                disputed: 0
+            };
+
+            for (const row of rows) {
+                const status = row.status as keyof typeof earnings;
+                const total = parseInt(row.total || '0', 10);
+                if (status in earnings) {
+                    earnings[status] = total;
+                }
+            }
+
+            return okJson(earnings);
+        } catch (error) {
+            return err(`Error fetching earnings: ${(error as Error).message}`);
+        }
+    })
 );
 
 server.prompt(

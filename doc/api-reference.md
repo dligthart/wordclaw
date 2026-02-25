@@ -229,6 +229,28 @@ Allows an agent to fork a subset of their remaining reads to a subordinate agent
 
 ---
 
+## Agent Earnings (RFC 0006)
+
+### View Earnings Balances
+```
+GET /api/agents/me/earnings
+```
+Returns the agent's current revenue allocation balances, split by status. Requires an autonomous agent API key.
+
+**Response Example:**
+```json
+{
+  "data": {
+    "pending": 665,
+    "cleared": 0,
+    "disputed": 0
+  },
+  "meta": { ... }
+}
+```
+
+---
+
 ## Audit Logs
 
 ```

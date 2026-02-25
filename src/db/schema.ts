@@ -205,6 +205,7 @@ export const agentProfiles = pgTable('agent_profiles', {
     id: serial('id').primaryKey(),
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'cascade' }).notNull(),
+    displayName: text('display_name'),
     payoutAddress: text('payout_address'), // RFC 0006 lightning address
 });
 
@@ -265,4 +266,61 @@ export const l402OperatorConfigs = pgTable('l402_operator_configs', {
     checklistApprovals: jsonb('checklist_approvals').notNull().default({}),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const contributionEvents = pgTable('contribution_events', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    contentItemId: integer('content_item_id').references(() => contentItems.id, { onDelete: 'cascade' }).notNull(),
+    agentProfileId: integer('agent_profile_id').references(() => agentProfiles.id, { onDelete: 'cascade' }).notNull(),
+    role: text('role').notNull(), // 'author', 'editor', 'distributor'
+    weight: integer('weight').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const revenueEvents = pgTable('revenue_events', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    sourceType: text('source_type').notNull(), // 'offer_purchase', etc
+    sourceRef: text('source_ref').notNull(), // e.g., paymentHash
+    grossSats: integer('gross_sats').notNull(),
+    feeSats: integer('fee_sats').notNull(),
+    netSats: integer('net_sats').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const revenueAllocations = pgTable('revenue_allocations', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    revenueEventId: integer('revenue_event_id').references(() => revenueEvents.id, { onDelete: 'cascade' }).notNull(),
+    agentProfileId: integer('agent_profile_id').references(() => agentProfiles.id, { onDelete: 'cascade' }).notNull(),
+    amountSats: integer('amount_sats').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const allocationStatusEvents = pgTable('allocation_status_events', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    allocationId: integer('allocation_id').references(() => revenueAllocations.id, { onDelete: 'cascade' }).notNull(),
+    status: text('status').notNull(), // 'pending', 'disputed', 'cleared'
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const payoutBatches = pgTable('payout_batches', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    periodStart: timestamp('period_start').notNull(),
+    periodEnd: timestamp('period_end').notNull(),
+    status: text('status').notNull().default('processing'), // 'processing', 'completed', 'failed'
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const payoutTransfers = pgTable('payout_transfers', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    batchId: integer('batch_id').references(() => payoutBatches.id, { onDelete: 'cascade' }).notNull(),
+    agentProfileId: integer('agent_profile_id').references(() => agentProfiles.id, { onDelete: 'cascade' }).notNull(),
+    amountSats: integer('amount_sats').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending', 'completed', 'failed', 'failed_permanent'
+    createdAt: timestamp('created_at').defaultNow().notNull(),
 });
