@@ -4,69 +4,62 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 
 ## System Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          CLIENTS                                    │
-│                                                                     │
-│   ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐  │
-│   │  Browser  │     │  Agent   │     │   CLI    │     │Supervisor│  │
-│   │  / cURL   │     │  (LLM)   │     │  Tools   │     │    UI    │  │
-│   └────┬──────┘     └────┬─────┘     └────┬─────┘     └────┬─────┘  │
-│        │ HTTP            │ HTTP/stdio      │ HTTP               │ HTTP   │
-└────────┼────────────────┼────────────────┼────────────────────┼─────┘
-         │                │                │
-┌────────▼────────────────▼────────────────▼──────────────────────────┐
-│                        WORDCLAW SERVER                              │
-│                                                                     │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                     MIDDLEWARE CHAIN                            │ │
-│  │                                                                │ │
-│  │  Request ID ─► Rate Limit ─► Idempotency ─► Auth ─► L402      │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-│                              │                                      │
-│         ┌────────────────────┼────────────────────┐                 │
-│         ▼                    ▼                    ▼                  │
-│  ┌─────────────┐    ┌──────────────┐    ┌──────────────┐           │
-│  │  REST API   │    │ GraphQL API  │    │  MCP Server  │           │
-│  │  (Fastify)  │    │ (Mercurius)  │    │   (stdio)    │           │
-│  │             │    │              │    │              │            │
-│  │ /api/*      │    │ /graphql     │    │ Tools        │            │
-│  │ OpenAPI/    │    │ GraphiQL     │    │ Resources    │            │
-│  │ Swagger     │    │ Playground   │    │ Prompts      │            │
-│  └──────┬──────┘    └──────┬───────┘    └──────┬───────┘           │
-│         │                  │                   │                    │
-│         └──────────────────┼───────────────────┘                    │
-│                            ▼                                        │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                     SERVICES LAYER                             │ │
-│  │                                                                │ │
-│  │  Policy Engine ── Context Adapters ── Content Schema Validation│ │
-│  │  Content Types ── Content Items ─── Event Bus ── Webhooks      │ │
-│  │  Embedding Svc ── API Keys ────── Audit Logging ─ Payment Prov │ │
-│  │  Revenue Allocator ─ Payout Worker ── Allocation State Worker  │ │
-│  └────────────────────────────┬───────────────────────────────────┘ │
-│                               ▼                                     │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                     DATA LAYER (Drizzle ORM)                   │ │
-│  │                                                                │ │
-│  │  content_types ── content_items ── content_item_versions       │ │
-│  │  content_item_embeddings ───────── api_keys ─────── webhooks   │ │
-│  │  users ────────── payments ─────── policy_decision_logs        │ │
-│  │  agent_profiles ─ audit_logs ───── entitlements                │ │
-│  │  revenue_events ─ revenue_allocations ── payout_batches        │ │
-│  └────────────────────────────┬───────────────────────────────────┘ │
-│                               │                                     │
-└───────────────────────────────┼─────────────────────────────────────┘
-                                ▼
-                     ┌────────────────────┐
-                     │   PostgreSQL 16    │
-                     │   (Docker)         │
-                     └────────────────────┘
-```
+```mermaid
+flowchart TB
+  subgraph Clients
+    Browser["Browser / cURL"]
+    Agent["Agent (LLM)"]
+    CLI["CLI Tools"]
+    Supervisor["Supervisor UI"]
+  end
 
-Rendered image:
+  subgraph WordClaw["WordClaw Server"]
+    subgraph Middleware["Middleware Chain"]
+      RequestId["Request ID"] --> RateLimit["Rate Limit"] --> Idempotency["Idempotency"] --> Auth["Auth"] --> L402["L402"]
+    end
 
-![System architecture diagram](../images/diagrams/architecture-system-diagram.svg)
+    subgraph APIs["API Layer"]
+      REST["REST API (Fastify)"]
+      GraphQL["GraphQL API (Mercurius)"]
+      MCP["MCP Server (stdio)"]
+    end
+
+    subgraph Services["Services Layer"]
+      Policy["Policy Engine + Context Adapters"]
+      Content["Content Types + Content Items"]
+      Events["Event Bus + Webhooks"]
+      Embeddings["Embedding Service"]
+      Payments["Payment Provider + L402"]
+      Revenue["Revenue Allocator + Payout Worker"]
+    end
+
+    subgraph Data["Data Layer (Drizzle ORM)"]
+      Tables["content_types, content_items, content_item_versions<br/>content_item_embeddings, api_keys, users, webhooks<br/>payments, policy_decision_logs, audit_logs<br/>agent_profiles, entitlements, revenue_events<br/>revenue_allocations, payout_batches"]
+    end
+
+    L402 --> REST
+    L402 --> GraphQL
+    L402 --> MCP
+    REST --> Policy
+    GraphQL --> Policy
+    MCP --> Policy
+    Policy --> Content
+    Content --> Events
+    Content --> Embeddings
+    Content --> Payments
+    Content --> Revenue
+    Events --> Tables
+    Embeddings --> Tables
+    Payments --> Tables
+    Revenue --> Tables
+  end
+
+  Browser -->|HTTP| RequestId
+  Agent -->|HTTP / stdio| RequestId
+  CLI -->|HTTP| RequestId
+  Supervisor -->|HTTP| RequestId
+  Tables --> Postgres["PostgreSQL 16"]
+```
 
 ## Layer Responsibilities
 
@@ -109,27 +102,18 @@ Drizzle ORM maps TypeScript types to PostgreSQL tables. Migrations live in `driz
 
 ## Data Model
 
+```mermaid
+erDiagram
+  content_types ||--o{ content_items : defines_schema_for
+  content_items ||--o{ content_item_versions : snapshots
+  content_items ||--o{ audit_logs : emits_mutations
+  webhooks ||--o{ audit_logs : receives_delivery_events
+  users ||--o{ api_keys : creates
+  api_keys ||--|| agent_profiles : identifies_agent
+  agent_profiles ||--o{ revenue_allocations : receives
+  revenue_events ||--o{ revenue_allocations : allocates
+  revenue_allocations ||--o{ allocation_status_events : tracks_state
 ```
-content_types 1───* content_items 1───* content_item_versions
-                          │
-                          │ (audit trail)
-                          ▼
-                     audit_logs
-                          ▲
-                          │ (event matching)
-                     webhooks
-
-users 1───* api_keys 1───1 agent_profiles 1───* revenue_allocations
-                                                     │
-                                                     ▼
-                                              payout_transfers
-
-revenue_events 1───* revenue_allocations 1───* allocation_status_events
-```
-
-Rendered image:
-
-![Architecture data model diagram](../images/diagrams/architecture-data-model-diagram.svg)
 
 Key relationships:
 
@@ -141,41 +125,25 @@ Key relationships:
 
 ## Request Lifecycle
 
+```mermaid
+flowchart TD
+  A[Client request] --> B[Assign or propagate x-request-id]
+  B --> C{Rate limit passed?}
+  C -- No --> C1[Return 429 Too Many Requests]
+  C -- Yes --> D{Idempotency hit?}
+  D -- Yes --> D1[Return cached response]
+  D -- No --> E{Authenticated?}
+  E -- No --> E1[Return 401 / 403]
+  E -- Yes --> F[Route handler (REST / GraphQL / MCP)]
+  F --> G[Service layer: validate, execute, version]
+  G --> H[Write audit log]
+  G --> I[Emit event bus message]
+  G --> J[Queue webhook delivery (non-blocking)]
+  H --> K[Cache response for idempotency writes]
+  I --> K
+  J --> K
+  K --> L[Return response with x-request-id]
 ```
-Client Request
-     │
-     ▼
-  Assign x-request-id
-     │
-     ▼
-  Rate limit check ──── 429 Too Many Requests
-     │
-     ▼
-  Idempotency lookup ── Return cached response (if duplicate key)
-     │
-     ▼
-  Authenticate ───────── 401 / 403 (if required)
-     │
-     ▼
-  Route handler (REST / GraphQL / MCP)
-     │
-     ▼
-  Service layer (validate → execute → version)
-     │
-     ├──► Audit log written
-     ├──► Event bus emitted
-     └──► Webhook delivery queued (non-blocking, retries)
-     │
-     ▼
-  Cache response for idempotency
-     │
-     ▼
-  Return response with x-request-id
-```
-
-Rendered image:
-
-![Request lifecycle diagram](../images/diagrams/architecture-request-lifecycle-diagram.svg)
 
 ## Technology Stack
 

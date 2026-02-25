@@ -2,79 +2,87 @@
 
 ## Entity Relationship Diagram
 
+```mermaid
+erDiagram
+  content_types ||--o{ content_items : "contentTypeId"
+  content_items ||--o{ content_item_versions : "contentItemId"
+  content_items ||--o{ content_item_embeddings : "contentItemId"
+  users ||--o{ api_keys : "createdBy"
+  api_keys ||--o{ audit_logs : "userId"
+  payments ||--|| entitlements : "paymentHash"
+
+  content_types {
+    int id PK
+    text name
+    text slug
+    text schema
+  }
+
+  content_items {
+    int id PK
+    int contentTypeId FK
+    text status
+    int version
+  }
+
+  content_item_versions {
+    int id PK
+    int contentItemId FK
+    int version
+  }
+
+  content_item_embeddings {
+    int id PK
+    int contentItemId FK
+    int domainId
+    vector embedding
+  }
+
+  users {
+    int id PK
+    text email
+  }
+
+  api_keys {
+    int id PK
+    int createdBy FK
+    text scopes
+  }
+
+  audit_logs {
+    int id PK
+    int userId FK
+    text action
+    text entityType
+  }
+
+  webhooks {
+    int id PK
+    text url
+    boolean active
+  }
+
+  payments {
+    int id PK
+    text paymentHash
+    text status
+    int amountSatoshis
+  }
+
+  entitlements {
+    int id PK
+    int agentProfileId FK
+    text paymentHash FK
+    text status
+  }
+
+  policy_decision_logs {
+    int id PK
+    text principalId
+    text operation
+    text outcome
+  }
 ```
-┌──────────────────┐       ┌──────────────────────┐       ┌───────────────────────────┐
-│   content_types  │       │    content_items      │       │  content_item_versions    │
-├──────────────────┤       ├──────────────────────┤       ├───────────────────────────┤
-│ id          PK   │──1:*──│ id             PK    │──1:*──│ id                PK     │
-│ name             │       │ contentTypeId  FK    │       │ contentItemId     FK     │
-│ slug        UQ   │       │ data                 │       │ data                     │
-│ schema           │       │ status               │       │ status                   │
-│ createdAt        │       │ version              │       │ version                  │
-│ updatedAt        │       │ createdAt            │       │ createdAt                │
-└──────────────────┘       │ updatedAt            │       └───────────────────────────┘
-                           └──────────────────────┘
-                               │
-                               │ 1:1
-                               ▼
-                           ┌───────────────────────────┐
-                           │ content_item_embeddings   │
-                           ├───────────────────────────┤
-                           │ id                PK      │
-                           │ contentItemId     FK      │
-                           │ domainId                  │
-                           │ textChunk                 │
-                           │ embedding        vector   │
-                           └───────────────────────────┘
-
-┌──────────────────┐       ┌──────────────────────┐
-│     users        │       │     api_keys         │
-├──────────────────┤       ├──────────────────────┤
-│ id          PK   │──1:*──│ id             PK    │
-│ name             │       │ name                 │
-│ email            │       │ keyHash              │
-│ createdAt        │       │ keyPrefix            │
-│ updatedAt        │       │ scopes               │
-└──────────────────┘       │ createdBy      FK    │
-                           │ expiresAt            │
-                           │ revokedAt            │
-                           │ lastUsedAt           │
-                           │ createdAt            │
-                           └──────────────────────┘
-
-┌──────────────────┐       ┌──────────────────────┐
-│   audit_logs     │       │     webhooks         │
-├──────────────────┤       ├──────────────────────┤
-│ id          PK   │       │ id             PK    │
-│ action           │       │ url                  │
-│ entityType       │       │ events               │
-│ entityId         │       │ secret               │
-│ details          │       │ active               │
-│ userId      FK   │       │ createdAt            │
-│ requestId        │       │ updatedAt            │
-│ createdAt        │       └──────────────────────┘
-└──────────────────┘
-
-┌──────────────────┐       ┌──────────────────────┐       ┌──────────────────────┐
-│    payments      │──1:1──│   entitlements       │       │ policy_decision_logs │
-├──────────────────┤       ├──────────────────────┤       ├──────────────────────┤
-│ id          PK   │       │ id             PK    │       │ id             PK    │
-│ paymentHash UQ   │       │ agentProfileId FK    │       │ principalId          │
-│ paymentRequest   │       │ paymentHash    FK    │       │ operation            │
-│ amountSatoshis   │       │ status               │       │ resourceType         │
-│ status           │       │ remainingReads       │       │ resourceId           │
-│ resourcePath     │       │ expiresAt            │       │ environment          │
-│ actorId          │       │ createdAt            │       │ outcome              │
-│ details          │       └──────────────────────┘       │ remediation          │
-│ createdAt        │                                      │ policyVersion        │
-│ updatedAt        │                                      │ evaluationDurationMs │
-└──────────────────┘                                      │ createdAt            │
-                                                          └──────────────────────┘
-```
-
-Rendered image:
-
-![Entity relationship diagram](../images/diagrams/data-model-entity-relationship-diagram.svg)
 
 ## Tables
 
@@ -243,32 +251,20 @@ Audit trail of PolicyEngine outcome evaluations for strict authorization parity.
 
 ## Versioning Strategy
 
+```mermaid
+flowchart LR
+  subgraph UpdateFlow[Update Flow]
+    U1[Update request] --> U2[Save current data, status, version to content_item_versions]
+    U2 --> U3[Apply update and increment version]
+    U3 --> U4[Return updated item]
+  end
+
+  subgraph RollbackFlow[Rollback Flow (to version N)]
+    R1[Rollback request] --> R2[Load version N snapshot from content_item_versions]
+    R2 --> R3[Save current head as new snapshot]
+    R3 --> R4[Overwrite item with version N data and increment version]
+    R4 --> R5[Return restored head revision]
+  end
 ```
-Update request
-     │
-     ▼
-  Save current (data, status, version) → content_item_versions
-     │
-     ▼
-  Apply update, increment version
-     │
-     ▼
-  Return updated item
-
-Rollback request (to version N)
-     │
-     ▼
-  Load version N snapshot from content_item_versions
-     │
-     ▼
-  Save current state as new version snapshot
-     │
-     ▼
-  Overwrite item with version N data, increment version
-```
-
-Rendered image:
-
-![Versioning strategy diagram](../images/diagrams/data-model-versioning-strategy-diagram.svg)
 
 Versions are append-only. Rollback does not delete history — it creates a new version that restores the old state.

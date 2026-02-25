@@ -1,0 +1,29 @@
+.vp-doc .language-mermaid.mermaid-rendered {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: var(--vp-c-bg-soft);
+  overflow-x: auto;
+}
+
+.vp-doc .language-mermaid.mermaid-rendered .mermaid-wrapper {
+  min-width: 560px;
+}
+
+.vp-doc .language-mermaid.mermaid-rendered svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .vp-doc .language-mermaid.mermaid-rendered {
+    padding: 12px;
+  }
+
+  .vp-doc .language-mermaid.mermaid-rendered .mermaid-wrapper {
+    min-width: 0;
+  }
+}

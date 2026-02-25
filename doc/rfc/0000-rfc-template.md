@@ -11,7 +11,7 @@ A concise overview of the proposed feature, architectural change, or improvement
 Explain why we need this change. What problem does it solve? What is the expected impact on users, the system, or the business?
 
 ## 3. Proposal
-Provide a high-level explanation of the proposed solution. How does it work? Include diagrams or flowcharts if necessary to clarify complex workflows.
+Provide a high-level explanation of the proposed solution. How does it work? Include Mermaid diagrams (` ```mermaid `) when necessary to clarify complex workflows.
 
 ## 4. Technical Design (Architecture)
 Detail the technical specifications:

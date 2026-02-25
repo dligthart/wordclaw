@@ -37,8 +37,19 @@ To keep our reference documentation in sync with the codebase efficiently:
 
 We prioritize "Diagrams as Code" to maintain version control and ease of editing.
 
-* Prefer using **Mermaid.js** (` ```mermaid `) blocks directly inside Markdown files for sequences, state diagrams, and flowcharts.
-* When external architectural diagrams are necessary, store the source files (e.g., Draw.io XML or SVG) in the `doc/images/diagrams/` folder and link them using relative paths (e.g., `![System Diagram](../images/diagrams/system.svg)`).
+* **Mermaid is the standard** for all architecture, lifecycle, sequence, state, and ER diagrams in `doc/`.
+* Keep Mermaid source in the same Markdown file as the explanatory text (no external diagram source-of-truth files).
+* If static exports (SVG/PNG) are required for external usage, generate them from the Mermaid source and treat those exports as derived artifacts.
+* Prefer multiple small Mermaid diagrams over a single oversized diagram to keep pages readable on mobile and desktop.
+
+Example:
+
+```mermaid
+flowchart TD
+  A[Request received] --> B[Validate auth]
+  B --> C[Process operation]
+  C --> D[Persist + emit audit event]
+```
 
 ## 4. Feature Proposals and Historical Decisions
 
