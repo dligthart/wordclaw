@@ -170,13 +170,6 @@ PUT    /api/webhooks/:id
 DELETE /api/webhooks/:id
 ```
 
-### Incoming Provider Webhooks
-
-```
-POST /api/webhooks/payments/ap2/settled
-```
-Endpoint for AP2 providers to asynchronously confirm payment settlement. Validates provider signature and transitions corresponding payment to `paid` and entitlement to `active`.
-
 ---
 
 ## Policy Engine
@@ -223,7 +216,7 @@ DELETE /api/auth/keys/:id
 
 ## Licensing, Entitlements & Paid Consumption (RFC 0004 & RFC 0015)
 
-WordClaw supports Paid Content Consumption where purchases create durable `Entitlements`. Purchases can be funded via Lightning Network (L402) or Agent Payments Protocol (AP2) mandates.
+WordClaw supports Paid Content Consumption where purchases create durable `Entitlements`. Purchases can be funded via Lightning Network (L402).
 
 ### Discover Offers
 ```
@@ -236,20 +229,13 @@ Returns available purchasing options for a specific content item.
 POST /api/offers/:id/purchase
 ```
 Initiates a purchase. 
-Accepts an optional `paymentMethod` payload (`lightning` | `ap2`).
-Returns a `402 Payment Required` with `paymentHash`, `entitlementId`, and the payment rail challenge (e.g. L402 macaroon + invoice, or AP2 checkout challenge).
+Returns a `402 Payment Required` with `paymentHash`, `entitlementId`, and the payment rail challenge (e.g. L402 macaroon + invoice).
 
 ### Confirm Purchase (L402 / Lightning)
 ```
 POST /api/offers/:id/purchase/confirm
 ```
 Requires `Authorization: L402 <macaroon>:<preimage>`. Verifies the payment and transitions the entitlement to `active`.
-
-### AP2 Checkout (RFC 0016)
-```
-POST /api/ap2/checkout
-```
-Requires a cryptographically signed AP2 mandate and the `paymentHash`. Binds the mandate to the purchase. The entitlement will activate asynchronously once the settlement webhook fires.
 
 ### View Entitlements
 ```

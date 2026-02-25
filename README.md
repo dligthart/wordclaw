@@ -15,7 +15,7 @@
 
 -   **AI-Friendly API**: REST endpoints return `recommendedNextAction`, `availableActions`, and `actionPriority` to guide agents.
 -   **Native Vector & RAG**: Built-in pgvector embeddings generation and semantic search for AI agents.
--   **Agentic Monetization (L402 & AP2)**: Micropayment gates using Lightning invoices and AP2 mandates.
+-   **Agentic Monetization (L402)**: Micropayment gates using Lightning invoices.
 -   **Multi-Tenant Data Isolation**: Secure domain-level data segregation across all APIs.
 -   **Runtime Content Validation**: Content item payloads are validated against content-type JSON schema at runtime.
 -   **Policy-Aware API Auth**: Optional API key auth with deterministic scope errors for agent remediation.

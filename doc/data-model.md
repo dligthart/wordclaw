@@ -60,26 +60,16 @@
 ├──────────────────┤       ├──────────────────────┤       ├──────────────────────┤
 │ id          PK   │       │ id             PK    │       │ id             PK    │
 │ paymentHash UQ   │       │ agentProfileId FK    │       │ principalId          │
-│ paymentMethod    │       │ paymentHash    FK    │       │ operation            │
+│ paymentRequest   │       │ paymentHash    FK    │       │ operation            │
 │ amountSatoshis   │       │ status               │       │ resourceType         │
 │ status           │       │ remainingReads       │       │ resourceId           │
 │ resourcePath     │       │ expiresAt            │       │ environment          │
 │ actorId          │       │ createdAt            │       │ outcome              │
 │ details          │       └──────────────────────┘       │ remediation          │
 │ createdAt        │                                      │ policyVersion        │
-│ updatedAt        │       ┌──────────────────────┐       │ evaluationDurationMs │
-└──────────────────┘       │   ap2_mandates       │       │ createdAt            │
-      │ 1:*                ├──────────────────────┤       └──────────────────────┘
-      ▼                    │ id             PK    │
-┌──────────────────┐       │ paymentId      FK    │
-│ ap2_settlement_  │       │ mandateDigest        │
-│ events           │       │ maxAmountMinor       │
-├──────────────────┤       │ status               │
-│ id          PK   │       │ signature            │
-│ providerEventId  │       └──────────────────────┘
-│ paymentId   FK   │
-│ eventType        │
-└──────────────────┘
+│ updatedAt        │                                      │ evaluationDurationMs │
+└──────────────────┘                                      │ createdAt            │
+                                                          └──────────────────────┘
 ```
 
 Rendered image:
@@ -189,14 +179,13 @@ Event delivery endpoints with HMAC signing.
 
 ### payments
 
-Tracks payment states (L402 or AP2) across API interactions.
+Tracks Lightning Network (L402) invoice states across API interactions.
 
 | Column           | Type      | Notes                                |
 |------------------|-----------|--------------------------------------|
 | `id`             | serial PK |                                      |
-| `paymentHash`    | text      | Unique hash of the LN invoice / auth |
-| `paymentMethod`  | text      | `lightning` or `ap2`                 |
-| `paymentRequest` | text      | The BOLT11 invoice string (if L402)  |
+| `paymentHash`    | text      | Unique hash of the LN invoice        |
+| `paymentRequest` | text      | The BOLT11 invoice string            |
 | `amountSatoshis` | integer   | Cost in satoshis                     |
 | `status`         | text      | `pending`, `paid`, `consumed`, `failed` |
 | `resourcePath`   | text      | The API route triggering the payment |
@@ -219,31 +208,7 @@ Durable buyer access grants tied to an agent profile and payment hash.
 | `expiresAt`      | timestamp | Nullable                             |
 | `createdAt`      | timestamp |                                      |
 
-### ap2_mandates (RFC 0016)
 
-Append-only ledger of verified AP2 signed mandates.
-
-| Column           | Type      | Notes                                |
-|------------------|-----------|--------------------------------------|
-| `id`             | serial PK |                                      |
-| `domainId`       | integer   |                                      |
-| `paymentId`      | integer   | FK → `payments.id`                   |
-| `mandateDigest`  | text      | Hash of mandate                      |
-| `status`         | text      | `verified`, `partially_used`, etc.   |
-| `signature`      | text      | Cryptographic proof                  |
-| `maxAmountMinor` | integer   | Enforced budget ceiling              |
-
-### ap2_settlement_events (RFC 0016)
-
-Append-only webhook event receipt table for reconciling completed AP2 purchases.
-
-| Column            | Type      | Notes                                |
-|-------------------|-----------|--------------------------------------|
-| `id`              | serial PK |                                      |
-| `providerEventId` | text      | Unique for replay protection         |
-| `paymentId`       | integer   | FK → `payments.id`                   |
-| `eventType`       | text      | E.g. `payment.settled`               |
-| `payloadHash`     | text      |                                      |
 
 ### policy_decision_logs
 

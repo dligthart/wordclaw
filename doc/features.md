@@ -85,12 +85,11 @@ Audit logs use cursor-based pagination for efficient traversal.
 
 Send an `Idempotency-Key` header on any POST/PUT/DELETE. If the same key is seen within the TTL window (default 5 minutes), the server returns the cached response with `x-idempotent-replayed: true` — no duplicate writes occur.
 
-## Agentic Monetization (L402 & AP2)
+## Agentic Monetization (L402)
 
 WordClaw implements a unified Paid Content Consumption Contract (RFC 0015):
 - **Offer / Entitlement Licensing**: Rather than solely pay-per-request gates, users buy logical Entitlements (`active`, `exhausted`, `expired`) attached to a purchase payment hash.
 - **Lightning Network (L402)**: Standard HTTP 402 payment gates utilizing Macaroon tokens and preimages verified against provider states.
-- **AP2 Mandates (RFC 0016)**: Optional settlement track where AI agents submit cryptographically signed payment mandates via `POST /api/ap2/checkout`. Limits, budgets, and nonces are enforced synchronously, while settlement completes via webhook.
 
 ## Revenue Attribution & Agent Payouts
 

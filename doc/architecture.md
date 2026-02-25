@@ -21,8 +21,7 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  ┌────────────────────────────────────────────────────────────────┐ │
 │  │                     MIDDLEWARE CHAIN                            │ │
 │  │                                                                │ │
-│  │  Request ID ─► Rate Limit ─► Idempotency ─► Auth ─► Payment    │ │
-│  │                                                     (L402/AP2) │ │
+│  │  Request ID ─► Rate Limit ─► Idempotency ─► Auth ─► L402      │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 │                              │                                      │
 │         ┌────────────────────┼────────────────────┐                 │
@@ -53,9 +52,8 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 │  │  content_types ── content_items ── content_item_versions       │ │
 │  │  content_item_embeddings ───────── api_keys ─────── webhooks   │ │
 │  │  users ────────── payments ─────── policy_decision_logs        │ │
-│  │  agent_profiles ─ ap2_mandates ─── ap2_settlement_events       │ │
-│  │  entitlements ─── revenue_events ─ revenue_allocations         │ │
-│  │  payout_batches ─ audit_logs                                   │ │
+│  │  agent_profiles ─ audit_logs ───── entitlements                │ │
+│  │  revenue_events ─ revenue_allocations ── payout_batches        │ │
 │  └────────────────────────────┬───────────────────────────────────┘ │
 │                               │                                     │
 └───────────────────────────────┼─────────────────────────────────────┘
@@ -82,7 +80,7 @@ Every incoming HTTP request passes through a shared middleware pipeline before r
 | **Rate Limit**   | Fastify rate-limit plugin, per-IP throttling                |
 | **Idempotency**  | Caches POST/PUT/DELETE responses keyed by `Idempotency-Key` |
 | **Auth**         | Validates `x-api-key` or `Authorization: Bearer` headers   |
-| **Payment Gate** | Optional Agentic Monetization gate (L402 or AP2 mandates)   |
+| **L402**         | Optional micropayment gate using Lightning invoices         |
 
 ### API Layer
 
