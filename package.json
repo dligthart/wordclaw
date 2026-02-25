@@ -55,6 +55,7 @@
     "@types/node": "^25.2.3",
     "@types/pg": "^8.16.0",
     "drizzle-kit": "^0.31.9",
+    "mermaid": "^11.12.3",
     "swagger-ui-dist": "^5.31.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

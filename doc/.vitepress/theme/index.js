@@ -1,26 +1,28 @@
 import DefaultTheme from 'vitepress/theme'
 import { useData, useRoute } from 'vitepress'
 import { nextTick, watch } from 'vue'
+import mermaid from 'mermaid'
 import './custom.css'
 
-let mermaidLoader
 let renderCounter = 0
 
-function getMermaid() {
-  if (!mermaidLoader) {
-    const fromJsDelivr = import(
-      /* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'
-    )
-    const fromUnpkg = import(
-      /* @vite-ignore */ 'https://unpkg.com/mermaid@11/dist/mermaid.esm.min.mjs'
-    )
-
-    mermaidLoader = fromJsDelivr
-      .catch(() => fromUnpkg)
-      .then((module) => module.default ?? module)
+function extractMermaidSource(block) {
+  const code = block.querySelector('code')
+  if (!code) {
+    return ''
   }
 
-  return mermaidLoader
+  // Shiki wraps each source line in `.line`; join explicitly so Mermaid parsing
+  // preserves line breaks for complex flowcharts.
+  const shikiLines = code.querySelectorAll('.line')
+  if (shikiLines.length > 0) {
+    return Array.from(shikiLines)
+      .map((line) => line.textContent ?? '')
+      .join('\n')
+      .trim()
+  }
+
+  return code.textContent?.trim() ?? ''
 }
 
 function buildMermaidConfig(isDark) {
@@ -41,19 +43,16 @@ async function renderMermaidBlocks(isDark) {
 
   await nextTick()
 
-  let mermaid
   try {
-    mermaid = await getMermaid()
+    mermaid.initialize(buildMermaidConfig(isDark))
   } catch (error) {
-    console.error('[docs] Failed to load Mermaid from CDN', error)
+    console.error('[docs] Failed to initialize Mermaid', error)
     return
   }
 
-  mermaid.initialize(buildMermaidConfig(isDark))
-
   const blocks = Array.from(document.querySelectorAll('.language-mermaid'))
   for (const block of blocks) {
-    const source = block.dataset.mermaidSource || block.querySelector('code')?.textContent?.trim()
+    const source = block.dataset.mermaidSource || extractMermaidSource(block)
     if (!source) {
       continue
     }
