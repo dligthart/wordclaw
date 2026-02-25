@@ -56,10 +56,73 @@ type AIErrorPayload = {
     context?: Record<string, unknown>;
 };
 
+type PaymentMethod = 'lightning' | 'ap2';
+
+type ParsedL402Credentials = {
+    macaroon: string;
+    preimage: string;
+};
+
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 
 function toErrorPayload(error: string, code: string, remediation: string): AIErrorPayload {
     return { error, code, remediation };
+}
+
+function parseL402AuthorizationHeader(authHeader: string | undefined): ParsedL402Credentials | null {
+    if (!authHeader || !authHeader.startsWith('L402 ')) {
+        return null;
+    }
+
+    const credential = authHeader.slice(5).trim();
+    if (!credential) {
+        return null;
+    }
+
+    const separatorIndex = credential.indexOf(':');
+    if (separatorIndex <= 0 || separatorIndex === credential.length - 1) {
+        return null;
+    }
+
+    if (credential.indexOf(':', separatorIndex + 1) !== -1) {
+        return null;
+    }
+
+    const macaroon = credential.slice(0, separatorIndex).trim();
+    const preimage = credential.slice(separatorIndex + 1).trim();
+    if (!macaroon || !preimage) {
+        return null;
+    }
+
+    return { macaroon, preimage };
+}
+
+function readSingleHeaderValue(raw: string | string[] | undefined): string | null {
+    if (typeof raw === 'string' && raw.length > 0) {
+        return raw;
+    }
+    if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'string') {
+        return raw[0];
+    }
+    return null;
+}
+
+function parsePositiveIntHeader(raw: string | null): number | null {
+    if (!raw) {
+        return null;
+    }
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        return null;
+    }
+    return parsed;
+}
+
+function offerScopeRank(scopeType: string): number {
+    if (scopeType === 'item') return 0;
+    if (scopeType === 'type') return 1;
+    if (scopeType === 'subscription') return 2;
+    return 99;
 }
 
 function fromValidationFailure(failure: ValidationFailure): AIErrorPayload {

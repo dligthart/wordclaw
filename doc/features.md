@@ -46,6 +46,16 @@ Parity is enforced by an automated [capability matrix test](../src/contracts/cap
 
 All write operations support a dry-run flag (`?mode=dry_run` for REST, `dryRun: true` for GraphQL/MCP). The server validates input and simulates execution — including schema validation, conflict detection, and version computation — without persisting any changes.
 
+## Native Vector RAG & Semantic Search
+
+By bringing `pgvector` into the primary PostgreSQL database alongside WordClaw's Policy Engine, we provide an all-in-one Agentic Database layer.
+- **Automated Embeddings**: When a content item is published, a background service chunks the JSON payload and generates vector embeddings (e.g. OpenAI `text-embedding-3-small`).
+- **Semantic Search**: Agents can query the CMS using natural language and semantic relevance (`GET /api/search/semantic`), completely removing the need to manage parallel LangChain / Pinecone infrastructure.
+
+## Multi-Tenant Data Isolation
+
+WordClaw natively supports secure domain-level data segregation. Resources like API keys, content types, and items belong to explicit domains. All REST, GraphQL, and MCP APIs filter strictly by the `domainId` detected from the authenticated request, guaranteeing non-overlapping data environments.
+
 ## Authentication & Authorization
 
 - **Scope-based** — Fine-grained permissions: `content:read`, `content:write`, `audit:read`, `admin`.
@@ -75,9 +85,12 @@ Audit logs use cursor-based pagination for efficient traversal.
 
 Send an `Idempotency-Key` header on any POST/PUT/DELETE. If the same key is seen within the TTL window (default 5 minutes), the server returns the cached response with `x-idempotent-replayed: true` — no duplicate writes occur.
 
-## L402 Micropayments
+## Agentic Monetization (L402 & AP2)
 
-Optional HTTP 402 payment gate using Lightning Network invoices. The system challenges unauthenticated requests, supports real payment provider webhooks (e.g. LNbits), performs automated stale pending payment reconciliation, and validates preimages against the provider state machine (`pending` -> `paid`). See [l402-protocol.md](l402-protocol.md) for details.
+WordClaw implements a unified Paid Content Consumption Contract (RFC 0015):
+- **Offer / Entitlement Licensing**: Rather than solely pay-per-request gates, users buy logical Entitlements (`active`, `exhausted`, `expired`) attached to a purchase payment hash.
+- **Lightning Network (L402)**: Standard HTTP 402 payment gates utilizing Macaroon tokens and preimages verified against provider states.
+- **AP2 Mandates (RFC 0016)**: Optional settlement track where AI agents submit cryptographically signed payment mandates via `POST /api/ap2/checkout`. Limits, budgets, and nonces are enforced synchronously, while settlement completes via webhook.
 
 ## Revenue Attribution & Agent Payouts
 

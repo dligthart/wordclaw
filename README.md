@@ -14,7 +14,9 @@
 ## 🚀 Features
 
 -   **AI-Friendly API**: REST endpoints return `recommendedNextAction`, `availableActions`, and `actionPriority` to guide agents.
--   **Dry-run Mode**: Simulate `POST`, `PUT`, and `DELETE` operations with `?mode=dry_run` to validate actions without side effects.
+-   **Native Vector & RAG**: Built-in pgvector embeddings generation and semantic search for AI agents.
+-   **Agentic Monetization (L402 & AP2)**: Micropayment gates using Lightning invoices and AP2 mandates.
+-   **Multi-Tenant Data Isolation**: Secure domain-level data segregation across all APIs.
 -   **Runtime Content Validation**: Content item payloads are validated against content-type JSON schema at runtime.
 -   **Policy-Aware API Auth**: Optional API key auth with deterministic scope errors for agent remediation.
 -   **Protocol Parity**: REST, GraphQL, and MCP capabilities are mapped and enforced via automated parity tests.

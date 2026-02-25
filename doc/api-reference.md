@@ -28,6 +28,18 @@ Append `?mode=dry_run` to any mutation endpoint. The server validates input and 
 
 ---
 
+## Search
+
+### Semantic Search (Vector RAG)
+
+```
+GET /api/search/semantic?query=company+vacation+policy&limit=5
+```
+
+Searches published content using natural language by comparing vector embeddings.
+
+---
+
 ## Content Types
 
 ### Create Content Type
@@ -158,6 +170,13 @@ PUT    /api/webhooks/:id
 DELETE /api/webhooks/:id
 ```
 
+### Incoming Provider Webhooks
+
+```
+POST /api/webhooks/payments/ap2/settled
+```
+Endpoint for AP2 providers to asynchronously confirm payment settlement. Validates provider signature and transitions corresponding payment to `paid` and entitlement to `active`.
+
 ---
 
 ## Policy Engine
@@ -202,7 +221,9 @@ DELETE /api/auth/keys/:id
 
 ---
 
-## Licensing & Entitlements (RFC 0004)
+## Licensing, Entitlements & Paid Consumption (RFC 0004 & RFC 0015)
+
+WordClaw supports Paid Content Consumption where purchases create durable `Entitlements`. Purchases can be funded via Lightning Network (L402) or Agent Payments Protocol (AP2) mandates.
 
 ### Discover Offers
 ```
@@ -214,13 +235,34 @@ Returns available purchasing options for a specific content item.
 ```
 POST /api/offers/:id/purchase
 ```
-Initiates a purchase and returns a `402 Payment Required` with an L402 challenge (macaroon + invoice). Paying the invoice activates the entitlement.
+Initiates a purchase. 
+Accepts an optional `paymentMethod` payload (`lightning` | `ap2`).
+Returns a `402 Payment Required` with `paymentHash`, `entitlementId`, and the payment rail challenge (e.g. L402 macaroon + invoice, or AP2 checkout challenge).
+
+### Confirm Purchase (L402 / Lightning)
+```
+POST /api/offers/:id/purchase/confirm
+```
+Requires `Authorization: L402 <macaroon>:<preimage>`. Verifies the payment and transitions the entitlement to `active`.
+
+### AP2 Checkout (RFC 0016)
+```
+POST /api/ap2/checkout
+```
+Requires a cryptographically signed AP2 mandate and the `paymentHash`. Binds the mandate to the purchase. The entitlement will activate asynchronously once the settlement webhook fires.
+
+### View Entitlements
+```
+GET /api/entitlements/me
+GET /api/entitlements/:id
+```
+Lists active or historical entitlements bound to the authenticated agent.
 
 ### Delegate Entitlement
 ```
 POST /api/entitlements/:id/delegate
 ```
-Allows an agent to fork a subset of their remaining reads to a subordinate agent.
+Allows an agent to fork a subset of their remaining reads to a subordinate agent within the same domain.
 
 | Field            | Type   | Required | Description                     |
 |------------------|--------|----------|---------------------------------|

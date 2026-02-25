@@ -1,8 +1,8 @@
 import crypto from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { contentItems, contentTypes, entitlements, payments } from '../db/schema.js';
+import { contentItems, contentTypes, entitlements, offers, payments } from '../db/schema.js';
 import { PaymentProvider, ProviderPaymentStatus } from '../interfaces/payment-provider.js';
 import { L402Options, PricingContext } from '../middleware/l402.js';
 import { LicensingService } from './licensing.js';
@@ -237,6 +237,31 @@ export const globalL402Options: L402Options = {
       ));
       if (contentType && contentType.basePrice) {
         totalBasePrice += contentType.basePrice * (context.batchSize || 1);
+      }
+    }
+
+    // RFC 0015 offer-first contract: when a content item has active offers,
+    // reads are entitlement-gated and legacy per-request L402 pricing is bypassed.
+    if (
+      context.operation === 'read'
+      && context.resourceType === 'content-item'
+      && Number.isInteger(context.resourceId)
+      && Number.isInteger(cType)
+    ) {
+      const itemId = context.resourceId as number;
+      const contentTypeId = cType as number;
+      const [matchingOffer] = await db.select({ id: offers.id }).from(offers).where(and(
+        eq(offers.domainId, domainId),
+        eq(offers.active, true),
+        or(
+          and(eq(offers.scopeType, 'item'), eq(offers.scopeRef, itemId)),
+          and(eq(offers.scopeType, 'type'), eq(offers.scopeRef, contentTypeId)),
+          and(eq(offers.scopeType, 'subscription'), isNull(offers.scopeRef))
+        )
+      )).limit(1);
+
+      if (matchingOffer) {
+        return 0;
       }
     }
 

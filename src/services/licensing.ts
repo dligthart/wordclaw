@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { offers, entitlements, licensePolicies, accessEvents, agentProfiles } from '../db/schema.js';
-import { eq, and, gt } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, desc } from 'drizzle-orm';
 
 export class LicensingService {
     /**
@@ -19,6 +19,22 @@ export class LicensingService {
     }
 
     /**
+     * Returns active offers that apply to a concrete content item read.
+     * Offer precedence is resolved by caller (item > type > subscription).
+     */
+    static async getActiveOffersForItemRead(domainId: number, itemId: number, contentTypeId: number) {
+        return db.select().from(offers).where(and(
+            eq(offers.domainId, domainId),
+            eq(offers.active, true),
+            or(
+                and(eq(offers.scopeType, 'item'), eq(offers.scopeRef, itemId)),
+                and(eq(offers.scopeType, 'type'), eq(offers.scopeRef, contentTypeId)),
+                and(eq(offers.scopeType, 'subscription'), isNull(offers.scopeRef))
+            )
+        ));
+    }
+
+    /**
      * Provisions an initial entitlement strictly mapped to a new L402 payment hash.
      * This entitlement stays inert until the payment is marked 'paid' or 'consumed'.
      */
@@ -34,12 +50,104 @@ export class LicensingService {
             policyVersion: policy.version,
             agentProfileId,
             paymentHash,
-            status: 'active',
+            status: 'pending_payment',
             expiresAt: policy.expiresAt,
             remainingReads: policy.maxReads,
         }).returning();
 
         return entitlement;
+    }
+
+    static async activateEntitlementForPayment(domainId: number, paymentHash: string) {
+        const [existing] = await db.select().from(entitlements).where(and(
+            eq(entitlements.domainId, domainId),
+            eq(entitlements.paymentHash, paymentHash)
+        ));
+
+        if (!existing) {
+            return null;
+        }
+
+        if (existing.status === 'active') {
+            return existing;
+        }
+
+        if (existing.status !== 'pending_payment') {
+            return existing;
+        }
+
+        const [updated] = await db.update(entitlements).set({
+            status: 'active',
+            activatedAt: new Date(),
+            terminatedAt: null
+        }).where(and(
+            eq(entitlements.id, existing.id),
+            eq(entitlements.status, 'pending_payment')
+        )).returning();
+
+        return updated ?? existing;
+    }
+
+    static async getEntitlementByPaymentHash(domainId: number, paymentHash: string) {
+        const [entitlement] = await db.select().from(entitlements).where(and(
+            eq(entitlements.domainId, domainId),
+            eq(entitlements.paymentHash, paymentHash)
+        ));
+        return entitlement ?? null;
+    }
+
+    static async getPendingEntitlementsForOffer(
+        domainId: number,
+        offerId: number,
+        agentProfileId: number
+    ) {
+        return db.select().from(entitlements).where(and(
+            eq(entitlements.domainId, domainId),
+            eq(entitlements.offerId, offerId),
+            eq(entitlements.agentProfileId, agentProfileId),
+            eq(entitlements.status, 'pending_payment')
+        )).orderBy(desc(entitlements.id));
+    }
+
+    static async getEntitlementsForAgent(domainId: number, agentProfileId: number) {
+        return db.select().from(entitlements).where(and(
+            eq(entitlements.domainId, domainId),
+            eq(entitlements.agentProfileId, agentProfileId)
+        )).orderBy(desc(entitlements.id));
+    }
+
+    static async getEntitlementForAgentById(domainId: number, agentProfileId: number, entitlementId: number) {
+        const [entitlement] = await db.select().from(entitlements).where(and(
+            eq(entitlements.domainId, domainId),
+            eq(entitlements.agentProfileId, agentProfileId),
+            eq(entitlements.id, entitlementId)
+        ));
+        return entitlement ?? null;
+    }
+
+    static async getEligibleEntitlementsForItemRead(
+        domainId: number,
+        agentProfileId: number,
+        itemId: number,
+        contentTypeId: number
+    ) {
+        const rows = await db.select({
+            entitlement: entitlements
+        }).from(entitlements)
+            .innerJoin(offers, eq(entitlements.offerId, offers.id))
+            .where(and(
+                eq(entitlements.domainId, domainId),
+                eq(entitlements.agentProfileId, agentProfileId),
+                eq(entitlements.status, 'active'),
+                eq(offers.domainId, domainId),
+                or(
+                    and(eq(offers.scopeType, 'item'), eq(offers.scopeRef, itemId)),
+                    and(eq(offers.scopeType, 'type'), eq(offers.scopeRef, contentTypeId)),
+                    and(eq(offers.scopeType, 'subscription'), isNull(offers.scopeRef))
+                )
+            ));
+
+        return rows.map((row) => row.entitlement);
     }
 
     /**
@@ -48,18 +156,45 @@ export class LicensingService {
      */
     static async atomicallyDecrementRead(domainId: number, entitlementId: number) {
         const result = await db.transaction(async (tx) => {
-            const [current] = await tx.select().from(entitlements).where(and(eq(entitlements.id, entitlementId), eq(entitlements.domainId, domainId), eq(entitlements.status, 'active')));
+            const [current] = await tx.select().from(entitlements).where(and(
+                eq(entitlements.id, entitlementId),
+                eq(entitlements.domainId, domainId)
+            ));
 
             if (!current) {
                 return { granted: false, reason: 'entitlement_not_found_or_inactive' };
             }
 
+            if (current.status !== 'active') {
+                if (current.status === 'expired') {
+                    return { granted: false, reason: 'entitlement_expired' };
+                }
+                if (current.status === 'exhausted') {
+                    return { granted: false, reason: 'remaining_reads_exhausted' };
+                }
+                return { granted: false, reason: 'entitlement_not_found_or_inactive' };
+            }
+
             if (current.expiresAt && new Date() > current.expiresAt) {
+                await tx.update(entitlements).set({
+                    status: 'expired',
+                    terminatedAt: new Date()
+                }).where(and(
+                    eq(entitlements.id, current.id),
+                    eq(entitlements.status, 'active')
+                ));
                 return { granted: false, reason: 'entitlement_expired' };
             }
 
             if (current.remainingReads !== null) {
                 if (current.remainingReads <= 0) {
+                    await tx.update(entitlements).set({
+                        status: 'exhausted',
+                        terminatedAt: new Date()
+                    }).where(and(
+                        eq(entitlements.id, current.id),
+                        eq(entitlements.status, 'active')
+                    ));
                     return { granted: false, reason: 'remaining_reads_exhausted' };
                 }
 
@@ -71,6 +206,26 @@ export class LicensingService {
                 if (!updated) {
                     return { granted: false, reason: 'race_condition_exhaustion' };
                 }
+
+                if (updated.remainingReads === 0) {
+                    await tx.update(entitlements).set({
+                        status: 'exhausted',
+                        terminatedAt: new Date()
+                    }).where(and(
+                        eq(entitlements.id, updated.id),
+                        eq(entitlements.status, 'active')
+                    ));
+                    return {
+                        granted: true,
+                        entitlement: {
+                            ...updated,
+                            status: 'exhausted',
+                            terminatedAt: new Date()
+                        }
+                    };
+                }
+
+                return { granted: true, entitlement: updated };
             }
 
             return { granted: true, entitlement: current };

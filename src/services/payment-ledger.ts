@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { payments } from '../db/schema.js';
@@ -89,6 +89,9 @@ export async function transitionPaymentStatus(
       // Lazy import to avoid circular dependency issues if any
       const { entitlements, offers } = await import('../db/schema.js');
       const { RevenueAllocatorService } = await import('./revenue-allocator.service.js');
+      const { LicensingService } = await import('./licensing.js');
+
+      await LicensingService.activateEntitlementForPayment(result.domainId, paymentHash);
 
       const [entitlement] = await db.select().from(entitlements).where(eq(entitlements.paymentHash, paymentHash));
       if (entitlement) {
@@ -106,6 +109,22 @@ export async function transitionPaymentStatus(
       }
     } catch (e) {
       console.error(`[PaymentLedger] Failed to allocate revenue for payment ${paymentHash}`, e);
+    }
+  }
+
+  if (result && currentStatus === 'pending' && nextStatus === 'expired') {
+    try {
+      const { entitlements } = await import('../db/schema.js');
+      await db.update(entitlements).set({
+        status: 'expired',
+        terminatedAt: new Date()
+      }).where(and(
+        eq(entitlements.paymentHash, paymentHash),
+        eq(entitlements.domainId, result.domainId),
+        eq(entitlements.status, 'pending_payment')
+      ));
+    } catch (e) {
+      console.error(`[PaymentLedger] Failed to expire entitlement for payment ${paymentHash}`, e);
     }
   }
 

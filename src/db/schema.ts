@@ -240,10 +240,21 @@ export const entitlements = pgTable('entitlements', {
     policyVersion: integer('policy_version').notNull(),
     agentProfileId: integer('agent_profile_id').references(() => agentProfiles.id, { onDelete: 'cascade' }).notNull(),
     paymentHash: text('payment_hash').notNull().unique(), // Linked to payment completion
-    status: text('status').notNull().default('active'), // 'active', 'revoked', 'expired'
+    status: text('status').notNull().default('pending_payment'), // 'pending_payment', 'active', 'exhausted', 'revoked', 'expired'
     expiresAt: timestamp('expires_at'),
     remainingReads: integer('remaining_reads'),
+    activatedAt: timestamp('activated_at'),
+    terminatedAt: timestamp('terminated_at'),
     delegatedFrom: integer('delegated_from'), // Self-referencing FK added after export
+}, (table) => {
+    return {
+        entitlementSelectionIdx: index('entitlements_domain_agent_status_expires_idx').on(
+            table.domainId,
+            table.agentProfileId,
+            table.status,
+            table.expiresAt
+        )
+    };
 });
 
 export const accessEvents = pgTable('access_events', {
