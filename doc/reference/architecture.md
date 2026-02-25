@@ -127,22 +127,22 @@ Key relationships:
 
 ```mermaid
 flowchart TD
-  A[Client request] --> B[Assign or propagate x-request-id]
-  B --> C{Rate limit passed?}
-  C -- No --> C1[Return 429 Too Many Requests]
-  C -- Yes --> D{Idempotency hit?}
-  D -- Yes --> D1[Return cached response]
-  D -- No --> E{Authenticated?}
-  E -- No --> E1[Return 401 / 403]
-  E -- Yes --> F[Route handler (REST / GraphQL / MCP)]
-  F --> G[Service layer: validate, execute, version]
-  G --> H[Write audit log]
-  G --> I[Emit event bus message]
-  G --> J[Queue webhook delivery (non-blocking)]
-  H --> K[Cache response for idempotency writes]
+  A["Client request"] --> B["Assign or propagate x-request-id"]
+  B --> C{"Rate limit passed?"}
+  C -->|No| C1["Return 429 Too Many Requests"]
+  C -->|Yes| D{"Idempotency hit?"}
+  D -->|Yes| D1["Return cached response"]
+  D -->|No| E{"Authenticated?"}
+  E -->|No| E1["Return 401 / 403"]
+  E -->|Yes| F["Route handler (REST / GraphQL / MCP)"]
+  F --> G["Service layer: validate, execute, version"]
+  G --> H["Write audit log"]
+  G --> I["Emit event bus message"]
+  G --> J["Queue webhook delivery (non-blocking)"]
+  H --> K["Cache response for idempotency writes"]
   I --> K
   J --> K
-  K --> L[Return response with x-request-id]
+  K --> L["Return response with x-request-id"]
 ```
 
 ## Technology Stack
