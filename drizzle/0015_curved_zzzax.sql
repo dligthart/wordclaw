@@ -28,7 +28,7 @@ CREATE TABLE "l402_operator_configs" (
 	CONSTRAINT "l402_operator_configs_domain_id_unique" UNIQUE("domain_id")
 );
 --> statement-breakpoint
-CREATE TABLE "payment_provider_events" (
+CREATE TABLE IF NOT EXISTS "payment_provider_events" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"provider" text NOT NULL,
 	"event_id" text NOT NULL,
@@ -78,13 +78,13 @@ CREATE TABLE "revenue_events" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "agent_profiles" ADD COLUMN "display_name" text;--> statement-breakpoint
-ALTER TABLE "payments" ADD COLUMN "provider" text DEFAULT 'mock' NOT NULL;--> statement-breakpoint
-ALTER TABLE "payments" ADD COLUMN "provider_invoice_id" text;--> statement-breakpoint
-ALTER TABLE "payments" ADD COLUMN "expires_at" timestamp;--> statement-breakpoint
-ALTER TABLE "payments" ADD COLUMN "settled_at" timestamp;--> statement-breakpoint
-ALTER TABLE "payments" ADD COLUMN "failure_reason" text;--> statement-breakpoint
-ALTER TABLE "payments" ADD COLUMN "last_event_id" text;--> statement-breakpoint
+ALTER TABLE "agent_profiles" ADD COLUMN IF NOT EXISTS "display_name" text;--> statement-breakpoint
+ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "provider" text DEFAULT 'mock' NOT NULL;--> statement-breakpoint
+ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "provider_invoice_id" text;--> statement-breakpoint
+ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "expires_at" timestamp;--> statement-breakpoint
+ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "settled_at" timestamp;--> statement-breakpoint
+ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "failure_reason" text;--> statement-breakpoint
+ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "last_event_id" text;--> statement-breakpoint
 ALTER TABLE "allocation_status_events" ADD CONSTRAINT "allocation_status_events_domain_id_domains_id_fk" FOREIGN KEY ("domain_id") REFERENCES "public"."domains"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "allocation_status_events" ADD CONSTRAINT "allocation_status_events_allocation_id_revenue_allocations_id_fk" FOREIGN KEY ("allocation_id") REFERENCES "public"."revenue_allocations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "contribution_events" ADD CONSTRAINT "contribution_events_domain_id_domains_id_fk" FOREIGN KEY ("domain_id") REFERENCES "public"."domains"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -99,6 +99,6 @@ ALTER TABLE "revenue_allocations" ADD CONSTRAINT "revenue_allocations_domain_id_
 ALTER TABLE "revenue_allocations" ADD CONSTRAINT "revenue_allocations_revenue_event_id_revenue_events_id_fk" FOREIGN KEY ("revenue_event_id") REFERENCES "public"."revenue_events"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "revenue_allocations" ADD CONSTRAINT "revenue_allocations_agent_profile_id_agent_profiles_id_fk" FOREIGN KEY ("agent_profile_id") REFERENCES "public"."agent_profiles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "revenue_events" ADD CONSTRAINT "revenue_events_domain_id_domains_id_fk" FOREIGN KEY ("domain_id") REFERENCES "public"."domains"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "payment_provider_events_provider_event_idx" ON "payment_provider_events" USING btree ("provider","event_id");--> statement-breakpoint
-CREATE INDEX "payment_provider_events_payment_hash_idx" ON "payment_provider_events" USING btree ("payment_hash");--> statement-breakpoint
-CREATE INDEX "payment_provider_idx" ON "payments" USING btree ("provider");
+CREATE UNIQUE INDEX IF NOT EXISTS "payment_provider_events_provider_event_idx" ON "payment_provider_events" USING btree ("provider","event_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "payment_provider_events_payment_hash_idx" ON "payment_provider_events" USING btree ("payment_hash");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "payment_provider_idx" ON "payments" USING btree ("provider");

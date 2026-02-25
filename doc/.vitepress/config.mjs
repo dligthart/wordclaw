@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
-export default defineConfig({
+export default withMermaid(defineConfig({
     title: "WordClaw",
     base: "/wordclaw/docs/",
     outDir: ".vitepress/dist/docs",
@@ -88,4 +89,4 @@ export default defineConfig({
             { icon: 'github', link: 'https://github.com/dligthart/wordclaw' }
         ]
     }
-})
+}))

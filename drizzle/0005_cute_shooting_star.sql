@@ -1,4 +1,4 @@
-CREATE TABLE "api_keys" (
+CREATE TABLE IF NOT EXISTS "api_keys" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"key_prefix" text NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE "api_keys" (
 	CONSTRAINT "api_keys_key_hash_unique" UNIQUE("key_hash")
 );
 --> statement-breakpoint
-CREATE TABLE "supervisors" (
+CREATE TABLE IF NOT EXISTS "supervisors" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"email" text NOT NULL,
 	"password_hash" text NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE "supervisors" (
 	CONSTRAINT "supervisors_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
-CREATE TABLE "webhooks" (
+CREATE TABLE IF NOT EXISTS "webhooks" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"url" text NOT NULL,
 	"events" text NOT NULL,
@@ -30,4 +30,13 @@ CREATE TABLE "webhooks" (
 	"active" boolean DEFAULT true NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'api_keys_created_by_users_id_fk'
+  ) THEN
+    ALTER TABLE "api_keys"
+      ADD CONSTRAINT "api_keys_created_by_users_id_fk"
+      FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+  END IF;
+END $$;
