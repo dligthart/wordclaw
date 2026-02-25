@@ -4,14 +4,15 @@
 **Status:** Proposed  
 **Date:** 2026-02-25  
 **Depends on:** RFC 0003, RFC 0004, RFC 0011  
-**Related:** RFC 0006, RFC 0009
+**Related:** RFC 0006, RFC 0009, RFC 0016
 
 ## 1. Summary
 
 This RFC defines the practical contract for paid content consumption in WordClaw.
 It removes ambiguity between:
-- pay-per-request L402 gates, and
-- offer/entitlement based content licensing.
+- pay-per-request L402 gates,
+- offer/entitlement based content licensing, and
+- AP2 mandate-backed payment authorization (RFC 0016).
 
 The contract standardizes:
 - how a purchase is completed,
@@ -56,7 +57,7 @@ Out of scope:
 1. `Offer`: sellable product for `scopeType` in `item`, `type`, `subscription`.
 2. `LicensePolicy`: immutable constraints (`maxReads`, `expiresAt`, `allowedChannels`, etc).
 3. `Entitlement`: buyer access grant bound to one `agentProfileId` and one purchase payment hash.
-4. `Payment`: invoice lifecycle (`pending`, `paid`, `consumed`, `expired`, `failed`).
+4. `Payment`: payment authorization lifecycle (`pending`, `paid`, `consumed`, `expired`, `failed`) across supported rails.
 5. `AccessEvent`: append-only log for each entitlement read decision.
 
 ### 4.2 Canonical Read Rule
@@ -95,15 +96,16 @@ Client starts purchase:
 Behavior:
 - Creates `payments` row (`pending`).
 - Creates `entitlements` row with status `pending_payment`.
-- Returns `402` challenge (`WWW-Authenticate: L402 ...`) plus `paymentHash` and `entitlementId`.
+- Returns `402 Payment Required` with `WWW-Authenticate` challenges for enabled rails.
+- Returns `paymentHash`, `entitlementId`, and rail-specific challenge/intent payload.
 
-### 5.3 Purchase Confirmation
+### 5.3 Purchase Authorization and Settlement Confirmation
 
-Client confirms payment with L402 credentials:
+L402 confirmation flow:
 
 `POST /api/offers/:id/purchase/confirm`
 
-Request:
+Request (L402):
 - `Authorization: L402 <macaroon>:<preimage>`
 - Optional `x-payment-hash` if multiple pending purchases for same offer.
 
@@ -113,6 +115,18 @@ Behavior:
 3. Transition payment `pending -> paid`.
 4. Transition entitlement `pending_payment -> active`.
 5. Return entitlement summary (`id`, `remainingReads`, `expiresAt`, `status`).
+
+AP2 authorization flow (RFC 0016):
+
+1. Client submits mandate to `POST /api/ap2/checkout` bound to the purchase `paymentHash`.
+2. Server verifies AP2 mandate signature/scope/nonce/spend limit and records mandate usage intent.
+3. AP2 provider confirms settlement asynchronously through `POST /api/webhooks/payments/ap2/settled`.
+4. Only after provider-confirmed settlement:
+- `payments` transitions `pending -> paid`.
+- `entitlements` transitions `pending_payment -> active`.
+
+Canonical invariant:
+- No rail is allowed to activate entitlement before payment settlement is cryptographically/provider verified.
 
 ### 5.4 Consumption
 
@@ -128,8 +142,8 @@ If entitlement-based:
 5. Return deterministic denial when exhausted/expired/revoked.
 6. A payment record transitioning to `consumed` MUST NOT by itself revoke access while entitlement remains `active` and within limits.
 
-If legacy L402 fallback:
-- Keep current middleware challenge/verify/consume flow.
+If legacy fallback gate:
+- Keep current challenge/verify/consume flow without persistent entitlements (currently L402; AP2 per-request fallback is optional and operator-configured).
 
 ## 6. State Machines
 
@@ -181,12 +195,15 @@ Allowed transitions:
 1. `POST /api/offers/:id/purchase/confirm`
 2. `GET /api/entitlements/me`
 3. `GET /api/entitlements/:id`
+4. `POST /api/ap2/checkout` (RFC 0016)
+5. `POST /api/webhooks/payments/ap2/settled` (RFC 0016)
 
 ### 7.2 Existing Endpoint Changes
 
 1. `POST /api/offers/:id/purchase`
 - Must return `paymentHash` and `entitlementId`.
 - Must create entitlement as `pending_payment` (not `active`).
+- Must accept optional `paymentMethod` (`lightning` | `ap2`) when multiple rails are enabled.
 
 2. `GET /api/content-items/:id`
 - Must enforce offer-first entitlement logic when active offers exist.
@@ -204,6 +221,11 @@ Standardize:
 - `OFFER_REQUIRED`
 - `PAYMENT_CONFIRMATION_REQUIRED`
 - `PAYMENT_VERIFICATION_FAILED`
+- `PAYMENT_SETTLEMENT_PENDING`
+- `PAYMENT_METHOD_UNSUPPORTED`
+- `MANDATE_VERIFICATION_FAILED`
+- `MANDATE_EXPIRED`
+- `PAYMENT_REPLAY_REJECTED`
 
 All errors must include `remediation`.
 
@@ -222,8 +244,9 @@ Hard requirements:
 1. Domain ID is derived from authenticated principal context, not raw client headers.
 2. Every lookup in purchase/confirm/consume paths is domain-scoped.
 3. Macaroon caveats include domain; mismatched domain fails verification.
-4. Entitlement delegation cannot cross domain boundaries.
-5. Revenue attribution for purchases must write to the same domain as the entitlement.
+4. AP2 mandate claims must include domain-bound scope; mismatched domain fails verification.
+5. Entitlement delegation cannot cross domain boundaries.
+6. Revenue attribution for purchases must write to the same domain as the entitlement.
 
 ## 10. Revenue Attribution Coupling
 
@@ -237,11 +260,12 @@ Legacy pay-per-request fallback reads may optionally write `sourceType='metered_
 
 ## 11. Security and Abuse Controls
 
-1. Confirm route verifies method/path/domain caveats in macaroon.
-2. Reject token replay across endpoints or domains.
-3. Enforce atomic decrement for finite reads to prevent race overspend.
-4. Log denied access decisions in `access_events`.
-5. Use idempotency keys for purchase confirmation retries.
+1. L402 confirm route verifies method/path/domain caveats in macaroon.
+2. AP2 checkout verifies signature, nonce uniqueness, spend ceiling, and scoped claims.
+3. Reject token/mandate replay across endpoints or domains.
+4. Enforce atomic decrement for finite reads to prevent race overspend.
+5. Log denied access decisions in `access_events`.
+6. Use idempotency keys for purchase confirmation retries.
 
 ## 12. Rollout Plan
 
@@ -253,20 +277,37 @@ Legacy pay-per-request fallback reads may optionally write `sourceType='metered_
 - Implement `/offers/:id/purchase/confirm`.
 - Migrate purchase init to `pending_payment`.
 
+### Phase 2b: AP2 Settlement Path (RFC 0016 coupling)
+- Implement `/api/ap2/checkout`.
+- Implement `/api/webhooks/payments/ap2/settled` with idempotency/replay protection.
+- Gate entitlement activation on provider-confirmed AP2 settlement.
+
 ### Phase 3: Consumption Enforcement
 - Implement offer-first logic on `GET /content-items/:id`.
 - Add entitlement selection and ambiguity handling.
 
 ### Phase 4: Compatibility and Cleanup
-- Keep legacy L402 fallback only when no active offers exist.
+- Keep legacy per-request fallback gates only when no active offers exist.
 - Add migration warnings and telemetry for fallback usage.
 
 ## 13. Acceptance Criteria
 
-1. Agent can complete purchase with a deterministic two-step flow: `purchase` then `purchase/confirm`.
+1. Agent can complete purchase with deterministic rail-specific flow:
+- L402: `purchase` then `purchase/confirm`.
+- AP2: `purchase` then `ap2/checkout` with async webhook settlement confirmation.
 2. Entitlement only becomes active after payment verification.
 3. Read requests decrement reads exactly once under concurrency.
 4. Exhausted/expired/revoked entitlements produce deterministic, actionable errors.
 5. Cross-domain token or entitlement use is rejected.
 6. Offer purchase creates revenue events once, not per read.
 7. Content remains accessible to the purchasing agent while entitlement is valid, even after payment status becomes `consumed`.
+
+## 14. Cross-RFC Integrations Implemented in This RFC Revision
+
+This section marks what was implemented in the RFC specification text on 2026-02-25 (document-level integration, not runtime code rollout).
+
+- [x] Integrated RFC 0016 payment-rail model into RFC 0015 while keeping entitlement semantics canonical.
+- [x] Added explicit AP2 checkout + webhook settlement dependency before entitlement activation.
+- [x] Added AP2-specific domain isolation requirements aligned with RFC 0011.
+- [x] Expanded error contract for multi-rail payment and mandate failures.
+- [x] Updated rollout/acceptance criteria to include both L402 and AP2 settlement paths.
