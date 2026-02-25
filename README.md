@@ -106,11 +106,11 @@ WordClaw comes with several built-in interactive demos located in the `demos/` a
 
 For detailed guides on setting up the Supervisor UI, authentication, testing, and system architecture, please refer to the `doc/` directory:
 
-- [Getting Started Guide](doc/getting-started.md) — Frontend UI setup, API authentication, testing, and environment setup.
-- [Drizzle Migrations Guide](doc/drizzle-migrations.md) — How to generate/apply/push schema migrations safely.
-- [Architecture Overview](doc/architecture.md) — System layer breakdown and data models.
-- [Features Outline](doc/features.md) — Content API and Human Supervisor Web Interface capabilities.
-- [MCP Integration](doc/mcp-integration.md) — Model Context Protocol implementation details.
+- [Getting Started Guide](doc/tutorials/getting-started.md) — Frontend UI setup, API authentication, testing, and environment setup.
+- [Drizzle Migrations Guide](doc/reference/drizzle-migrations.md) — How to generate/apply/push schema migrations safely.
+- [Architecture Overview](doc/reference/architecture.md) — System layer breakdown and data models.
+- [Features Outline](doc/concepts/features.md) — Content API and Human Supervisor Web Interface capabilities.
+- [MCP Integration](doc/guides/mcp-integration.md) — Model Context Protocol implementation details.
 - [Feature Proposals (RFCs)](doc/rfc) — Methodology and history of proposed platform features.
 
 ### API Documentation

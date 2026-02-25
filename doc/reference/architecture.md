@@ -66,7 +66,7 @@ WordClaw is an AI-first headless CMS that exposes identical capabilities over th
 
 Rendered image:
 
-![System architecture diagram](images/diagrams/architecture-system-diagram.svg)
+![System architecture diagram](../images/diagrams/architecture-system-diagram.svg)
 
 ## Layer Responsibilities
 
@@ -129,7 +129,7 @@ revenue_events 1───* revenue_allocations 1───* allocation_status_eve
 
 Rendered image:
 
-![Architecture data model diagram](images/diagrams/architecture-data-model-diagram.svg)
+![Architecture data model diagram](../images/diagrams/architecture-data-model-diagram.svg)
 
 Key relationships:
 
@@ -175,7 +175,7 @@ Client Request
 
 Rendered image:
 
-![Request lifecycle diagram](images/diagrams/architecture-request-lifecycle-diagram.svg)
+![Request lifecycle diagram](../images/diagrams/architecture-request-lifecycle-diagram.svg)
 
 ## Technology Stack
 

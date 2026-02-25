@@ -49,7 +49,7 @@
    npx drizzle-kit migrate
    ```
 
-   For full migration workflows (`generate`, `migrate`, `push`) see [drizzle-migrations.md](drizzle-migrations.md).
+   For full migration workflows (`generate`, `migrate`, `push`) see [drizzle-migrations.md](../reference/drizzle-migrations.md).
 
 6. **Start the server**
 
@@ -143,4 +143,4 @@ RUN_INTEGRATION=1 npm test
 ```
 
 ### Capability Parity Contract
-Cross-protocol capability parity is documented in [mcp-integration.md](mcp-integration.md) and validated in the default `npm test` run to ensure REST, GraphQL, and MCP tools remain synced.
+Cross-protocol capability parity is documented in [mcp-integration.md](../guides/mcp-integration.md) and validated in the default `npm test` run to ensure REST, GraphQL, and MCP tools remain synced.

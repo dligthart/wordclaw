@@ -8,7 +8,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "mcp:start": "tsx src/mcp/index.ts",
-    "test": "vitest run --reporter verbose"
+    "test": "vitest run --reporter verbose",
+    "docs:dev": "vitepress dev doc",
+    "docs:build": "vitepress build doc",
+    "docs:preview": "vitepress preview doc"
   },
   "repository": {
     "type": "git",
@@ -52,8 +55,10 @@
     "@types/node": "^25.2.3",
     "@types/pg": "^8.16.0",
     "drizzle-kit": "^0.31.9",
+    "swagger-ui-dist": "^5.31.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
+    "vitepress": "^1.6.4",
     "vitest": "^4.0.18"
   }
 }

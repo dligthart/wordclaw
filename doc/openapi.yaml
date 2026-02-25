@@ -1,0 +1,5761 @@
+swagger: "2.0"
+info:
+  version: 9.7.0
+  title: "@fastify/swagger"
+definitions: {}
+paths:
+  /graphql:
+    get:
+      parameters:
+        - type: string
+          required: false
+          in: query
+          name: query
+        - type: boolean
+          required: false
+          in: query
+          name: persisted
+        - type:
+            - string
+            - "null"
+          required: false
+          in: query
+          name: operationName
+        - type: string
+          required: false
+          in: query
+          name: variables
+        - type: string
+          required: false
+          in: query
+          name: extensions
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            properties:
+              data:
+                type:
+                  - "null"
+                  - object
+                additionalProperties: true
+              errors:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - message
+                  properties:
+                    message:
+                      type: string
+                    locations:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          line:
+                            type: integer
+                          column:
+                            type: integer
+                    path:
+                      type: array
+                      items:
+                        type: string
+                    extensions:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                      additionalProperties: true
+              extensions:
+                type: object
+                additionalProperties: true
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            properties:
+              query:
+                type: string
+              persisted:
+                type: boolean
+              operationName:
+                type:
+                  - string
+                  - "null"
+              variables:
+                type:
+                  - object
+                  - "null"
+              extensions:
+                type: object
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            properties:
+              data:
+                type:
+                  - "null"
+                  - object
+                additionalProperties: true
+              errors:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - message
+                  properties:
+                    message:
+                      type: string
+                    locations:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          line:
+                            type: integer
+                          column:
+                            type: integer
+                    path:
+                      type: array
+                      items:
+                        type: string
+                    extensions:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                      additionalProperties: true
+              extensions:
+                type: object
+                additionalProperties: true
+  /graphiql:
+    get:
+      responses:
+        "200":
+          description: Default Response
+  /graphiql/main.js:
+    get:
+      responses:
+        "200":
+          description: Default Response
+  /graphiql/sw.js:
+    get:
+      responses:
+        "200":
+          description: Default Response
+  /graphiql/config.js:
+    get:
+      responses:
+        "200":
+          description: Default Response
+  /api/sandbox/mcp/execute:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - tool
+            properties:
+              tool:
+                type: string
+              args:
+                additionalProperties: true
+                type: object
+                properties: {}
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - tool
+                  - protocol
+                  - result
+                properties:
+                  tool:
+                    type: string
+                  protocol:
+                    type: string
+                    enum:
+                      - mcp
+                  result: {}
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/auth/keys:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - name
+              - scopes
+            properties:
+              name:
+                type: string
+              scopes:
+                type: array
+                items:
+                  type: string
+              expiresAt:
+                format: date-time
+                type: string
+      responses:
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - name
+                  - keyPrefix
+                  - scopes
+                  - apiKey
+                properties:
+                  id:
+                    type: number
+                  name:
+                    type: string
+                  keyPrefix:
+                    type: string
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                  expiresAt:
+                    type: string
+                  apiKey:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - name
+                    - keyPrefix
+                    - scopes
+                    - createdBy
+                    - createdAt
+                    - expiresAt
+                    - revokedAt
+                    - lastUsedAt
+                  properties:
+                    id:
+                      type: number
+                    name:
+                      type: string
+                    keyPrefix:
+                      type: string
+                    scopes:
+                      type: array
+                      items:
+                        type: string
+                    createdBy:
+                      anyOf:
+                        - type: number
+                        - type: "null"
+                    createdAt:
+                      type: string
+                    expiresAt:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    revokedAt:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    lastUsedAt:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/auth/keys/{id}:
+    delete:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - message
+                properties:
+                  id:
+                    type: number
+                  message:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    put:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - oldId
+                  - newId
+                  - keyPrefix
+                  - apiKey
+                properties:
+                  oldId:
+                    type: number
+                  newId:
+                    type: number
+                  keyPrefix:
+                    type: string
+                  apiKey:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/policy/evaluate:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - operation
+              - resource
+            properties:
+              operation:
+                type: string
+              resource:
+                type: object
+                required:
+                  - type
+                properties:
+                  type:
+                    type: string
+                  id:
+                    type: string
+                  contentTypeId:
+                    type: string
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - outcome
+              - code
+              - policyVersion
+            properties:
+              outcome:
+                type: string
+              code:
+                type: string
+              remediation:
+                type: string
+              metadata:
+                type: object
+                additionalProperties:
+                  type: string
+              policyVersion:
+                type: string
+  /api/webhooks:
+    post:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - url
+              - events
+              - secret
+            properties:
+              url:
+                format: uri
+                type: string
+              events:
+                type: array
+                items:
+                  type: string
+              secret:
+                type: string
+              active:
+                type: boolean
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - url
+                  - events
+                  - active
+                  - createdAt
+                properties:
+                  id:
+                    type: number
+                  url:
+                    type: string
+                  events:
+                    type: array
+                    items:
+                      type: string
+                  active:
+                    type: boolean
+                  createdAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - url
+                  - events
+                  - active
+                  - createdAt
+                properties:
+                  id:
+                    type: number
+                  url:
+                    type: string
+                  events:
+                    type: array
+                    items:
+                      type: string
+                  active:
+                    type: boolean
+                  createdAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - url
+                    - events
+                    - active
+                    - createdAt
+                  properties:
+                    id:
+                      type: number
+                    url:
+                      type: string
+                    events:
+                      type: array
+                      items:
+                        type: string
+                    active:
+                      type: boolean
+                    createdAt:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/webhooks/{id}:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - url
+                  - events
+                  - active
+                  - createdAt
+                properties:
+                  id:
+                    type: number
+                  url:
+                    type: string
+                  events:
+                    type: array
+                    items:
+                      type: string
+                  active:
+                    type: boolean
+                  createdAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    put:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - name: body
+          in: body
+          schema:
+            type: object
+            properties:
+              url:
+                format: uri
+                type: string
+              events:
+                type: array
+                items:
+                  type: string
+              secret:
+                type: string
+              active:
+                type: boolean
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - url
+                  - events
+                  - active
+                  - createdAt
+                properties:
+                  id:
+                    type: number
+                  url:
+                    type: string
+                  events:
+                    type: array
+                    items:
+                      type: string
+                  active:
+                    type: boolean
+                  createdAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    delete:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - message
+                properties:
+                  id:
+                    type: number
+                  message:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/domains:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - name
+                    - hostname
+                    - createdAt
+                  properties:
+                    id:
+                      type: number
+                    name:
+                      type: string
+                    hostname:
+                      type: string
+                    createdAt:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/content-types:
+    post:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - name
+              - slug
+              - schema
+            properties:
+              name:
+                type: string
+              slug:
+                type: string
+              description:
+                type: string
+              schema:
+                anyOf:
+                  - type: string
+                  - additionalProperties: true
+                    type: object
+                    properties: {}
+              basePrice:
+                type: number
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - name
+                  - slug
+                properties:
+                  id:
+                    type: number
+                  name:
+                    type: string
+                  slug:
+                    type: string
+                  basePrice:
+                    type: number
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - name
+                  - slug
+                properties:
+                  id:
+                    type: number
+                  name:
+                    type: string
+                  slug:
+                    type: string
+                  basePrice:
+                    type: number
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    get:
+      parameters:
+        - minimum: 1
+          maximum: 500
+          type: number
+          required: false
+          in: query
+          name: limit
+        - minimum: 0
+          type: number
+          required: false
+          in: query
+          name: offset
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - name
+                    - slug
+                    - schema
+                    - createdAt
+                    - updatedAt
+                  properties:
+                    id:
+                      type: number
+                    name:
+                      type: string
+                    slug:
+                      type: string
+                    description:
+                      type: string
+                    schema:
+                      type: string
+                    basePrice:
+                      type: number
+                    createdAt:
+                      type: string
+                    updatedAt:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/content-types/{id}:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - name
+                  - slug
+                  - schema
+                  - createdAt
+                  - updatedAt
+                properties:
+                  id:
+                    type: number
+                  name:
+                    type: string
+                  slug:
+                    type: string
+                  description:
+                    type: string
+                  schema:
+                    type: string
+                  basePrice:
+                    type: number
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    put:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - name: body
+          in: body
+          schema:
+            type: object
+            properties:
+              name:
+                type: string
+              slug:
+                type: string
+              description:
+                type: string
+              schema:
+                anyOf:
+                  - type: string
+                  - additionalProperties: true
+                    type: object
+                    properties: {}
+              basePrice:
+                type: number
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                properties:
+                  id:
+                    type: number
+                  name:
+                    type: string
+                  slug:
+                    type: string
+                  description:
+                    type: string
+                  schema:
+                    type: string
+                  basePrice:
+                    type: number
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    delete:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - message
+                properties:
+                  id:
+                    type: number
+                  message:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/content-items:
+    post:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - contentTypeId
+              - data
+            properties:
+              contentTypeId:
+                type: number
+              data:
+                anyOf:
+                  - type: string
+                  - additionalProperties: true
+                    type: object
+                    properties: {}
+              status:
+                type: string
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - contentTypeId
+                  - version
+                properties:
+                  id:
+                    type: number
+                  contentTypeId:
+                    type: number
+                  version:
+                    type: number
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - contentTypeId
+                  - version
+                properties:
+                  id:
+                    type: number
+                  contentTypeId:
+                    type: number
+                  version:
+                    type: number
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "402":
+          description: Default Response
+          schema: {}
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    get:
+      parameters:
+        - type: number
+          required: false
+          in: query
+          name: contentTypeId
+        - type: string
+          required: false
+          in: query
+          name: status
+        - type: string
+          required: false
+          in: query
+          name: createdAfter
+        - type: string
+          required: false
+          in: query
+          name: createdBefore
+        - minimum: 1
+          maximum: 500
+          type: number
+          required: false
+          in: query
+          name: limit
+        - minimum: 0
+          type: number
+          required: false
+          in: query
+          name: offset
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - contentTypeId
+                    - data
+                    - status
+                    - version
+                    - createdAt
+                    - updatedAt
+                  properties:
+                    id:
+                      type: number
+                    contentTypeId:
+                      type: number
+                    data:
+                      type: string
+                    status:
+                      type: string
+                    version:
+                      type: number
+                    createdAt:
+                      type: string
+                    updatedAt:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/content-types/{contentTypeId}/items:
+    post:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                anyOf:
+                  - type: string
+                  - additionalProperties: true
+                    type: object
+                    properties: {}
+              status:
+                type: string
+        - type: number
+          required: true
+          in: path
+          name: contentTypeId
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - contentTypeId
+                  - version
+                properties:
+                  id:
+                    type: number
+                  contentTypeId:
+                    type: number
+                  version:
+                    type: number
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - contentTypeId
+                  - version
+                properties:
+                  id:
+                    type: number
+                  contentTypeId:
+                    type: number
+                  version:
+                    type: number
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "402":
+          description: Default Response
+          schema: {}
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/search/semantic:
+    get:
+      parameters:
+        - type: string
+          required: true
+          in: query
+          name: query
+        - minimum: 1
+          maximum: 50
+          default: 5
+          type: number
+          required: false
+          in: query
+          name: limit
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - contentItemId
+                    - chunkIndex
+                    - textChunk
+                    - similarity
+                    - contentItemData
+                    - contentTypeSlug
+                  properties:
+                    id:
+                      type: number
+                    contentItemId:
+                      type: number
+                    chunkIndex:
+                      type: number
+                    textChunk:
+                      type: string
+                    similarity:
+                      type: number
+                    contentItemData: {}
+                    contentTypeSlug:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "429":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "500":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "503":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/content-items/{id}:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - contentTypeId
+                  - data
+                  - status
+                  - version
+                  - createdAt
+                  - updatedAt
+                properties:
+                  id:
+                    type: number
+                  contentTypeId:
+                    type: number
+                  data:
+                    type: string
+                  status:
+                    type: string
+                  version:
+                    type: number
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "402":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "409":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    put:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - name: body
+          in: body
+          schema:
+            type: object
+            properties:
+              contentTypeId:
+                type: number
+              data:
+                anyOf:
+                  - type: string
+                  - additionalProperties: true
+                    type: object
+                    properties: {}
+              status:
+                type: string
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - contentTypeId
+                  - data
+                  - status
+                  - version
+                properties:
+                  id:
+                    type: number
+                  contentTypeId:
+                    type: number
+                  data:
+                    type: string
+                  status:
+                    type: string
+                  version:
+                    type: number
+                  createdAt:
+                    type: string
+                  updatedAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    delete:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - message
+                properties:
+                  id:
+                    type: number
+                  message:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/content-items/{id}/offers:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - domainId
+                    - slug
+                    - name
+                    - scopeType
+                    - scopeRef
+                    - priceSats
+                    - active
+                  properties:
+                    id:
+                      type: number
+                    domainId:
+                      type: number
+                    slug:
+                      type: string
+                    name:
+                      type: string
+                    scopeType:
+                      type: string
+                    scopeRef:
+                      anyOf:
+                        - type: number
+                        - type: "null"
+                    priceSats:
+                      type: number
+                    active:
+                      type: boolean
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/offers/{id}/purchase:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            properties:
+              paymentMethod:
+                anyOf:
+                  - type: string
+                    enum:
+                      - lightning
+                  - type: string
+                    enum:
+                      - ap2
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "402":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "503":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/offers/{id}/purchase/confirm:
+    post:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - domainId
+                  - offerId
+                  - policyId
+                  - policyVersion
+                  - agentProfileId
+                  - paymentHash
+                  - status
+                  - remainingReads
+                  - expiresAt
+                  - activatedAt
+                properties:
+                  id:
+                    type: number
+                  domainId:
+                    type: number
+                  offerId:
+                    type: number
+                  policyId:
+                    type: number
+                  policyVersion:
+                    type: number
+                  agentProfileId:
+                    type: number
+                  paymentHash:
+                    type: string
+                  status:
+                    type: string
+                  remainingReads:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                  expiresAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  activatedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "402":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "409":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/entitlements/me:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - domainId
+                    - offerId
+                    - policyId
+                    - policyVersion
+                    - agentProfileId
+                    - paymentHash
+                    - status
+                    - remainingReads
+                    - expiresAt
+                    - activatedAt
+                    - terminatedAt
+                  properties:
+                    id:
+                      type: number
+                    domainId:
+                      type: number
+                    offerId:
+                      type: number
+                    policyId:
+                      type: number
+                    policyVersion:
+                      type: number
+                    agentProfileId:
+                      type: number
+                    paymentHash:
+                      type: string
+                    status:
+                      type: string
+                    remainingReads:
+                      anyOf:
+                        - type: number
+                        - type: "null"
+                    expiresAt:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    activatedAt:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    terminatedAt:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/entitlements/{id}:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - domainId
+                  - offerId
+                  - policyId
+                  - policyVersion
+                  - agentProfileId
+                  - paymentHash
+                  - status
+                  - remainingReads
+                  - expiresAt
+                  - activatedAt
+                  - terminatedAt
+                properties:
+                  id:
+                    type: number
+                  domainId:
+                    type: number
+                  offerId:
+                    type: number
+                  policyId:
+                    type: number
+                  policyVersion:
+                    type: number
+                  agentProfileId:
+                    type: number
+                  paymentHash:
+                    type: string
+                  status:
+                    type: string
+                  remainingReads:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                  expiresAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  activatedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  terminatedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/entitlements/{id}/delegate:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - targetApiKeyId
+              - readsAmount
+            properties:
+              targetApiKeyId:
+                type: number
+              readsAmount:
+                type: number
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - domainId
+                  - offerId
+                  - policyId
+                  - policyVersion
+                  - agentProfileId
+                  - paymentHash
+                  - status
+                  - remainingReads
+                  - delegatedFrom
+                properties:
+                  id:
+                    type: number
+                  domainId:
+                    type: number
+                  offerId:
+                    type: number
+                  policyId:
+                    type: number
+                  policyVersion:
+                    type: number
+                  agentProfileId:
+                    type: number
+                  paymentHash:
+                    type: string
+                  status:
+                    type: string
+                  remainingReads:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                  expiresAt:
+                    type: string
+                  delegatedFrom:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "403":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/content-items/{id}/versions:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - version
+                    - data
+                    - status
+                    - createdAt
+                  properties:
+                    id:
+                      type: number
+                    version:
+                      type: number
+                    data:
+                      type: string
+                    status:
+                      type: string
+                    createdAt:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/content-items/{id}/rollback:
+    post:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - version
+            properties:
+              version:
+                type: number
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - version
+                  - message
+                properties:
+                  id:
+                    type: number
+                  version:
+                    type: number
+                  message:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/content-items/batch:
+    post:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - type: boolean
+          required: false
+          in: query
+          name: atomic
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - items
+            properties:
+              items:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - contentTypeId
+                    - data
+                  properties:
+                    contentTypeId:
+                      type: number
+                    data:
+                      type: string
+                    status:
+                      type: string
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - atomic
+                  - results
+                properties:
+                  atomic:
+                    type: boolean
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - index
+                        - ok
+                      properties:
+                        index:
+                          type: number
+                        ok:
+                          type: boolean
+                        id:
+                          type: number
+                        version:
+                          type: number
+                        code:
+                          type: string
+                        error:
+                          type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    put:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - type: boolean
+          required: false
+          in: query
+          name: atomic
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - items
+            properties:
+              items:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                  properties:
+                    id:
+                      type: number
+                    contentTypeId:
+                      type: number
+                    data:
+                      type: string
+                    status:
+                      type: string
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - atomic
+                  - results
+                properties:
+                  atomic:
+                    type: boolean
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - index
+                        - ok
+                      properties:
+                        index:
+                          type: number
+                        ok:
+                          type: boolean
+                        id:
+                          type: number
+                        version:
+                          type: number
+                        code:
+                          type: string
+                        error:
+                          type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+    delete:
+      parameters:
+        - const: dry_run
+          type: string
+          required: false
+          in: query
+          name: mode
+        - type: boolean
+          required: false
+          in: query
+          name: atomic
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - ids
+            properties:
+              ids:
+                type: array
+                items:
+                  type: number
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - atomic
+                  - results
+                properties:
+                  atomic:
+                    type: boolean
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - index
+                        - ok
+                      properties:
+                        index:
+                          type: number
+                        ok:
+                          type: boolean
+                        id:
+                          type: number
+                        code:
+                          type: string
+                        error:
+                          type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/audit-logs:
+    get:
+      parameters:
+        - type: string
+          required: false
+          in: query
+          name: entityType
+        - type: number
+          required: false
+          in: query
+          name: entityId
+        - type: string
+          required: false
+          in: query
+          name: action
+        - default: 50
+          minimum: 1
+          maximum: 500
+          type: number
+          required: false
+          in: query
+          name: limit
+        - type: string
+          required: false
+          in: query
+          name: cursor
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - action
+                    - entityType
+                    - entityId
+                    - createdAt
+                  properties:
+                    id:
+                      type: number
+                    action:
+                      type: string
+                    entityType:
+                      type: string
+                    entityId:
+                      type: number
+                    details:
+                      type: string
+                    createdAt:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/payments/webhooks/{provider}/settled:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            additionalProperties: true
+            type: object
+            properties: {}
+        - type: string
+          required: true
+          in: path
+          name: provider
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - accepted
+              - eventId
+              - paymentHash
+              - status
+            properties:
+              accepted:
+                type: boolean
+              eventId:
+                type: string
+              paymentHash:
+                type: string
+              status:
+                type: string
+        "202":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - accepted
+            properties:
+              accepted:
+                type: boolean
+              duplicate:
+                type: boolean
+              unknownPayment:
+                type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "401":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "409":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "503":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/payments/metrics:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - counters
+                  - gauges
+                properties:
+                  counters:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  gauges:
+                    type: object
+                    additionalProperties:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/payments:
+    get:
+      parameters:
+        - default: 50
+          minimum: 1
+          maximum: 500
+          type: number
+          required: false
+          in: query
+          name: limit
+        - minimum: 0
+          type: number
+          required: false
+          in: query
+          name: offset
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - paymentHash
+                    - amountSatoshis
+                    - status
+                    - resourcePath
+                    - actorId
+                    - details
+                    - createdAt
+                  properties:
+                    id:
+                      type: number
+                    paymentHash:
+                      type: string
+                    amountSatoshis:
+                      type: number
+                    status:
+                      type: string
+                    resourcePath:
+                      type: string
+                    actorId:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    details: {}
+                    createdAt:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/payments/{id}:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - paymentHash
+                  - amountSatoshis
+                  - status
+                  - resourcePath
+                  - actorId
+                  - details
+                  - createdAt
+                properties:
+                  id:
+                    type: number
+                  paymentHash:
+                    type: string
+                  amountSatoshis:
+                    type: number
+                  status:
+                    type: string
+                  resourcePath:
+                    type: string
+                  actorId:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  details: {}
+                  createdAt:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/workflows:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - name
+              - contentTypeId
+            properties:
+              name:
+                type: string
+              contentTypeId:
+                type: number
+              active:
+                type: boolean
+      responses:
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - name
+                  - contentTypeId
+                  - active
+                properties:
+                  id:
+                    type: number
+                  name:
+                    type: string
+                  contentTypeId:
+                    type: number
+                  active:
+                    type: boolean
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/workflows/{id}/transitions:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - fromState
+              - toState
+              - requiredRoles
+            properties:
+              fromState:
+                type: string
+              toState:
+                type: string
+              requiredRoles:
+                type: array
+                items:
+                  type: string
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - workflowId
+                  - fromState
+                  - toState
+                properties:
+                  id:
+                    type: number
+                  workflowId:
+                    type: number
+                  fromState:
+                    type: string
+                  toState:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/content-types/{id}/workflows/active:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - name
+                  - contentTypeId
+                  - active
+                  - transitions
+                properties:
+                  id:
+                    type: number
+                  name:
+                    type: string
+                  contentTypeId:
+                    type: number
+                  active:
+                    type: boolean
+                  transitions:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - workflowId
+                        - fromState
+                        - toState
+                        - requiredRoles
+                      properties:
+                        id:
+                          type: number
+                        workflowId:
+                          type: number
+                        fromState:
+                          type: string
+                        toState:
+                          type: string
+                        requiredRoles:
+                          type: array
+                          items:
+                            type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/content-items/{id}/submit:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - workflowTransitionId
+            properties:
+              workflowTransitionId:
+                type: number
+              assignee:
+                type: string
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - status
+                properties:
+                  id:
+                    type: number
+                  status:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/review-tasks:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - task
+                    - transition
+                    - workflow
+                    - contentItem
+                    - contentType
+                  properties:
+                    task: {}
+                    transition: {}
+                    workflow: {}
+                    contentItem: {}
+                    contentType: {}
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/review-tasks/{id}/decide:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - decision
+            properties:
+              decision:
+                anyOf:
+                  - type: string
+                    enum:
+                      - approved
+                  - type: string
+                    enum:
+                      - rejected
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - status
+                properties:
+                  id:
+                    type: number
+                  status:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/content-items/{id}/comments:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - authorId
+                    - comment
+                    - createdAt
+                  properties:
+                    id:
+                      type: number
+                    authorId:
+                      type: string
+                    comment:
+                      type: string
+                    createdAt:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - comment
+            properties:
+              comment:
+                type: string
+        - type: number
+          required: true
+          in: path
+          name: id
+      responses:
+        "201":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - id
+                  - authorId
+                  - comment
+                properties:
+                  id:
+                    type: number
+                  authorId:
+                    type: string
+                  comment:
+                    type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+  /api/agents/me/earnings:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - pending
+                  - cleared
+                  - disputed
+                properties:
+                  pending:
+                    type: number
+                  cleared:
+                    type: number
+                  disputed:
+                    type: number
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "401":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        "404":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/supervisors/login:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - email
+              - password
+            properties:
+              email:
+                format: email
+                type: string
+              password:
+                type: string
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - ok
+              - message
+            properties:
+              ok:
+                type: boolean
+                enum:
+                  - true
+              message:
+                type: string
+        "401":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - ok
+              - error
+            properties:
+              ok:
+                type: boolean
+                enum:
+                  - false
+              error:
+                type: string
+  /api/supervisors/logout:
+    post:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - ok
+            properties:
+              ok:
+                type: boolean
+                enum:
+                  - true
+  /api/supervisors/me:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - id
+              - email
+            properties:
+              id:
+                type: number
+              email:
+                type: string
+        "401":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: string
+  /api/supervisors/setup-initial:
+    post:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            required:
+              - email
+              - password
+            properties:
+              email:
+                format: email
+                type: string
+              password:
+                type: string
+        - type: string
+          required: false
+          in: header
+          name: x-setup-token
+      responses:
+        "200":
+          description: Default Response
+  /api/supervisors/dashboard:
+    get:
+      responses:
+        "200":
+          description: Default Response
+  /api/supervisors/l402-readiness/:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - domainId
+              - architecture
+              - webhookEndpoint
+              - secretManagerPath
+              - checklistApprovals
+              - diagnostics
+            properties:
+              id:
+                type: number
+              domainId:
+                type: number
+              architecture:
+                type: string
+              webhookEndpoint:
+                anyOf:
+                  - type: string
+                  - type: "null"
+              secretManagerPath:
+                anyOf:
+                  - type: string
+                  - type: "null"
+              checklistApprovals:
+                type: object
+                additionalProperties:
+                  type: string
+              diagnostics:
+                type: object
+                required:
+                  - hasLnbitsUrl
+                  - hasLnbitsKey
+                  - hasLndMacaroon
+                  - webhookConfigured
+                properties:
+                  hasLnbitsUrl:
+                    type: boolean
+                  hasLnbitsKey:
+                    type: boolean
+                  hasLndMacaroon:
+                    type: boolean
+                  webhookConfigured:
+                    type: boolean
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: string
+        "401":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: string
+    put:
+      parameters:
+        - name: body
+          in: body
+          schema:
+            type: object
+            properties:
+              architecture:
+                type: string
+              webhookEndpoint:
+                type: string
+              secretManagerPath:
+                type: string
+              checklistApprovals:
+                type: object
+                additionalProperties:
+                  type: string
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - ok
+            properties:
+              ok:
+                type: boolean
+                enum:
+                  - true
+        "400":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: string
+        "401":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: string
