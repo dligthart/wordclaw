@@ -9,6 +9,7 @@ Request for Comments (RFCs) define proposed, in-progress, and implemented archit
 - [RFC-0009: Content Discovery and Consumption API](/rfc/proposed/0009-content-discovery-and-consumption-api)
 - [RFC-0015: Paid Content Consumption Contract](/rfc/proposed/0015-paid-content-consumption-contract)
 - [RFC-0016: AP2 Agentic Monetization](/rfc/proposed/0016-ap2-agentic-monetization)
+- [RFC-0017: Tenant Boundary and Contract Hardening](/rfc/proposed/0017-tenant-boundary-and-contract-hardening)
 
 ## Partially Implemented
 
