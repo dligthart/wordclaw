@@ -1,7 +1,7 @@
 # RFC 0018: Integration Testing via GitHub Actions
 
 **Author:** DLIGTHART
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-02-25
 
 ## 1. Summary
