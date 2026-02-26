@@ -7,6 +7,10 @@ export interface AuthPrincipalData {
     source?: string;
 }
 
+function requiresDomainContext(resourceType: string): boolean {
+    return resourceType !== 'system';
+}
+
 export function buildOperationContext(
     protocol: 'rest' | 'graphql' | 'mcp',
     principal: AuthPrincipalData | null | undefined,
@@ -20,15 +24,22 @@ export function buildOperationContext(
         scopesArray = principal.scopes;
     }
 
+    const principalDomainId = principal?.domainId ?? (() => {
+        throw new Error('TENANT_ISOLATION_VIOLATION: Operations require explicit domain context.');
+    })();
+    const resourceWithDomain = requiresDomainContext(resource.type) && resource.domainId === undefined
+        ? { ...resource, domainId: principalDomainId }
+        : resource;
+
     return {
         principal: {
             id: principal?.keyId?.toString() || 'anonymous',
-            domainId: principal?.domainId ?? (() => { throw new Error('TENANT_ISOLATION_VIOLATION: Operations require explicit domain context.'); })(),
+            domainId: principalDomainId,
             scopes: scopesArray,
             source: principal?.source || 'anonymous'
         },
         operation,
-        resource,
+        resource: resourceWithDomain,
         environment: {
             protocol,
             timestamp: new Date()
@@ -65,14 +76,22 @@ export function resolveRestOperation(method: string, routePath: string): string 
     return 'content.write';
 }
 
-export function resolveRestResource(routePath: string): OperationContext['resource'] {
+export function resolveRestResource(routePath: string, domainId?: number): OperationContext['resource'] {
     const segments = routePath.split('/').filter(Boolean);
 
     if (segments[1] === 'content-types') {
-        return { type: 'content_type', id: segments[2] };
+        return {
+            type: 'content_type',
+            id: segments[2],
+            ...(domainId !== undefined ? { domainId } : {})
+        };
     }
     if (segments[1] === 'content-items') {
-        return { type: 'content_item', id: segments[2] };
+        return {
+            type: 'content_item',
+            id: segments[2],
+            ...(domainId !== undefined ? { domainId } : {})
+        };
     }
 
     return { type: 'system' };

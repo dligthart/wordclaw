@@ -235,4 +235,43 @@ describe('GraphQL Resolver Contracts', () => {
             }
         } satisfies GraphQLErrorLike);
     });
+
+    it('createWorkflow maps CONTENT_TYPE_NOT_FOUND to deterministic GraphQL error', async () => {
+        const createWorkflowSpy = vi.spyOn(WorkflowService, 'createWorkflow')
+            .mockRejectedValue(new Error('CONTENT_TYPE_NOT_FOUND'));
+
+        await expect(
+            resolvers.Mutation.createWorkflow({}, {
+                name: 'Cross Domain Workflow',
+                contentTypeId: '99999',
+                active: true
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_TYPE_NOT_FOUND'
+            }
+        } satisfies GraphQLErrorLike);
+
+        createWorkflowSpy.mockRestore();
+    });
+
+    it('createWorkflowTransition maps WORKFLOW_NOT_FOUND to deterministic GraphQL error', async () => {
+        const createTransitionSpy = vi.spyOn(WorkflowService, 'createWorkflowTransition')
+            .mockRejectedValue(new Error('WORKFLOW_NOT_FOUND'));
+
+        await expect(
+            resolvers.Mutation.createWorkflowTransition({}, {
+                workflowId: '99999',
+                fromState: 'draft',
+                toState: 'published',
+                requiredRoles: ['admin']
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'WORKFLOW_NOT_FOUND'
+            }
+        } satisfies GraphQLErrorLike);
+
+        createTransitionSpy.mockRestore();
+    });
 });

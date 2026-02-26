@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
     return {
         dbMock,
         logAuditMock: vi.fn(),
+        isSafeWebhookUrlMock: vi.fn(async () => true),
     };
 });
 
@@ -24,8 +25,17 @@ vi.mock('../services/audit.js', () => ({
     logAudit: mocks.logAuditMock,
 }));
 
+vi.mock('../services/webhook.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../services/webhook.js')>();
+    return {
+        ...actual,
+        isSafeWebhookUrl: mocks.isSafeWebhookUrlMock,
+    };
+});
+
 import { errorHandler } from './error-handler.js';
 import apiRoutes from './routes.js';
+import { WorkflowService } from '../services/workflow.js';
 
 type ApiErrorBody = {
     error: string;
@@ -47,6 +57,8 @@ function resetMocks() {
     mocks.dbMock.delete.mockReset();
     mocks.dbMock.transaction.mockReset();
     mocks.logAuditMock.mockReset();
+    mocks.isSafeWebhookUrlMock.mockReset();
+    mocks.isSafeWebhookUrlMock.mockImplementation(async () => true);
 }
 
 const originalAuthRequired = process.env.AUTH_REQUIRED;
@@ -305,6 +317,56 @@ describe('API Route Contracts', () => {
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('MISSING_CONTENT_WRITE_SCOPE');
         } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_TYPE_NOT_FOUND when workflow target content type is outside current domain', async () => {
+        const app = await buildServer();
+        const createWorkflowSpy = vi.spyOn(WorkflowService, 'createWorkflow')
+            .mockRejectedValue(new Error('CONTENT_TYPE_NOT_FOUND'));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/workflows',
+                payload: {
+                    name: 'Cross Domain Workflow',
+                    contentTypeId: 99999,
+                    active: true
+                }
+            });
+
+            expect(response.statusCode).toBe(404);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_TYPE_NOT_FOUND');
+        } finally {
+            createWorkflowSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns WORKFLOW_NOT_FOUND when transition target workflow is outside current domain', async () => {
+        const app = await buildServer();
+        const createTransitionSpy = vi.spyOn(WorkflowService, 'createWorkflowTransition')
+            .mockRejectedValue(new Error('WORKFLOW_NOT_FOUND'));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/workflows/99999/transitions',
+                payload: {
+                    fromState: 'draft',
+                    toState: 'published',
+                    requiredRoles: ['admin']
+                }
+            });
+
+            expect(response.statusCode).toBe(404);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('WORKFLOW_NOT_FOUND');
+        } finally {
+            createTransitionSpy.mockRestore();
             await app.close();
         }
     });

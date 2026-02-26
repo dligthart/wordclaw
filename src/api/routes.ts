@@ -274,7 +274,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             'rest',
             principal,
             resolveRestOperation(request.method, path),
-            resolveRestResource(path)
+            resolveRestResource(path, principal.domainId)
         );
 
         const decision = await PolicyEngine.evaluate(operationContext);
@@ -1626,6 +1626,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const conditions = [
+            eq(contentItems.domainId, getDomainId(request)),
             contentTypeId !== undefined ? eq(contentItems.contentTypeId, contentTypeId) : undefined,
             status ? eq(contentItems.status, status) : undefined,
             afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
@@ -3681,17 +3682,26 @@ export default async function apiRoutes(server: FastifyInstance) {
                     name: Type.String(),
                     contentTypeId: Type.Number(),
                     active: Type.Boolean()
-                }))
+                })),
+                404: AIErrorResponse
             }
         }
     }, async (request, reply) => {
         const payload = request.body as any;
-        const [workflow] = await db.insert(workflows).values({
-            domainId: getDomainId(request),
-            name: payload.name,
-            contentTypeId: payload.contentTypeId,
-            active: payload.active !== undefined ? payload.active : true
-        }).returning();
+        let workflow;
+        try {
+            workflow = await WorkflowService.createWorkflow(
+                getDomainId(request),
+                payload.name,
+                payload.contentTypeId,
+                payload.active !== undefined ? payload.active : true
+            );
+        } catch (error) {
+            if (error instanceof Error && error.message === 'CONTENT_TYPE_NOT_FOUND') {
+                return reply.status(404).send(notFoundContentType(payload.contentTypeId));
+            }
+            throw error;
+        }
 
         return reply.status(201).send({
             data: workflow,
@@ -3715,18 +3725,32 @@ export default async function apiRoutes(server: FastifyInstance) {
                     workflowId: Type.Number(),
                     fromState: Type.String(),
                     toState: Type.String()
-                }))
+                })),
+                404: AIErrorResponse
             }
         }
     }, async (request, reply) => {
         const { id } = request.params as { id: number };
         const payload = request.body as any;
-        const [transition] = await db.insert(workflowTransitions).values({
-            workflowId: id,
-            fromState: payload.fromState,
-            toState: payload.toState,
-            requiredRoles: payload.requiredRoles
-        }).returning();
+        let transition;
+        try {
+            transition = await WorkflowService.createWorkflowTransition(
+                getDomainId(request),
+                id,
+                payload.fromState,
+                payload.toState,
+                payload.requiredRoles
+            );
+        } catch (error) {
+            if (error instanceof Error && error.message === 'WORKFLOW_NOT_FOUND') {
+                return reply.status(404).send(toErrorPayload(
+                    'Workflow not found',
+                    'WORKFLOW_NOT_FOUND',
+                    'Provide an existing workflow ID in the current domain.'
+                ));
+            }
+            throw error;
+        }
 
         return reply.status(201).send({
             data: transition,

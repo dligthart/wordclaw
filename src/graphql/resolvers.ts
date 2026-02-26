@@ -338,7 +338,10 @@ async function validateContentItemUpdateInput(item: {
         };
     }
 
-    const [existing] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
+    const [existing] = await db.select().from(contentItems).where(and(
+        eq(contentItems.id, item.id),
+        eq(contentItems.domainId, domainId)
+    ));
     if (!existing) {
         return {
             ok: false,
@@ -347,7 +350,10 @@ async function validateContentItemUpdateInput(item: {
     }
 
     const targetContentTypeId = updateData.contentTypeId ?? existing.contentTypeId;
-    const [targetContentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+    const [targetContentType] = await db.select().from(contentTypes).where(and(
+        eq(contentTypes.id, targetContentTypeId),
+        eq(contentTypes.domainId, domainId)
+    ));
     if (!targetContentType) {
         return {
             ok: false,
@@ -921,7 +927,10 @@ export const resolvers = {
             const results: BatchResultRow[] = [];
             for (const [index, item] of normalizedItems.entries()) {
                 try {
-                    const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, item.contentTypeId));
+                    const [contentType] = await db.select().from(contentTypes).where(and(
+                        eq(contentTypes.id, item.contentTypeId),
+                        eq(contentTypes.domainId, getDomainId(context))
+                    ));
                     if (!contentType) {
                         results.push(buildBatchError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`));
                         continue;
@@ -987,7 +996,10 @@ export const resolvers = {
             const targetContentTypeId = typeof updateData.contentTypeId === 'number'
                 ? updateData.contentTypeId
                 : existing.contentTypeId;
-            const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+            const [contentType] = await db.select().from(contentTypes).where(and(
+                eq(contentTypes.id, targetContentTypeId),
+                eq(contentTypes.domainId, getDomainId(context))
+            ));
             if (!contentType) {
                 throw notFoundContentTypeError(targetContentTypeId);
             }
@@ -1112,7 +1124,10 @@ export const resolvers = {
                             }
 
                             const targetContentTypeId = updateData.contentTypeId ?? existing.contentTypeId;
-                            const [targetContentType] = await tx.select().from(contentTypes).where(eq(contentTypes.id, targetContentTypeId));
+                            const [targetContentType] = await tx.select().from(contentTypes).where(and(
+                                eq(contentTypes.id, targetContentTypeId),
+                                eq(contentTypes.domainId, getDomainId(context))
+                            ));
                             if (!targetContentType) {
                                 throw new Error(JSON.stringify(buildBatchError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${targetContentTypeId} not found`)));
                             }
@@ -1137,7 +1152,10 @@ export const resolvers = {
                                     version: existing.version + 1,
                                     updatedAt: new Date()
                                 })
-                                .where(eq(contentItems.id, item.id))
+                                .where(and(
+                                    eq(contentItems.id, item.id),
+                                    eq(contentItems.domainId, getDomainId(context))
+                                ))
                                 .returning();
 
                             output.push({
@@ -1203,7 +1221,10 @@ export const resolvers = {
                             version: validated.existing.version + 1,
                             updatedAt: new Date()
                         })
-                        .where(eq(contentItems.id, validated.existing.id))
+                        .where(and(
+                            eq(contentItems.id, validated.existing.id),
+                            eq(contentItems.domainId, getDomainId(context))
+                        ))
                         .returning();
 
                     return updated;
@@ -1513,7 +1534,10 @@ export const resolvers = {
                 throw targetVersionNotFoundError(id, targetVersion);
             }
 
-            const [contentType] = await db.select().from(contentTypes).where(eq(contentTypes.id, currentItem.contentTypeId));
+            const [contentType] = await db.select().from(contentTypes).where(and(
+                eq(contentTypes.id, currentItem.contentTypeId),
+                eq(contentTypes.domainId, getDomainId(context))
+            ));
             if (!contentType) {
                 throw notFoundContentTypeError(currentItem.contentTypeId);
             }
@@ -1601,23 +1625,42 @@ export const resolvers = {
         }),
 
         createWorkflow: withPolicy('system.config', () => ({ type: 'system' }), async (_parent: unknown, args: { name: string; contentTypeId: IdValue; active?: boolean }, context?: unknown) => {
-            const [workflow] = await db.insert(workflows).values({
-                domainId: getDomainId(context),
-                name: args.name,
-                contentTypeId: parseId(args.contentTypeId),
-                active: args.active !== undefined ? args.active : true
-            }).returning();
-            return workflow;
+            const contentTypeId = parseId(args.contentTypeId, 'contentTypeId');
+            try {
+                return await WorkflowService.createWorkflow(
+                    getDomainId(context),
+                    args.name,
+                    contentTypeId,
+                    args.active !== undefined ? args.active : true
+                );
+            } catch (error) {
+                if (error instanceof Error && error.message === 'CONTENT_TYPE_NOT_FOUND') {
+                    throw notFoundContentTypeError(contentTypeId);
+                }
+                throw error;
+            }
         }),
 
-        createWorkflowTransition: withPolicy('system.config', () => ({ type: 'system' }), async (_parent: unknown, args: { workflowId: IdValue; fromState: string; toState: string; requiredRoles: string[] }) => {
-            const [transition] = await db.insert(workflowTransitions).values({
-                workflowId: parseId(args.workflowId),
-                fromState: args.fromState,
-                toState: args.toState,
-                requiredRoles: args.requiredRoles
-            }).returning();
-            return transition;
+        createWorkflowTransition: withPolicy('system.config', () => ({ type: 'system' }), async (_parent: unknown, args: { workflowId: IdValue; fromState: string; toState: string; requiredRoles: string[] }, context?: unknown) => {
+            const workflowId = parseId(args.workflowId, 'workflowId');
+            try {
+                return await WorkflowService.createWorkflowTransition(
+                    getDomainId(context),
+                    workflowId,
+                    args.fromState,
+                    args.toState,
+                    args.requiredRoles
+                );
+            } catch (error) {
+                if (error instanceof Error && error.message === 'WORKFLOW_NOT_FOUND') {
+                    throw toError(
+                        'Workflow not found',
+                        'WORKFLOW_NOT_FOUND',
+                        `Provide a valid workflowId owned by this domain. Received '${workflowId}'.`
+                    );
+                }
+                throw error;
+            }
         }),
 
         submitReviewTask: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.contentItemId }), async (_parent: unknown, args: { contentItemId: IdValue; workflowTransitionId: IdValue; assignee?: string }, context?: unknown) => {

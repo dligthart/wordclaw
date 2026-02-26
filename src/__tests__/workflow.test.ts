@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { db } from '../db/index.js';
-import { workflows, workflowTransitions, contentTypes, contentItems, reviewTasks, reviewComments } from '../db/schema.js';
+import { workflows, workflowTransitions, contentTypes, contentItems, reviewTasks, reviewComments, domains } from '../db/schema.js';
 import { WorkflowService } from '../services/workflow.js';
 import { eq } from 'drizzle-orm';
 
@@ -129,5 +129,71 @@ describe('Workflow & Review System (Domain 1)', () => {
         expect(list.length).toBe(2);
         expect(list[0].authorId).toBe('AgentB');
         expect(list[1].authorId).toBe('AgentA');
+    });
+
+    it('should reject workflow creation when content type belongs to another domain', async () => {
+        const [domain2] = await db.select().from(domains).where(eq(domains.id, 2));
+        if (!domain2) {
+            await db.insert(domains).values({
+                id: 2,
+                name: 'Workflow Test Domain 2',
+                hostname: `workflow-domain2-${Date.now()}.local`
+            });
+        }
+
+        const [foreignType] = await db.insert(contentTypes).values({
+            domainId: 2,
+            name: 'Cross Domain Workflow Type',
+            slug: `cross-domain-workflow-type-${Date.now()}`,
+            schema: JSON.stringify({ type: 'object', properties: { title: { type: 'string' } } })
+        }).returning();
+
+        try {
+            await expect(
+                WorkflowService.createWorkflow(domainId, 'Invalid Cross Domain Workflow', foreignType.id, true)
+            ).rejects.toThrow('CONTENT_TYPE_NOT_FOUND');
+        } finally {
+            await db.delete(contentTypes).where(eq(contentTypes.id, foreignType.id));
+        }
+    });
+
+    it('should reject transition creation when workflow belongs to another domain', async () => {
+        const [domain2] = await db.select().from(domains).where(eq(domains.id, 2));
+        if (!domain2) {
+            await db.insert(domains).values({
+                id: 2,
+                name: 'Workflow Test Domain 2',
+                hostname: `workflow-domain2-${Date.now()}.local`
+            });
+        }
+
+        const [foreignType] = await db.insert(contentTypes).values({
+            domainId: 2,
+            name: 'Foreign Workflow Transition Type',
+            slug: `foreign-workflow-transition-type-${Date.now()}`,
+            schema: JSON.stringify({ type: 'object', properties: { title: { type: 'string' } } })
+        }).returning();
+
+        const [foreignWorkflow] = await db.insert(workflows).values({
+            domainId: 2,
+            name: 'Foreign Domain Workflow',
+            contentTypeId: foreignType.id,
+            active: true
+        }).returning();
+
+        try {
+            await expect(
+                WorkflowService.createWorkflowTransition(
+                    domainId,
+                    foreignWorkflow.id,
+                    'draft',
+                    'in_review',
+                    ['admin']
+                )
+            ).rejects.toThrow('WORKFLOW_NOT_FOUND');
+        } finally {
+            await db.delete(workflows).where(eq(workflows.id, foreignWorkflow.id));
+            await db.delete(contentTypes).where(eq(contentTypes.id, foreignType.id));
+        }
     });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupServer } from '../../src/server';
+import { buildServer } from '../../src/server';
 import { db } from '../../src/db';
 
 describe('Integration Tests - Core API', () => {
@@ -8,7 +8,7 @@ describe('Integration Tests - Core API', () => {
     beforeAll(async () => {
         // We expect the server to be set up but not listening,
         // so we can use app.inject() for requests.
-        app = await setupServer();
+        app = await buildServer();
     });
 
     afterAll(async () => {
@@ -18,21 +18,15 @@ describe('Integration Tests - Core API', () => {
         // Clean up connections if necessary
     });
 
-    it('GET /api/public/content - should return content list', async () => {
+    it('GET /api/content-items - should return 401 Unauthorized without API key', async () => {
         const response = await app.inject({
             method: 'GET',
-            url: '/api/public/content',
+            url: '/api/content-items',
         });
 
-        expect(response.statusCode).toBe(200);
+        expect(response.statusCode).toBe(401);
         const payload = JSON.parse(response.payload);
-        expect(payload).toBeDefined();
-        // Assuming the API returns an array, or an object with a data array
-        if (Array.isArray(payload)) {
-            expect(Array.isArray(payload)).toBe(true);
-        } else {
-            expect(Array.isArray(payload.data) || Array.isArray(payload.items)).toBe(true);
-        }
+        expect(payload.error).toBeDefined();
     });
 
     it('GET /health - should return healthy status', async () => {

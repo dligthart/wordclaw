@@ -1531,14 +1531,17 @@ server.tool(
     },
     withMCPPolicy('system.config', () => ({ type: 'system' }), async ({ name, contentTypeId, active }, _extra, domainId) => {
         try {
-            const [workflow] = await db.insert(workflows).values({
+            const workflow = await WorkflowService.createWorkflow(
                 domainId,
                 name,
                 contentTypeId,
                 active
-            }).returning();
+            );
             return okJson(workflow);
         } catch (error) {
+            if (error instanceof Error && error.message === 'CONTENT_TYPE_NOT_FOUND') {
+                return err(`CONTENT_TYPE_NOT_FOUND: Content type ${contentTypeId} not found in current domain`);
+            }
             return err(`Error creating workflow: ${(error as Error).message}`);
         }
     })
@@ -1553,16 +1556,20 @@ server.tool(
         toState: z.string().describe('Target state (e.g. "in_review")'),
         requiredRoles: z.array(z.string()).describe('Roles authorized to execute this transition (e.g. ["reviewer"])')
     },
-    withMCPPolicy('system.config', () => ({ type: 'system' }), async ({ workflowId, fromState, toState, requiredRoles }) => {
+    withMCPPolicy('system.config', () => ({ type: 'system' }), async ({ workflowId, fromState, toState, requiredRoles }, _extra, domainId) => {
         try {
-            const [transition] = await db.insert(workflowTransitions).values({
+            const transition = await WorkflowService.createWorkflowTransition(
+                domainId,
                 workflowId,
                 fromState,
                 toState,
                 requiredRoles
-            }).returning();
+            );
             return okJson(transition);
         } catch (error) {
+            if (error instanceof Error && error.message === 'WORKFLOW_NOT_FOUND') {
+                return err(`WORKFLOW_NOT_FOUND: Workflow ${workflowId} not found in current domain`);
+            }
             return err(`Error creating transition: ${(error as Error).message}`);
         }
     })

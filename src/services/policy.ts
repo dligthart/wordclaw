@@ -75,6 +75,15 @@ export class PolicyEngine {
             };
         }
 
+        if (resource.type !== 'system' && resource.domainId === undefined) {
+            return {
+                outcome: 'deny',
+                code: 'POLICY_RESOURCE_DOMAIN_UNRESOLVED',
+                remediation: 'Resource domain context is required for this operation.',
+                policyVersion: POLICY_VERSION
+            };
+        }
+
         // Cross-Tenant Boundary Enforcement
         if (resource.domainId !== undefined && resource.domainId !== principal.domainId) {
             return {

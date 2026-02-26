@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
-import { apiKeys, domains, contentTypes } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { apiKeys, domains, contentItems, contentTypes } from '../db/schema.js';
+import { eq, sql } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
 import { hashApiKey } from '../services/api-key.js';
@@ -19,6 +19,7 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
     let rawKey1 = 'wc_test_d1_1234567890';
     let rawKey2 = 'wc_test_d2_0987654321';
     let contentType1Id: number;
+    let createdDomain2 = false;
 
     beforeAll(async () => {
         fastify = Fastify({ logger: false });
@@ -32,8 +33,14 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
         domain1Id = 1;
 
-        const [d2] = await db.insert(domains).values({ id: 2, name: 'Secondary Test Domain', hostname: 'tenant2.local' }).returning();
-        domain2Id = d2.id;
+        const [existingDomain2] = await db.select().from(domains).where(eq(domains.id, 2));
+        if (existingDomain2) {
+            domain2Id = existingDomain2.id;
+        } else {
+            const [d2] = await db.insert(domains).values({ id: 2, name: 'Secondary Test Domain', hostname: 'tenant2.local' }).returning();
+            domain2Id = d2.id;
+            createdDomain2 = true;
+        }
 
         // 2. Create API keys for each domain
         const key1Hash = hashApiKey(rawKey1);
@@ -72,7 +79,7 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         if (apiKey1Id) await db.delete(apiKeys).where(eq(apiKeys.id, Number(apiKey1Id)));
         if (apiKey2Id) await db.delete(apiKeys).where(eq(apiKeys.id, Number(apiKey2Id)));
         if (contentType1Id) await db.delete(contentTypes).where(eq(contentTypes.id, contentType1Id));
-        if (domain2Id) await db.delete(domains).where(eq(domains.id, domain2Id));
+        if (createdDomain2 && domain2Id) await db.delete(domains).where(eq(domains.id, domain2Id));
     });
 
     it('Domain 1 API Key can fetch its own ContentType', async () => {
@@ -148,5 +155,89 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
 
         // Cleanup
         await db.delete(contentTypes).where(eq(contentTypes.id, createdId));
+    });
+
+    it('Domain-scoped content-item listing does not leak items or totals across tenants', async () => {
+        let domain2TypeId: number | null = null;
+        let domain1ItemId: number | null = null;
+        let domain2ItemId: number | null = null;
+
+        try {
+            const [domain2Type] = await db.insert(contentTypes).values({
+                domainId: domain2Id,
+                name: 'Domain 2 List Scope Type',
+                slug: 'd2-list-scope-' + crypto.randomUUID().slice(0, 8),
+                schema: JSON.stringify({ type: 'object' }),
+                basePrice: 0
+            }).returning();
+            domain2TypeId = domain2Type.id;
+
+            const [domain1Item] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: contentType1Id,
+                data: JSON.stringify({ title: 'domain1-visible' }),
+                status: 'draft'
+            }).returning();
+            domain1ItemId = domain1Item.id;
+
+            const [domain2Item] = await db.insert(contentItems).values({
+                domainId: domain2Id,
+                contentTypeId: domain2Type.id,
+                data: JSON.stringify({ title: 'domain2-visible' }),
+                status: 'draft'
+            }).returning();
+            domain2ItemId = domain2Item.id;
+
+            const domain1List = await fastify.inject({
+                method: 'GET',
+                url: '/api/content-items?limit=500',
+                headers: { 'x-api-key': rawKey1 }
+            });
+            const domain2List = await fastify.inject({
+                method: 'GET',
+                url: '/api/content-items?limit=500',
+                headers: { 'x-api-key': rawKey2 }
+            });
+
+            expect(domain1List.statusCode).toBe(200);
+            expect(domain2List.statusCode).toBe(200);
+
+            const domain1Payload = JSON.parse(domain1List.payload) as {
+                data: Array<{ id: number }>;
+                meta: { total: number };
+            };
+            const domain2Payload = JSON.parse(domain2List.payload) as {
+                data: Array<{ id: number }>;
+                meta: { total: number };
+            };
+
+            const domain1Ids = new Set(domain1Payload.data.map((row) => row.id));
+            const domain2Ids = new Set(domain2Payload.data.map((row) => row.id));
+
+            expect(domain1Ids.has(domain1Item.id)).toBe(true);
+            expect(domain1Ids.has(domain2Item.id)).toBe(false);
+            expect(domain2Ids.has(domain2Item.id)).toBe(true);
+            expect(domain2Ids.has(domain1Item.id)).toBe(false);
+
+            const [{ total: domain1Total }] = await db.select({ total: sql<number>`count(*)::int` })
+                .from(contentItems)
+                .where(eq(contentItems.domainId, domain1Id));
+            const [{ total: domain2Total }] = await db.select({ total: sql<number>`count(*)::int` })
+                .from(contentItems)
+                .where(eq(contentItems.domainId, domain2Id));
+
+            expect(domain1Payload.meta.total).toBe(domain1Total);
+            expect(domain2Payload.meta.total).toBe(domain2Total);
+        } finally {
+            if (domain1ItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, domain1ItemId));
+            }
+            if (domain2ItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, domain2ItemId));
+            }
+            if (domain2TypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, domain2TypeId));
+            }
+        }
     });
 });

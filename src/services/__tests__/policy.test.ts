@@ -51,4 +51,17 @@ describe('PolicyEngine Multi-Tenant Isolation', () => {
         expect(result.outcome).toBe('deny');
         expect(result.code).toBe('TENANT_ISOLATION_VIOLATION');
     });
+
+    it('denies tenant-bound writes when resource domain context is unresolved', async () => {
+        const context: OperationContext = {
+            principal: { id: 'user1', domainId: 2, scopes: ['content:write'], source: 'db' },
+            operation: 'content.write',
+            resource: { type: 'content_item' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('deny');
+        expect(result.code).toBe('POLICY_RESOURCE_DOMAIN_UNRESOLVED');
+    });
 });

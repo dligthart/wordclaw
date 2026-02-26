@@ -19,6 +19,54 @@ export interface WorkflowTransitionContext {
 }
 
 export class WorkflowService {
+    static async createWorkflow(domainId: number, name: string, contentTypeId: number, active = true) {
+        const [contentType] = await db.select({ id: contentTypes.id })
+            .from(contentTypes)
+            .where(and(
+                eq(contentTypes.id, contentTypeId),
+                eq(contentTypes.domainId, domainId)
+            ));
+        if (!contentType) {
+            throw new Error('CONTENT_TYPE_NOT_FOUND');
+        }
+
+        const [workflow] = await db.insert(workflows).values({
+            domainId,
+            name,
+            contentTypeId,
+            active
+        }).returning();
+
+        return workflow;
+    }
+
+    static async createWorkflowTransition(
+        domainId: number,
+        workflowId: number,
+        fromState: string,
+        toState: string,
+        requiredRoles: string[]
+    ) {
+        const [workflow] = await db.select({ id: workflows.id })
+            .from(workflows)
+            .where(and(
+                eq(workflows.id, workflowId),
+                eq(workflows.domainId, domainId)
+            ));
+        if (!workflow) {
+            throw new Error('WORKFLOW_NOT_FOUND');
+        }
+
+        const [transition] = await db.insert(workflowTransitions).values({
+            workflowId,
+            fromState,
+            toState,
+            requiredRoles
+        }).returning();
+
+        return transition;
+    }
+
     static async getActiveWorkflow(domainId: number, contentTypeId: number) {
         const results = await db.select()
             .from(workflows)
