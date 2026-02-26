@@ -11,7 +11,8 @@
     "test": "vitest run --reporter verbose",
     "docs:dev": "vitepress dev doc",
     "docs:build": "vitepress build doc",
-    "docs:preview": "vitepress preview doc"
+    "docs:preview": "vitepress preview doc",
+    "test:integration": "vitest run tests/integration"
   },
   "repository": {
     "type": "git",
