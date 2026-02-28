@@ -339,3 +339,76 @@ export const payoutTransfers = pgTable('payout_transfers', {
     status: text('status').notNull().default('pending'), // 'pending', 'completed', 'failed', 'failed_permanent'
     createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const agentRunDefinitions = pgTable('agent_run_definitions', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    runType: text('run_type').notNull(),
+    strategyConfig: jsonb('strategy_config').notNull().default({}),
+    active: boolean('active').notNull().default(true),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        agentRunDefinitionsDomainNameUniqueIdx: uniqueIndex('agent_run_definitions_domain_name_unique').on(table.domainId, table.name),
+        agentRunDefinitionsDomainRunTypeIdx: index('agent_run_definitions_domain_run_type_idx').on(table.domainId, table.runType)
+    };
+});
+
+export const agentRuns = pgTable('agent_runs', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    definitionId: integer('definition_id').references(() => agentRunDefinitions.id, { onDelete: 'set null' }),
+    goal: text('goal').notNull(),
+    runType: text('run_type').notNull(),
+    status: text('status').notNull().default('queued'), // queued, planning, waiting_approval, running, succeeded, failed, cancelled
+    requestedBy: text('requested_by'),
+    metadata: jsonb('metadata'),
+    startedAt: timestamp('started_at'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        agentRunsDomainStatusIdx: index('agent_runs_domain_status_idx').on(table.domainId, table.status),
+        agentRunsDomainCreatedAtIdx: index('agent_runs_domain_created_at_idx').on(table.domainId, table.createdAt),
+        agentRunsDefinitionIdx: index('agent_runs_definition_idx').on(table.definitionId)
+    };
+});
+
+export const agentRunSteps = pgTable('agent_run_steps', {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id').references(() => agentRuns.id, { onDelete: 'cascade' }).notNull(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    stepIndex: integer('step_index').notNull().default(0),
+    stepKey: text('step_key').notNull(),
+    actionType: text('action_type').notNull(),
+    status: text('status').notNull().default('pending'), // pending, executing, succeeded, failed, skipped
+    requestSnapshot: jsonb('request_snapshot'),
+    responseSnapshot: jsonb('response_snapshot'),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        agentRunStepsRunStepIndexIdx: index('agent_run_steps_run_step_index_idx').on(table.runId, table.stepIndex),
+        agentRunStepsDomainRunIdx: index('agent_run_steps_domain_run_idx').on(table.domainId, table.runId)
+    };
+});
+
+export const agentRunCheckpoints = pgTable('agent_run_checkpoints', {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id').references(() => agentRuns.id, { onDelete: 'cascade' }).notNull(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    checkpointKey: text('checkpoint_key').notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        agentRunCheckpointsRunCreatedAtIdx: index('agent_run_checkpoints_run_created_at_idx').on(table.runId, table.createdAt),
+        agentRunCheckpointsDomainRunIdx: index('agent_run_checkpoints_domain_run_idx').on(table.domainId, table.runId)
+    };
+});

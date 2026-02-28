@@ -20,6 +20,7 @@ import { LicensingService } from '../services/licensing.js';
 import { transitionPaymentStatus } from '../services/payment-ledger.js';
 import { paymentFlowMetrics } from '../services/payment-metrics.js';
 import { parsePaymentWebhookEvent, verifyPaymentWebhookSignature } from '../services/payment-webhook.js';
+import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -34,6 +35,11 @@ type ContentItemsQuery = {
     offset?: number;
 };
 type PaginationQuery = {
+    limit?: number;
+    offset?: number;
+};
+type AgentRunsQuery = {
+    status?: string;
     limit?: number;
     offset?: number;
 };
@@ -213,6 +219,103 @@ function notFoundContentItem(id: number): AIErrorPayload {
         'CONTENT_ITEM_NOT_FOUND',
         `The content item with ID ${id} does not exist. List available items with GET /api/content-items to find valid IDs.`
     );
+}
+
+function notFoundAgentRun(id: number): AIErrorPayload {
+    return toErrorPayload(
+        'Agent run not found',
+        'AGENT_RUN_NOT_FOUND',
+        `The agent run with ID ${id} does not exist in the current domain.`
+    );
+}
+
+function toIsoString(value: Date | null): string | null {
+    if (!value) {
+        return null;
+    }
+    return value.toISOString();
+}
+
+function serializeAgentRun(run: {
+    id: number;
+    domainId: number;
+    definitionId: number | null;
+    goal: string;
+    runType: string;
+    status: string;
+    requestedBy: string | null;
+    metadata: unknown;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+}) {
+    return {
+        id: run.id,
+        domainId: run.domainId,
+        definitionId: run.definitionId,
+        goal: run.goal,
+        runType: run.runType,
+        status: run.status,
+        requestedBy: run.requestedBy,
+        metadata: run.metadata,
+        startedAt: toIsoString(run.startedAt),
+        completedAt: toIsoString(run.completedAt),
+        createdAt: run.createdAt.toISOString(),
+        updatedAt: run.updatedAt.toISOString()
+    };
+}
+
+function serializeAgentRunStep(step: {
+    id: number;
+    runId: number;
+    domainId: number;
+    stepIndex: number;
+    stepKey: string;
+    actionType: string;
+    status: string;
+    requestSnapshot: unknown;
+    responseSnapshot: unknown;
+    errorMessage: string | null;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+}) {
+    return {
+        id: step.id,
+        runId: step.runId,
+        domainId: step.domainId,
+        stepIndex: step.stepIndex,
+        stepKey: step.stepKey,
+        actionType: step.actionType,
+        status: step.status,
+        requestSnapshot: step.requestSnapshot,
+        responseSnapshot: step.responseSnapshot,
+        errorMessage: step.errorMessage,
+        startedAt: toIsoString(step.startedAt),
+        completedAt: toIsoString(step.completedAt),
+        createdAt: step.createdAt.toISOString(),
+        updatedAt: step.updatedAt.toISOString()
+    };
+}
+
+function serializeAgentRunCheckpoint(checkpoint: {
+    id: number;
+    runId: number;
+    domainId: number;
+    checkpointKey: string;
+    payload: unknown;
+    createdAt: Date;
+}) {
+    return {
+        id: checkpoint.id,
+        runId: checkpoint.runId,
+        domainId: checkpoint.domainId,
+        checkpointKey: checkpoint.checkpointKey,
+        payload: checkpoint.payload,
+        createdAt: checkpoint.createdAt.toISOString()
+    };
 }
 
 function toAuditActorId(request: { authPrincipal?: { keyId: number | string } }): number | undefined {
@@ -3736,6 +3839,259 @@ export default async function apiRoutes(server: FastifyInstance) {
             data: payment,
             meta: buildMeta('Get a specific payment', ['GET /api/payments/:id'], 'low', 1, false)
         };
+    });
+
+    const AgentRunSchema = Type.Object({
+        id: Type.Number(),
+        domainId: Type.Number(),
+        definitionId: Type.Union([Type.Number(), Type.Null()]),
+        goal: Type.String(),
+        runType: Type.String(),
+        status: Type.String(),
+        requestedBy: Type.Union([Type.String(), Type.Null()]),
+        metadata: Type.Union([Type.Object({}, { additionalProperties: true }), Type.Null()]),
+        startedAt: Type.Union([Type.String(), Type.Null()]),
+        completedAt: Type.Union([Type.String(), Type.Null()]),
+        createdAt: Type.String(),
+        updatedAt: Type.String()
+    });
+
+    const AgentRunStepSchema = Type.Object({
+        id: Type.Number(),
+        runId: Type.Number(),
+        domainId: Type.Number(),
+        stepIndex: Type.Number(),
+        stepKey: Type.String(),
+        actionType: Type.String(),
+        status: Type.String(),
+        requestSnapshot: Type.Union([Type.Object({}, { additionalProperties: true }), Type.Null()]),
+        responseSnapshot: Type.Union([Type.Object({}, { additionalProperties: true }), Type.Null()]),
+        errorMessage: Type.Union([Type.String(), Type.Null()]),
+        startedAt: Type.Union([Type.String(), Type.Null()]),
+        completedAt: Type.Union([Type.String(), Type.Null()]),
+        createdAt: Type.String(),
+        updatedAt: Type.String()
+    });
+
+    const AgentRunCheckpointSchema = Type.Object({
+        id: Type.Number(),
+        runId: Type.Number(),
+        domainId: Type.Number(),
+        checkpointKey: Type.String(),
+        payload: Type.Object({}, { additionalProperties: true }),
+        createdAt: Type.String()
+    });
+
+    // --- Autonomous Agent Runs ---
+
+    server.post('/agent-runs', {
+        schema: {
+            body: Type.Object({
+                goal: Type.String({ minLength: 1 }),
+                runType: Type.Optional(Type.String()),
+                definitionId: Type.Optional(Type.Number()),
+                requireApproval: Type.Optional(Type.Boolean()),
+                metadata: Type.Optional(Type.Object({}, { additionalProperties: true }))
+            }),
+            response: {
+                201: createAIResponse(AgentRunSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const payload = request.body as {
+            goal: string;
+            runType?: string;
+            definitionId?: number;
+            requireApproval?: boolean;
+            metadata?: Record<string, unknown>;
+        };
+
+        try {
+            const authPrincipal = (request as any).authPrincipal as { keyId?: number | string } | undefined;
+            const run = await AgentRunService.createRun(getDomainId(request), {
+                goal: payload.goal,
+                runType: payload.runType,
+                definitionId: payload.definitionId,
+                requireApproval: payload.requireApproval,
+                metadata: payload.metadata,
+                requestedBy: authPrincipal?.keyId?.toString()
+            });
+
+            return reply.status(201).send({
+                data: serializeAgentRun(run),
+                meta: buildMeta(
+                    run.status === 'waiting_approval' ? 'Approve run to start execution' : 'Inspect run progress',
+                    [`POST /api/agent-runs/${run.id}/control`, `GET /api/agent-runs/${run.id}`],
+                    'medium',
+                    1
+                )
+            });
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
+                    return reply.status(404).send(toErrorPayload(
+                        'Run definition not found',
+                        error.code,
+                        'Provide a valid definitionId that belongs to this domain.'
+                    ));
+                }
+
+                if (error.code === 'AGENT_RUN_INVALID_GOAL') {
+                    return reply.status(400).send(toErrorPayload(
+                        'Invalid run goal',
+                        error.code,
+                        'Provide a non-empty goal string.'
+                    ));
+                }
+            }
+
+            throw error;
+        }
+    });
+
+    server.get('/agent-runs', {
+        schema: {
+            querystring: Type.Object({
+                status: Type.Optional(Type.String()),
+                limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+                offset: Type.Optional(Type.Number({ minimum: 0 }))
+            }),
+            response: {
+                200: createAIResponse(Type.Array(AgentRunSchema)),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { status, limit, offset } = request.query as AgentRunsQuery;
+        if (status && !isAgentRunStatus(status)) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid run status',
+                'AGENT_RUN_INVALID_STATUS',
+                `Use one of: queued, planning, waiting_approval, running, succeeded, failed, cancelled.`
+            ));
+        }
+
+        const runs = await AgentRunService.listRuns(getDomainId(request), {
+            status: status as any,
+            limit,
+            offset
+        });
+
+        return {
+            data: runs.items.map(serializeAgentRun),
+            meta: buildMeta(
+                'Inspect run queue',
+                ['POST /api/agent-runs'],
+                'low',
+                1,
+                false,
+                {
+                    total: runs.total,
+                    offset: runs.offset,
+                    limit: runs.limit,
+                    hasMore: runs.hasMore
+                }
+            )
+        };
+    });
+
+    server.get('/agent-runs/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    run: AgentRunSchema,
+                    steps: Type.Array(AgentRunStepSchema),
+                    checkpoints: Type.Array(AgentRunCheckpointSchema)
+                })),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const details = await AgentRunService.getRun(getDomainId(request), id);
+        if (!details) {
+            return reply.status(404).send(notFoundAgentRun(id));
+        }
+
+        return {
+            data: {
+                run: serializeAgentRun(details.run),
+                steps: details.steps.map(serializeAgentRunStep),
+                checkpoints: details.checkpoints.map(serializeAgentRunCheckpoint)
+            },
+            meta: buildMeta(
+                'Control this run',
+                [`POST /api/agent-runs/${id}/control`],
+                'medium',
+                1
+            )
+        };
+    });
+
+    server.post('/agent-runs/:id/control', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                action: Type.Union([
+                    Type.Literal('approve'),
+                    Type.Literal('pause'),
+                    Type.Literal('resume'),
+                    Type.Literal('cancel')
+                ])
+            }),
+            response: {
+                200: createAIResponse(AgentRunSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const payload = request.body as { action: string };
+
+        if (!isAgentRunControlAction(payload.action)) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid control action',
+                'AGENT_RUN_INVALID_ACTION',
+                'Use one of: approve, pause, resume, cancel.'
+            ));
+        }
+
+        try {
+            const run = await AgentRunService.controlRun(getDomainId(request), id, payload.action);
+            return {
+                data: serializeAgentRun(run),
+                meta: buildMeta(
+                    'Control action applied',
+                    [`GET /api/agent-runs/${id}`],
+                    'low',
+                    1
+                )
+            };
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_NOT_FOUND') {
+                    return reply.status(404).send(notFoundAgentRun(id));
+                }
+
+                if (error.code === 'AGENT_RUN_INVALID_TRANSITION') {
+                    return reply.status(400).send(toErrorPayload(
+                        'Invalid run transition',
+                        error.code,
+                        error.message
+                    ));
+                }
+            }
+
+            throw error;
+        }
     });
 
     // --- Workflows & Review Tasks ---

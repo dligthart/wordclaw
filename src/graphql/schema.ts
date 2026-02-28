@@ -182,6 +182,52 @@ export const schema = `
     createdAt: String
   }
 
+  """A single deterministic action within an autonomous run."""
+  type AgentRunStep {
+    id: ID!
+    runId: ID!
+    domainId: ID!
+    stepIndex: Int!
+    stepKey: String!
+    actionType: String!
+    status: String!
+    requestSnapshot: JSON
+    responseSnapshot: JSON
+    errorMessage: String
+    startedAt: String
+    completedAt: String
+    createdAt: String
+    updatedAt: String
+  }
+
+  """A resumable checkpoint persisted during run execution."""
+  type AgentRunCheckpoint {
+    id: ID!
+    runId: ID!
+    domainId: ID!
+    checkpointKey: String!
+    payload: JSON!
+    createdAt: String
+  }
+
+  """An autonomous content-operations execution instance."""
+  type AgentRun {
+    id: ID!
+    domainId: ID!
+    definitionId: ID
+    goal: String!
+    runType: String!
+    status: String!
+    requestedBy: String
+    metadata: JSON
+    startedAt: String
+    completedAt: String
+    createdAt: String
+    updatedAt: String
+    steps: [AgentRunStep!]!
+    checkpoints: [AgentRunCheckpoint!]!
+  }
+
   """Per-item result in batch operations."""
   type BatchItemResult {
     """Index of the input item in the original request."""
@@ -246,6 +292,10 @@ export const schema = `
     webhooks: [Webhook!]!
     """Get one webhook registration by id."""
     webhook(id: ID!): Webhook
+    """List autonomous runs for the current domain."""
+    agentRuns(status: String, limit: Int = 50, offset: Int = 0): [AgentRun!]!
+    """Get one autonomous run with steps/checkpoints by id."""
+    agentRun(id: ID!): AgentRun
   }
 
   type PolicyDecision {
@@ -334,6 +384,16 @@ export const schema = `
     rollbackContentItem(id: ID!, version: Int!, dryRun: Boolean = false): RollbackResult!
     """Evaluate a policy decision without side effects."""
     policyEvaluate(operation: String!, resource: ResourceInput!): PolicyDecision!
+    """Create a new autonomous run."""
+    createAgentRun(
+      goal: String!,
+      runType: String,
+      definitionId: ID,
+      requireApproval: Boolean = true,
+      metadata: JSON
+    ): AgentRun!
+    """Apply a control action on an autonomous run."""
+    controlAgentRun(id: ID!, action: String!): AgentRun!
     
     """Create a new Workflow for a given ContentType."""
     createWorkflow(name: String!, contentTypeId: ID!, active: Boolean): Workflow!

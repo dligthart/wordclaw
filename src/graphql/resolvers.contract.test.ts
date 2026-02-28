@@ -287,6 +287,26 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('agentRuns rejects invalid status filter with deterministic code', async () => {
+        await expect(
+            resolvers.Query.agentRuns({}, { status: 'not-a-status' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'AGENT_RUN_INVALID_STATUS'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
+    it('controlAgentRun rejects invalid action with deterministic code', async () => {
+        await expect(
+            resolvers.Mutation.controlAgentRun({}, { id: '1', action: 'launch' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'AGENT_RUN_INVALID_ACTION'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
     it('createWorkflow maps CONTENT_TYPE_NOT_FOUND to deterministic GraphQL error', async () => {
         const createWorkflowSpy = vi.spyOn(WorkflowService, 'createWorkflow')
             .mockRejectedValue(new Error('CONTENT_TYPE_NOT_FOUND'));

@@ -7,7 +7,13 @@ import { emitAuditWebhookEvents } from './webhook.js';
 // --- Typed enums ---
 
 export type AuditAction = 'create' | 'update' | 'delete' | 'rollback';
-export type EntityType = 'content_type' | 'content_item' | 'api_key' | 'webhook' | 'l402_operator_config';
+export type EntityType =
+    | 'content_type'
+    | 'content_item'
+    | 'api_key'
+    | 'webhook'
+    | 'l402_operator_config'
+    | 'agent_run';
 
 // --- Write ---
 

@@ -178,6 +178,34 @@ export const capabilityMatrix: Capability[] = [
         rest: { method: 'GET', path: '/payments/:id' },
         graphql: { operation: 'Query', field: 'payment' },
         mcp: { tool: 'get_payment' }
+    },
+    {
+        id: 'create_agent_run',
+        description: 'Create autonomous content ops run',
+        rest: { method: 'POST', path: '/agent-runs' },
+        graphql: { operation: 'Mutation', field: 'createAgentRun' },
+        mcp: { tool: 'create_agent_run' }
+    },
+    {
+        id: 'list_agent_runs',
+        description: 'List autonomous runs',
+        rest: { method: 'GET', path: '/agent-runs' },
+        graphql: { operation: 'Query', field: 'agentRuns' },
+        mcp: { tool: 'list_agent_runs' }
+    },
+    {
+        id: 'get_agent_run',
+        description: 'Get autonomous run by ID',
+        rest: { method: 'GET', path: '/agent-runs/:id' },
+        graphql: { operation: 'Query', field: 'agentRun' },
+        mcp: { tool: 'get_agent_run' }
+    },
+    {
+        id: 'control_agent_run',
+        description: 'Control autonomous run lifecycle',
+        rest: { method: 'POST', path: '/agent-runs/:id/control' },
+        graphql: { operation: 'Mutation', field: 'controlAgentRun' },
+        mcp: { tool: 'control_agent_run' }
     }
 ];
 

@@ -12,6 +12,7 @@ import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
+import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
@@ -122,6 +123,22 @@ type UpdateWebhookArgs = {
 };
 type DeleteWebhookArgs = {
     id: IdValue;
+};
+type AgentRunsArgs = {
+    status?: string;
+    limit?: number;
+    offset?: number;
+};
+type CreateAgentRunArgs = {
+    goal: string;
+    runType?: string;
+    definitionId?: IdValue;
+    requireApproval?: boolean;
+    metadata?: Record<string, unknown>;
+};
+type ControlAgentRunArgs = {
+    id: IdValue;
+    action: string;
 };
 
 type BatchCreateContentItemsArgs = {
@@ -306,6 +323,97 @@ function parseDateArg(value: string | undefined, fieldName: string): Date | null
 
 // Removed isValidUrl in favor of isSafeWebhookUrl
 
+function toIsoString(value: Date | null): string | null {
+    if (!value) {
+        return null;
+    }
+    return value.toISOString();
+}
+
+function serializeAgentRun(run: {
+    id: number;
+    domainId: number;
+    definitionId: number | null;
+    goal: string;
+    runType: string;
+    status: string;
+    requestedBy: string | null;
+    metadata: unknown;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+}) {
+    return {
+        id: run.id,
+        domainId: run.domainId,
+        definitionId: run.definitionId,
+        goal: run.goal,
+        runType: run.runType,
+        status: run.status,
+        requestedBy: run.requestedBy,
+        metadata: run.metadata,
+        startedAt: toIsoString(run.startedAt),
+        completedAt: toIsoString(run.completedAt),
+        createdAt: run.createdAt.toISOString(),
+        updatedAt: run.updatedAt.toISOString(),
+        steps: [],
+        checkpoints: []
+    };
+}
+
+function serializeAgentRunStep(step: {
+    id: number;
+    runId: number;
+    domainId: number;
+    stepIndex: number;
+    stepKey: string;
+    actionType: string;
+    status: string;
+    requestSnapshot: unknown;
+    responseSnapshot: unknown;
+    errorMessage: string | null;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+}) {
+    return {
+        id: step.id,
+        runId: step.runId,
+        domainId: step.domainId,
+        stepIndex: step.stepIndex,
+        stepKey: step.stepKey,
+        actionType: step.actionType,
+        status: step.status,
+        requestSnapshot: step.requestSnapshot,
+        responseSnapshot: step.responseSnapshot,
+        errorMessage: step.errorMessage,
+        startedAt: toIsoString(step.startedAt),
+        completedAt: toIsoString(step.completedAt),
+        createdAt: step.createdAt.toISOString(),
+        updatedAt: step.updatedAt.toISOString()
+    };
+}
+
+function serializeAgentRunCheckpoint(checkpoint: {
+    id: number;
+    runId: number;
+    domainId: number;
+    checkpointKey: string;
+    payload: unknown;
+    createdAt: Date;
+}) {
+    return {
+        id: checkpoint.id,
+        runId: checkpoint.runId,
+        domainId: checkpoint.domainId,
+        checkpointKey: checkpoint.checkpointKey,
+        payload: checkpoint.payload,
+        createdAt: checkpoint.createdAt.toISOString()
+    };
+}
+
 function notFoundContentTypeError(id: number): GraphQLError {
     return toError(
         'Content type not found',
@@ -442,7 +550,7 @@ function withPolicy(
 
         let l402Result;
         // Apply L402 Payment Check for create/update/delete on content items
-        if (resource.type === 'content_item' || resource.type === 'batch' || (operation === 'content.write' && !['content_type', 'webhook'].includes(resource.type))) {
+        if (resource.type === 'content_item' || resource.type === 'batch' || (operation === 'content.write' && !['content_type', 'webhook', 'agent_run'].includes(resource.type))) {
             const pricingContext = {
                 resourceType: 'content-item',
                 operation: operation.includes('write') ? (args.id ? 'update' : 'create') : 'read',
@@ -706,6 +814,38 @@ export const resolvers = {
                 events: parseWebhookEvents(hook.events),
                 active: hook.active,
                 createdAt: hook.createdAt
+            };
+        }),
+
+        agentRuns: withPolicy('content.read', () => ({ type: 'agent_run' }), async (_parent: unknown, { status, limit, offset }: AgentRunsArgs, context?: unknown) => {
+            if (status && !isAgentRunStatus(status)) {
+                throw toError(
+                    'Invalid run status',
+                    'AGENT_RUN_INVALID_STATUS',
+                    'Use one of: queued, planning, waiting_approval, running, succeeded, failed, cancelled.'
+                );
+            }
+
+            const runs = await AgentRunService.listRuns(getDomainId(context), {
+                status: status as any,
+                limit,
+                offset
+            });
+
+            return runs.items.map(serializeAgentRun);
+        }),
+
+        agentRun: withPolicy('content.read', (args) => ({ type: 'agent_run', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
+            const numericId = parseId(id);
+            const details = await AgentRunService.getRun(getDomainId(context), numericId);
+            if (!details) {
+                return null;
+            }
+
+            return {
+                ...serializeAgentRun(details.run),
+                steps: details.steps.map(serializeAgentRunStep),
+                checkpoints: details.checkpoints.map(serializeAgentRunCheckpoint)
             };
         }),
 
@@ -1700,6 +1840,81 @@ export const resolvers = {
                 resource
             );
             return PolicyEngine.evaluate(operationContext);
+        }),
+
+        createAgentRun: withPolicy('content.write', () => ({ type: 'agent_run' }), async (_parent: unknown, args: CreateAgentRunArgs, context?: unknown) => {
+            const definitionId = args.definitionId !== undefined
+                ? parseId(args.definitionId, 'definitionId')
+                : undefined;
+            const requestedBy = contextView(context).authPrincipal?.keyId?.toString();
+
+            try {
+                const run = await AgentRunService.createRun(getDomainId(context), {
+                    goal: args.goal,
+                    runType: args.runType,
+                    definitionId,
+                    requireApproval: args.requireApproval,
+                    metadata: args.metadata,
+                    requestedBy
+                });
+                return serializeAgentRun(run);
+            } catch (error) {
+                if (error instanceof AgentRunServiceError) {
+                    if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
+                        throw toError(
+                            'Run definition not found',
+                            error.code,
+                            'Provide a valid definitionId owned by this domain.'
+                        );
+                    }
+
+                    if (error.code === 'AGENT_RUN_INVALID_GOAL') {
+                        throw toError(
+                            'Invalid run goal',
+                            error.code,
+                            'Provide a non-empty goal string.'
+                        );
+                    }
+                }
+
+                throw error;
+            }
+        }),
+
+        controlAgentRun: withPolicy('content.write', (args) => ({ type: 'agent_run', id: args.id }), async (_parent: unknown, args: ControlAgentRunArgs, context?: unknown) => {
+            const runId = parseId(args.id);
+            if (!isAgentRunControlAction(args.action)) {
+                throw toError(
+                    'Invalid control action',
+                    'AGENT_RUN_INVALID_ACTION',
+                    'Use one of: approve, pause, resume, cancel.'
+                );
+            }
+
+            try {
+                const updated = await AgentRunService.controlRun(getDomainId(context), runId, args.action);
+                return serializeAgentRun(updated);
+            } catch (error) {
+                if (error instanceof AgentRunServiceError) {
+                    if (error.code === 'AGENT_RUN_NOT_FOUND') {
+                        throw toError(
+                            'Agent run not found',
+                            error.code,
+                            `The agent run with ID ${runId} does not exist in the current domain.`
+                        );
+                    }
+
+                    if (error.code === 'AGENT_RUN_INVALID_TRANSITION') {
+                        throw toError(
+                            'Invalid run transition',
+                            error.code,
+                            error.message
+                        );
+                    }
+                }
+
+                throw error;
+            }
         }),
 
         createWorkflow: withPolicy('system.config', () => ({ type: 'system' }), async (_parent: unknown, args: { name: string; contentTypeId: IdValue; active?: boolean }, context?: unknown) => {

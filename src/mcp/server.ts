@@ -11,6 +11,7 @@ import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../ser
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
+import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
@@ -155,6 +156,95 @@ function decodeCursor(cursor: string): { createdAt: Date; id: number } | null {
     } catch {
         return null;
     }
+}
+
+function toIsoString(value: Date | null): string | null {
+    if (!value) {
+        return null;
+    }
+    return value.toISOString();
+}
+
+function serializeAgentRun(run: {
+    id: number;
+    domainId: number;
+    definitionId: number | null;
+    goal: string;
+    runType: string;
+    status: string;
+    requestedBy: string | null;
+    metadata: unknown;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+}) {
+    return {
+        id: run.id,
+        domainId: run.domainId,
+        definitionId: run.definitionId,
+        goal: run.goal,
+        runType: run.runType,
+        status: run.status,
+        requestedBy: run.requestedBy,
+        metadata: run.metadata,
+        startedAt: toIsoString(run.startedAt),
+        completedAt: toIsoString(run.completedAt),
+        createdAt: run.createdAt.toISOString(),
+        updatedAt: run.updatedAt.toISOString()
+    };
+}
+
+function serializeAgentRunStep(step: {
+    id: number;
+    runId: number;
+    domainId: number;
+    stepIndex: number;
+    stepKey: string;
+    actionType: string;
+    status: string;
+    requestSnapshot: unknown;
+    responseSnapshot: unknown;
+    errorMessage: string | null;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+}) {
+    return {
+        id: step.id,
+        runId: step.runId,
+        domainId: step.domainId,
+        stepIndex: step.stepIndex,
+        stepKey: step.stepKey,
+        actionType: step.actionType,
+        status: step.status,
+        requestSnapshot: step.requestSnapshot,
+        responseSnapshot: step.responseSnapshot,
+        errorMessage: step.errorMessage,
+        startedAt: toIsoString(step.startedAt),
+        completedAt: toIsoString(step.completedAt),
+        createdAt: step.createdAt.toISOString(),
+        updatedAt: step.updatedAt.toISOString()
+    };
+}
+
+function serializeAgentRunCheckpoint(checkpoint: {
+    id: number;
+    runId: number;
+    domainId: number;
+    checkpointKey: string;
+    payload: unknown;
+    createdAt: Date;
+}) {
+    return {
+        id: checkpoint.id,
+        runId: checkpoint.runId,
+        domainId: checkpoint.domainId,
+        checkpointKey: checkpoint.checkpointKey,
+        payload: checkpoint.payload,
+        createdAt: checkpoint.createdAt.toISOString()
+    };
 }
 
 server.tool(
@@ -1556,6 +1646,130 @@ server.tool(
         }
     }
     ));
+
+server.tool(
+    'create_agent_run',
+    'Create a new autonomous content-operations run',
+    {
+        goal: z.string().min(1).describe('Goal statement for the run'),
+        runType: z.string().optional().describe('Optional run type identifier'),
+        definitionId: z.number().optional().describe('Optional run definition ID'),
+        requireApproval: z.boolean().optional().default(true).describe('Whether run should start in waiting_approval'),
+        metadata: z.record(z.string(), z.any()).optional().describe('Optional arbitrary JSON metadata')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'agent_run' }), async ({ goal, runType, definitionId, requireApproval, metadata }, _extra, domainId) => {
+        try {
+            const run = await AgentRunService.createRun(domainId, {
+                goal,
+                runType,
+                definitionId,
+                requireApproval,
+                metadata,
+                requestedBy: 'mcp-local'
+            });
+
+            return okJson(serializeAgentRun(run));
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
+                    return err('AGENT_RUN_DEFINITION_NOT_FOUND: Provide a definitionId that belongs to this domain.');
+                }
+                if (error.code === 'AGENT_RUN_INVALID_GOAL') {
+                    return err('AGENT_RUN_INVALID_GOAL: Goal must be a non-empty string.');
+                }
+            }
+
+            return err(`Error creating agent run: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'list_agent_runs',
+    'List autonomous runs with optional status and pagination',
+    {
+        status: z.string().optional().describe('Optional status filter'),
+        limit: z.number().min(1).max(500).optional().default(50).describe('Page size'),
+        offset: z.number().min(0).optional().default(0).describe('Row offset')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'agent_run' }), async ({ status, limit, offset }, _extra, domainId) => {
+        try {
+            if (status && !isAgentRunStatus(status)) {
+                return err('AGENT_RUN_INVALID_STATUS: Use queued|planning|waiting_approval|running|succeeded|failed|cancelled.');
+            }
+
+            const runs = await AgentRunService.listRuns(domainId, {
+                status: status as any,
+                limit,
+                offset
+            });
+
+            return okJson({
+                items: runs.items.map(serializeAgentRun),
+                total: runs.total,
+                limit: runs.limit,
+                offset: runs.offset,
+                hasMore: runs.hasMore
+            });
+        } catch (error) {
+            return err(`Error listing agent runs: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'get_agent_run',
+    'Get one autonomous run by ID including steps and checkpoints',
+    {
+        id: z.number().describe('Run ID')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'agent_run', id: args.id.toString() }), async ({ id }, _extra, domainId) => {
+        try {
+            const details = await AgentRunService.getRun(domainId, id);
+            if (!details) {
+                return err(`AGENT_RUN_NOT_FOUND: Run ${id} was not found in this domain.`);
+            }
+
+            return okJson({
+                run: serializeAgentRun(details.run),
+                steps: details.steps.map(serializeAgentRunStep),
+                checkpoints: details.checkpoints.map(serializeAgentRunCheckpoint)
+            });
+        } catch (error) {
+            return err(`Error fetching agent run: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'control_agent_run',
+    'Apply a control action to an autonomous run',
+    {
+        id: z.number().describe('Run ID'),
+        action: z.enum(['approve', 'pause', 'resume', 'cancel']).describe('Control action')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'agent_run', id: args.id.toString() }), async ({ id, action }, _extra, domainId) => {
+        try {
+            if (!isAgentRunControlAction(action)) {
+                return err('AGENT_RUN_INVALID_ACTION: Use approve|pause|resume|cancel.');
+            }
+
+            const run = await AgentRunService.controlRun(domainId, id, action);
+            return okJson(serializeAgentRun(run));
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_NOT_FOUND') {
+                    return err(`AGENT_RUN_NOT_FOUND: Run ${id} was not found in this domain.`);
+                }
+                if (error.code === 'AGENT_RUN_INVALID_TRANSITION') {
+                    return err(`AGENT_RUN_INVALID_TRANSITION: ${error.message}`);
+                }
+            }
+
+            return err(`Error controlling agent run: ${(error as Error).message}`);
+        }
+    })
+);
 
 server.tool(
     'evaluate_policy',

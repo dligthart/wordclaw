@@ -339,6 +339,23 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns AGENT_RUN_INVALID_STATUS for invalid agent-run list filter', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/agent-runs?status=not-a-status'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('AGENT_RUN_INVALID_STATUS');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns AUTH_MISSING_API_KEY when auth is required', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'writer=content:read|content:write|audit:read';
