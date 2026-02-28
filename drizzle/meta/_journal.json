@@ -120,6 +120,13 @@
       "when": 1772000001000,
       "tag": "0016_human_paid_consumption",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1772190000000,
+      "tag": "0017_content_types_domain_slug_unique",
+      "breakpoints": true
     }
   ]
 }

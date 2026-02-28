@@ -92,6 +92,57 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('createContentType maps duplicate slug to CONTENT_TYPE_SLUG_CONFLICT', async () => {
+        const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+            code: '23505',
+            constraint: 'content_types_domain_slug_unique'
+        });
+
+        mocks.dbMock.insert.mockImplementation(() => ({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockRejectedValue(duplicateError)
+            })
+        }));
+
+        await expect(
+            resolvers.Mutation.createContentType({}, {
+                name: 'Duplicate Type',
+                slug: 'article',
+                schema: '{"type":"object"}'
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_TYPE_SLUG_CONFLICT'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
+    it('updateContentType maps duplicate slug to CONTENT_TYPE_SLUG_CONFLICT', async () => {
+        const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+            code: '23505',
+            constraint: 'content_types_domain_slug_unique'
+        });
+
+        mocks.dbMock.update.mockImplementation(() => ({
+            set: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    returning: vi.fn().mockRejectedValue(duplicateError)
+                })
+            })
+        }));
+
+        await expect(
+            resolvers.Mutation.updateContentType({}, {
+                id: '1',
+                slug: 'article'
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_TYPE_SLUG_CONFLICT'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
     it('maps TARGET_VERSION_NOT_FOUND to GraphQL error code', async () => {
         let callCount = 0;
         mocks.dbMock.select.mockImplementation(() => ({

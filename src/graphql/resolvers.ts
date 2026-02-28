@@ -14,6 +14,10 @@ import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
+const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
+    'content_types_slug_unique',
+    'content_types_domain_slug_unique'
+]);
 
 type ResolverContext = {
     requestId?: string;
@@ -180,6 +184,34 @@ function toErrorFromValidation(failure: ValidationFailure): GraphQLError {
             ...(failure.context ? { context: failure.context } : {})
         }
     });
+}
+
+function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
+    const visited = new Set<unknown>();
+    let candidate: unknown = error;
+
+    while (candidate && typeof candidate === 'object' && !visited.has(candidate)) {
+        visited.add(candidate);
+        const maybeDbError = candidate as { code?: string; constraint?: string; cause?: unknown };
+        if (
+            maybeDbError.code === '23505'
+            && typeof maybeDbError.constraint === 'string'
+            && constraints.has(maybeDbError.constraint)
+        ) {
+            return true;
+        }
+        candidate = maybeDbError.cause;
+    }
+
+    return false;
+}
+
+function contentTypeSlugConflictError(slug: string): GraphQLError {
+    return toError(
+        'Content type slug already exists',
+        'CONTENT_TYPE_SLUG_CONFLICT',
+        `Choose a different slug than '${slug}' or update the existing content type in this domain.`
+    );
 }
 
 function parseId(id: IdValue, fieldName = 'id'): number {
@@ -673,13 +705,21 @@ export const resolvers = {
                 };
             }
 
-            const [newItem] = await db.insert(contentTypes).values({
-                domainId: getDomainId(context),
-                name: args.name,
-                slug: args.slug,
-                description: args.description,
-                schema: schemaStr
-            }).returning();
+            let newItem;
+            try {
+                [newItem] = await db.insert(contentTypes).values({
+                    domainId: getDomainId(context),
+                    name: args.name,
+                    slug: args.slug,
+                    description: args.description,
+                    schema: schemaStr
+                }).returning();
+            } catch (error) {
+                if (isUniqueViolation(error, CONTENT_TYPE_SLUG_CONSTRAINTS)) {
+                    throw contentTypeSlugConflictError(args.slug);
+                }
+                throw error;
+            }
 
             await logAudit(getDomainId(context), 'create', 'content_type', newItem.id, newItem, toActorId(context), toRequestId(context));
             return newItem;
@@ -715,10 +755,18 @@ export const resolvers = {
                 return { ...existing, ...updateData };
             }
 
-            const [updated] = await db.update(contentTypes)
-                .set(updateData)
-                .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(context))))
-                .returning();
+            let updated;
+            try {
+                [updated] = await db.update(contentTypes)
+                    .set(updateData)
+                    .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(context))))
+                    .returning();
+            } catch (error) {
+                if (isUniqueViolation(error, CONTENT_TYPE_SLUG_CONSTRAINTS)) {
+                    throw contentTypeSlugConflictError(args.slug ?? '');
+                }
+                throw error;
+            }
 
             if (!updated) {
                 throw notFoundContentTypeError(id);

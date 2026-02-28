@@ -64,9 +64,41 @@ type ParsedL402Credentials = {
 };
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
+const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
+    'content_types_slug_unique',
+    'content_types_domain_slug_unique'
+]);
 
 function toErrorPayload(error: string, code: string, remediation: string): AIErrorPayload {
     return { error, code, remediation };
+}
+
+function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
+    const visited = new Set<unknown>();
+    let candidate: unknown = error;
+
+    while (candidate && typeof candidate === 'object' && !visited.has(candidate)) {
+        visited.add(candidate);
+        const maybeDbError = candidate as { code?: string; constraint?: string; cause?: unknown };
+        if (
+            maybeDbError.code === '23505'
+            && typeof maybeDbError.constraint === 'string'
+            && constraints.has(maybeDbError.constraint)
+        ) {
+            return true;
+        }
+        candidate = maybeDbError.cause;
+    }
+
+    return false;
+}
+
+function contentTypeSlugConflict(slug: string): AIErrorPayload {
+    return toErrorPayload(
+        'Content type slug already exists',
+        'CONTENT_TYPE_SLUG_CONFLICT',
+        `Choose a different slug than '${slug}' or update the existing content type in this domain.`
+    );
 }
 
 function parseL402AuthorizationHeader(authHeader: string | undefined): ParsedL402Credentials | null {
@@ -997,13 +1029,18 @@ export default async function apiRoutes(server: FastifyInstance) {
                 })))
             }
         }
-    }, async (_request) => {
-        const allDomains = await db.select()
-            .from(domains)
-            .orderBy(domains.id);
+    }, async (request) => {
+        const principal = (request as { authPrincipal?: { scopes?: Set<string> } }).authPrincipal;
+        const isAdmin = principal?.scopes?.has('admin') || principal?.scopes?.has('tenant:admin');
+        const accessibleDomains = isAdmin
+            ? await db.select().from(domains).orderBy(domains.id)
+            : await db.select()
+                .from(domains)
+                .where(eq(domains.id, getDomainId(request)))
+                .orderBy(domains.id);
 
         return {
-            data: allDomains.map((domain) => ({
+            data: accessibleDomains.map((domain) => ({
                 id: domain.id,
                 name: domain.name,
                 hostname: domain.hostname,
@@ -1041,7 +1078,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     slug: Type.String(),
                     basePrice: Type.Optional(Type.Number()),
                 })),
-                400: AIErrorResponse
+                400: AIErrorResponse,
+                409: AIErrorResponse
             },
         },
     }, async (request, reply) => {
@@ -1068,7 +1106,16 @@ export default async function apiRoutes(server: FastifyInstance) {
             });
         }
 
-        const [newItem] = await db.insert(contentTypes).values(data).returning();
+        let newItem;
+        try {
+            [newItem] = await db.insert(contentTypes).values(data).returning();
+        } catch (error) {
+            if (isUniqueViolation(error, CONTENT_TYPE_SLUG_CONSTRAINTS)) {
+                return reply.status(409).send(contentTypeSlugConflict(data.slug));
+            }
+            throw error;
+        }
+
         await logAudit(getDomainId(request), 'create',
             'content_type',
             newItem.id,
@@ -1195,7 +1242,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     updatedAt: Type.Optional(Type.String())
                 })),
                 400: AIErrorResponse,
-                404: AIErrorResponse
+                404: AIErrorResponse,
+                409: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -1241,10 +1289,18 @@ export default async function apiRoutes(server: FastifyInstance) {
             };
         }
 
-        const [updatedType] = await db.update(contentTypes)
-            .set(updateData)
-            .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))))
-            .returning();
+        let updatedType;
+        try {
+            [updatedType] = await db.update(contentTypes)
+                .set(updateData)
+                .where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))))
+                .returning();
+        } catch (error) {
+            if (isUniqueViolation(error, CONTENT_TYPE_SLUG_CONSTRAINTS)) {
+                return reply.status(409).send(contentTypeSlugConflict(updateData.slug || ''));
+            }
+            throw error;
+        }
 
         if (!updatedType) {
             return reply.status(404).send(notFoundContentType(id));

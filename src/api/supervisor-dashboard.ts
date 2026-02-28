@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { sql, desc, eq, gt } from 'drizzle-orm';
+import { sql, and, desc, eq, gt } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { auditLogs, contentItems, contentTypes, payments } from '../db/schema.js';
 
@@ -14,6 +14,18 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
     });
 
     server.get('/dashboard', async (request, reply) => {
+        const rawDomainHeader = request.headers['x-wordclaw-domain'];
+        const domainHeader = Array.isArray(rawDomainHeader) ? rawDomainHeader[0] : rawDomainHeader;
+        const domainId = Number.parseInt(domainHeader ?? '', 10);
+
+        if (!Number.isInteger(domainId) || domainId <= 0) {
+            return reply.status(400).send({
+                error: 'Invalid domain context',
+                code: 'INVALID_DOMAIN_CONTEXT',
+                remediation: 'Provide x-wordclaw-domain header with a positive integer domain ID.'
+            });
+        }
+
         // 1. System Health
         let dbOk = false;
         try {
@@ -36,7 +48,7 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
         const recentLogs = await db
             .select()
             .from(auditLogs)
-            .where(gt(auditLogs.createdAt, yesterday));
+            .where(and(eq(auditLogs.domainId, domainId), gt(auditLogs.createdAt, yesterday)));
 
         const activitySummary = {
             creates: recentLogs.filter(l => l.action === 'create').length,
@@ -50,13 +62,13 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
         const allPaid = await db
             .select()
             .from(payments)
-            .where(eq(payments.status, 'paid'));
+            .where(and(eq(payments.domainId, domainId), eq(payments.status, 'paid')));
         const totalEarnings = allPaid.reduce((acc, curr) => acc + curr.amountSatoshis, 0);
 
         const pendingPayments = await db
             .select()
             .from(payments)
-            .where(eq(payments.status, 'pending'));
+            .where(and(eq(payments.domainId, domainId), eq(payments.status, 'pending')));
         const pendingEarnings = pendingPayments.reduce((acc, curr) => acc + curr.amountSatoshis, 0);
 
         const earningsSummary = {
@@ -69,6 +81,7 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
         const recentEvents = await db
             .select()
             .from(auditLogs)
+            .where(eq(auditLogs.domainId, domainId))
             .orderBy(desc(auditLogs.createdAt))
             .limit(20);
 
@@ -79,7 +92,7 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
         const errorLogs = await db
             .select()
             .from(auditLogs)
-            .where(eq(auditLogs.action, 'error'))
+            .where(and(eq(auditLogs.domainId, domainId), eq(auditLogs.action, 'error')))
             .orderBy(desc(auditLogs.createdAt))
             .limit(5);
 

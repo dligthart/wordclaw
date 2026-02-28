@@ -157,6 +157,91 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         await db.delete(contentTypes).where(eq(contentTypes.id, createdId));
     });
 
+    it('GET /api/domains returns only caller-accessible domains for non-admin keys', async () => {
+        const rawReadOnlyKey = `wc_test_d2_ro_${crypto.randomUUID().slice(0, 8)}`;
+        const keyHash = hashApiKey(rawReadOnlyKey);
+        const [readOnlyKey] = await db.insert(apiKeys).values({
+            keyHash,
+            keyPrefix: rawReadOnlyKey.slice(0, 12),
+            name: 'Domain 2 Read-Only Key',
+            domainId: domain2Id,
+            scopes: 'content:read'
+        }).returning();
+
+        try {
+            const response = await fastify.inject({
+                method: 'GET',
+                url: '/api/domains',
+                headers: { 'x-api-key': rawReadOnlyKey }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const payload = JSON.parse(response.payload) as {
+                data: Array<{ id: number }>;
+            };
+
+            expect(payload.data).toHaveLength(1);
+            expect(payload.data[0].id).toBe(domain2Id);
+            expect(payload.data.some((domain) => domain.id === domain1Id)).toBe(false);
+        } finally {
+            await db.delete(apiKeys).where(eq(apiKeys.id, readOnlyKey.id));
+        }
+    });
+
+    it('Same content-type slug is allowed across different domains but conflicts within a single domain', async () => {
+        const sharedSlug = `tenant-shared-${crypto.randomUUID().slice(0, 8)}`;
+        let domain1TypeId: number | null = null;
+        let domain2TypeId: number | null = null;
+
+        try {
+            const createDomain1 = await fastify.inject({
+                method: 'POST',
+                url: '/api/content-types',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    name: 'Shared Slug D1',
+                    slug: sharedSlug,
+                    schema: { type: 'object' }
+                }
+            });
+            expect(createDomain1.statusCode).toBe(201);
+            domain1TypeId = JSON.parse(createDomain1.payload).data.id;
+
+            const createDomain2 = await fastify.inject({
+                method: 'POST',
+                url: '/api/content-types',
+                headers: { 'x-api-key': rawKey2 },
+                payload: {
+                    name: 'Shared Slug D2',
+                    slug: sharedSlug,
+                    schema: { type: 'object' }
+                }
+            });
+            expect(createDomain2.statusCode).toBe(201);
+            domain2TypeId = JSON.parse(createDomain2.payload).data.id;
+
+            const duplicateInDomain2 = await fastify.inject({
+                method: 'POST',
+                url: '/api/content-types',
+                headers: { 'x-api-key': rawKey2 },
+                payload: {
+                    name: 'Duplicate Slug D2',
+                    slug: sharedSlug,
+                    schema: { type: 'object' }
+                }
+            });
+            expect(duplicateInDomain2.statusCode).toBe(409);
+            expect(JSON.parse(duplicateInDomain2.payload).code).toBe('CONTENT_TYPE_SLUG_CONFLICT');
+        } finally {
+            if (domain1TypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, domain1TypeId));
+            }
+            if (domain2TypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, domain2TypeId));
+            }
+        }
+    });
+
     it('Domain-scoped content-item listing does not leak items or totals across tenants', async () => {
         let domain2TypeId: number | null = null;
         let domain1ItemId: number | null = null;

@@ -35,6 +35,10 @@ const server = new McpServer({
 });
 
 const TARGET_VERSION_NOT_FOUND = 'Target version not found';
+const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
+    'content_types_slug_unique',
+    'content_types_domain_slug_unique'
+]);
 
 type ToolResult = {
     content: Array<{ type: 'text'; text: string }>;
@@ -61,6 +65,26 @@ function err(text: string): ToolResult {
 function validationFailureToText(failure: ValidationFailure): string {
     const context = failure.context ? ` Context: ${JSON.stringify(failure.context)}` : '';
     return `${failure.code}: ${failure.error}. ${failure.remediation}${context}`;
+}
+
+function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
+    const visited = new Set<unknown>();
+    let candidate: unknown = error;
+
+    while (candidate && typeof candidate === 'object' && !visited.has(candidate)) {
+        visited.add(candidate);
+        const maybeDbError = candidate as { code?: string; constraint?: string; cause?: unknown };
+        if (
+            maybeDbError.code === '23505'
+            && typeof maybeDbError.constraint === 'string'
+            && constraints.has(maybeDbError.constraint)
+        ) {
+            return true;
+        }
+        candidate = maybeDbError.cause;
+    }
+
+    return false;
 }
 
 function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
@@ -167,6 +191,9 @@ server.tool(
 
             return ok(`Created content type '${newItem.name}' (ID: ${newItem.id})`);
         } catch (error) {
+            if (isUniqueViolation(error, CONTENT_TYPE_SLUG_CONSTRAINTS)) {
+                return err(`CONTENT_TYPE_SLUG_CONFLICT: Choose a different slug than '${slug}' or update the existing content type in this domain.`);
+            }
             return err(`Error creating content type: ${(error as Error).message}`);
         }
     }
@@ -268,6 +295,9 @@ server.tool(
 
             return ok(`Updated content type '${updated.name}' (ID: ${updated.id})`);
         } catch (error) {
+            if (isUniqueViolation(error, CONTENT_TYPE_SLUG_CONSTRAINTS)) {
+                return err(`CONTENT_TYPE_SLUG_CONFLICT: Choose a different slug than '${slug ?? ''}' or update the existing content type in this domain.`);
+            }
             return err(`Error updating content type: ${(error as Error).message}`);
         }
     }

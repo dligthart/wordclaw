@@ -20,12 +20,16 @@ export const contentTypes = pgTable('content_types', {
     id: serial('id').primaryKey(),
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     name: text('name').notNull(),
-    slug: text('slug').notNull().unique(),
+    slug: text('slug').notNull(),
     description: text('description'),
     schema: text('schema').notNull(),
     basePrice: integer('base_price'), // Minimum cost in Satoshis for creating an item of this type
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        contentTypesDomainSlugUniqueIdx: uniqueIndex('content_types_domain_slug_unique').on(table.domainId, table.slug)
+    };
 });
 
 export const contentItems = pgTable('content_items', {

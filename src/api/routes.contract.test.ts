@@ -160,6 +160,70 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns CONTENT_TYPE_SLUG_CONFLICT for content-type create duplicate slug in domain', async () => {
+        const app = await buildServer();
+        const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+            code: '23505',
+            constraint: 'content_types_domain_slug_unique'
+        });
+
+        mocks.dbMock.insert.mockImplementation(() => ({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockRejectedValue(duplicateError)
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-types',
+                payload: {
+                    name: 'Duplicate Slug',
+                    slug: 'article',
+                    schema: '{"type":"object"}'
+                }
+            });
+
+            expect(response.statusCode).toBe(409);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_TYPE_SLUG_CONFLICT');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_TYPE_SLUG_CONFLICT for content-type update duplicate slug in domain', async () => {
+        const app = await buildServer();
+        const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+            code: '23505',
+            constraint: 'content_types_domain_slug_unique'
+        });
+
+        mocks.dbMock.update.mockImplementation(() => ({
+            set: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    returning: vi.fn().mockRejectedValue(duplicateError)
+                })
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/content-types/1',
+                payload: {
+                    slug: 'article'
+                }
+            });
+
+            expect(response.statusCode).toBe(409);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_TYPE_SLUG_CONFLICT');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('maps missing rollback target version to 404 TARGET_VERSION_NOT_FOUND', async () => {
         const app = await buildServer();
 

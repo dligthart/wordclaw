@@ -32,7 +32,7 @@ A centralized authorization layer ensuring that any rule mapping identities to a
 
 ## Protocol Parity
 
-Every operation is available through three interfaces:
+Core multi-protocol capabilities are defined in the [capability matrix test](../src/contracts/capability-parity.test.ts). These matrix entries are enforced across three interfaces:
 
 | Protocol  | Transport      | Playground           |
 |-----------|----------------|----------------------|
@@ -40,11 +40,11 @@ Every operation is available through three interfaces:
 | GraphQL   | HTTP           | GraphiQL at `/graphql`     |
 | MCP       | stdio          | Any MCP-compatible client  |
 
-Parity is enforced by an automated [capability matrix test](../src/contracts/capability-parity.test.ts) that fails CI if any protocol falls behind.
+Parity is enforced by an automated [capability matrix test](../src/contracts/capability-parity.test.ts) that fails CI if any matrix capability falls behind.
 
 ## Dry-Run Mode
 
-All write operations support a dry-run flag (`?mode=dry_run` for REST, `dryRun: true` for GraphQL/MCP). The server validates input and simulates execution — including schema validation, conflict detection, and version computation — without persisting any changes.
+Dry-run support is guaranteed for write capabilities listed in the capability matrix `dryRunCapabilities` contract set (`?mode=dry_run` for REST, `dryRun: true` for GraphQL/MCP). Operations outside that set may not expose simulation semantics.
 
 ## Native Vector RAG & Semantic Search
 
