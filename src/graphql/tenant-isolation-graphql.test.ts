@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { contentItems, contentTypes, domains } from '../db/schema.js';
+import { agentRuns, contentItems, contentTypes, domains } from '../db/schema.js';
 import { resolvers } from './resolvers.js';
 import { schema } from './schema.js';
 
@@ -14,6 +14,7 @@ describe('GraphQL Tenant Isolation', () => {
     let domain2TypeId: number;
     let domain1ItemId: number;
     let domain2ItemId: number;
+    let domain1RunId: number;
 
     beforeAll(async () => {
         const [domain1] = await db.select().from(domains).where(eq(domains.id, 1));
@@ -76,6 +77,15 @@ describe('GraphQL Tenant Isolation', () => {
         }).returning();
         domain2ItemId = item2.id;
 
+        const [run1] = await db.insert(agentRuns).values({
+            domainId: 1,
+            goal: `domain-one-tenant-graphql-run-${Date.now()}`,
+            runType: 'review_backlog_manager',
+            status: 'waiting_approval',
+            requestedBy: 'tenant-1'
+        }).returning();
+        domain1RunId = run1.id;
+
         app = Fastify({ logger: false });
         app.register(mercurius, {
             schema,
@@ -116,6 +126,9 @@ describe('GraphQL Tenant Isolation', () => {
         }
         if (domain2TypeId) {
             await db.delete(contentTypes).where(eq(contentTypes.id, domain2TypeId));
+        }
+        if (domain1RunId) {
+            await db.delete(agentRuns).where(eq(agentRuns.id, domain1RunId));
         }
     });
 
@@ -218,5 +231,56 @@ describe('GraphQL Tenant Isolation', () => {
         };
         expect(payload.data?.updateContentItemsBatch?.results[0]?.ok).toBe(false);
         expect(payload.data?.updateContentItemsBatch?.results[0]?.code).toBe('CONTENT_ITEM_NOT_FOUND');
+    });
+
+    it('hides cross-tenant agent runs and rejects cross-tenant control actions', async () => {
+        const queryResponse = await app.inject({
+            method: 'POST',
+            url: '/graphql',
+            headers: {
+                'x-domain-id': '2'
+            },
+            payload: {
+                query: `
+                  query AgentRun($id: ID!) {
+                    agentRun(id: $id) { id status }
+                  }
+                `,
+                variables: {
+                    id: String(domain1RunId)
+                }
+            }
+        });
+
+        expect(queryResponse.statusCode).toBe(200);
+        const queryPayload = queryResponse.json() as {
+            data?: { agentRun?: { id: string } | null };
+        };
+        expect(queryPayload.data?.agentRun).toBeNull();
+
+        const controlResponse = await app.inject({
+            method: 'POST',
+            url: '/graphql',
+            headers: {
+                'x-domain-id': '2'
+            },
+            payload: {
+                query: `
+                  mutation ControlRun($id: ID!, $action: String!) {
+                    controlAgentRun(id: $id, action: $action) { id status }
+                  }
+                `,
+                variables: {
+                    id: String(domain1RunId),
+                    action: 'cancel'
+                }
+            }
+        });
+
+        expect(controlResponse.statusCode).toBe(200);
+        const controlPayload = controlResponse.json() as {
+            errors?: Array<{ extensions?: { code?: string } }>;
+        };
+        expect(controlPayload.errors?.[0]?.extensions?.code).toBe('AGENT_RUN_NOT_FOUND');
     });
 });
