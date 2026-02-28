@@ -102,6 +102,11 @@ WordClaw comes with several built-in interactive demos located in the `demos/` a
    An autonomous TypeScript agent that encounters a `402 Payment Required` L402 invoice when trying to publish a Guest Post. It programmatically parses the Macaroon, dummy-pays the Lightning invoice, and retries the request successfully.
    - Run the demo: `npx tsx demos/agent-l402-demo.ts`
 
+4. **Agent Skills Marketplace (`demos/agent-skills-marketplace`)**
+   A full end-to-end sandbox demonstrating L402 gating and AP2 revenue routing for AI agents. It features a React UI where you can browse programmatic skills, simulate lightning network payments to unlock them, and test executions in a sandbox.
+   - Run the setup script: `npx tsx scripts/setup-skills-marketplace.ts`
+   - Start the marketplace: `cd demos/agent-skills-marketplace && npm run dev`
+
 ## 📚 Documentation
 
 For detailed guides on setting up the Supervisor UI, authentication, testing, and system architecture, please refer to the `doc/` directory:
