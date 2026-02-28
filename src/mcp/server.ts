@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { agentProfiles, auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
-import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
+import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema, redactPremiumFields } from '../services/content-schema.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { WorkflowService } from '../services/workflow.js';
@@ -840,11 +840,26 @@ server.tool(
                 .from(contentItems)
                 .where(whereClause);
 
-            const items = await db.select()
+            const rawItems = await db.select({
+                item: contentItems,
+                schema: contentTypes.schema,
+                basePrice: contentTypes.basePrice
+            })
                 .from(contentItems)
+                .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
                 .where(whereClause)
                 .limit(limit)
                 .offset(offset);
+
+            const items = rawItems.map(row => {
+                if ((row.basePrice || 0) > 0) {
+                    return {
+                        ...row.item,
+                        data: redactPremiumFields(row.schema, row.item.data)
+                    };
+                }
+                return row.item;
+            });
 
             return okJson({
                 items,
@@ -866,11 +881,23 @@ server.tool(
         id: z.number().describe('ID of the content item')
     },
     withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, extra, domainId) => {
-        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
-        if (!item) {
+        const [row] = await db.select({
+            item: contentItems,
+            basePrice: contentTypes.basePrice
+        })
+            .from(contentItems)
+            .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
+            .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
+
+        if (!row) {
             return err('Content item not found');
         }
-        return okJson(item);
+
+        if ((row.basePrice || 0) > 0) {
+            return err('PAYMENT_REQUIRED: This content item is paywalled. You must use the REST API /api/content-items/:id to fulfill the L402 payment challenge.');
+        }
+
+        return okJson(row.item);
     }
     ));
 

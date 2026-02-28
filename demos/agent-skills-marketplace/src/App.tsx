@@ -89,33 +89,48 @@ export default function App() {
     setSelectedSkill(skills.find(s => s.id === skillId) || null);
 
     try {
-      // In WordClaw, basePrice puts a gate on creation/mutation.
-      // For this demo, we simulate the L402 gate to "read" the prompt template 
-      // by first requesting it, getting a 402, and showing the invoice.
+      // 1. Fetch available offers for this skill
+      const offersRes = await fetch(`${API_URL}/content-items/${skillId}/offers`, {
+        headers: {
+          'x-api-key': API_KEY
+        }
+      });
+      const offersData = await offersRes.json();
+      const availableOffers = offersData.data || [];
 
+      if (availableOffers.length > 0) {
+        const offer = availableOffers[0];
+
+        // 2. Initiate purchase to get invoice/macaroon
+        const purchaseRes = await fetch(`${API_URL}/offers/${offer.id}/purchase`, {
+          method: 'POST',
+          headers: {
+            'x-api-key': API_KEY
+          }
+        });
+
+        if (purchaseRes.status === 402) {
+          const purchaseData = await purchaseRes.json();
+          const details = purchaseData.error?.details || {};
+          setInvoiceStatus('required');
+          setInvoiceData({
+            invoice: details.invoice,
+            macaroon: details.macaroon,
+            amount: details.amountSatoshis,
+            offerId: offer.id,
+            paymentHash: purchaseData.paymentHash
+          });
+          return;
+        }
+      }
+
+      // If no offers (free), we just read the item directly
       const res = await fetch(`${API_URL}/content-items/${skillId}`, {
         method: 'GET',
         headers: {
           'x-api-key': API_KEY,
-          // We simulate a strict paid environment for the demo
         }
       });
-
-      // If the API isn't physically gated on GET out of the box for basePrice, 
-      // we'll simulate the 402 challenge based on the skill's basePrice.
-      const skill = skills.find(s => s.id === skillId);
-      if (skill && skill.data.basePrice > 0) {
-        // Simulate the WordClaw L402 Response Payload for the UI Experience
-        setInvoiceStatus('required');
-        setInvoiceData({
-          invoice: `lnbc_${skill.data.basePrice}_mock_inv_${Date.now()}`,
-          macaroon: btoa(`macaroon_for_${skill.id}`),
-          amount: skill.data.basePrice
-        });
-        return;
-      }
-
-      // If no price, we just show it
       const data = await res.json();
       if (data.data) {
         const parsedData = { ...data.data, data: typeof data.data.data === 'string' ? JSON.parse(data.data.data) : data.data.data };
@@ -126,21 +141,44 @@ export default function App() {
     }
   };
 
-  const payInvoice = () => {
+  const payInvoice = async () => {
     setInvoiceStatus('paying');
 
     // Simulate real-world Lightning delay
-    setTimeout(() => {
+    setTimeout(async () => {
       setInvoiceStatus('paid');
-      // Once paid, Agent receives the premium payload
       const MOCK_PREIMAGE = "mock_preimage_12345";
 
-      if (selectedSkill) {
-        // We simulate the secondary fetch with the L402 Authorization Token
-        console.log(`Sending Authorization: L402 ${invoiceData?.macaroon}:${MOCK_PREIMAGE}`);
-        setPurchasedSkillData(selectedSkill); // In reality, fetch from API with L402 header
+      if (selectedSkill && invoiceData) {
+        try {
+          // 3. Confirm purchase to transition entitlement to paid
+          await fetch(`${API_URL}/offers/${invoiceData.offerId}/purchase/confirm`, {
+            method: 'POST',
+            headers: {
+              'x-api-key': API_KEY,
+              'x-payment-hash': invoiceData.paymentHash,
+              'Authorization': `L402 ${invoiceData.macaroon}:${MOCK_PREIMAGE}`
+            }
+          });
+
+          // 4. Fetch the premium skill payload with the active L402 token
+          const res = await fetch(`${API_URL}/content-items/${selectedSkill.id}`, {
+            headers: {
+              'x-api-key': API_KEY,
+              'Authorization': `L402 ${invoiceData.macaroon}:${MOCK_PREIMAGE}`
+            }
+          });
+
+          const data = await res.json();
+          if (data.data) {
+            const parsedData = { ...data.data, data: typeof data.data.data === 'string' ? JSON.parse(data.data.data) : data.data.data };
+            setPurchasedSkillData(parsedData);
+          }
+        } catch (err) {
+          console.error("Failed to confirm purchase or fetch secure payload", err);
+        }
       }
-    }, 2000);
+    }, 1500);
   };
 
   const handleSelectSkill = (skill: Skill) => {

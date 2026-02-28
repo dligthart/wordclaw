@@ -260,18 +260,16 @@ export async function createL402Challenge(
       'WWW-Authenticate': formatAuthenticateHeaderValue(macaroon, invoice.paymentRequest)
     },
     payload: {
-      success: false,
-      error: {
-        code: 'PAYMENT_REQUIRED',
-        message: challengeMessage(reason),
-        details: {
-          invoice: invoice.paymentRequest,
-          macaroon,
-          amountSatoshis,
-          reason
-        }
-      },
-      recommendedNextAction: 'pay_invoice_and_retry'
+      error: challengeMessage(reason),
+      code: 'PAYMENT_REQUIRED',
+      remediation: 'Complete the L402 payment challenge to proceed. Use the invoice and macaroon in the context.',
+      context: {
+        invoice: invoice.paymentRequest,
+        macaroon,
+        amountSatoshis,
+        reason,
+        recommendedNextAction: 'pay_invoice_and_retry'
+      }
     }
   };
 }
@@ -324,11 +322,9 @@ export async function enforceL402Payment(
           ok: false,
           paymentConsumed: true,
           errorPayload: {
-            success: false,
-            error: {
-              code: 'PAYMENT_CONSUMED',
-              message: 'This L402 token has already been consumed for a previous request. Please request a new invoice.'
-            }
+            error: 'This L402 token has already been consumed for a previous request. Please request a new invoice.',
+            code: 'PAYMENT_CONSUMED',
+            remediation: 'Initiate a new purchase challenge to acquire a fresh token.'
           }
         };
       }

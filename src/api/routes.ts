@@ -5,7 +5,7 @@ import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
-import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure } from '../services/content-schema.js';
+import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure, redactPremiumFields } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authenticateApiRequest, getDomainId } from './auth.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
@@ -1691,11 +1691,26 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
         const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentItems).where(whereClause);
-        const items = await db.select()
+        const rawItems = await db.select({
+            item: contentItems,
+            schema: contentTypes.schema,
+            basePrice: contentTypes.basePrice
+        })
             .from(contentItems)
+            .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
             .where(whereClause)
             .limit(limit)
             .offset(offset);
+
+        const items = rawItems.map(row => {
+            if ((row.basePrice || 0) > 0) {
+                return {
+                    ...row.item,
+                    data: redactPremiumFields(row.schema, row.item.data)
+                };
+            }
+            return row.item;
+        });
         const hasMore = offset + items.length < total;
 
         return {

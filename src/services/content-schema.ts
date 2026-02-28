@@ -137,3 +137,28 @@ export function validateContentDataAgainstSchema(schemaText: string, dataText: s
         }
     };
 }
+
+export function redactPremiumFields(schemaText: string, dataText: string): string {
+    const compiled = compileSchema(schemaText);
+    if (!compiled.ok) return dataText;
+
+    const parsedData = parseJson(dataText, 'ERR', 'ERR', 'ERR');
+    if (!parsedData.ok) return dataText;
+
+    const schema = compiled.schema as Record<string, any>;
+    if (schema?.type === 'object' && schema?.properties) {
+        let redacted = false;
+        const data = parsedData.parsed as Record<string, unknown>;
+
+        for (const [key, propDef] of Object.entries(schema.properties as Record<string, any>)) {
+            if (propDef?.premium === true && data[key] !== undefined) {
+                data[key] = '[REDACTED: PREMIUM CONTENT]';
+                redacted = true;
+            }
+        }
+
+        if (redacted) return JSON.stringify(data);
+    }
+
+    return dataText;
+}

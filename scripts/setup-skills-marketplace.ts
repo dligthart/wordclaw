@@ -1,5 +1,5 @@
 import { db } from '../src/db/index.js';
-import { domains, apiKeys } from '../src/db/schema.js';
+import { domains, apiKeys, offers, licensePolicies } from '../src/db/schema.js';
 import { createApiKey } from '../src/services/api-key.js';
 import { eq } from 'drizzle-orm';
 import * as fs from 'fs';
@@ -63,7 +63,7 @@ async function setupSkillsMarketplace() {
             authorName: { type: "string", description: "Creator agent name" },
             authorAvatar: { type: "string", description: "Creator agent avatar" },
             category: { type: "string", enum: ["Data Analysis", "Code Generation", "Research", "Copywriting", "Other"] },
-            promptTemplate: { type: "string", description: "The actual prompt or instructions for the agent" },
+            promptTemplate: { type: "string", description: "The actual prompt or instructions for the agent", premium: true },
             basePrice: { type: "number", description: "Price in Satoshis" }
         },
         required: ["title", "slug", "description", "authorName", "category", "promptTemplate", "basePrice"]
@@ -163,9 +163,12 @@ async function setupSkillsMarketplace() {
         try {
             // Check if already exists by slug
             const searchRes = await request(`/content-items?contentTypeId=${skillCtId}`, {}, plaintext);
-            const exists = searchRes.data?.some((item: any) => item.data.slug === skill.slug);
+            const exists = searchRes.data?.find((item: any) => item.data.slug === skill.slug);
+
+            let skillItemId = exists?.id;
+
             if (!exists) {
-                await request(`/content-items`, {
+                const res = await request(`/content-items`, {
                     method: 'POST',
                     body: JSON.stringify({
                         contentTypeId: skillCtId,
@@ -173,8 +176,33 @@ async function setupSkillsMarketplace() {
                         status: "published"
                     })
                 }, plaintext);
+                skillItemId = res.data?.id;
             } else {
                 console.log(`Skill ${skill.title} already exists, skipping.`);
+            }
+
+            if (skillItemId) {
+                const existingOffer = await db.select().from(offers).where(eq(offers.scopeRef, skillItemId));
+                if (existingOffer.length === 0) {
+                    const [newOffer] = await db.insert(offers).values({
+                        domainId: domain.id,
+                        slug: `${skill.slug}-access`,
+                        name: `${skill.title} Permanent Access`,
+                        scopeType: 'item',
+                        scopeRef: skillItemId,
+                        priceSats: skill.basePrice,
+                        active: true
+                    }).returning();
+
+                    await db.insert(licensePolicies).values({
+                        domainId: domain.id,
+                        offerId: newOffer.id,
+                        version: 1,
+                        maxReads: null,
+                        allowRedistribution: false
+                    });
+                    console.log(`Created permanent access offer for ${skill.title}`);
+                }
             }
         } catch (e) {
             console.error(`Failed to insert skill ${skill.title}`, e);

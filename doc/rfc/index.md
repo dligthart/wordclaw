@@ -11,6 +11,7 @@ Request for Comments (RFCs) define proposed, in-progress, and implemented archit
 - [RFC-0016: AP2 Agentic Monetization](/rfc/proposed/0016-ap2-agentic-monetization)
 - [RFC-0017: Tenant Boundary and Contract Hardening](/rfc/proposed/0017-tenant-boundary-and-contract-hardening)
 - [RFC-0019: Internal Agentic Content Recommender Engine](/rfc/proposed/0019-internal-agentic-content-recommender-engine)
+- [RFC-0020: Autonomous Content Ops Agent](/rfc/proposed/0020-autonomous-content-ops-agent)
 
 ## Partially Implemented
 

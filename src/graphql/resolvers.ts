@@ -6,7 +6,7 @@ import GraphQLJSON from 'graphql-type-json';
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
-import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema } from '../services/content-schema.js';
+import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema, redactPremiumFields } from '../services/content-schema.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
@@ -550,17 +550,47 @@ export const resolvers = {
                 beforeDate ? lte(contentItems.createdAt, beforeDate) : undefined,
             ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
-            return db.select()
+            const rawItems = await db.select({
+                item: contentItems,
+                schema: contentTypes.schema,
+                basePrice: contentTypes.basePrice
+            })
                 .from(contentItems)
+                .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
                 .where(conditions.length > 0 ? and(...conditions) : undefined)
                 .limit(limit)
                 .offset(offset);
+
+            return rawItems.map(row => {
+                if ((row.basePrice || 0) > 0) {
+                    return {
+                        ...row.item,
+                        data: redactPremiumFields(row.schema, row.item.data)
+                    };
+                }
+                return row.item;
+            });
         }),
 
         contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
             const numericId = parseId(id);
-            const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, numericId), eq(contentItems.domainId, getDomainId(context))));
-            return item || null;
+            const [row] = await db.select({
+                item: contentItems,
+                basePrice: contentTypes.basePrice
+            })
+                .from(contentItems)
+                .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
+                .where(and(eq(contentItems.id, numericId), eq(contentItems.domainId, getDomainId(context))));
+
+            if (!row) return null;
+            if ((row.basePrice || 0) > 0) {
+                throw toError(
+                    'L402 Payment Required',
+                    'PAYMENT_REQUIRED',
+                    'This content item is paywalled. You must use the REST API /api/content-items/:id to fulfill the L402 payment challenge.'
+                );
+            }
+            return row.item;
         }),
 
         contentItemVersions: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
