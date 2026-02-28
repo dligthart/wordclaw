@@ -20,6 +20,14 @@ describe('AgentRun transition resolver', () => {
         expect(resolveAgentRunTransition('waiting_approval', 'resume', false)).toBe('queued');
     });
 
+    it('resumes queued run into running to start execution', () => {
+        expect(resolveAgentRunTransition('queued', 'resume', false)).toBe('running');
+    });
+
+    it('approves queued run into running', () => {
+        expect(resolveAgentRunTransition('queued', 'approve', false)).toBe('running');
+    });
+
     it('resumes paused run back to running when already started', () => {
         expect(resolveAgentRunTransition('waiting_approval', 'resume', true)).toBe('running');
     });
@@ -29,10 +37,10 @@ describe('AgentRun transition resolver', () => {
     });
 
     it('rejects invalid transitions with deterministic codes', () => {
-        expect(() => resolveAgentRunTransition('queued', 'approve', false)).toThrowError(AgentRunServiceError);
+        expect(() => resolveAgentRunTransition('succeeded', 'approve', false)).toThrowError(AgentRunServiceError);
 
         try {
-            resolveAgentRunTransition('queued', 'approve', false);
+            resolveAgentRunTransition('succeeded', 'approve', false);
         } catch (error) {
             expect(error).toBeInstanceOf(AgentRunServiceError);
             expect((error as AgentRunServiceError).code).toBe('AGENT_RUN_INVALID_TRANSITION');

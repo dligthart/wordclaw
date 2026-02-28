@@ -97,6 +97,9 @@ export function resolveAgentRunTransition(
         if (currentStatus === 'waiting_approval') {
             return 'running';
         }
+        if (currentStatus === 'queued' || currentStatus === 'planning') {
+            return 'running';
+        }
         if (currentStatus === 'running') {
             return 'running';
         }
@@ -120,7 +123,10 @@ export function resolveAgentRunTransition(
         if (currentStatus === 'waiting_approval') {
             return hasStarted ? 'running' : 'queued';
         }
-        if (currentStatus === 'queued' || currentStatus === 'running') {
+        if (currentStatus === 'queued') {
+            return 'running';
+        }
+        if (currentStatus === 'running') {
             return currentStatus;
         }
         throw new AgentRunServiceError(
