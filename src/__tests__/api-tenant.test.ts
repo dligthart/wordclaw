@@ -354,6 +354,16 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 headers: { 'x-api-key': rawKey1 }
             });
             expect(domain1Read.statusCode).toBe(200);
+            const domain1ReadPayload = JSON.parse(domain1Read.payload) as {
+                data: {
+                    steps: Array<{ stepKey: string; status: string }>;
+                    checkpoints: Array<{ checkpointKey: string }>;
+                };
+            };
+            expect(domain1ReadPayload.data.steps.length).toBeGreaterThan(0);
+            expect(domain1ReadPayload.data.steps[0].stepKey).toBe('plan_run');
+            expect(domain1ReadPayload.data.steps[0].status).toBe('pending');
+            expect(domain1ReadPayload.data.checkpoints.some((checkpoint) => checkpoint.checkpointKey === 'created')).toBe(true);
 
             const domain2Read = await fastify.inject({
                 method: 'GET',
@@ -380,6 +390,21 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             });
             expect(domain1Approve.statusCode).toBe(200);
             expect(JSON.parse(domain1Approve.payload).data.status).toBe('running');
+
+            const domain1ReadAfterApprove = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${domain1RunId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(domain1ReadAfterApprove.statusCode).toBe(200);
+            const readAfterPayload = JSON.parse(domain1ReadAfterApprove.payload) as {
+                data: {
+                    steps: Array<{ stepKey: string; status: string }>;
+                    checkpoints: Array<{ checkpointKey: string }>;
+                };
+            };
+            expect(readAfterPayload.data.steps[0].status).toBe('executing');
+            expect(readAfterPayload.data.checkpoints.some((checkpoint) => checkpoint.checkpointKey === 'control_approve')).toBe(true);
         } finally {
             if (domain1RunId) {
                 await db.delete(agentRuns).where(eq(agentRuns.id, domain1RunId));

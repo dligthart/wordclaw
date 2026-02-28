@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { agentRunCheckpoints, agentRunDefinitions, agentRunSteps, agentRuns } from '../db/schema.js';
@@ -180,15 +180,40 @@ export class AgentRunService {
         const runType = input.runType?.trim() || inferredRunType || 'review_backlog_manager';
         const status: AgentRunStatus = input.requireApproval ? 'waiting_approval' : 'queued';
 
-        const [created] = await db.insert(agentRuns).values({
-            domainId,
-            definitionId,
-            goal,
-            runType,
-            status,
-            requestedBy: input.requestedBy,
-            metadata: input.metadata ?? null
-        }).returning();
+        const created = await db.transaction(async (tx) => {
+            const [newRun] = await tx.insert(agentRuns).values({
+                domainId,
+                definitionId,
+                goal,
+                runType,
+                status,
+                requestedBy: input.requestedBy,
+                metadata: input.metadata ?? null
+            }).returning();
+
+            await tx.insert(agentRunSteps).values({
+                runId: newRun.id,
+                domainId,
+                stepIndex: 0,
+                stepKey: 'plan_run',
+                actionType: 'plan',
+                status: 'pending'
+            });
+
+            await tx.insert(agentRunCheckpoints).values({
+                runId: newRun.id,
+                domainId,
+                checkpointKey: 'created',
+                payload: {
+                    status: newRun.status,
+                    goal: newRun.goal,
+                    runType: newRun.runType,
+                    requestedBy: newRun.requestedBy
+                }
+            });
+
+            return newRun;
+        });
 
         await logAudit(domainId, 'create', 'agent_run', created.id, {
             goal: created.goal,
@@ -319,10 +344,59 @@ export class AgentRunService {
             return run;
         }
 
-        const [updated] = await db.update(agentRuns)
-            .set(setPayload)
-            .where(and(eq(agentRuns.id, runId), eq(agentRuns.domainId, domainId)))
-            .returning();
+        const updated = await db.transaction(async (tx) => {
+            const [updatedRun] = await tx.update(agentRuns)
+                .set(setPayload)
+                .where(and(eq(agentRuns.id, runId), eq(agentRuns.domainId, domainId)))
+                .returning();
+
+            if (!updatedRun) {
+                return null;
+            }
+
+            if (updatedRun.status === 'running') {
+                await tx.update(agentRunSteps)
+                    .set({
+                        status: 'executing',
+                        startedAt: now,
+                        updatedAt: now
+                    })
+                    .where(and(
+                        eq(agentRunSteps.runId, runId),
+                        eq(agentRunSteps.domainId, domainId),
+                        eq(agentRunSteps.stepIndex, 0),
+                        eq(agentRunSteps.status, 'pending')
+                    ));
+            }
+
+            if (updatedRun.status === 'cancelled') {
+                await tx.update(agentRunSteps)
+                    .set({
+                        status: 'skipped',
+                        completedAt: now,
+                        updatedAt: now
+                    })
+                    .where(and(
+                        eq(agentRunSteps.runId, runId),
+                        eq(agentRunSteps.domainId, domainId),
+                        inArray(agentRunSteps.status, ['pending', 'executing'])
+                    ));
+            }
+
+            await tx.insert(agentRunCheckpoints).values({
+                runId,
+                domainId,
+                checkpointKey: `control_${action}`,
+                payload: {
+                    action,
+                    fromStatus: run.status,
+                    toStatus: updatedRun.status,
+                    at: now.toISOString()
+                }
+            });
+
+            return updatedRun;
+        });
 
         if (!updated) {
             throw new AgentRunServiceError(
