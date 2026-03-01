@@ -298,6 +298,33 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('agentRunDefinitions forwards runType filter to service layer', async () => {
+        const listDefinitionsSpy = vi.spyOn(AgentRunService, 'listDefinitions').mockResolvedValue({
+            items: [],
+            total: 0,
+            limit: 50,
+            offset: 0,
+            hasMore: false
+        });
+
+        const result = await resolvers.Query.agentRunDefinitions({}, {
+            active: true,
+            runType: 'quality_refiner',
+            limit: 25,
+            offset: 5
+        }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {});
+
+        expect(result).toEqual([]);
+        expect(listDefinitionsSpy).toHaveBeenCalledWith(1, {
+            active: true,
+            runType: 'quality_refiner',
+            limit: 25,
+            offset: 5
+        });
+
+        listDefinitionsSpy.mockRestore();
+    });
+
     it('controlAgentRun rejects invalid action with deterministic code', async () => {
         await expect(
             resolvers.Mutation.controlAgentRun({}, { id: '1', action: 'launch' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})

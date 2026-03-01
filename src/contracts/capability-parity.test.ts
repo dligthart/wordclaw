@@ -243,4 +243,20 @@ describe('Capability Parity Matrix', () => {
         expect(queryArgNames?.has('limit')).toBe(true);
         expect(queryArgNames?.has('offset')).toBe(true);
     });
+
+    it('keeps agent-run-definition filtering contract aligned', () => {
+        const definitionsRouteBlock = getRestRouteBlock(routesSource, 'GET', '/agent-run-definitions');
+        expect(definitionsRouteBlock?.includes('active: Type.Optional(Type.Boolean())')).toBe(true);
+        expect(definitionsRouteBlock?.includes('runType: Type.Optional(Type.String())')).toBe(true);
+
+        const definitionsToolBlock = getMcpToolBlock(mcpSource, 'list_agent_run_definitions');
+        expect(definitionsToolBlock?.includes('active: z.boolean().optional()')).toBe(true);
+        expect(definitionsToolBlock?.includes('runType: z.string().optional()')).toBe(true);
+
+        const queryArgNames = graphqlSurface.queryArgs.get('agentRunDefinitions');
+        expect(queryArgNames?.has('active')).toBe(true);
+        expect(queryArgNames?.has('runType')).toBe(true);
+        expect(queryArgNames?.has('limit')).toBe(true);
+        expect(queryArgNames?.has('offset')).toBe(true);
+    });
 });

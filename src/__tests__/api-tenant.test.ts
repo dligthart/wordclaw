@@ -480,6 +480,62 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
     });
 
+    it('agent-run-definition list supports runType filter', async () => {
+        const definitionIds: number[] = [];
+
+        try {
+            const reviewDefinition = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-run-definitions',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    name: `d1-review-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    strategyConfig: {},
+                    active: true
+                }
+            });
+            expect(reviewDefinition.statusCode).toBe(201);
+            definitionIds.push(JSON.parse(reviewDefinition.payload).data.id as number);
+
+            const qualityDefinition = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-run-definitions',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    name: `d1-quality-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'quality_refiner',
+                    strategyConfig: {},
+                    active: true
+                }
+            });
+            expect(qualityDefinition.statusCode).toBe(201);
+            const qualityDefinitionId = JSON.parse(qualityDefinition.payload).data.id as number;
+            definitionIds.push(qualityDefinitionId);
+
+            const filteredList = await fastify.inject({
+                method: 'GET',
+                url: '/api/agent-run-definitions?runType=quality_refiner&limit=500',
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(filteredList.statusCode).toBe(200);
+            const filteredPayload = JSON.parse(filteredList.payload) as {
+                data: Array<{ id: number; runType: string }>;
+            };
+
+            const matchingDefinitionIds = filteredPayload.data
+                .filter((definition) => definition.runType === 'quality_refiner')
+                .map((definition) => definition.id);
+
+            expect(matchingDefinitionIds).toContain(qualityDefinitionId);
+            expect(filteredPayload.data.some((definition) => definition.id === definitionIds[0])).toBe(false);
+        } finally {
+            for (const definitionId of definitionIds) {
+                await db.delete(agentRunDefinitions).where(eq(agentRunDefinitions.id, definitionId));
+            }
+        }
+    });
+
     it('agent-run creation from definition inherits strategy config and definition runType', async () => {
         let domain1DefinitionId: number | null = null;
         let domain1RunId: number | null = null;

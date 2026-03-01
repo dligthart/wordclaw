@@ -1703,16 +1703,18 @@ server.tool(
 
 server.tool(
     'list_agent_run_definitions',
-    'List autonomous run definitions with optional active filter and pagination',
+    'List autonomous run definitions with optional active/runType filters and pagination',
     {
         active: z.boolean().optional().describe('Filter by active definitions'),
+        runType: z.string().optional().describe('Filter by run type'),
         limit: z.number().min(1).max(500).optional().default(50).describe('Page size'),
         offset: z.number().min(0).optional().default(0).describe('Row offset')
     },
-    withMCPPolicy('content.read', () => ({ type: 'agent_run_definition' }), async ({ active, limit, offset }, _extra, domainId) => {
+    withMCPPolicy('content.read', () => ({ type: 'agent_run_definition' }), async ({ active, runType, limit, offset }, _extra, domainId) => {
         try {
             const definitions = await AgentRunService.listDefinitions(domainId, {
                 active,
+                runType,
                 limit,
                 offset
             });

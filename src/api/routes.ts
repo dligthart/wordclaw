@@ -47,6 +47,7 @@ type AgentRunsQuery = {
 };
 type AgentRunDefinitionsQuery = {
     active?: boolean;
+    runType?: string;
     limit?: number;
     offset?: number;
 };
@@ -3990,6 +3991,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         schema: {
             querystring: Type.Object({
                 active: Type.Optional(Type.Boolean()),
+                runType: Type.Optional(Type.String()),
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
                 offset: Type.Optional(Type.Number({ minimum: 0 }))
             }),
@@ -3998,9 +4000,10 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request) => {
-        const { active, limit, offset } = request.query as AgentRunDefinitionsQuery;
+        const { active, runType, limit, offset } = request.query as AgentRunDefinitionsQuery;
         const definitions = await AgentRunService.listDefinitions(getDomainId(request), {
             active,
+            runType,
             limit,
             offset
         });

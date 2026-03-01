@@ -309,7 +309,7 @@ export const schema = `
     """Get one autonomous run with steps/checkpoints by id."""
     agentRun(id: ID!): AgentRun
     """List autonomous run definitions for the current domain."""
-    agentRunDefinitions(active: Boolean, limit: Int = 50, offset: Int = 0): [AgentRunDefinition!]!
+    agentRunDefinitions(active: Boolean, runType: String, limit: Int = 50, offset: Int = 0): [AgentRunDefinition!]!
     """Get one autonomous run definition by id."""
     agentRunDefinition(id: ID!): AgentRunDefinition
   }

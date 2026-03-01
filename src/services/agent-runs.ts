@@ -58,6 +58,7 @@ export type UpdateAgentRunDefinitionInput = {
 
 export type ListAgentRunDefinitionsOptions = {
     active?: boolean;
+    runType?: string;
     limit?: number;
     offset?: number;
 };
@@ -244,10 +245,17 @@ export class AgentRunService {
     static async listDefinitions(domainId: number, options: ListAgentRunDefinitionsOptions = {}) {
         const limit = clampLimit(options.limit);
         const offset = clampOffset(options.offset);
+        const runType = options.runType?.trim();
 
-        const whereClause = options.active === undefined
-            ? eq(agentRunDefinitions.domainId, domainId)
-            : and(eq(agentRunDefinitions.domainId, domainId), eq(agentRunDefinitions.active, options.active));
+        const whereConditions = [
+            eq(agentRunDefinitions.domainId, domainId),
+            options.active === undefined ? undefined : eq(agentRunDefinitions.active, options.active),
+            runType ? eq(agentRunDefinitions.runType, runType) : undefined
+        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+        const whereClause = whereConditions.length > 1
+            ? and(...whereConditions)
+            : whereConditions[0];
 
         const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
             .from(agentRunDefinitions)

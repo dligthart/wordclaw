@@ -133,6 +133,7 @@ type AgentRunsArgs = {
 };
 type AgentRunDefinitionsArgs = {
     active?: boolean;
+    runType?: string;
     limit?: number;
     offset?: number;
 };
@@ -894,9 +895,10 @@ export const resolvers = {
             };
         }),
 
-        agentRunDefinitions: withPolicy('content.read', () => ({ type: 'agent_run_definition' }), async (_parent: unknown, { active, limit, offset }: AgentRunDefinitionsArgs, context?: unknown) => {
+        agentRunDefinitions: withPolicy('content.read', () => ({ type: 'agent_run_definition' }), async (_parent: unknown, { active, runType, limit, offset }: AgentRunDefinitionsArgs, context?: unknown) => {
             const definitions = await AgentRunService.listDefinitions(getDomainId(context), {
                 active,
+                runType,
                 limit,
                 offset
             });
