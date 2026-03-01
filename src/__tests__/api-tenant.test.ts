@@ -539,6 +539,69 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
     });
 
+    it('agent-run control approve action is idempotent', async () => {
+        let runId: number | null = null;
+
+        try {
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `idempotent-control-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    requireApproval: true
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const firstApprove = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: {
+                    'x-api-key': rawKey1
+                },
+                payload: { action: 'approve' }
+            });
+            expect(firstApprove.statusCode).toBe(200);
+            expect(JSON.parse(firstApprove.payload).data.status).toBe('running');
+
+            const replayApprove = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: {
+                    'x-api-key': rawKey1
+                },
+                payload: { action: 'approve' }
+            });
+            expect(replayApprove.statusCode).toBe(200);
+            expect(JSON.parse(replayApprove.payload).data.status).toBe('running');
+
+            const runDetails = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(runDetails.statusCode).toBe(200);
+
+            const detailsPayload = JSON.parse(runDetails.payload) as {
+                data: {
+                    checkpoints: Array<{ checkpointKey: string }>;
+                };
+            };
+            const approveCheckpointCount = detailsPayload.data.checkpoints
+                .filter((checkpoint) => checkpoint.checkpointKey === 'control_approve')
+                .length;
+
+            expect(approveCheckpointCount).toBe(1);
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+        }
+    });
+
     it('agent-run-definition routes enforce tenant scoping for read and update', async () => {
         let domain1DefinitionId: number | null = null;
 
