@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
-import { agentRunDefinitions, agentRuns, apiKeys, domains, contentItems, contentTypes } from '../db/schema.js';
+import { agentRunDefinitions, agentRuns, apiKeys, domains, contentItems, contentTypes, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
@@ -650,6 +650,175 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
             if (draftItemTwoId) {
                 await db.delete(contentItems).where(eq(contentItems.id, draftItemTwoId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
+    it('review_backlog_manager approve auto-submits staged review tasks when enabled', async () => {
+        let scopedTypeId: number | null = null;
+        let workflowId: number | null = null;
+        let transitionId: number | null = null;
+        let draftItemOneId: number | null = null;
+        let draftItemTwoId: number | null = null;
+        let runId: number | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Backlog Execute Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `backlog-exec-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({ type: 'object' }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [workflow] = await db.insert(workflows).values({
+                domainId: domain1Id,
+                name: `Auto Submit Workflow ${crypto.randomUUID().slice(0, 6)}`,
+                contentTypeId: scopedTypeId,
+                active: true
+            }).returning();
+            workflowId = workflow.id;
+
+            const [transition] = await db.insert(workflowTransitions).values({
+                workflowId: workflowId,
+                fromState: 'draft',
+                toState: 'pending_review',
+                requiredRoles: []
+            }).returning();
+            transitionId = transition.id;
+
+            const [draftOne] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'exec-draft-one' }),
+                status: 'draft'
+            }).returning();
+            draftItemOneId = draftOne.id;
+
+            const [draftTwo] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'exec-draft-two' }),
+                status: 'draft'
+            }).returning();
+            draftItemTwoId = draftTwo.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `execute-review-backlog-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    requireApproval: true,
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        maxCandidates: 10,
+                        autoSubmitReview: true
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const approveRun = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(approveRun.statusCode).toBe(200);
+            const approvePayload = JSON.parse(approveRun.payload) as {
+                data: {
+                    status: string;
+                    completedAt: string | null;
+                };
+            };
+            expect(approvePayload.data.status).toBe('succeeded');
+            expect(approvePayload.data.completedAt).not.toBeNull();
+
+            const details = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(details.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(details.payload) as {
+                data: {
+                    run: {
+                        status: string;
+                    };
+                    steps: Array<{
+                        actionType: string;
+                        status: string;
+                        responseSnapshot?: {
+                            reviewTaskId?: number;
+                            workflowTransitionId?: number;
+                        } | null;
+                    }>;
+                    checkpoints: Array<{
+                        checkpointKey: string;
+                        payload?: {
+                            succeededCount?: number;
+                        };
+                    }>;
+                };
+            };
+
+            expect(detailsPayload.data.run.status).toBe('succeeded');
+            const submitSteps = detailsPayload.data.steps.filter((step) => step.actionType === 'submit_review');
+            expect(submitSteps).toHaveLength(2);
+            expect(submitSteps.every((step) => step.status === 'succeeded')).toBe(true);
+            expect(submitSteps.every((step) => step.responseSnapshot?.workflowTransitionId === transitionId)).toBe(true);
+            expect(submitSteps.every((step) => typeof step.responseSnapshot?.reviewTaskId === 'number')).toBe(true);
+
+            const completionCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'review_execution_completed'
+            );
+            expect(completionCheckpoint?.payload?.succeededCount).toBe(2);
+
+            const pendingTasksResponse = await fastify.inject({
+                method: 'GET',
+                url: '/api/review-tasks',
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(pendingTasksResponse.statusCode).toBe(200);
+            const pendingTasksPayload = JSON.parse(pendingTasksResponse.payload) as {
+                data: Array<{
+                    task: {
+                        contentItemId: number;
+                        workflowTransitionId: number;
+                        status: string;
+                    };
+                }>;
+            };
+            const taskItems = pendingTasksPayload.data
+                .filter((row) => row.task.workflowTransitionId === transitionId)
+                .map((row) => row.task.contentItemId);
+            expect(taskItems).toEqual(expect.arrayContaining([draftItemOneId!, draftItemTwoId!]));
+            expect(
+                pendingTasksPayload.data.filter((row) => row.task.workflowTransitionId === transitionId).every((row) => row.task.status === 'pending')
+            ).toBe(true);
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (draftItemOneId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemOneId));
+            }
+            if (draftItemTwoId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemTwoId));
+            }
+            if (transitionId) {
+                await db.delete(reviewTasks).where(eq(reviewTasks.workflowTransitionId, transitionId));
+                await db.delete(workflowTransitions).where(eq(workflowTransitions.id, transitionId));
+            }
+            if (workflowId) {
+                await db.delete(workflows).where(eq(workflows.id, workflowId));
             }
             if (scopedTypeId) {
                 await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));

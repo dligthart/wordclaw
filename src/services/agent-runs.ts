@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { agentRunCheckpoints, agentRunDefinitions, agentRunSteps, agentRuns, contentItems } from '../db/schema.js';
 import { logAudit } from './audit.js';
+import { WorkflowService } from './workflow.js';
 
 export const AGENT_RUN_STATUSES = [
     'queued',
@@ -242,6 +243,228 @@ export function resolveAgentRunTransition(
 }
 
 export class AgentRunService {
+    private static async executeReviewSubmissionSteps(
+        domainId: number,
+        runId: number,
+        metadata?: Record<string, unknown> | null
+    ) {
+        const assignee = metadata && typeof metadata.reviewAssignee === 'string' && metadata.reviewAssignee.trim().length > 0
+            ? metadata.reviewAssignee.trim()
+            : undefined;
+
+        const pendingSteps = await db.select()
+            .from(agentRunSteps)
+            .where(and(
+                eq(agentRunSteps.runId, runId),
+                eq(agentRunSteps.domainId, domainId),
+                eq(agentRunSteps.actionType, 'submit_review'),
+                eq(agentRunSteps.status, 'pending')
+            ))
+            .orderBy(asc(agentRunSteps.stepIndex), asc(agentRunSteps.id));
+
+        for (const step of pendingSteps) {
+            const stepStart = new Date();
+            await db.update(agentRunSteps)
+                .set({
+                    status: 'executing',
+                    startedAt: step.startedAt ?? stepStart,
+                    updatedAt: stepStart
+                })
+                .where(and(
+                    eq(agentRunSteps.id, step.id),
+                    eq(agentRunSteps.domainId, domainId),
+                    eq(agentRunSteps.runId, runId),
+                    eq(agentRunSteps.status, 'pending')
+                ));
+
+            const requestSnapshot = isRecord(step.requestSnapshot) ? step.requestSnapshot : {};
+            const contentItemId = parseOptionalPositiveInt(requestSnapshot.contentItemId);
+            if (!contentItemId) {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: 'Missing contentItemId in submit_review request snapshot.'
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+                continue;
+            }
+
+            const [contentItem] = await db.select({
+                id: contentItems.id,
+                contentTypeId: contentItems.contentTypeId,
+                status: contentItems.status
+            })
+                .from(contentItems)
+                .where(and(
+                    eq(contentItems.id, contentItemId),
+                    eq(contentItems.domainId, domainId)
+                ));
+            if (!contentItem) {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: `Content item ${contentItemId} not found in this domain.`
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+                continue;
+            }
+
+            const workflow = await WorkflowService.getActiveWorkflowWithTransitions(domainId, contentItem.contentTypeId);
+            if (!workflow || workflow.transitions.length === 0) {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: `No active workflow transitions for content type ${contentItem.contentTypeId}.`
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+                continue;
+            }
+
+            const transition = workflow.transitions.find((candidate) => candidate.fromState === contentItem.status);
+            if (!transition) {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: `No workflow transition matches content item state '${contentItem.status}'.`
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+                continue;
+            }
+
+            try {
+                const reviewTask = await WorkflowService.submitForReview({
+                    domainId,
+                    contentItemId: contentItem.id,
+                    workflowTransitionId: transition.id,
+                    assignee,
+                    authPrincipal: {
+                        scopes: new Set<string>(['admin']),
+                        domainId
+                    }
+                });
+
+                const succeededAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'succeeded',
+                        completedAt: succeededAt,
+                        updatedAt: succeededAt,
+                        errorMessage: null,
+                        responseSnapshot: {
+                            reviewTaskId: reviewTask.id,
+                            workflowId: workflow.id,
+                            workflowTransitionId: transition.id,
+                            itemStatusBefore: contentItem.status,
+                            itemStatusAfter: transition.toState
+                        }
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+
+                await db.insert(agentRunCheckpoints).values({
+                    runId,
+                    domainId,
+                    checkpointKey: 'review_task_created',
+                    payload: {
+                        stepId: step.id,
+                        contentItemId: contentItem.id,
+                        reviewTaskId: reviewTask.id,
+                        workflowTransitionId: transition.id
+                    }
+                });
+            } catch (error) {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: (error as Error).message
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+            }
+        }
+
+        const submissionSteps = await db.select({ status: agentRunSteps.status })
+            .from(agentRunSteps)
+            .where(and(
+                eq(agentRunSteps.runId, runId),
+                eq(agentRunSteps.domainId, domainId),
+                eq(agentRunSteps.actionType, 'submit_review')
+            ));
+        if (submissionSteps.length === 0) {
+            return;
+        }
+
+        const pendingCount = submissionSteps.filter(
+            (step) => step.status === 'pending' || step.status === 'executing'
+        ).length;
+        if (pendingCount > 0) {
+            return;
+        }
+
+        const failedCount = submissionSteps.filter((step) => step.status === 'failed').length;
+        const succeededCount = submissionSteps.filter((step) => step.status === 'succeeded').length;
+        const settledAt = new Date();
+
+        if (failedCount > 0) {
+            await db.update(agentRuns)
+                .set({
+                    status: 'failed',
+                    completedAt: settledAt,
+                    updatedAt: settledAt
+                })
+                .where(and(
+                    eq(agentRuns.id, runId),
+                    eq(agentRuns.domainId, domainId),
+                    eq(agentRuns.status, 'running')
+                ));
+
+            await db.insert(agentRunCheckpoints).values({
+                runId,
+                domainId,
+                checkpointKey: 'review_execution_failed',
+                payload: {
+                    failedCount,
+                    succeededCount
+                }
+            });
+            return;
+        }
+
+        await db.update(agentRuns)
+            .set({
+                status: 'succeeded',
+                completedAt: settledAt,
+                updatedAt: settledAt
+            })
+            .where(and(
+                eq(agentRuns.id, runId),
+                eq(agentRuns.domainId, domainId),
+                eq(agentRuns.status, 'running')
+            ));
+
+        await db.insert(agentRunCheckpoints).values({
+            runId,
+            domainId,
+            checkpointKey: 'review_execution_completed',
+            payload: {
+                succeededCount
+            }
+        });
+    }
+
     private static async buildReviewBacklogPlanSnapshot(domainId: number, metadata: Record<string, unknown>) {
         const maxCandidates = clampLimit(parseOptionalPositiveInt(metadata.maxCandidates), 25, 250);
         const requestedContentTypeId = parseOptionalPositiveInt(metadata.contentTypeId);
@@ -843,14 +1066,28 @@ export class AgentRunService {
             );
         }
 
-        await logAudit(domainId, 'update', 'agent_run', updated.id, {
+        if (
+            updated.status === 'running'
+            && updated.runType === 'review_backlog_manager'
+            && isRecord(updated.metadata)
+            && parseBooleanFlag(updated.metadata.autoSubmitReview, false)
+        ) {
+            await AgentRunService.executeReviewSubmissionSteps(domainId, runId, updated.metadata);
+        }
+
+        const [latestRun] = await db.select()
+            .from(agentRuns)
+            .where(and(eq(agentRuns.id, runId), eq(agentRuns.domainId, domainId)));
+        const resultRun = latestRun ?? updated;
+
+        await logAudit(domainId, 'update', 'agent_run', resultRun.id, {
             action,
             fromStatus: run.status,
-            toStatus: updated.status,
-            startedAt: updated.startedAt,
-            completedAt: updated.completedAt
+            toStatus: resultRun.status,
+            startedAt: resultRun.startedAt,
+            completedAt: resultRun.completedAt
         });
 
-        return updated;
+        return resultRun;
     }
 }
