@@ -544,4 +544,84 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
         }
     });
+
+    it('agent-run list supports runType and definitionId filters', async () => {
+        let definitionId: number | null = null;
+        let runFromDefinitionId: number | null = null;
+        let runManualId: number | null = null;
+
+        try {
+            const createDefinition = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-run-definitions',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    name: `d1-filter-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    strategyConfig: {},
+                    active: true
+                }
+            });
+            expect(createDefinition.statusCode).toBe(201);
+            definitionId = JSON.parse(createDefinition.payload).data.id as number;
+
+            const runFromDefinition = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: 'from-definition',
+                    definitionId
+                }
+            });
+            expect(runFromDefinition.statusCode).toBe(201);
+            runFromDefinitionId = JSON.parse(runFromDefinition.payload).data.id as number;
+
+            const runManual = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: 'manual',
+                    runType: 'quality_refiner'
+                }
+            });
+            expect(runManual.statusCode).toBe(201);
+            runManualId = JSON.parse(runManual.payload).data.id as number;
+
+            const byRunType = await fastify.inject({
+                method: 'GET',
+                url: '/api/agent-runs?runType=quality_refiner&limit=500',
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(byRunType.statusCode).toBe(200);
+            const byRunTypePayload = JSON.parse(byRunType.payload) as {
+                data: Array<{ id: number; runType: string }>;
+            };
+            expect(byRunTypePayload.data.some((run) => run.id === runManualId)).toBe(true);
+            expect(byRunTypePayload.data.some((run) => run.id === runFromDefinitionId)).toBe(false);
+
+            const byDefinition = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs?definitionId=${definitionId}&limit=500`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(byDefinition.statusCode).toBe(200);
+            const byDefinitionPayload = JSON.parse(byDefinition.payload) as {
+                data: Array<{ id: number; definitionId: number | null }>;
+            };
+            expect(byDefinitionPayload.data.some((run) => run.id === runFromDefinitionId)).toBe(true);
+            expect(byDefinitionPayload.data.some((run) => run.id === runManualId)).toBe(false);
+        } finally {
+            if (runFromDefinitionId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runFromDefinitionId));
+            }
+            if (runManualId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runManualId));
+            }
+            if (definitionId) {
+                await db.delete(agentRunDefinitions).where(eq(agentRunDefinitions.id, definitionId));
+            }
+        }
+    });
 });
