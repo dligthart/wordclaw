@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
-import { agentRuns, apiKeys, domains, contentItems, contentTypes } from '../db/schema.js';
+import { agentRunDefinitions, agentRuns, apiKeys, domains, contentItems, contentTypes } from '../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
@@ -408,6 +408,74 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         } finally {
             if (domain1RunId) {
                 await db.delete(agentRuns).where(eq(agentRuns.id, domain1RunId));
+            }
+        }
+    });
+
+    it('agent-run-definition routes enforce tenant scoping for read and update', async () => {
+        let domain1DefinitionId: number | null = null;
+
+        try {
+            const createDefinition = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-run-definitions',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    name: `d1-definition-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    strategyConfig: { maxTasks: 10 },
+                    active: true
+                }
+            });
+            expect(createDefinition.statusCode).toBe(201);
+            const createPayload = JSON.parse(createDefinition.payload) as {
+                data: { id: number };
+            };
+            domain1DefinitionId = createPayload.data.id;
+
+            const domain2Read = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-run-definitions/${domain1DefinitionId}`,
+                headers: { 'x-api-key': rawKey2 }
+            });
+            expect(domain2Read.statusCode).toBe(404);
+            expect(JSON.parse(domain2Read.payload).code).toBe('AGENT_RUN_DEFINITION_NOT_FOUND');
+
+            const domain2Update = await fastify.inject({
+                method: 'PUT',
+                url: `/api/agent-run-definitions/${domain1DefinitionId}`,
+                headers: { 'x-api-key': rawKey2 },
+                payload: { active: false }
+            });
+            expect(domain2Update.statusCode).toBe(404);
+            expect(JSON.parse(domain2Update.payload).code).toBe('AGENT_RUN_DEFINITION_NOT_FOUND');
+
+            const domain1List = await fastify.inject({
+                method: 'GET',
+                url: '/api/agent-run-definitions?limit=500',
+                headers: { 'x-api-key': rawKey1 }
+            });
+            const domain2List = await fastify.inject({
+                method: 'GET',
+                url: '/api/agent-run-definitions?limit=500',
+                headers: { 'x-api-key': rawKey2 }
+            });
+
+            expect(domain1List.statusCode).toBe(200);
+            expect(domain2List.statusCode).toBe(200);
+
+            const domain1ListPayload = JSON.parse(domain1List.payload) as {
+                data: Array<{ id: number }>;
+            };
+            const domain2ListPayload = JSON.parse(domain2List.payload) as {
+                data: Array<{ id: number }>;
+            };
+
+            expect(domain1ListPayload.data.some((definition) => definition.id === domain1DefinitionId)).toBe(true);
+            expect(domain2ListPayload.data.some((definition) => definition.id === domain1DefinitionId)).toBe(false);
+        } finally {
+            if (domain1DefinitionId) {
+                await db.delete(agentRunDefinitions).where(eq(agentRunDefinitions.id, domain1DefinitionId));
             }
         }
     });
