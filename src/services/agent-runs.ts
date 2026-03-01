@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { agentRunCheckpoints, agentRunDefinitions, agentRunSteps, agentRuns } from '../db/schema.js';
+import { agentRunCheckpoints, agentRunDefinitions, agentRunSteps, agentRuns, contentItems } from '../db/schema.js';
 import { logAudit } from './audit.js';
 
 export const AGENT_RUN_STATUSES = [
@@ -107,6 +107,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function parseOptionalPositiveInt(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+        return value;
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+        const parsed = Number.parseInt(value.trim(), 10);
+        if (Number.isInteger(parsed) && parsed > 0) {
+            return parsed;
+        }
+    }
+
+    return undefined;
+}
+
+function parseBooleanFlag(value: unknown, fallback: boolean): boolean {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    return fallback;
+}
+
 function isUniqueViolation(error: unknown, constraintName: string): boolean {
     const visited = new Set<unknown>();
     let candidate: unknown = error;
@@ -198,6 +220,57 @@ export function resolveAgentRunTransition(
 }
 
 export class AgentRunService {
+    private static async buildReviewBacklogPlanSnapshot(domainId: number, metadata: Record<string, unknown>) {
+        const maxCandidates = clampLimit(parseOptionalPositiveInt(metadata.maxCandidates), 25, 250);
+        const requestedContentTypeId = parseOptionalPositiveInt(metadata.contentTypeId);
+        const dryRun = parseBooleanFlag(metadata.dryRun, true);
+
+        const whereConditions = [
+            eq(contentItems.domainId, domainId),
+            eq(contentItems.status, 'draft'),
+            requestedContentTypeId ? eq(contentItems.contentTypeId, requestedContentTypeId) : undefined
+        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+        const whereClause = whereConditions.length > 1
+            ? and(...whereConditions)
+            : whereConditions[0];
+
+        const [{ totalDrafts }] = await db.select({ totalDrafts: sql<number>`count(*)::int` })
+            .from(contentItems)
+            .where(whereClause);
+
+        const candidates = await db.select({
+            id: contentItems.id,
+            contentTypeId: contentItems.contentTypeId,
+            status: contentItems.status,
+            updatedAt: contentItems.updatedAt
+        })
+            .from(contentItems)
+            .where(whereClause)
+            .orderBy(asc(contentItems.updatedAt), asc(contentItems.id))
+            .limit(maxCandidates);
+
+        return {
+            mode: dryRun ? 'dry_run' : 'live_preview',
+            runType: 'review_backlog_manager',
+            criteria: {
+                status: 'draft',
+                contentTypeId: requestedContentTypeId ?? null
+            },
+            summary: {
+                backlogCount: totalDrafts,
+                selectedCount: candidates.length,
+                maxCandidates
+            },
+            candidates: candidates.map((candidate) => ({
+                id: candidate.id,
+                contentTypeId: candidate.contentTypeId,
+                status: candidate.status,
+                updatedAt: candidate.updatedAt.toISOString()
+            }))
+        };
+    }
+
     static async createDefinition(domainId: number, input: CreateAgentRunDefinitionInput) {
         const name = input.name?.trim();
         const runType = input.runType?.trim();
@@ -415,6 +488,9 @@ export class AgentRunService {
             ...baseMetadata,
             ...(input.metadata ?? {})
         };
+        const planningSnapshot = runType === 'review_backlog_manager'
+            ? await AgentRunService.buildReviewBacklogPlanSnapshot(domainId, metadata)
+            : null;
         const status: AgentRunStatus = input.requireApproval ? 'waiting_approval' : 'queued';
 
         const created = await db.transaction(async (tx) => {
@@ -450,6 +526,15 @@ export class AgentRunService {
                     metadata: newRun.metadata
                 }
             });
+
+            if (planningSnapshot) {
+                await tx.insert(agentRunCheckpoints).values({
+                    runId: newRun.id,
+                    domainId,
+                    checkpointKey: 'plan_review_backlog',
+                    payload: planningSnapshot
+                });
+            }
 
             return newRun;
         });

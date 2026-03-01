@@ -412,6 +412,133 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
     });
 
+    it('review_backlog_manager run creation snapshots draft backlog candidates', async () => {
+        let scopedTypeId: number | null = null;
+        let draftItemOneId: number | null = null;
+        let draftItemTwoId: number | null = null;
+        let publishedItemId: number | null = null;
+        let runId: number | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Backlog Plan Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `backlog-plan-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({ type: 'object' }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [draftOne] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'draft-one' }),
+                status: 'draft'
+            }).returning();
+            draftItemOneId = draftOne.id;
+
+            const [draftTwo] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'draft-two' }),
+                status: 'draft'
+            }).returning();
+            draftItemTwoId = draftTwo.id;
+
+            const [publishedItem] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'published-item' }),
+                status: 'published'
+            }).returning();
+            publishedItemId = publishedItem.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `plan-review-backlog-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        maxCandidates: 10,
+                        dryRun: true
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const getRun = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(getRun.statusCode).toBe(200);
+
+            const runPayload = JSON.parse(getRun.payload) as {
+                data: {
+                    checkpoints: Array<{
+                        checkpointKey: string;
+                        payload?: {
+                            mode?: string;
+                            runType?: string;
+                            criteria?: {
+                                status?: string;
+                                contentTypeId?: number | null;
+                            };
+                            summary?: {
+                                backlogCount?: number;
+                                selectedCount?: number;
+                                maxCandidates?: number;
+                            };
+                            candidates?: Array<{
+                                id: number;
+                                contentTypeId: number;
+                                status: string;
+                            }>;
+                        };
+                    }>;
+                };
+            };
+
+            const planCheckpoint = runPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'plan_review_backlog'
+            );
+
+            expect(planCheckpoint).toBeDefined();
+            expect(planCheckpoint?.payload?.mode).toBe('dry_run');
+            expect(planCheckpoint?.payload?.runType).toBe('review_backlog_manager');
+            expect(planCheckpoint?.payload?.criteria?.status).toBe('draft');
+            expect(planCheckpoint?.payload?.criteria?.contentTypeId).toBe(scopedTypeId);
+            expect(planCheckpoint?.payload?.summary?.backlogCount).toBe(2);
+            expect(planCheckpoint?.payload?.summary?.selectedCount).toBe(2);
+            expect(planCheckpoint?.payload?.summary?.maxCandidates).toBe(10);
+
+            const candidateIds = new Set((planCheckpoint?.payload?.candidates ?? []).map((candidate) => candidate.id));
+            expect(candidateIds.has(draftItemOneId!)).toBe(true);
+            expect(candidateIds.has(draftItemTwoId!)).toBe(true);
+            expect(candidateIds.has(publishedItemId!)).toBe(false);
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (draftItemOneId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemOneId));
+            }
+            if (draftItemTwoId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemTwoId));
+            }
+            if (publishedItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, publishedItemId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
     it('agent-run-definition routes enforce tenant scoping for read and update', async () => {
         let domain1DefinitionId: number | null = null;
 
