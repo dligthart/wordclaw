@@ -624,4 +624,40 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
         }
     });
+
+    it('rejects run creation from inactive definitions', async () => {
+        let definitionId: number | null = null;
+
+        try {
+            const createDefinition = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-run-definitions',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    name: `d1-inactive-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    strategyConfig: {},
+                    active: false
+                }
+            });
+            expect(createDefinition.statusCode).toBe(201);
+            definitionId = JSON.parse(createDefinition.payload).data.id as number;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: 'inactive-definition-run',
+                    definitionId
+                }
+            });
+            expect(createRun.statusCode).toBe(400);
+            expect(JSON.parse(createRun.payload).code).toBe('AGENT_RUN_DEFINITION_INACTIVE');
+        } finally {
+            if (definitionId) {
+                await db.delete(agentRunDefinitions).where(eq(agentRunDefinitions.id, definitionId));
+            }
+        }
+    });
 });

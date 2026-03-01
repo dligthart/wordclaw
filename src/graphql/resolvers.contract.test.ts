@@ -25,6 +25,7 @@ vi.mock('../services/audit.js', () => ({
 
 import { resolvers } from './resolvers.js';
 import { WorkflowService } from '../services/workflow.js';
+import { AgentRunService, AgentRunServiceError } from '../services/agent-runs.js';
 
 type GraphQLErrorLike = {
     extensions?: {
@@ -315,6 +316,24 @@ describe('GraphQL Resolver Contracts', () => {
                 code: 'AGENT_RUN_DEFINITION_EMPTY_UPDATE'
             }
         } satisfies GraphQLErrorLike);
+    });
+
+    it('createAgentRun maps inactive definition to deterministic GraphQL error', async () => {
+        const createRunSpy = vi.spyOn(AgentRunService, 'createRun')
+            .mockRejectedValue(new AgentRunServiceError('AGENT_RUN_DEFINITION_INACTIVE', 'inactive'));
+
+        await expect(
+            resolvers.Mutation.createAgentRun({}, {
+                goal: 'test',
+                definitionId: '1'
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'AGENT_RUN_DEFINITION_INACTIVE'
+            }
+        } satisfies GraphQLErrorLike);
+
+        createRunSpy.mockRestore();
     });
 
     it('createWorkflow maps CONTENT_TYPE_NOT_FOUND to deterministic GraphQL error', async () => {

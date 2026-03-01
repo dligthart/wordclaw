@@ -4163,6 +4163,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                     ));
                 }
 
+                if (error.code === 'AGENT_RUN_DEFINITION_INACTIVE') {
+                    return reply.status(400).send(toErrorPayload(
+                        'Run definition inactive',
+                        error.code,
+                        'Activate the run definition before creating new runs from it.'
+                    ));
+                }
+
                 if (error.code === 'AGENT_RUN_INVALID_GOAL') {
                     return reply.status(400).send(toErrorPayload(
                         'Invalid run goal',

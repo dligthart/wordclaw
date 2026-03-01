@@ -2001,6 +2001,14 @@ export const resolvers = {
                         );
                     }
 
+                    if (error.code === 'AGENT_RUN_DEFINITION_INACTIVE') {
+                        throw toError(
+                            'Run definition inactive',
+                            error.code,
+                            'Activate the run definition before creating new runs from it.'
+                        );
+                    }
+
                     if (error.code === 'AGENT_RUN_INVALID_GOAL') {
                         throw toError(
                             'Invalid run goal',

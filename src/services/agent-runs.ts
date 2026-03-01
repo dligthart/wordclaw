@@ -388,6 +388,13 @@ export class AgentRunService {
                 );
             }
 
+            if (!definition.active) {
+                throw new AgentRunServiceError(
+                    'AGENT_RUN_DEFINITION_INACTIVE',
+                    `Run definition ${input.definitionId} is inactive and cannot be used for new runs.`
+                );
+            }
+
             definitionId = definition.id;
             inferredRunType = definition.runType;
             if (isRecord(definition.strategyConfig)) {

@@ -1816,6 +1816,9 @@ server.tool(
                 if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
                     return err('AGENT_RUN_DEFINITION_NOT_FOUND: Provide a definitionId that belongs to this domain.');
                 }
+                if (error.code === 'AGENT_RUN_DEFINITION_INACTIVE') {
+                    return err('AGENT_RUN_DEFINITION_INACTIVE: Activate the run definition before creating new runs from it.');
+                }
                 if (error.code === 'AGENT_RUN_INVALID_GOAL') {
                     return err('AGENT_RUN_INVALID_GOAL: Goal must be a non-empty string.');
                 }
