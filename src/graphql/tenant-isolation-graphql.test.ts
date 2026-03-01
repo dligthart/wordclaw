@@ -347,4 +347,66 @@ describe('GraphQL Tenant Isolation', () => {
         };
         expect(updatePayload.errors?.[0]?.extensions?.code).toBe('AGENT_RUN_DEFINITION_NOT_FOUND');
     });
+
+    it('filters run definitions by runType within tenant scope', async () => {
+        const definitionIds: number[] = [];
+
+        try {
+            const [reviewDefinition] = await db.insert(agentRunDefinitions).values({
+                domainId: 1,
+                name: `domain-one-graphql-review-${Date.now()}`,
+                runType: 'review_backlog_manager',
+                strategyConfig: {},
+                active: true
+            }).returning();
+            definitionIds.push(reviewDefinition.id);
+
+            const [qualityDefinition] = await db.insert(agentRunDefinitions).values({
+                domainId: 1,
+                name: `domain-one-graphql-quality-${Date.now()}`,
+                runType: 'quality_refiner',
+                strategyConfig: {},
+                active: true
+            }).returning();
+            definitionIds.push(qualityDefinition.id);
+
+            const response = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      query DefinitionsByRunType($runType: String!) {
+                        agentRunDefinitions(runType: $runType, limit: 500) {
+                          id
+                          runType
+                        }
+                      }
+                    `,
+                    variables: {
+                        runType: 'quality_refiner'
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const payload = response.json() as {
+                data?: {
+                    agentRunDefinitions?: Array<{ id: string; runType: string }>;
+                };
+            };
+            const definitions = payload.data?.agentRunDefinitions ?? [];
+            const filteredIds = definitions.map((definition) => Number.parseInt(definition.id, 10));
+
+            expect(filteredIds).toContain(qualityDefinition.id);
+            expect(filteredIds).not.toContain(reviewDefinition.id);
+            expect(definitions.every((definition) => definition.runType === 'quality_refiner')).toBe(true);
+        } finally {
+            for (const definitionId of definitionIds) {
+                await db.delete(agentRunDefinitions).where(eq(agentRunDefinitions.id, definitionId));
+            }
+        }
+    });
 });
