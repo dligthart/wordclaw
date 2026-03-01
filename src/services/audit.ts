@@ -13,7 +13,8 @@ export type EntityType =
     | 'api_key'
     | 'webhook'
     | 'l402_operator_config'
-    | 'agent_run';
+    | 'agent_run'
+    | 'agent_run_definition';
 
 // --- Write ---
 

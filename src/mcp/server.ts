@@ -165,6 +165,28 @@ function toIsoString(value: Date | null): string | null {
     return value.toISOString();
 }
 
+function serializeAgentRunDefinition(definition: {
+    id: number;
+    domainId: number;
+    name: string;
+    runType: string;
+    strategyConfig: unknown;
+    active: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}) {
+    return {
+        id: definition.id,
+        domainId: definition.domainId,
+        name: definition.name,
+        runType: definition.runType,
+        strategyConfig: definition.strategyConfig,
+        active: definition.active,
+        createdAt: definition.createdAt.toISOString(),
+        updatedAt: definition.updatedAt.toISOString()
+    };
+}
+
 function serializeAgentRun(run: {
     id: number;
     domainId: number;
@@ -1646,6 +1668,126 @@ server.tool(
         }
     }
     ));
+
+server.tool(
+    'create_agent_run_definition',
+    'Create a reusable autonomous run definition',
+    {
+        name: z.string().min(1).describe('Unique definition name in current domain'),
+        runType: z.string().min(1).describe('Run type key used by the runtime'),
+        strategyConfig: z.record(z.string(), z.any()).optional().describe('Optional strategy configuration object'),
+        active: z.boolean().optional().default(true).describe('Whether this definition can be selected for new runs')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'agent_run_definition' }), async ({ name, runType, strategyConfig, active }, _extra, domainId) => {
+        try {
+            const definition = await AgentRunService.createDefinition(domainId, {
+                name,
+                runType,
+                strategyConfig,
+                active
+            });
+            return okJson(serializeAgentRunDefinition(definition));
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NAME_CONFLICT') {
+                    return err('AGENT_RUN_DEFINITION_NAME_CONFLICT: Choose a unique definition name in this domain.');
+                }
+                if (error.code === 'AGENT_RUN_DEFINITION_INVALID_NAME' || error.code === 'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE') {
+                    return err(`AGENT_RUN_DEFINITION_INVALID_PAYLOAD: ${error.message}`);
+                }
+            }
+            return err(`Error creating agent run definition: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'list_agent_run_definitions',
+    'List autonomous run definitions with optional active filter and pagination',
+    {
+        active: z.boolean().optional().describe('Filter by active definitions'),
+        limit: z.number().min(1).max(500).optional().default(50).describe('Page size'),
+        offset: z.number().min(0).optional().default(0).describe('Row offset')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'agent_run_definition' }), async ({ active, limit, offset }, _extra, domainId) => {
+        try {
+            const definitions = await AgentRunService.listDefinitions(domainId, {
+                active,
+                limit,
+                offset
+            });
+
+            return okJson({
+                items: definitions.items.map(serializeAgentRunDefinition),
+                total: definitions.total,
+                limit: definitions.limit,
+                offset: definitions.offset,
+                hasMore: definitions.hasMore
+            });
+        } catch (error) {
+            return err(`Error listing agent run definitions: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'get_agent_run_definition',
+    'Get one autonomous run definition by ID',
+    {
+        id: z.number().describe('Definition ID')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'agent_run_definition', id: args.id.toString() }), async ({ id }, _extra, domainId) => {
+        try {
+            const definition = await AgentRunService.getDefinition(domainId, id);
+            if (!definition) {
+                return err(`AGENT_RUN_DEFINITION_NOT_FOUND: Definition ${id} was not found in this domain.`);
+            }
+            return okJson(serializeAgentRunDefinition(definition));
+        } catch (error) {
+            return err(`Error fetching agent run definition: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'update_agent_run_definition',
+    'Update a reusable autonomous run definition',
+    {
+        id: z.number().describe('Definition ID'),
+        name: z.string().optional().describe('Updated name'),
+        runType: z.string().optional().describe('Updated run type'),
+        strategyConfig: z.record(z.string(), z.any()).optional().describe('Updated strategy configuration object'),
+        active: z.boolean().optional().describe('Updated active flag')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'agent_run_definition', id: args.id.toString() }), async ({ id, name, runType, strategyConfig, active }, _extra, domainId) => {
+        try {
+            const definition = await AgentRunService.updateDefinition(domainId, id, {
+                name,
+                runType,
+                strategyConfig,
+                active
+            });
+            return okJson(serializeAgentRunDefinition(definition));
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
+                    return err(`AGENT_RUN_DEFINITION_NOT_FOUND: Definition ${id} was not found in this domain.`);
+                }
+                if (error.code === 'AGENT_RUN_DEFINITION_NAME_CONFLICT') {
+                    return err('AGENT_RUN_DEFINITION_NAME_CONFLICT: Choose a unique definition name in this domain.');
+                }
+                if (
+                    error.code === 'AGENT_RUN_DEFINITION_INVALID_NAME'
+                    || error.code === 'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE'
+                    || error.code === 'AGENT_RUN_DEFINITION_EMPTY_UPDATE'
+                ) {
+                    return err(`AGENT_RUN_DEFINITION_INVALID_UPDATE: ${error.message}`);
+                }
+            }
+            return err(`Error updating agent run definition: ${(error as Error).message}`);
+        }
+    })
+);
 
 server.tool(
     'create_agent_run',

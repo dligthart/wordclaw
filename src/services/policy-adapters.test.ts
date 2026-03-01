@@ -27,6 +27,15 @@ describe('resolveRestResource', () => {
             domainId: 9
         });
     });
+
+    it('resolves agent-run-definition resource IDs with domain context', () => {
+        const resource = resolveRestResource('/api/agent-run-definitions/8', 4);
+        expect(resource).toEqual({
+            type: 'agent_run_definition',
+            id: '8',
+            domainId: 4
+        });
+    });
 });
 
 describe('buildOperationContext', () => {

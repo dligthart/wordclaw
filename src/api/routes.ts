@@ -43,6 +43,11 @@ type AgentRunsQuery = {
     limit?: number;
     offset?: number;
 };
+type AgentRunDefinitionsQuery = {
+    active?: boolean;
+    limit?: number;
+    offset?: number;
+};
 type AuditLogQuery = {
     entityType?: string;
     entityId?: number;
@@ -229,6 +234,14 @@ function notFoundAgentRun(id: number): AIErrorPayload {
     );
 }
 
+function notFoundAgentRunDefinition(id: number): AIErrorPayload {
+    return toErrorPayload(
+        'Agent run definition not found',
+        'AGENT_RUN_DEFINITION_NOT_FOUND',
+        `The agent run definition with ID ${id} does not exist in the current domain.`
+    );
+}
+
 function toIsoString(value: Date | null): string | null {
     if (!value) {
         return null;
@@ -263,6 +276,28 @@ function serializeAgentRun(run: {
         completedAt: toIsoString(run.completedAt),
         createdAt: run.createdAt.toISOString(),
         updatedAt: run.updatedAt.toISOString()
+    };
+}
+
+function serializeAgentRunDefinition(definition: {
+    id: number;
+    domainId: number;
+    name: string;
+    runType: string;
+    strategyConfig: unknown;
+    active: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}) {
+    return {
+        id: definition.id,
+        domainId: definition.domainId,
+        name: definition.name,
+        runType: definition.runType,
+        strategyConfig: definition.strategyConfig,
+        active: definition.active,
+        createdAt: definition.createdAt.toISOString(),
+        updatedAt: definition.updatedAt.toISOString()
     };
 }
 
@@ -3856,6 +3891,17 @@ export default async function apiRoutes(server: FastifyInstance) {
         updatedAt: Type.String()
     });
 
+    const AgentRunDefinitionSchema = Type.Object({
+        id: Type.Number(),
+        domainId: Type.Number(),
+        name: Type.String(),
+        runType: Type.String(),
+        strategyConfig: Type.Object({}, { additionalProperties: true }),
+        active: Type.Boolean(),
+        createdAt: Type.String(),
+        updatedAt: Type.String()
+    });
+
     const AgentRunStepSchema = Type.Object({
         id: Type.Number(),
         runId: Type.Number(),
@@ -3880,6 +3926,183 @@ export default async function apiRoutes(server: FastifyInstance) {
         checkpointKey: Type.String(),
         payload: Type.Object({}, { additionalProperties: true }),
         createdAt: Type.String()
+    });
+
+    // --- Autonomous Agent Run Definitions ---
+
+    server.post('/agent-run-definitions', {
+        schema: {
+            body: Type.Object({
+                name: Type.String({ minLength: 1 }),
+                runType: Type.String({ minLength: 1 }),
+                strategyConfig: Type.Optional(Type.Object({}, { additionalProperties: true })),
+                active: Type.Optional(Type.Boolean())
+            }),
+            response: {
+                201: createAIResponse(AgentRunDefinitionSchema),
+                400: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const payload = request.body as {
+            name: string;
+            runType: string;
+            strategyConfig?: Record<string, unknown>;
+            active?: boolean;
+        };
+
+        try {
+            const definition = await AgentRunService.createDefinition(getDomainId(request), payload);
+            return reply.status(201).send({
+                data: serializeAgentRunDefinition(definition),
+                meta: buildMeta(
+                    'Use this definition when creating runs',
+                    ['POST /api/agent-runs'],
+                    'medium',
+                    1
+                )
+            });
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NAME_CONFLICT') {
+                    return reply.status(409).send(toErrorPayload(
+                        'Run definition name already exists',
+                        error.code,
+                        'Choose a unique definition name in this domain.'
+                    ));
+                }
+                if (error.code === 'AGENT_RUN_DEFINITION_INVALID_NAME' || error.code === 'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE') {
+                    return reply.status(400).send(toErrorPayload(
+                        'Invalid run definition payload',
+                        error.code,
+                        error.message
+                    ));
+                }
+            }
+            throw error;
+        }
+    });
+
+    server.get('/agent-run-definitions', {
+        schema: {
+            querystring: Type.Object({
+                active: Type.Optional(Type.Boolean()),
+                limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+                offset: Type.Optional(Type.Number({ minimum: 0 }))
+            }),
+            response: {
+                200: createAIResponse(Type.Array(AgentRunDefinitionSchema))
+            }
+        }
+    }, async (request) => {
+        const { active, limit, offset } = request.query as AgentRunDefinitionsQuery;
+        const definitions = await AgentRunService.listDefinitions(getDomainId(request), {
+            active,
+            limit,
+            offset
+        });
+
+        return {
+            data: definitions.items.map(serializeAgentRunDefinition),
+            meta: buildMeta(
+                'Manage reusable run templates',
+                ['POST /api/agent-run-definitions', 'POST /api/agent-runs'],
+                'low',
+                1,
+                false,
+                {
+                    total: definitions.total,
+                    offset: definitions.offset,
+                    limit: definitions.limit,
+                    hasMore: definitions.hasMore
+                }
+            )
+        };
+    });
+
+    server.get('/agent-run-definitions/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(AgentRunDefinitionSchema),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const definition = await AgentRunService.getDefinition(getDomainId(request), id);
+        if (!definition) {
+            return reply.status(404).send(notFoundAgentRunDefinition(id));
+        }
+
+        return {
+            data: serializeAgentRunDefinition(definition),
+            meta: buildMeta('Update this run definition', [`PUT /api/agent-run-definitions/${id}`], 'low', 1)
+        };
+    });
+
+    server.put('/agent-run-definitions/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                name: Type.Optional(Type.String({ minLength: 1 })),
+                runType: Type.Optional(Type.String({ minLength: 1 })),
+                strategyConfig: Type.Optional(Type.Object({}, { additionalProperties: true })),
+                active: Type.Optional(Type.Boolean())
+            }),
+            response: {
+                200: createAIResponse(AgentRunDefinitionSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const payload = request.body as {
+            name?: string;
+            runType?: string;
+            strategyConfig?: Record<string, unknown>;
+            active?: boolean;
+        };
+
+        try {
+            const definition = await AgentRunService.updateDefinition(getDomainId(request), id, payload);
+            return {
+                data: serializeAgentRunDefinition(definition),
+                meta: buildMeta('Apply updated template to new runs', ['POST /api/agent-runs'], 'low', 1)
+            };
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
+                    return reply.status(404).send(notFoundAgentRunDefinition(id));
+                }
+                if (error.code === 'AGENT_RUN_DEFINITION_NAME_CONFLICT') {
+                    return reply.status(409).send(toErrorPayload(
+                        'Run definition name already exists',
+                        error.code,
+                        'Choose a unique definition name in this domain.'
+                    ));
+                }
+                if (
+                    error.code === 'AGENT_RUN_DEFINITION_INVALID_NAME'
+                    || error.code === 'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE'
+                    || error.code === 'AGENT_RUN_DEFINITION_EMPTY_UPDATE'
+                ) {
+                    return reply.status(400).send(toErrorPayload(
+                        'Invalid run definition update',
+                        error.code,
+                        error.message
+                    ));
+                }
+            }
+            throw error;
+        }
     });
 
     // --- Autonomous Agent Runs ---

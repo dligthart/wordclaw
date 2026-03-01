@@ -356,6 +356,24 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns AGENT_RUN_DEFINITION_EMPTY_UPDATE for empty run-definition update payload', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/agent-run-definitions/1',
+                payload: {}
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('AGENT_RUN_DEFINITION_EMPTY_UPDATE');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns AUTH_MISSING_API_KEY when auth is required', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'writer=content:read|content:write|audit:read';

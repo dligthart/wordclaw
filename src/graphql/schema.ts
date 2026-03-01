@@ -228,6 +228,18 @@ export const schema = `
     checkpoints: [AgentRunCheckpoint!]!
   }
 
+  """Reusable template for autonomous run creation."""
+  type AgentRunDefinition {
+    id: ID!
+    domainId: ID!
+    name: String!
+    runType: String!
+    strategyConfig: JSON!
+    active: Boolean!
+    createdAt: String
+    updatedAt: String
+  }
+
   """Per-item result in batch operations."""
   type BatchItemResult {
     """Index of the input item in the original request."""
@@ -296,6 +308,10 @@ export const schema = `
     agentRuns(status: String, limit: Int = 50, offset: Int = 0): [AgentRun!]!
     """Get one autonomous run with steps/checkpoints by id."""
     agentRun(id: ID!): AgentRun
+    """List autonomous run definitions for the current domain."""
+    agentRunDefinitions(active: Boolean, limit: Int = 50, offset: Int = 0): [AgentRunDefinition!]!
+    """Get one autonomous run definition by id."""
+    agentRunDefinition(id: ID!): AgentRunDefinition
   }
 
   type PolicyDecision {
@@ -394,6 +410,21 @@ export const schema = `
     ): AgentRun!
     """Apply a control action on an autonomous run."""
     controlAgentRun(id: ID!, action: String!): AgentRun!
+    """Create a reusable autonomous run definition."""
+    createAgentRunDefinition(
+      name: String!,
+      runType: String!,
+      strategyConfig: JSON,
+      active: Boolean = true
+    ): AgentRunDefinition!
+    """Update a reusable autonomous run definition."""
+    updateAgentRunDefinition(
+      id: ID!,
+      name: String,
+      runType: String,
+      strategyConfig: JSON,
+      active: Boolean
+    ): AgentRunDefinition!
     
     """Create a new Workflow for a given ContentType."""
     createWorkflow(name: String!, contentTypeId: ID!, active: Boolean): Workflow!

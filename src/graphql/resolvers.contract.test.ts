@@ -307,6 +307,16 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('updateAgentRunDefinition rejects empty payload with deterministic code', async () => {
+        await expect(
+            resolvers.Mutation.updateAgentRunDefinition({}, { id: '1' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'AGENT_RUN_DEFINITION_EMPTY_UPDATE'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
     it('createWorkflow maps CONTENT_TYPE_NOT_FOUND to deterministic GraphQL error', async () => {
         const createWorkflowSpy = vi.spyOn(WorkflowService, 'createWorkflow')
             .mockRejectedValue(new Error('CONTENT_TYPE_NOT_FOUND'));

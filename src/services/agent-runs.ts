@@ -42,6 +42,26 @@ export type CreateAgentRunInput = {
     requestedBy?: string;
 };
 
+export type CreateAgentRunDefinitionInput = {
+    name: string;
+    runType: string;
+    strategyConfig?: Record<string, unknown> | null;
+    active?: boolean;
+};
+
+export type UpdateAgentRunDefinitionInput = {
+    name?: string;
+    runType?: string;
+    strategyConfig?: Record<string, unknown> | null;
+    active?: boolean;
+};
+
+export type ListAgentRunDefinitionsOptions = {
+    active?: boolean;
+    limit?: number;
+    offset?: number;
+};
+
 export type ListAgentRunsOptions = {
     status?: AgentRunStatus;
     limit?: number;
@@ -78,6 +98,25 @@ function clampOffset(offset?: number): number {
     }
 
     return Math.max(0, offset);
+}
+
+function isUniqueViolation(error: unknown, constraintName: string): boolean {
+    const visited = new Set<unknown>();
+    let candidate: unknown = error;
+
+    while (candidate && typeof candidate === 'object' && !visited.has(candidate)) {
+        visited.add(candidate);
+        const maybeDbError = candidate as { code?: string; constraint?: string; cause?: unknown };
+        if (
+            maybeDbError.code === '23505'
+            && maybeDbError.constraint === constraintName
+        ) {
+            return true;
+        }
+        candidate = maybeDbError.cause;
+    }
+
+    return false;
 }
 
 export function isAgentRunStatus(value: string): value is AgentRunStatus {
@@ -152,6 +191,169 @@ export function resolveAgentRunTransition(
 }
 
 export class AgentRunService {
+    static async createDefinition(domainId: number, input: CreateAgentRunDefinitionInput) {
+        const name = input.name?.trim();
+        const runType = input.runType?.trim();
+        if (!name) {
+            throw new AgentRunServiceError(
+                'AGENT_RUN_DEFINITION_INVALID_NAME',
+                'Definition name is required.'
+            );
+        }
+        if (!runType) {
+            throw new AgentRunServiceError(
+                'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE',
+                'Definition runType is required.'
+            );
+        }
+
+        let created: typeof agentRunDefinitions.$inferSelect;
+        try {
+            [created] = await db.insert(agentRunDefinitions).values({
+                domainId,
+                name,
+                runType,
+                strategyConfig: input.strategyConfig ?? {},
+                active: input.active ?? true
+            }).returning();
+        } catch (error) {
+            if (isUniqueViolation(error, 'agent_run_definitions_domain_name_unique')) {
+                throw new AgentRunServiceError(
+                    'AGENT_RUN_DEFINITION_NAME_CONFLICT',
+                    `A run definition named '${name}' already exists in this domain.`
+                );
+            }
+            throw error;
+        }
+
+        await logAudit(domainId, 'create', 'agent_run_definition', created.id, {
+            name: created.name,
+            runType: created.runType,
+            active: created.active
+        });
+
+        return created;
+    }
+
+    static async listDefinitions(domainId: number, options: ListAgentRunDefinitionsOptions = {}) {
+        const limit = clampLimit(options.limit);
+        const offset = clampOffset(options.offset);
+
+        const whereClause = options.active === undefined
+            ? eq(agentRunDefinitions.domainId, domainId)
+            : and(eq(agentRunDefinitions.domainId, domainId), eq(agentRunDefinitions.active, options.active));
+
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
+            .from(agentRunDefinitions)
+            .where(whereClause);
+
+        const items = await db.select()
+            .from(agentRunDefinitions)
+            .where(whereClause)
+            .orderBy(desc(agentRunDefinitions.createdAt), desc(agentRunDefinitions.id))
+            .limit(limit)
+            .offset(offset);
+
+        return {
+            items,
+            total,
+            limit,
+            offset,
+            hasMore: offset + items.length < total
+        };
+    }
+
+    static async getDefinition(domainId: number, definitionId: number) {
+        const [definition] = await db.select()
+            .from(agentRunDefinitions)
+            .where(and(
+                eq(agentRunDefinitions.id, definitionId),
+                eq(agentRunDefinitions.domainId, domainId)
+            ));
+
+        return definition ?? null;
+    }
+
+    static async updateDefinition(domainId: number, definitionId: number, input: UpdateAgentRunDefinitionInput) {
+        const updateData: Partial<typeof agentRunDefinitions.$inferInsert> = {};
+
+        if (input.name !== undefined) {
+            const name = input.name.trim();
+            if (!name) {
+                throw new AgentRunServiceError(
+                    'AGENT_RUN_DEFINITION_INVALID_NAME',
+                    'Definition name cannot be empty.'
+                );
+            }
+            updateData.name = name;
+        }
+
+        if (input.runType !== undefined) {
+            const runType = input.runType.trim();
+            if (!runType) {
+                throw new AgentRunServiceError(
+                    'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE',
+                    'Definition runType cannot be empty.'
+                );
+            }
+            updateData.runType = runType;
+        }
+
+        if (input.strategyConfig !== undefined) {
+            updateData.strategyConfig = input.strategyConfig ?? {};
+        }
+
+        if (input.active !== undefined) {
+            updateData.active = input.active;
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            throw new AgentRunServiceError(
+                'AGENT_RUN_DEFINITION_EMPTY_UPDATE',
+                'Provide at least one field to update.'
+            );
+        }
+
+        updateData.updatedAt = new Date();
+
+        let updated: typeof agentRunDefinitions.$inferSelect | undefined;
+        try {
+            [updated] = await db.update(agentRunDefinitions)
+                .set(updateData)
+                .where(and(
+                    eq(agentRunDefinitions.id, definitionId),
+                    eq(agentRunDefinitions.domainId, domainId)
+                ))
+                .returning();
+        } catch (error) {
+            if (isUniqueViolation(error, 'agent_run_definitions_domain_name_unique')) {
+                throw new AgentRunServiceError(
+                    'AGENT_RUN_DEFINITION_NAME_CONFLICT',
+                    `A run definition named '${updateData.name ?? ''}' already exists in this domain.`
+                );
+            }
+            throw error;
+        }
+
+        if (!updated) {
+            throw new AgentRunServiceError(
+                'AGENT_RUN_DEFINITION_NOT_FOUND',
+                `Run definition ${definitionId} was not found in this domain.`
+            );
+        }
+
+        await logAudit(domainId, 'update', 'agent_run_definition', updated.id, {
+            changes: {
+                name: updateData.name,
+                runType: updateData.runType,
+                strategyConfig: updateData.strategyConfig,
+                active: updateData.active
+            }
+        });
+
+        return updated;
+    }
+
     static async createRun(domainId: number, input: CreateAgentRunInput) {
         const goal = input.goal?.trim();
         if (!goal) {
