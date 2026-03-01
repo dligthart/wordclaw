@@ -129,6 +129,25 @@ function parseBooleanFlag(value: unknown, fallback: boolean): boolean {
     return fallback;
 }
 
+function extractReviewCandidateIds(payload: unknown): number[] {
+    if (!isRecord(payload) || !Array.isArray(payload.candidates)) {
+        return [];
+    }
+
+    const ids: number[] = [];
+    for (const candidate of payload.candidates) {
+        if (!isRecord(candidate)) {
+            continue;
+        }
+        const id = parseOptionalPositiveInt(candidate.id);
+        if (id !== undefined && !ids.includes(id)) {
+            ids.push(id);
+        }
+    }
+
+    return ids;
+}
+
 function isUniqueViolation(error: unknown, constraintName: string): boolean {
     const visited = new Set<unknown>();
     let candidate: unknown = error;
@@ -711,6 +730,81 @@ export class AgentRunService {
                         eq(agentRunSteps.stepIndex, 0),
                         eq(agentRunSteps.status, 'pending')
                     ));
+
+                if (updatedRun.runType === 'review_backlog_manager') {
+                    const [existingReviewStep] = await tx.select({ id: agentRunSteps.id })
+                        .from(agentRunSteps)
+                        .where(and(
+                            eq(agentRunSteps.runId, runId),
+                            eq(agentRunSteps.domainId, domainId),
+                            eq(agentRunSteps.actionType, 'submit_review')
+                        ))
+                        .limit(1);
+
+                    if (!existingReviewStep) {
+                        const [planCheckpoint] = await tx.select({ payload: agentRunCheckpoints.payload })
+                            .from(agentRunCheckpoints)
+                            .where(and(
+                                eq(agentRunCheckpoints.runId, runId),
+                                eq(agentRunCheckpoints.domainId, domainId),
+                                eq(agentRunCheckpoints.checkpointKey, 'plan_review_backlog')
+                            ))
+                            .orderBy(desc(agentRunCheckpoints.createdAt), desc(agentRunCheckpoints.id))
+                            .limit(1);
+
+                        const candidateIds = extractReviewCandidateIds(planCheckpoint?.payload);
+                        const [stepStats] = await tx.select({
+                            maxStepIndex: sql<number>`coalesce(max(${agentRunSteps.stepIndex}), -1)`
+                        })
+                            .from(agentRunSteps)
+                            .where(and(
+                                eq(agentRunSteps.runId, runId),
+                                eq(agentRunSteps.domainId, domainId)
+                            ));
+                        const nextStepIndex = (stepStats?.maxStepIndex ?? -1) + 1;
+
+                        if (candidateIds.length > 0) {
+                            await tx.insert(agentRunSteps).values(candidateIds.map((contentItemId, index) => ({
+                                runId,
+                                domainId,
+                                stepIndex: nextStepIndex + index,
+                                stepKey: `submit_review_${contentItemId}`,
+                                actionType: 'submit_review',
+                                status: 'pending',
+                                requestSnapshot: {
+                                    contentItemId
+                                }
+                            })));
+                        }
+
+                        await tx.update(agentRunSteps)
+                            .set({
+                                status: 'succeeded',
+                                completedAt: now,
+                                updatedAt: now,
+                                responseSnapshot: {
+                                    selectedCount: candidateIds.length,
+                                    checkpointKey: 'planned_review_actions'
+                                }
+                            })
+                            .where(and(
+                                eq(agentRunSteps.runId, runId),
+                                eq(agentRunSteps.domainId, domainId),
+                                eq(agentRunSteps.stepIndex, 0),
+                                inArray(agentRunSteps.status, ['pending', 'executing'])
+                            ));
+
+                        await tx.insert(agentRunCheckpoints).values({
+                            runId,
+                            domainId,
+                            checkpointKey: 'planned_review_actions',
+                            payload: {
+                                selectedCount: candidateIds.length,
+                                candidateIds
+                            }
+                        });
+                    }
+                }
             }
 
             if (updatedRun.status === 'cancelled') {

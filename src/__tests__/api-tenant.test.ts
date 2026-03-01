@@ -403,7 +403,7 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                     checkpoints: Array<{ checkpointKey: string }>;
                 };
             };
-            expect(readAfterPayload.data.steps[0].status).toBe('executing');
+            expect(readAfterPayload.data.steps[0].status).toBe('succeeded');
             expect(readAfterPayload.data.checkpoints.some((checkpoint) => checkpoint.checkpointKey === 'control_approve')).toBe(true);
         } finally {
             if (domain1RunId) {
@@ -532,6 +532,124 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
             if (publishedItemId) {
                 await db.delete(contentItems).where(eq(contentItems.id, publishedItemId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
+    it('review_backlog_manager approve stages submit_review steps from plan checkpoint', async () => {
+        let scopedTypeId: number | null = null;
+        let draftItemOneId: number | null = null;
+        let draftItemTwoId: number | null = null;
+        let runId: number | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Backlog Stage Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `backlog-stage-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({ type: 'object' }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [draftOne] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'stage-draft-one' }),
+                status: 'draft'
+            }).returning();
+            draftItemOneId = draftOne.id;
+
+            const [draftTwo] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'stage-draft-two' }),
+                status: 'draft'
+            }).returning();
+            draftItemTwoId = draftTwo.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `stage-review-backlog-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    requireApproval: true,
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        maxCandidates: 10
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const approveRun = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(approveRun.statusCode).toBe(200);
+            expect(JSON.parse(approveRun.payload).data.status).toBe('running');
+
+            const details = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(details.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(details.payload) as {
+                data: {
+                    steps: Array<{
+                        stepKey: string;
+                        actionType: string;
+                        status: string;
+                        requestSnapshot?: {
+                            contentItemId?: number;
+                        } | null;
+                    }>;
+                    checkpoints: Array<{
+                        checkpointKey: string;
+                        payload?: {
+                            selectedCount?: number;
+                            candidateIds?: number[];
+                        };
+                    }>;
+                };
+            };
+
+            const submitSteps = detailsPayload.data.steps.filter((step) => step.actionType === 'submit_review');
+            expect(submitSteps).toHaveLength(2);
+            expect(submitSteps.every((step) => step.status === 'pending')).toBe(true);
+
+            const stagedIds = new Set(submitSteps.map((step) => step.requestSnapshot?.contentItemId));
+            expect(stagedIds.has(draftItemOneId)).toBe(true);
+            expect(stagedIds.has(draftItemTwoId)).toBe(true);
+
+            const planStep = detailsPayload.data.steps.find((step) => step.stepKey === 'plan_run');
+            expect(planStep?.status).toBe('succeeded');
+
+            const stagedCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'planned_review_actions'
+            );
+            expect(stagedCheckpoint?.payload?.selectedCount).toBe(2);
+            expect(stagedCheckpoint?.payload?.candidateIds).toEqual(
+                expect.arrayContaining([draftItemOneId!, draftItemTwoId!])
+            );
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (draftItemOneId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemOneId));
+            }
+            if (draftItemTwoId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemTwoId));
             }
             if (scopedTypeId) {
                 await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
