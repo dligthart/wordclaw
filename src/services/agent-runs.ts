@@ -194,6 +194,9 @@ export function resolveAgentRunTransition(
         if (currentStatus === 'queued') {
             return 'running';
         }
+        if (currentStatus === 'failed') {
+            return 'queued';
+        }
         if (currentStatus === 'running') {
             return currentStatus;
         }
@@ -667,10 +670,19 @@ export class AgentRunService {
             setPayload.completedAt = now;
         }
 
+        const isNonTerminalStatus = nextStatus === 'queued'
+            || nextStatus === 'planning'
+            || nextStatus === 'waiting_approval'
+            || nextStatus === 'running';
+        if (isNonTerminalStatus && run.completedAt) {
+            setPayload.completedAt = null;
+        }
+
         const shouldUpdate =
             nextStatus !== run.status
             || (nextStatus === 'running' && !run.startedAt)
-            || (nextStatus === 'cancelled' && !run.completedAt);
+            || (nextStatus === 'cancelled' && !run.completedAt)
+            || (isNonTerminalStatus && Boolean(run.completedAt));
 
         if (!shouldUpdate) {
             return run;

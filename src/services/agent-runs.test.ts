@@ -24,6 +24,10 @@ describe('AgentRun transition resolver', () => {
         expect(resolveAgentRunTransition('queued', 'resume', false)).toBe('running');
     });
 
+    it('resumes failed run back into queued for retry scheduling', () => {
+        expect(resolveAgentRunTransition('failed', 'resume', true)).toBe('queued');
+    });
+
     it('approves queued run into running', () => {
         expect(resolveAgentRunTransition('queued', 'approve', false)).toBe('running');
     });

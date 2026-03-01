@@ -602,6 +602,57 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
     });
 
+    it('agent-run resume recovers failed run back to queued', async () => {
+        let runId: number | null = null;
+
+        try {
+            const [failedRun] = await db.insert(agentRuns).values({
+                domainId: domain1Id,
+                goal: `recover-failed-${crypto.randomUUID().slice(0, 8)}`,
+                runType: 'review_backlog_manager',
+                status: 'failed',
+                requestedBy: apiKey1Id,
+                startedAt: new Date(Date.now() - 5 * 60 * 1000),
+                completedAt: new Date(Date.now() - 60 * 1000),
+                metadata: { reason: 'transient_network_error' }
+            }).returning();
+            runId = failedRun.id;
+
+            const resumeResponse = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'resume' }
+            });
+            expect(resumeResponse.statusCode).toBe(200);
+            const resumePayload = JSON.parse(resumeResponse.payload) as {
+                data: {
+                    status: string;
+                    completedAt: string | null;
+                };
+            };
+            expect(resumePayload.data.status).toBe('queued');
+            expect(resumePayload.data.completedAt).toBeNull();
+
+            const detailsResponse = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(detailsResponse.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(detailsResponse.payload) as {
+                data: {
+                    checkpoints: Array<{ checkpointKey: string }>;
+                };
+            };
+            expect(detailsPayload.data.checkpoints.some((checkpoint) => checkpoint.checkpointKey === 'control_resume')).toBe(true);
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+        }
+    });
+
     it('agent-run-definition routes enforce tenant scoping for read and update', async () => {
         let domain1DefinitionId: number | null = null;
 
