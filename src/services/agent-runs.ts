@@ -100,6 +100,10 @@ function clampOffset(offset?: number): number {
     return Math.max(0, offset);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function isUniqueViolation(error: unknown, constraintName: string): boolean {
     const visited = new Set<unknown>();
     let candidate: unknown = error;
@@ -365,6 +369,7 @@ export class AgentRunService {
 
         let definitionId: number | null = null;
         let inferredRunType: string | null = null;
+        let baseMetadata: Record<string, unknown> = {};
 
         if (input.definitionId !== undefined) {
             const [definition] = await db.select()
@@ -383,9 +388,16 @@ export class AgentRunService {
 
             definitionId = definition.id;
             inferredRunType = definition.runType;
+            if (isRecord(definition.strategyConfig)) {
+                baseMetadata = definition.strategyConfig;
+            }
         }
 
-        const runType = input.runType?.trim() || inferredRunType || 'review_backlog_manager';
+        const runType = inferredRunType || input.runType?.trim() || 'review_backlog_manager';
+        const metadata = {
+            ...baseMetadata,
+            ...(input.metadata ?? {})
+        };
         const status: AgentRunStatus = input.requireApproval ? 'waiting_approval' : 'queued';
 
         const created = await db.transaction(async (tx) => {
@@ -396,7 +408,7 @@ export class AgentRunService {
                 runType,
                 status,
                 requestedBy: input.requestedBy,
-                metadata: input.metadata ?? null
+                metadata: Object.keys(metadata).length > 0 ? metadata : null
             }).returning();
 
             await tx.insert(agentRunSteps).values({
@@ -416,7 +428,9 @@ export class AgentRunService {
                     status: newRun.status,
                     goal: newRun.goal,
                     runType: newRun.runType,
-                    requestedBy: newRun.requestedBy
+                    requestedBy: newRun.requestedBy,
+                    definitionId: newRun.definitionId,
+                    metadata: newRun.metadata
                 }
             });
 

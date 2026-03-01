@@ -479,4 +479,69 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
         }
     });
+
+    it('agent-run creation from definition inherits strategy config and definition runType', async () => {
+        let domain1DefinitionId: number | null = null;
+        let domain1RunId: number | null = null;
+
+        try {
+            const createDefinition = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-run-definitions',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    name: `d1-inherit-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'quality_refiner',
+                    strategyConfig: {
+                        maxCandidates: 5,
+                        safeMode: true
+                    },
+                    active: true
+                }
+            });
+            expect(createDefinition.statusCode).toBe(201);
+            domain1DefinitionId = JSON.parse(createDefinition.payload).data.id as number;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: 'Run from template',
+                    definitionId: domain1DefinitionId,
+                    runType: 'review_backlog_manager',
+                    metadata: {
+                        safeMode: false,
+                        operator: 'tenant-test'
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+
+            const runPayload = JSON.parse(createRun.payload) as {
+                data: {
+                    id: number;
+                    runType: string;
+                    definitionId: number | null;
+                    metadata: Record<string, unknown> | null;
+                };
+            };
+            domain1RunId = runPayload.data.id;
+
+            expect(runPayload.data.definitionId).toBe(domain1DefinitionId);
+            expect(runPayload.data.runType).toBe('quality_refiner');
+            expect(runPayload.data.metadata).toEqual({
+                maxCandidates: 5,
+                safeMode: false,
+                operator: 'tenant-test'
+            });
+        } finally {
+            if (domain1RunId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, domain1RunId));
+            }
+            if (domain1DefinitionId) {
+                await db.delete(agentRunDefinitions).where(eq(agentRunDefinitions.id, domain1DefinitionId));
+            }
+        }
+    });
 });
