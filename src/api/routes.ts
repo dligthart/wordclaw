@@ -40,6 +40,8 @@ type PaginationQuery = {
 };
 type AgentRunsQuery = {
     status?: string;
+    runType?: string;
+    definitionId?: number;
     limit?: number;
     offset?: number;
 };
@@ -4178,6 +4180,8 @@ export default async function apiRoutes(server: FastifyInstance) {
         schema: {
             querystring: Type.Object({
                 status: Type.Optional(Type.String()),
+                runType: Type.Optional(Type.String()),
+                definitionId: Type.Optional(Type.Number()),
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
                 offset: Type.Optional(Type.Number({ minimum: 0 }))
             }),
@@ -4187,7 +4191,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const { status, limit, offset } = request.query as AgentRunsQuery;
+        const { status, runType, definitionId, limit, offset } = request.query as AgentRunsQuery;
         if (status && !isAgentRunStatus(status)) {
             return reply.status(400).send(toErrorPayload(
                 'Invalid run status',
@@ -4198,6 +4202,8 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         const runs = await AgentRunService.listRuns(getDomainId(request), {
             status: status as any,
+            runType,
+            definitionId,
             limit,
             offset
         });

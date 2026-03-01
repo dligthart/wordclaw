@@ -64,6 +64,8 @@ export type ListAgentRunDefinitionsOptions = {
 
 export type ListAgentRunsOptions = {
     status?: AgentRunStatus;
+    runType?: string;
+    definitionId?: number;
     limit?: number;
     offset?: number;
 };
@@ -459,9 +461,17 @@ export class AgentRunService {
             );
         }
 
-        const whereClause = options.status
-            ? and(eq(agentRuns.domainId, domainId), eq(agentRuns.status, options.status))
-            : eq(agentRuns.domainId, domainId);
+        const runType = options.runType?.trim();
+        const whereConditions = [
+            eq(agentRuns.domainId, domainId),
+            options.status ? eq(agentRuns.status, options.status) : undefined,
+            runType ? eq(agentRuns.runType, runType) : undefined,
+            options.definitionId !== undefined ? eq(agentRuns.definitionId, options.definitionId) : undefined
+        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+        const whereClause = whereConditions.length > 1
+            ? and(...whereConditions)
+            : whereConditions[0];
 
         const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
             .from(agentRuns)

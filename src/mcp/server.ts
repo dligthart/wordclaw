@@ -1831,10 +1831,12 @@ server.tool(
     'List autonomous runs with optional status and pagination',
     {
         status: z.string().optional().describe('Optional status filter'),
+        runType: z.string().optional().describe('Optional runType filter'),
+        definitionId: z.number().optional().describe('Optional run definition ID filter'),
         limit: z.number().min(1).max(500).optional().default(50).describe('Page size'),
         offset: z.number().min(0).optional().default(0).describe('Row offset')
     },
-    withMCPPolicy('content.read', () => ({ type: 'agent_run' }), async ({ status, limit, offset }, _extra, domainId) => {
+    withMCPPolicy('content.read', () => ({ type: 'agent_run' }), async ({ status, runType, definitionId, limit, offset }, _extra, domainId) => {
         try {
             if (status && !isAgentRunStatus(status)) {
                 return err('AGENT_RUN_INVALID_STATUS: Use queued|planning|waiting_approval|running|succeeded|failed|cancelled.');
@@ -1842,6 +1844,8 @@ server.tool(
 
             const runs = await AgentRunService.listRuns(domainId, {
                 status: status as any,
+                runType,
+                definitionId,
                 limit,
                 offset
             });

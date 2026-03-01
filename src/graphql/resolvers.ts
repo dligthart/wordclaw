@@ -126,6 +126,8 @@ type DeleteWebhookArgs = {
 };
 type AgentRunsArgs = {
     status?: string;
+    runType?: string;
+    definitionId?: IdValue;
     limit?: number;
     offset?: number;
 };
@@ -857,7 +859,7 @@ export const resolvers = {
             };
         }),
 
-        agentRuns: withPolicy('content.read', () => ({ type: 'agent_run' }), async (_parent: unknown, { status, limit, offset }: AgentRunsArgs, context?: unknown) => {
+        agentRuns: withPolicy('content.read', () => ({ type: 'agent_run' }), async (_parent: unknown, { status, runType, definitionId, limit, offset }: AgentRunsArgs, context?: unknown) => {
             if (status && !isAgentRunStatus(status)) {
                 throw toError(
                     'Invalid run status',
@@ -866,8 +868,11 @@ export const resolvers = {
                 );
             }
 
+            const parsedDefinitionId = parseOptionalId(definitionId, 'definitionId');
             const runs = await AgentRunService.listRuns(getDomainId(context), {
                 status: status as any,
+                runType,
+                definitionId: parsedDefinitionId,
                 limit,
                 offset
             });

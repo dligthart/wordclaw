@@ -224,4 +224,23 @@ describe('Capability Parity Matrix', () => {
         const queryArgNames = graphqlSurface.queryArgs.get('auditLogs');
         expect(queryArgNames?.has('cursor')).toBe(true);
     });
+
+    it('keeps agent-run filtering contract aligned', () => {
+        const runsRouteBlock = getRestRouteBlock(routesSource, 'GET', '/agent-runs');
+        expect(runsRouteBlock?.includes('status: Type.Optional(Type.String())')).toBe(true);
+        expect(runsRouteBlock?.includes('runType: Type.Optional(Type.String())')).toBe(true);
+        expect(runsRouteBlock?.includes('definitionId: Type.Optional(Type.Number())')).toBe(true);
+
+        const runsToolBlock = getMcpToolBlock(mcpSource, 'list_agent_runs');
+        expect(runsToolBlock?.includes('status: z.string().optional()')).toBe(true);
+        expect(runsToolBlock?.includes('runType: z.string().optional()')).toBe(true);
+        expect(runsToolBlock?.includes('definitionId: z.number().optional()')).toBe(true);
+
+        const queryArgNames = graphqlSurface.queryArgs.get('agentRuns');
+        expect(queryArgNames?.has('status')).toBe(true);
+        expect(queryArgNames?.has('runType')).toBe(true);
+        expect(queryArgNames?.has('definitionId')).toBe(true);
+        expect(queryArgNames?.has('limit')).toBe(true);
+        expect(queryArgNames?.has('offset')).toBe(true);
+    });
 });

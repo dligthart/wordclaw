@@ -305,7 +305,7 @@ export const schema = `
     """Get one webhook registration by id."""
     webhook(id: ID!): Webhook
     """List autonomous runs for the current domain."""
-    agentRuns(status: String, limit: Int = 50, offset: Int = 0): [AgentRun!]!
+    agentRuns(status: String, runType: String, definitionId: ID, limit: Int = 50, offset: Int = 0): [AgentRun!]!
     """Get one autonomous run with steps/checkpoints by id."""
     agentRun(id: ID!): AgentRun
     """List autonomous run definitions for the current domain."""
