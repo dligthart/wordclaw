@@ -36,6 +36,7 @@ vi.mock('../services/webhook.js', async (importOriginal) => {
 import { errorHandler } from './error-handler.js';
 import apiRoutes from './routes.js';
 import { WorkflowService } from '../services/workflow.js';
+import { AgentRunService } from '../services/agent-runs.js';
 
 type ApiErrorBody = {
     error: string;
@@ -352,6 +353,35 @@ describe('API Route Contracts', () => {
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('AGENT_RUN_INVALID_STATUS');
         } finally {
+            await app.close();
+        }
+    });
+
+    it('forwards runType filter for run-definition list route', async () => {
+        const app = await buildServer();
+        const listDefinitionsSpy = vi.spyOn(AgentRunService, 'listDefinitions').mockResolvedValue({
+            items: [],
+            total: 0,
+            limit: 50,
+            offset: 0,
+            hasMore: false
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/agent-run-definitions?runType=quality_refiner&limit=25&offset=5'
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(listDefinitionsSpy).toHaveBeenCalledWith(1, {
+                active: undefined,
+                runType: 'quality_refiner',
+                limit: 25,
+                offset: 5
+            });
+        } finally {
+            listDefinitionsSpy.mockRestore();
             await app.close();
         }
     });
