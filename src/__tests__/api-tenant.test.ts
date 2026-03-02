@@ -923,6 +923,179 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
     });
 
+    it('review_backlog_manager resume retries failed submit_review steps after workflow is configured', async () => {
+        let scopedTypeId: number | null = null;
+        let workflowId: number | null = null;
+        let transitionId: number | null = null;
+        let draftItemId: number | null = null;
+        let runId: number | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Backlog Retry Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `backlog-retry-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({ type: 'object' }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [draftItem] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'retry-draft-item' }),
+                status: 'draft'
+            }).returning();
+            draftItemId = draftItem.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `retry-review-backlog-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    requireApproval: true,
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        autoSubmitReview: true
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const initialApprove = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(initialApprove.statusCode).toBe(200);
+            expect(JSON.parse(initialApprove.payload).data.status).toBe('failed');
+
+            const [workflow] = await db.insert(workflows).values({
+                domainId: domain1Id,
+                name: `Retry Workflow ${crypto.randomUUID().slice(0, 6)}`,
+                contentTypeId: scopedTypeId,
+                active: true
+            }).returning();
+            workflowId = workflow.id;
+
+            const [transition] = await db.insert(workflowTransitions).values({
+                workflowId: workflowId,
+                fromState: 'draft',
+                toState: 'pending_review',
+                requiredRoles: []
+            }).returning();
+            transitionId = transition.id;
+
+            const resumeRun = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'resume' }
+            });
+            expect(resumeRun.statusCode).toBe(200);
+            expect(JSON.parse(resumeRun.payload).data.status).toBe('queued');
+
+            const finalApprove = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(finalApprove.statusCode).toBe(200);
+            expect(JSON.parse(finalApprove.payload).data.status).toBe('succeeded');
+
+            const details = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(details.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(details.payload) as {
+                data: {
+                    run: {
+                        status: string;
+                    };
+                    steps: Array<{
+                        actionType: string;
+                        status: string;
+                        responseSnapshot?: {
+                            reviewTaskId?: number;
+                            workflowTransitionId?: number;
+                        } | null;
+                    }>;
+                    checkpoints: Array<{
+                        checkpointKey: string;
+                        payload?: {
+                            failedCount?: number;
+                            succeededCount?: number;
+                        };
+                    }>;
+                };
+            };
+
+            expect(detailsPayload.data.run.status).toBe('succeeded');
+            const submitSteps = detailsPayload.data.steps.filter((step) => step.actionType === 'submit_review');
+            expect(submitSteps).toHaveLength(1);
+            expect(submitSteps[0].status).toBe('succeeded');
+            expect(submitSteps[0].responseSnapshot?.workflowTransitionId).toBe(transitionId);
+            expect(typeof submitSteps[0].responseSnapshot?.reviewTaskId).toBe('number');
+
+            const retryCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'review_retry_scheduled'
+            );
+            expect(retryCheckpoint?.payload?.failedCount).toBe(1);
+
+            const completionCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'review_execution_completed'
+            );
+            expect(completionCheckpoint?.payload?.succeededCount).toBe(1);
+
+            const pendingTasksResponse = await fastify.inject({
+                method: 'GET',
+                url: '/api/review-tasks',
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(pendingTasksResponse.statusCode).toBe(200);
+            const pendingTasksPayload = JSON.parse(pendingTasksResponse.payload) as {
+                data: Array<{
+                    task: {
+                        contentItemId: number;
+                        workflowTransitionId: number;
+                        status: string;
+                    };
+                }>;
+            };
+            expect(
+                pendingTasksPayload.data.some((row) =>
+                    row.task.contentItemId === draftItemId
+                    && row.task.workflowTransitionId === transitionId
+                    && row.task.status === 'pending'
+                )
+            ).toBe(true);
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (draftItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemId));
+            }
+            if (transitionId) {
+                await db.delete(reviewTasks).where(eq(reviewTasks.workflowTransitionId, transitionId));
+                await db.delete(workflowTransitions).where(eq(workflowTransitions.id, transitionId));
+            }
+            if (workflowId) {
+                await db.delete(workflows).where(eq(workflows.id, workflowId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
     it('agent-run control approve action is idempotent', async () => {
         let runId: number | null = null;
 

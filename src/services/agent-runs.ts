@@ -1030,6 +1030,50 @@ export class AgentRunService {
                 }
             }
 
+            if (
+                updatedRun.status === 'queued'
+                && run.status === 'failed'
+                && updatedRun.runType === 'review_backlog_manager'
+            ) {
+                const [retryStats] = await tx.select({
+                    failedCount: sql<number>`count(*)::int`
+                })
+                    .from(agentRunSteps)
+                    .where(and(
+                        eq(agentRunSteps.runId, runId),
+                        eq(agentRunSteps.domainId, domainId),
+                        eq(agentRunSteps.actionType, 'submit_review'),
+                        eq(agentRunSteps.status, 'failed')
+                    ));
+
+                if ((retryStats?.failedCount ?? 0) > 0) {
+                    await tx.update(agentRunSteps)
+                        .set({
+                            status: 'pending',
+                            startedAt: null,
+                            completedAt: null,
+                            updatedAt: now,
+                            errorMessage: null,
+                            responseSnapshot: null
+                        })
+                        .where(and(
+                            eq(agentRunSteps.runId, runId),
+                            eq(agentRunSteps.domainId, domainId),
+                            eq(agentRunSteps.actionType, 'submit_review'),
+                            eq(agentRunSteps.status, 'failed')
+                        ));
+
+                    await tx.insert(agentRunCheckpoints).values({
+                        runId,
+                        domainId,
+                        checkpointKey: 'review_retry_scheduled',
+                        payload: {
+                            failedCount: retryStats.failedCount
+                        }
+                    });
+                }
+            }
+
             if (updatedRun.status === 'cancelled') {
                 await tx.update(agentRunSteps)
                     .set({
