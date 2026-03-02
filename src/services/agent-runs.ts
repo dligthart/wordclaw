@@ -404,6 +404,31 @@ export class AgentRunService {
                 eq(agentRunSteps.actionType, 'submit_review')
             ));
         if (submissionSteps.length === 0) {
+            const settledAt = new Date();
+            const [settledRun] = await db.update(agentRuns)
+                .set({
+                    status: 'succeeded',
+                    completedAt: settledAt,
+                    updatedAt: settledAt
+                })
+                .where(and(
+                    eq(agentRuns.id, runId),
+                    eq(agentRuns.domainId, domainId),
+                    eq(agentRuns.status, 'running')
+                ))
+                .returning();
+
+            if (settledRun) {
+                await db.insert(agentRunCheckpoints).values({
+                    runId,
+                    domainId,
+                    checkpointKey: 'review_execution_completed',
+                    payload: {
+                        succeededCount: 0,
+                        noop: true
+                    }
+                });
+            }
             return;
         }
 

@@ -832,6 +832,94 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
     });
 
+    it('review_backlog_manager auto-submit succeeds with noop completion when no candidates are staged', async () => {
+        let scopedTypeId: number | null = null;
+        let runId: number | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Backlog Noop Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `backlog-noop-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({ type: 'object' }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `noop-review-backlog-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    requireApproval: true,
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        autoSubmitReview: true
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const approveRun = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(approveRun.statusCode).toBe(200);
+            expect(JSON.parse(approveRun.payload).data.status).toBe('succeeded');
+
+            const details = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(details.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(details.payload) as {
+                data: {
+                    run: {
+                        status: string;
+                    };
+                    steps: Array<{
+                        actionType: string;
+                    }>;
+                    checkpoints: Array<{
+                        checkpointKey: string;
+                        payload?: {
+                            succeededCount?: number;
+                            noop?: boolean;
+                            settledStatus?: string;
+                        };
+                    }>;
+                };
+            };
+
+            expect(detailsPayload.data.run.status).toBe('succeeded');
+            expect(detailsPayload.data.steps.some((step) => step.actionType === 'submit_review')).toBe(false);
+
+            const completionCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'review_execution_completed'
+            );
+            expect(completionCheckpoint?.payload?.succeededCount).toBe(0);
+            expect(completionCheckpoint?.payload?.noop).toBe(true);
+
+            const settledCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'control_approve_settled'
+            );
+            expect(settledCheckpoint?.payload?.settledStatus).toBe('succeeded');
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
     it('review_backlog_manager auto-submit fails run when workflow is missing', async () => {
         let scopedTypeId: number | null = null;
         let draftItemId: number | null = null;
