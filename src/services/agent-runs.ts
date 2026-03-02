@@ -1124,6 +1124,20 @@ export class AgentRunService {
             .where(and(eq(agentRuns.id, runId), eq(agentRuns.domainId, domainId)));
         const resultRun = latestRun ?? updated;
 
+        if (resultRun.status !== updated.status) {
+            await db.insert(agentRunCheckpoints).values({
+                runId,
+                domainId,
+                checkpointKey: `control_${action}_settled`,
+                payload: {
+                    action,
+                    interimStatus: updated.status,
+                    settledStatus: resultRun.status,
+                    at: new Date().toISOString()
+                }
+            });
+        }
+
         await logAudit(domainId, 'update', 'agent_run', resultRun.id, {
             action,
             fromStatus: run.status,

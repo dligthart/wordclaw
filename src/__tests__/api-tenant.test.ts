@@ -764,6 +764,7 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                         checkpointKey: string;
                         payload?: {
                             succeededCount?: number;
+                            settledStatus?: string;
                         };
                     }>;
                 };
@@ -780,6 +781,11 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 (checkpoint) => checkpoint.checkpointKey === 'review_execution_completed'
             );
             expect(completionCheckpoint?.payload?.succeededCount).toBe(2);
+
+            const settledCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'control_approve_settled'
+            );
+            expect(settledCheckpoint?.payload?.settledStatus).toBe('succeeded');
 
             const pendingTasksResponse = await fastify.inject({
                 method: 'GET',
@@ -895,6 +901,7 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                         checkpointKey: string;
                         payload?: {
                             failedCount?: number;
+                            settledStatus?: string;
                         };
                     }>;
                 };
@@ -910,6 +917,11 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 (checkpoint) => checkpoint.checkpointKey === 'review_execution_failed'
             );
             expect(failedCheckpoint?.payload?.failedCount).toBe(1);
+
+            const settledCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'control_approve_settled'
+            );
+            expect(settledCheckpoint?.payload?.settledStatus).toBe('failed');
         } finally {
             if (runId) {
                 await db.delete(agentRuns).where(eq(agentRuns.id, runId));
