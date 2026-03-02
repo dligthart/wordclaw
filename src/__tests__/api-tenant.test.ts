@@ -826,6 +826,103 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
     });
 
+    it('review_backlog_manager auto-submit fails run when workflow is missing', async () => {
+        let scopedTypeId: number | null = null;
+        let draftItemId: number | null = null;
+        let runId: number | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Backlog Fail Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `backlog-fail-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({ type: 'object' }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [draftItem] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'missing-workflow-draft' }),
+                status: 'draft'
+            }).returning();
+            draftItemId = draftItem.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `fail-review-backlog-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    requireApproval: true,
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        autoSubmitReview: true
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const approveRun = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(approveRun.statusCode).toBe(200);
+            expect(JSON.parse(approveRun.payload).data.status).toBe('failed');
+
+            const details = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(details.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(details.payload) as {
+                data: {
+                    run: {
+                        status: string;
+                    };
+                    steps: Array<{
+                        actionType: string;
+                        status: string;
+                        errorMessage?: string | null;
+                    }>;
+                    checkpoints: Array<{
+                        checkpointKey: string;
+                        payload?: {
+                            failedCount?: number;
+                        };
+                    }>;
+                };
+            };
+
+            expect(detailsPayload.data.run.status).toBe('failed');
+            const submitSteps = detailsPayload.data.steps.filter((step) => step.actionType === 'submit_review');
+            expect(submitSteps).toHaveLength(1);
+            expect(submitSteps[0].status).toBe('failed');
+            expect(submitSteps[0].errorMessage).toContain('No active workflow transitions');
+
+            const failedCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'review_execution_failed'
+            );
+            expect(failedCheckpoint?.payload?.failedCount).toBe(1);
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (draftItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
     it('agent-run control approve action is idempotent', async () => {
         let runId: number | null = null;
 
