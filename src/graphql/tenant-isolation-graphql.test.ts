@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { agentRunDefinitions, agentRuns, contentItems, contentTypes, domains, workflowTransitions, workflows } from '../db/schema.js';
+import { agentRunDefinitions, agentRuns, contentItems, contentTypes, domains, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
 import { resolvers } from './resolvers.js';
 import { schema } from './schema.js';
 
@@ -606,6 +606,282 @@ describe('GraphQL Tenant Isolation', () => {
                 await db.delete(contentItems).where(eq(contentItems.id, contentItemId));
             }
             if (transitionId) {
+                await db.delete(reviewTasks).where(eq(reviewTasks.workflowTransitionId, transitionId));
+                await db.delete(workflowTransitions).where(eq(workflowTransitions.id, transitionId));
+            }
+            if (workflowId) {
+                await db.delete(workflows).where(eq(workflows.id, workflowId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
+    it('recovers failed auto-submit run via resume and subsequent approve', async () => {
+        let scopedTypeId: number | null = null;
+        let workflowId: number | null = null;
+        let transitionId: number | null = null;
+        let contentItemId: number | null = null;
+        let runId: string | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: 1,
+                name: `GraphQL Retry Type ${Date.now()}`,
+                slug: `graphql-retry-${Date.now()}`,
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: { title: { type: 'string' } },
+                    required: ['title']
+                }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [item] = await db.insert(contentItems).values({
+                domainId: 1,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'graphql-retry-item' }),
+                status: 'draft'
+            }).returning();
+            contentItemId = item.id;
+
+            const createRunResponse = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      mutation CreateRun($goal: String!, $metadata: JSON) {
+                        createAgentRun(goal: $goal, runType: "review_backlog_manager", requireApproval: true, metadata: $metadata) {
+                          id
+                          status
+                        }
+                      }
+                    `,
+                    variables: {
+                        goal: `graphql-retry-run-${Date.now()}`,
+                        metadata: {
+                            contentTypeId: scopedTypeId,
+                            autoSubmitReview: true
+                        }
+                    }
+                }
+            });
+            expect(createRunResponse.statusCode).toBe(200);
+            const createRunPayload = createRunResponse.json() as {
+                data?: {
+                    createAgentRun?: {
+                        id: string;
+                        status: string;
+                    };
+                };
+            };
+            runId = createRunPayload.data?.createAgentRun?.id ?? null;
+            expect(runId).toBeTruthy();
+            expect(createRunPayload.data?.createAgentRun?.status).toBe('waiting_approval');
+
+            const initialApproveResponse = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      mutation ControlRun($id: ID!, $action: String!) {
+                        controlAgentRun(id: $id, action: $action) {
+                          id
+                          status
+                        }
+                      }
+                    `,
+                    variables: {
+                        id: runId,
+                        action: 'approve'
+                    }
+                }
+            });
+            expect(initialApproveResponse.statusCode).toBe(200);
+            const initialApprovePayload = initialApproveResponse.json() as {
+                data?: {
+                    controlAgentRun?: {
+                        status: string;
+                    };
+                };
+            };
+            expect(initialApprovePayload.data?.controlAgentRun?.status).toBe('failed');
+
+            const [workflow] = await db.insert(workflows).values({
+                domainId: 1,
+                name: `GraphQL Retry Workflow ${Date.now()}`,
+                contentTypeId: scopedTypeId,
+                active: true
+            }).returning();
+            workflowId = workflow.id;
+
+            const [transition] = await db.insert(workflowTransitions).values({
+                workflowId: workflow.id,
+                fromState: 'draft',
+                toState: 'pending_review',
+                requiredRoles: []
+            }).returning();
+            transitionId = transition.id;
+
+            const resumeRunResponse = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      mutation ControlRun($id: ID!, $action: String!) {
+                        controlAgentRun(id: $id, action: $action) {
+                          id
+                          status
+                        }
+                      }
+                    `,
+                    variables: {
+                        id: runId,
+                        action: 'resume'
+                    }
+                }
+            });
+            expect(resumeRunResponse.statusCode).toBe(200);
+            const resumePayload = resumeRunResponse.json() as {
+                data?: {
+                    controlAgentRun?: {
+                        status: string;
+                    };
+                };
+            };
+            expect(resumePayload.data?.controlAgentRun?.status).toBe('queued');
+
+            const finalApproveResponse = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      mutation ControlRun($id: ID!, $action: String!) {
+                        controlAgentRun(id: $id, action: $action) {
+                          id
+                          status
+                          completedAt
+                        }
+                      }
+                    `,
+                    variables: {
+                        id: runId,
+                        action: 'approve'
+                    }
+                }
+            });
+            expect(finalApproveResponse.statusCode).toBe(200);
+            const finalApprovePayload = finalApproveResponse.json() as {
+                data?: {
+                    controlAgentRun?: {
+                        status: string;
+                        completedAt: string | null;
+                    };
+                };
+            };
+            expect(finalApprovePayload.data?.controlAgentRun?.status).toBe('succeeded');
+            expect(finalApprovePayload.data?.controlAgentRun?.completedAt).not.toBeNull();
+
+            const runDetailsResponse = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      query RunDetails($id: ID!) {
+                        agentRun(id: $id) {
+                          id
+                          status
+                          steps {
+                            actionType
+                            status
+                            responseSnapshot
+                          }
+                          checkpoints {
+                            checkpointKey
+                            payload
+                          }
+                        }
+                      }
+                    `,
+                    variables: {
+                        id: runId
+                    }
+                }
+            });
+            expect(runDetailsResponse.statusCode).toBe(200);
+            const runDetailsPayload = runDetailsResponse.json() as {
+                data?: {
+                    agentRun?: {
+                        status: string;
+                        steps: Array<{
+                            actionType: string;
+                            status: string;
+                            responseSnapshot?: {
+                                reviewTaskId?: number;
+                                workflowTransitionId?: number;
+                            } | null;
+                        }>;
+                        checkpoints: Array<{
+                            checkpointKey: string;
+                            payload?: {
+                                failedCount?: number;
+                                succeededCount?: number;
+                                settledStatus?: string;
+                            };
+                        }>;
+                    } | null;
+                };
+            };
+
+            const runDetails = runDetailsPayload.data?.agentRun;
+            expect(runDetails?.status).toBe('succeeded');
+            const submitSteps = (runDetails?.steps ?? []).filter((step) => step.actionType === 'submit_review');
+            expect(submitSteps).toHaveLength(1);
+            expect(submitSteps[0].status).toBe('succeeded');
+            expect(submitSteps[0].responseSnapshot?.workflowTransitionId).toBe(transitionId);
+            expect(typeof submitSteps[0].responseSnapshot?.reviewTaskId).toBe('number');
+
+            const retryCheckpoint = (runDetails?.checkpoints ?? []).find(
+                (checkpoint) => checkpoint.checkpointKey === 'review_retry_scheduled'
+            );
+            expect(retryCheckpoint?.payload?.failedCount).toBe(1);
+
+            const completionCheckpoint = (runDetails?.checkpoints ?? []).find(
+                (checkpoint) => checkpoint.checkpointKey === 'review_execution_completed'
+            );
+            expect(completionCheckpoint?.payload?.succeededCount).toBe(1);
+
+            const settledCheckpoints = (runDetails?.checkpoints ?? []).filter(
+                (checkpoint) => checkpoint.checkpointKey === 'control_approve_settled'
+            );
+            expect(settledCheckpoints.some((checkpoint) => checkpoint.payload?.settledStatus === 'failed')).toBe(true);
+            expect(settledCheckpoints.some((checkpoint) => checkpoint.payload?.settledStatus === 'succeeded')).toBe(true);
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, Number.parseInt(runId, 10)));
+            }
+            if (contentItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, contentItemId));
+            }
+            if (transitionId) {
+                await db.delete(reviewTasks).where(eq(reviewTasks.workflowTransitionId, transitionId));
                 await db.delete(workflowTransitions).where(eq(workflowTransitions.id, transitionId));
             }
             if (workflowId) {
