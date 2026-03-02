@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { agentRunDefinitions, agentRuns, contentItems, contentTypes, domains } from '../db/schema.js';
+import { agentRunDefinitions, agentRuns, contentItems, contentTypes, domains, workflowTransitions, workflows } from '../db/schema.js';
 import { resolvers } from './resolvers.js';
 import { schema } from './schema.js';
 
@@ -406,6 +406,213 @@ describe('GraphQL Tenant Isolation', () => {
         } finally {
             for (const definitionId of definitionIds) {
                 await db.delete(agentRunDefinitions).where(eq(agentRunDefinitions.id, definitionId));
+            }
+        }
+    });
+
+    it('auto-submits review steps and reports settled status through GraphQL agentRun', async () => {
+        let scopedTypeId: number | null = null;
+        let workflowId: number | null = null;
+        let transitionId: number | null = null;
+        let contentItemId: number | null = null;
+        let runId: string | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: 1,
+                name: `GraphQL Auto Submit Type ${Date.now()}`,
+                slug: `graphql-auto-submit-${Date.now()}`,
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: { title: { type: 'string' } },
+                    required: ['title']
+                }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [workflow] = await db.insert(workflows).values({
+                domainId: 1,
+                name: `GraphQL Auto Submit Workflow ${Date.now()}`,
+                contentTypeId: scopedTypeId,
+                active: true
+            }).returning();
+            workflowId = workflow.id;
+
+            const [transition] = await db.insert(workflowTransitions).values({
+                workflowId: workflow.id,
+                fromState: 'draft',
+                toState: 'pending_review',
+                requiredRoles: []
+            }).returning();
+            transitionId = transition.id;
+
+            const [item] = await db.insert(contentItems).values({
+                domainId: 1,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'graphql-auto-submit-item' }),
+                status: 'draft'
+            }).returning();
+            contentItemId = item.id;
+
+            const createRunResponse = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      mutation CreateRun($goal: String!, $runType: String!, $metadata: JSON) {
+                        createAgentRun(goal: $goal, runType: $runType, requireApproval: true, metadata: $metadata) {
+                          id
+                          status
+                        }
+                      }
+                    `,
+                    variables: {
+                        goal: `graphql-auto-submit-${Date.now()}`,
+                        runType: 'review_backlog_manager',
+                        metadata: {
+                            contentTypeId: scopedTypeId,
+                            autoSubmitReview: true
+                        }
+                    }
+                }
+            });
+            expect(createRunResponse.statusCode).toBe(200);
+            const createRunPayload = createRunResponse.json() as {
+                data?: {
+                    createAgentRun?: {
+                        id: string;
+                        status: string;
+                    };
+                };
+            };
+            runId = createRunPayload.data?.createAgentRun?.id ?? null;
+            expect(runId).toBeTruthy();
+            expect(createRunPayload.data?.createAgentRun?.status).toBe('waiting_approval');
+
+            const approveRunResponse = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      mutation ApproveRun($id: ID!, $action: String!) {
+                        controlAgentRun(id: $id, action: $action) {
+                          id
+                          status
+                          completedAt
+                        }
+                      }
+                    `,
+                    variables: {
+                        id: runId,
+                        action: 'approve'
+                    }
+                }
+            });
+            expect(approveRunResponse.statusCode).toBe(200);
+            const approveRunPayload = approveRunResponse.json() as {
+                data?: {
+                    controlAgentRun?: {
+                        id: string;
+                        status: string;
+                        completedAt: string | null;
+                    };
+                };
+            };
+            expect(approveRunPayload.data?.controlAgentRun?.status).toBe('succeeded');
+            expect(approveRunPayload.data?.controlAgentRun?.completedAt).not.toBeNull();
+
+            const runDetailsResponse = await app.inject({
+                method: 'POST',
+                url: '/graphql',
+                headers: {
+                    'x-domain-id': '1'
+                },
+                payload: {
+                    query: `
+                      query RunDetails($id: ID!) {
+                        agentRun(id: $id) {
+                          id
+                          status
+                          steps {
+                            actionType
+                            status
+                            responseSnapshot
+                          }
+                          checkpoints {
+                            checkpointKey
+                            payload
+                          }
+                        }
+                      }
+                    `,
+                    variables: {
+                        id: runId
+                    }
+                }
+            });
+            expect(runDetailsResponse.statusCode).toBe(200);
+            const runDetailsPayload = runDetailsResponse.json() as {
+                data?: {
+                    agentRun?: {
+                        status: string;
+                        steps: Array<{
+                            actionType: string;
+                            status: string;
+                            responseSnapshot?: {
+                                reviewTaskId?: number;
+                                workflowTransitionId?: number;
+                            } | null;
+                        }>;
+                        checkpoints: Array<{
+                            checkpointKey: string;
+                            payload?: {
+                                succeededCount?: number;
+                                settledStatus?: string;
+                            };
+                        }>;
+                    } | null;
+                };
+            };
+
+            const runDetails = runDetailsPayload.data?.agentRun;
+            expect(runDetails?.status).toBe('succeeded');
+            const submitSteps = (runDetails?.steps ?? []).filter((step) => step.actionType === 'submit_review');
+            expect(submitSteps).toHaveLength(1);
+            expect(submitSteps[0].status).toBe('succeeded');
+            expect(submitSteps[0].responseSnapshot?.workflowTransitionId).toBe(transitionId);
+            expect(typeof submitSteps[0].responseSnapshot?.reviewTaskId).toBe('number');
+
+            const completionCheckpoint = (runDetails?.checkpoints ?? []).find(
+                (checkpoint) => checkpoint.checkpointKey === 'review_execution_completed'
+            );
+            expect(completionCheckpoint?.payload?.succeededCount).toBe(1);
+
+            const settledCheckpoint = (runDetails?.checkpoints ?? []).find(
+                (checkpoint) => checkpoint.checkpointKey === 'control_approve_settled'
+            );
+            expect(settledCheckpoint?.payload?.settledStatus).toBe('succeeded');
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, Number.parseInt(runId, 10)));
+            }
+            if (contentItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, contentItemId));
+            }
+            if (transitionId) {
+                await db.delete(workflowTransitions).where(eq(workflowTransitions.id, transitionId));
+            }
+            if (workflowId) {
+                await db.delete(workflows).where(eq(workflows.id, workflowId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
             }
         }
     });
