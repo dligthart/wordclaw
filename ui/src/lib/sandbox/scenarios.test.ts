@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SCENARIOS } from "./scenarios";
 
 describe("sandbox scenarios", () => {
-    it("includes an executable MCP step in tri-protocol parity", () => {
+    it("includes an executable MCP step in the core-surface scenario", () => {
         const triProtocol = SCENARIOS.find(
             (scenario) => scenario.id === "tri-protocol",
         );

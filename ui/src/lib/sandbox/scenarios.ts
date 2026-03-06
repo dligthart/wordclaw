@@ -311,14 +311,14 @@ export const SCENARIOS: Scenario[] = [
     },
     {
         id: "tri-protocol",
-        title: "Tri-Protocol Parity (REST/GraphQL/MCP)",
+        title: "REST + MCP Core Surfaces",
         icon: "layers",
-        tagline: "Interact with the same system using REST, GraphQL, or tool use.",
-        differentiator: "Architecture",
+        tagline: "Run the core workflow through REST and MCP, with GraphQL shown as compatibility-only.",
+        differentiator: "Runtime Surfaces",
         steps: [
             {
                 title: "Create Shared Fixture via REST",
-                narration: "Create a deterministic content type used by all protocol calls in this scenario.",
+                narration: "Create a deterministic content type used by each surface in this scenario.",
                 method: "POST",
                 endpoint: "/api/content-types",
                 protocol: "REST",
@@ -352,7 +352,7 @@ export const SCENARIOS: Scenario[] = [
             },
             {
                 title: "Query via GraphQL",
-                narration: "The same item is instantly available via the GraphQL endpoint.",
+                narration: "The same item is available via the GraphQL compatibility endpoint when that surface is enabled.",
                 method: "POST",
                 endpoint: "/api/graphql",
                 protocol: "GRAPHQL",
@@ -363,7 +363,7 @@ export const SCENARIOS: Scenario[] = [
             },
             {
                 title: "Fetch via MCP Tool",
-                narration: "Use the sandbox MCP bridge to execute the same read operation through a tool-style call.",
+                narration: "Use the sandbox MCP bridge to execute the same read operation through the default agent-tooling surface.",
                 method: "POST",
                 endpoint: "/api/sandbox/mcp/execute",
                 protocol: "MCP",

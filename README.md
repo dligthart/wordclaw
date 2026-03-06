@@ -93,7 +93,7 @@ The server will start at `http://localhost:4000`.
 
 ## 🎮 Demos
 
-WordClaw includes a mix of core and experimental demos in `demos/` and `scripts/`:
+WordClaw includes core demos plus a clearly separated experimental sandbox in `demos/` and `scripts/`:
 
 1. **Headless React Blog (`demos/demo-blog`)**  
    Core demo.
@@ -112,9 +112,9 @@ WordClaw includes a mix of core and experimental demos in `demos/` and `scripts/
    An autonomous TypeScript agent that encounters a `402 Payment Required` L402 invoice when trying to publish a Guest Post. It programmatically parses the Macaroon, dummy-pays the Lightning invoice, and retries the request successfully.
    - Run the demo: `npx tsx demos/agent-l402-demo.ts`
 
-4. **Agent Skills Marketplace (`demos/agent-skills-marketplace`)**  
+4. **Marketplace Sandbox (`demos/agent-skills-marketplace`)**  
    Experimental / incubating demo.
-   A sandbox for broader marketplace-style ideas, including AP2-adjacent revenue-routing concepts. It is not part of the default supported WordClaw product path.
+   An isolated sandbox for marketplace-style ideas, including AP2-adjacent revenue-routing concepts. It sits outside the default supported WordClaw product path and should not shape the main operator story.
    - Run the setup script: `npx tsx scripts/setup-skills-marketplace.ts`
    - Start the marketplace: `cd demos/agent-skills-marketplace && npm run dev`
 
