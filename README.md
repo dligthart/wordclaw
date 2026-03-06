@@ -19,7 +19,7 @@
 -   **Agent-Friendly API**: REST responses include `recommendedNextAction`, `availableActions`, and `actionPriority` to guide automated clients.
 -   **REST + MCP Surfaces**: Primary agent access paths with strong content and governance semantics.
 -   **Governance by Default**: Dry-run support, approval workflows, audit logs, idempotency, and multi-tenant isolation.
--   **Supervisor Control Plane**: Human oversight for content, schemas, approvals, audit, and agent-key management.
+-   **Supervisor Control Plane**: Human oversight for content, schemas, approvals, audit, and API key management.
 
 ### Optional Modules
 
@@ -29,7 +29,7 @@
 ### Compatibility / Experimental
 
 -   **GraphQL**: Available in the current runtime as a compatibility surface.
--   **Incubating Ideas**: AP2, payouts, marketplace-oriented demos, and broader agent-economy features are not part of the default supported product path.
+-   **Incubating Ideas**: AP2, payouts, recommender systems, sandbox showcases, marketplace-oriented demos, and broader agent-economy features are not part of the default supported product path.
 
 ## 🛠️ Prerequisites
 
