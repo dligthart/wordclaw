@@ -1,6 +1,6 @@
 # Architecture Overview
 
-WordClaw is an AI-first headless CMS that exposes identical capabilities over three protocols — REST, GraphQL, and MCP (Model Context Protocol) — so both human operators and AI agents can manage content through a single runtime.
+WordClaw is a safe content runtime for AI agents and human supervisors. The current runtime is available through REST, MCP (Model Context Protocol), and GraphQL, but REST and MCP are the primary product surfaces while GraphQL is maintained as a compatibility layer.
 
 ## System Diagram
 
@@ -77,21 +77,21 @@ Every incoming HTTP request passes through a shared middleware pipeline before r
 
 ### API Layer
 
-Three protocol interfaces expose the same set of operations, alongside a dedicated UI:
+WordClaw currently exposes three interfaces, alongside a dedicated UI:
 
 - **REST** — RESTful routes under `/api/*` with OpenAPI documentation at `/documentation`.
-- **GraphQL** — Full query and mutation schema at `/graphql` with GraphiQL playground.
 - **MCP** — Model Context Protocol over stdio; exposes tools, resources, and prompts for LLM agents.
+- **GraphQL** — Compatibility surface at `/graphql` with GraphiQL playground.
 - **Supervisor UI** — A SvelteKit application served at `/ui` for human oversight, schema management, and audit log review.
 
-Feature parity across the three is enforced by an automated [capability parity contract](../src/contracts/capability-parity.test.ts) that runs in CI.
+The capability contract requires REST and MCP coverage for core features. GraphQL coverage is tracked when explicitly declared in the compatibility matrix.
 
 ### Services Layer
 
 Business logic lives in isolated service modules. No API handler accesses the database directly — all operations route through services that own validation, versioning, audit emission, and webhook delivery.
 
 #### Policy Engine & Context Adapters
-The `PolicyEngine` enforces rigorous cross-protocol parity. A request from REST, GraphQL, or MCP traverses through a `ContextAdapter` to map into a flat, protocol-agnostic `OperationContext`. The engine parses the active rules against the principal's scope and produces an immutable `PolicyDecision` (allow/deny) and automatically populates the `policy_decision_logs` database table.
+The `PolicyEngine` remains protocol-agnostic. A request from REST, MCP, or the current GraphQL compatibility surface traverses through a `ContextAdapter` to map into a flat, protocol-agnostic `OperationContext`. The engine parses the active rules against the principal's scope and produces an immutable `PolicyDecision` (allow/deny) and automatically populates the `policy_decision_logs` database table.
 
 #### Embedding Service (Vector RAG)
 An asynchronous `EmbeddingService` listens to the WordClaw `EventBus` for `content_item.published` events. It chunks the document payload, hits an external LLM Embeddings Provider (e.g. OpenAI), and stores vectors in a `pgvector` enabled Postgres table. This powers out-of-the-box semantic search endpoints for AI agents.

@@ -1,18 +1,24 @@
 # Capability Parity Matrix
 
-This matrix is the source of truth for protocol-level parity across:
+This matrix is the source of truth for capability coverage across protocol surfaces.
 
 - REST API (`src/api/routes.ts`)
-- GraphQL API (`src/graphql/schema.ts`, `src/graphql/resolvers.ts`)
 - MCP server (`src/mcp/server.ts`)
+- GraphQL API (`src/graphql/schema.ts`, `src/graphql/resolvers.ts`) as a compatibility surface
 
 Automated guardrail:
 
-- `src/contracts/capability-parity.test.ts` validates this contract in CI/local tests.
+- `src/contracts/capability-parity.test.ts` validates required surfaces in CI/local tests and checks GraphQL compatibility coverage when it is declared in the matrix.
+
+Contract tiers:
+
+- **Required core surfaces:** REST and MCP
+- **Compatibility surface:** GraphQL
+- **Rule for new capabilities:** add REST and MCP first; add GraphQL only when the compatibility surface is intentionally extended
 
 ## Coverage
 
-| Capability | REST | GraphQL | MCP | Dry-Run |
+| Capability | REST (Required) | GraphQL (Compatibility) | MCP (Required) | Dry-Run |
 | --- | --- | --- | --- | --- |
 | Create content type | `POST /api/content-types` | `createContentType` | `create_content_type` | Yes |
 | List content types | `GET /api/content-types` | `contentTypes` | `list_content_types` | N/A |
@@ -37,7 +43,6 @@ Any new operational capability must be added to:
 
 1. `src/contracts/capability-matrix.ts`
 2. REST route surface
-3. GraphQL schema/resolver surface
-4. MCP tool surface
+3. MCP tool surface
 
-If any one surface is missing, parity tests fail.
+GraphQL is optional for new capabilities. If a capability declares GraphQL coverage in the matrix, the compatibility tests require the schema/resolver surface to exist and stay aligned.

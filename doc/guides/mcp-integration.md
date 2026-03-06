@@ -1,6 +1,6 @@
 # MCP Integration
 
-WordClaw ships a [Model Context Protocol](https://modelcontextprotocol.io/) server so LLM agents can manage content without writing HTTP requests. The MCP server exposes the same operations as the REST and GraphQL APIs through **tools**, **resources**, and **prompts**.
+WordClaw ships a [Model Context Protocol](https://modelcontextprotocol.io/) server so LLM agents can manage content without writing HTTP requests. MCP is one of the two primary product surfaces alongside REST. The current runtime still exposes GraphQL, but GraphQL is treated as a compatibility layer rather than the default contract for new agent capabilities.
 
 ## Starting the MCP Server
 
@@ -107,4 +107,4 @@ All tool responses follow one of two patterns:
 
 ## Dry-Run Support
 
-All write tools accept a `dryRun` boolean parameter. When `true`, the tool validates input and simulates the operation without persisting changes.
+Core write tools accept a `dryRun` boolean parameter. When `true`, the tool validates input and simulates the operation without persisting changes. REST and MCP remain the required dry-run surfaces for core capability work; GraphQL mirrors those semantics where the compatibility surface is implemented.

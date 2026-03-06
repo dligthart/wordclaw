@@ -4,6 +4,6 @@
 import SwaggerUI from '../.vitepress/components/SwaggerUI.vue'
 </script>
 
-WordClaw exposes the same capabilities through three protocols. This document covers the REST API. For GraphQL, use the interactive playground at `/graphql`. For MCP, see [mcp-integration.md](../guides/mcp-integration).
+This document covers WordClaw's primary HTTP surface: the REST API. MCP is the primary agent-native companion surface; see [mcp-integration.md](../guides/mcp-integration). GraphQL remains available at `/graphql` as a compatibility layer.
 
 <SwaggerUI />

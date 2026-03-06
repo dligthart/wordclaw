@@ -1,6 +1,9 @@
 export type RestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export type GraphqlOperation = 'Query' | 'Mutation';
 
+export const requiredProtocolSurfaces = ['rest', 'mcp'] as const;
+export const compatibilityProtocolSurfaces = ['graphql'] as const;
+
 export type Capability = {
     id: string;
     description: string;
@@ -8,7 +11,7 @@ export type Capability = {
         method: RestMethod;
         path: string;
     };
-    graphql: {
+    graphql?: {
         operation: GraphqlOperation;
         field: string;
     };

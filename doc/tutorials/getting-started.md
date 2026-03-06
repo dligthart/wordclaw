@@ -143,4 +143,4 @@ RUN_INTEGRATION=1 npm test
 ```
 
 ### Capability Parity Contract
-Cross-protocol capability parity is documented in [mcp-integration.md](../guides/mcp-integration.md) and validated in the default `npm test` run to ensure REST, GraphQL, and MCP tools remain synced.
+Capability coverage is documented in [mcp-integration.md](../guides/mcp-integration.md) and validated in the default `npm test` run. REST and MCP are the required core surfaces; GraphQL is checked when a capability explicitly declares compatibility coverage.

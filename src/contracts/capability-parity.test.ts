@@ -4,7 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'graphql';
 
 import { schema } from '../graphql/schema.js';
-import { capabilityMatrix, dryRunCapabilities } from './capability-matrix.js';
+import {
+    capabilityMatrix,
+    compatibilityProtocolSurfaces,
+    dryRunCapabilities,
+    requiredProtocolSurfaces
+} from './capability-matrix.js';
 import type { RestMethod } from './capability-matrix.js';
 
 type GraphqlSurface = {
@@ -127,24 +132,14 @@ describe('Capability Parity Matrix', () => {
         expect(new Set(ids).size).toBe(ids.length);
     });
 
-    it('keeps REST, GraphQL, and MCP operations in sync', () => {
+    it('keeps required REST and MCP operations in sync', () => {
+        expect(requiredProtocolSurfaces).toEqual(['rest', 'mcp']);
+
         for (const capability of capabilityMatrix) {
             expect(
                 restRoutes.has(`${capability.rest.method} ${capability.rest.path}`),
                 `Missing REST route for ${capability.id}`
             ).toBe(true);
-
-            if (capability.graphql.operation === 'Query') {
-                expect(
-                    graphqlSurface.queries.has(capability.graphql.field),
-                    `Missing GraphQL query for ${capability.id}`
-                ).toBe(true);
-            } else {
-                expect(
-                    graphqlSurface.mutations.has(capability.graphql.field),
-                    `Missing GraphQL mutation for ${capability.id}`
-                ).toBe(true);
-            }
 
             expect(
                 mcpTools.has(capability.mcp.tool),
@@ -153,7 +148,29 @@ describe('Capability Parity Matrix', () => {
         }
     });
 
-    it('enforces dry-run support parity for write capabilities', () => {
+    it('tracks GraphQL compatibility operations when declared', () => {
+        expect(compatibilityProtocolSurfaces).toEqual(['graphql']);
+
+        for (const capability of capabilityMatrix) {
+            if (!capability.graphql) {
+                continue;
+            }
+
+            if (capability.graphql.operation === 'Query') {
+                expect(
+                    graphqlSurface.queries.has(capability.graphql.field),
+                    `Missing GraphQL compatibility query for ${capability.id}`
+                ).toBe(true);
+            } else {
+                expect(
+                    graphqlSurface.mutations.has(capability.graphql.field),
+                    `Missing GraphQL compatibility mutation for ${capability.id}`
+                ).toBe(true);
+            }
+        }
+    });
+
+    it('enforces dry-run support on required surfaces and GraphQL compatibility when present', () => {
         for (const capability of capabilityMatrix) {
             if (!dryRunCapabilities.has(capability.id)) {
                 continue;
@@ -174,9 +191,13 @@ describe('Capability Parity Matrix', () => {
                 `MCP dry-run missing for ${capability.id}`
             ).toBe(true);
 
+            if (!capability.graphql) {
+                continue;
+            }
+
             expect(
                 capability.graphql.operation,
-                `GraphQL dry-run capabilities must map to mutations (${capability.id})`
+                `GraphQL dry-run compatibility must map to mutations (${capability.id})`
             ).toBe('Mutation');
 
             const args = graphqlSurface.mutationArgs.get(capability.graphql.field);
