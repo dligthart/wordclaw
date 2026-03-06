@@ -84,6 +84,14 @@
         change: "added" | "removed" | "changed";
     };
 
+    type SchemaPreviewLine = {
+        label: string;
+        depth: number;
+        required: boolean;
+        typeLabel?: string;
+        summary?: boolean;
+    };
+
     const PAGE_SIZE = 20;
     const STATUS_OPTIONS = ["draft", "in_review", "published", "archived"];
     const PRIMARY_LABEL_FIELDS = ["title", "name", "headline", "slug"];
@@ -282,6 +290,152 @@
             .split("_")
             .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
             .join(" ");
+    }
+
+    function formatRelativeDate(value: string): string {
+        const timestamp = new Date(value).getTime();
+        if (Number.isNaN(timestamp)) {
+            return "unknown";
+        }
+
+        const deltaHours = Math.floor((Date.now() - timestamp) / 3_600_000);
+        if (deltaHours < 1) return "just now";
+        if (deltaHours < 24) return `${deltaHours}h ago`;
+
+        const deltaDays = Math.floor(deltaHours / 24);
+        if (deltaDays < 7) return `${deltaDays}d ago`;
+
+        return formatDate(value);
+    }
+
+    function resolveSchemaTypeLabel(
+        node: Record<string, unknown> | null,
+    ): string | undefined {
+        const type = typeof node?.type === "string" ? node.type : undefined;
+        if (!type) return undefined;
+
+        if (type === "string") return "text";
+        if (type === "integer" || type === "number") return "num";
+        if (type === "boolean") return "bool";
+        if (type === "array") return "list";
+        if (type === "object") return "group";
+        return type;
+    }
+
+    function collectSchemaPreviewLines(
+        properties: Record<string, unknown>,
+        required: Set<string>,
+        depth = 0,
+        lines: SchemaPreviewLine[] = [],
+        maxLines = 6,
+    ): SchemaPreviewLine[] {
+        const entries = Object.entries(properties);
+        let processedAtDepth = 0;
+
+        for (const [key, rawNode] of entries) {
+            if (lines.length >= maxLines) {
+                break;
+            }
+
+            processedAtDepth += 1;
+            const node =
+                rawNode && typeof rawNode === "object" && !Array.isArray(rawNode)
+                    ? (rawNode as Record<string, unknown>)
+                    : null;
+
+            lines.push({
+                label:
+                    typeof node?.type === "string" && node.type === "array"
+                        ? `${key}[]`
+                        : key,
+                depth,
+                required: required.has(key),
+                typeLabel: resolveSchemaTypeLabel(node),
+            });
+
+            const nestedProperties =
+                node?.properties &&
+                typeof node.properties === "object" &&
+                !Array.isArray(node.properties)
+                    ? (node.properties as Record<string, unknown>)
+                    : null;
+
+            if (nestedProperties && lines.length < maxLines && depth < 1) {
+                const nestedRequired = new Set(
+                    Array.isArray(node?.required)
+                        ? node.required.filter(
+                              (field): field is string =>
+                                  typeof field === "string",
+                          )
+                        : [],
+                );
+                collectSchemaPreviewLines(
+                    nestedProperties,
+                    nestedRequired,
+                    depth + 1,
+                    lines,
+                    maxLines,
+                );
+            }
+        }
+
+        const remaining = entries.length - processedAtDepth;
+        if (remaining > 0 && lines.length < maxLines + 1) {
+            lines.push({
+                label: `+${remaining} more field${remaining === 1 ? "" : "s"}`,
+                depth,
+                required: false,
+                summary: true,
+            });
+        }
+
+        return lines.slice(0, maxLines + 1);
+    }
+
+    function resolveSchemaPreviewLines(type: ContentType): SchemaPreviewLine[] {
+        try {
+            const parsed = JSON.parse(type.schema) as {
+                properties?: Record<string, unknown>;
+                required?: unknown[];
+            };
+            const properties =
+                parsed.properties &&
+                typeof parsed.properties === "object" &&
+                !Array.isArray(parsed.properties)
+                    ? parsed.properties
+                    : null;
+
+            if (!properties || Object.keys(properties).length === 0) {
+                return [
+                    {
+                        label: "Custom schema",
+                        depth: 0,
+                        required: false,
+                        summary: true,
+                    },
+                ];
+            }
+
+            return collectSchemaPreviewLines(
+                properties,
+                new Set(
+                    Array.isArray(parsed.required)
+                        ? parsed.required.filter(
+                              (field): field is string => typeof field === "string",
+                          )
+                        : [],
+                ),
+            );
+        } catch {
+            return [
+                {
+                    label: "Custom schema",
+                    depth: 0,
+                    required: false,
+                    summary: true,
+                },
+            ];
+        }
     }
 
     function resolveSchemaSummary(type: ContentType): string {
@@ -815,20 +969,32 @@
 
     <div class="flex-1 flex flex-col lg:flex-row gap-6 overflow-hidden">
         <aside
-            class="w-full lg:w-80 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedType
+            class="w-full lg:w-72 xl:w-64 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedType
                 ? 'hidden lg:flex'
                 : 'flex'}"
         >
             <div
                 class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"
             >
-                <h3
-                    class="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                >
-                    Models
-                </h3>
+                <div class="flex items-center justify-between gap-2">
+                    <div>
+                        <h3
+                            class="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider"
+                        >
+                            Models
+                        </h3>
+                        <p class="mt-1 text-[0.7rem] text-gray-500 dark:text-gray-400">
+                            Compact schema map
+                        </p>
+                    </div>
+                    <span
+                        class="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-[0.65rem] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                    >
+                        {contentTypes.length}
+                    </span>
+                </div>
             </div>
-            <div class="flex-1 overflow-y-auto p-3">
+            <div class="flex-1 overflow-y-auto p-2.5">
                 {#if loading}
                     <div class="flex justify-center p-8">
                         <LoadingSpinner size="md" />
@@ -838,81 +1004,106 @@
                         No types defined.
                     </p>
                 {:else}
-                    <ul class="space-y-2">
+                    <ul class="space-y-1.5">
                         {#each sortedContentTypes as type}
                             {@const typeStatusSummary =
                                 summarizeTypeStatuses(type)}
+                            {@const previewLines =
+                                resolveSchemaPreviewLines(type)}
                             <li>
                                 <button
                                     type="button"
                                     onclick={() => selectType(type)}
-                                    class="w-full text-left rounded-xl border px-4 py-3 transition-colors {selectedType?.id ===
+                                    class="w-full text-left rounded-xl border px-3 py-2.5 transition-colors {selectedType?.id ===
                                     type.id
-                                        ? 'border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-100'
+                                        ? 'border-blue-300 bg-blue-50/80 text-blue-900 shadow-sm dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-100'
                                         : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:border-gray-600 dark:hover:bg-gray-700/60'}"
                                 >
                                     <div
-                                        class="flex items-start justify-between gap-3"
+                                        class="flex items-start justify-between gap-2"
                                     >
-                                        <div>
-                                            <div class="font-semibold">
+                                        <div class="min-w-0">
+                                            <div class="truncate text-sm font-semibold">
                                                 {type.name}
                                             </div>
                                             <div
-                                                class="mt-1 text-xs font-mono text-gray-500 dark:text-gray-400"
+                                                class="mt-0.5 truncate text-[0.65rem] font-mono text-gray-500 dark:text-gray-400"
                                             >
                                                 {type.slug}
                                             </div>
                                         </div>
-                                        {#if (type.basePrice ?? 0) > 0}
+                                        <div class="flex items-center gap-1 shrink-0">
                                             <span
-                                                class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-                                            >
-                                                Paid
-                                            </span>
-                                        {/if}
-                                    </div>
-                                    <p
-                                        class="mt-3 text-sm text-gray-600 dark:text-gray-300 line-clamp-2"
-                                    >
-                                        {type.description ||
-                                            "Structured content model for supervised AI and operator workflows."}
-                                    </p>
-                                    <div class="mt-3 grid grid-cols-2 gap-2">
-                                        <div
-                                            class="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-700/60"
-                                        >
-                                            <div
-                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                                            >
-                                                Items
-                                            </div>
-                                            <div
-                                                class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100"
+                                                class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[0.65rem] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
                                             >
                                                 {resolveTypeItemCount(type)}
-                                            </div>
+                                            </span>
+                                            {#if (type.basePrice ?? 0) > 0}
+                                                <span
+                                                    class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                                                >
+                                                    Paid
+                                                </span>
+                                            {/if}
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="mt-2 rounded-lg bg-gray-50/80 px-2.5 py-2 dark:bg-gray-900/40"
+                                    >
+                                        <div class="flex items-center justify-between gap-2">
+                                            <p
+                                                class="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400"
+                                            >
+                                                Structure
+                                            </p>
+                                            <span
+                                                class="text-[0.62rem] text-gray-500 dark:text-gray-400"
+                                            >
+                                                {resolveSchemaSummary(type)}
+                                            </span>
                                         </div>
                                         <div
-                                            class="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-700/60"
+                                            class="mt-2 border-l border-gray-200 pl-2 dark:border-gray-700"
                                         >
-                                            <div
-                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                                            >
-                                                Last item
-                                            </div>
-                                            <div
-                                                class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100"
-                                            >
-                                                {resolveTypeLastActivity(type)}
-                                            </div>
+                                            {#each previewLines as line}
+                                                <div
+                                                    class="flex items-center gap-1.5 py-0.5 text-[0.68rem]"
+                                                    style={`padding-left: ${line.depth * 0.75}rem`}
+                                                >
+                                                    <span
+                                                        class="text-gray-400 dark:text-gray-500"
+                                                        >{line.summary ? "…" : "└"}</span
+                                                    >
+                                                    <span
+                                                        class={line.summary
+                                                            ? "truncate text-gray-500 italic dark:text-gray-400"
+                                                            : "truncate text-gray-700 dark:text-gray-200"}
+                                                    >
+                                                        {line.label}
+                                                    </span>
+                                                    {#if line.typeLabel}
+                                                        <span
+                                                            class="rounded bg-gray-200 px-1 py-0.5 text-[0.55rem] uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                                                        >
+                                                            {line.typeLabel}
+                                                        </span>
+                                                    {/if}
+                                                    {#if line.required}
+                                                        <span
+                                                            class="rounded bg-blue-100 px-1 py-0.5 text-[0.55rem] uppercase tracking-wide text-blue-700 dark:bg-blue-900/30 dark:text-blue-200"
+                                                        >
+                                                            req
+                                                        </span>
+                                                    {/if}
+                                                </div>
+                                            {/each}
                                         </div>
                                     </div>
                                     {#if typeStatusSummary.length > 0}
-                                        <div class="mt-3 flex flex-wrap gap-1.5">
+                                        <div class="mt-2 flex flex-wrap gap-1">
                                             {#each typeStatusSummary as summary}
                                                 <span
-                                                    class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-[0.65rem] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                                                    class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[0.6rem] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
                                                 >
                                                     {formatStatusLabel(
                                                         summary.status,
@@ -925,11 +1116,11 @@
                                         </div>
                                     {/if}
                                     <div
-                                        class="mt-3 flex items-center justify-between text-[0.7rem] text-gray-500 dark:text-gray-400"
+                                        class="mt-2 flex items-center justify-between gap-2 text-[0.65rem] text-gray-500 dark:text-gray-400"
                                     >
-                                        <span>{resolveSchemaSummary(type)}</span>
+                                        <span>{resolveTypeItemCount(type)} items</span>
                                         <span
-                                            >Model updated {formatDate(
+                                            >Updated {formatRelativeDate(
                                                 type.updatedAt,
                                             )}</span
                                         >
@@ -943,7 +1134,7 @@
         </aside>
 
         <div
-            class="flex-1 flex flex-col xl:flex-row gap-6 overflow-hidden {!selectedType
+            class="relative flex-1 min-w-0 overflow-hidden {!selectedType
                 ? 'hidden lg:flex'
                 : 'flex'}"
         >
@@ -955,9 +1146,7 @@
                 </div>
             {:else}
                 <section
-                    class="{selectedItem
-                        ? 'hidden xl:flex xl:w-[30rem]'
-                        : 'w-full'} transition-all duration-300 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+                    class="w-full bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
                 >
                     <div
                         class="px-4 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-br from-gray-50 to-white dark:from-gray-700/60 dark:to-gray-800/90"
@@ -1467,8 +1656,14 @@
                 </section>
 
                 {#if selectedItem}
+                    <button
+                        type="button"
+                        class="fixed inset-0 z-30 bg-slate-950/55 xl:hidden"
+                        aria-label="Close detail view"
+                        onclick={() => resetSelectedItemContext()}
+                    ></button>
                     <section
-                        class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+                        class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-800 dark:border-gray-700 xl:absolute xl:inset-y-3 xl:right-3 xl:w-[23rem] xl:max-w-none xl:rounded-2xl xl:border xl:border-gray-200 2xl:w-[25rem]"
                     >
                         <div
                             class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex items-start justify-between gap-4"
