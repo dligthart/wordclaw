@@ -86,7 +86,7 @@
                 {title}
             </h4>
             <div
-                class="text-sm text-blue-800/80 dark:text-blue-200/70 prose prose-sm prose-blue dark:prose-invert max-w-none"
+                class="text-sm text-blue-800/80 dark:text-blue-100 prose prose-sm prose-blue dark:prose-invert max-w-none"
             >
                 {@html htmlContent}
             </div>

@@ -87,6 +87,29 @@
     let errorTitle = $state<string | null>(null);
     let errorDetails = $state<string[]>([]);
     let errorAction = $state<ErrorAction>(null);
+    let contextSummaryItems = $derived([
+        { label: "domain", value: sandboxContext.domainId ?? "n/a" },
+        {
+            label: "contentTypeId",
+            value: sandboxContext.contentTypeId ?? "n/a",
+        },
+        {
+            label: "contentItemId",
+            value: sandboxContext.contentItemId ?? "n/a",
+        },
+        { label: "workflowId", value: sandboxContext.workflowId ?? "n/a" },
+        {
+            label: "transitionId",
+            value: sandboxContext.transitionId ?? "n/a",
+        },
+        {
+            label: "reviewTaskId",
+            value: sandboxContext.reviewTaskId ?? "n/a",
+        },
+        { label: "webhookId", value: sandboxContext.webhookId ?? "n/a" },
+        { label: "apiKeyId", value: sandboxContext.apiKeyId ?? "n/a" },
+        { label: "paymentId", value: sandboxContext.paymentId ?? "n/a" },
+    ]);
 
     function clearError() {
         errorTitle = null;
@@ -1933,7 +1956,7 @@
     <title>Agent Sandbox (Experimental) | WordClaw Supervisor</title>
 </svelte:head>
 
-<div class="h-full flex flex-col">
+<div class="h-full flex flex-col max-w-7xl w-full mx-auto">
     <div class="mb-6 flex flex-col gap-4">
         <div class="flex justify-between items-end gap-4 flex-wrap">
             <div>
@@ -1946,7 +1969,9 @@
                     demos, not the default supported supervisor workflow.
                 </p>
             </div>
-            <div class="flex items-center gap-2 flex-wrap">
+            <div
+                class="flex w-full lg:w-auto flex-col sm:flex-row items-stretch sm:items-center gap-2"
+            >
                 <label
                     for="template-select"
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -1955,7 +1980,7 @@
                 <select
                     id="template-select"
                     onchange={applyTemplate}
-                    class="block rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-1.5 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-xs min-w-[320px]"
+                    class="block w-full sm:w-auto min-w-0 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-1.5 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-xs sm:min-w-[320px]"
                 >
                     <option value="" disabled selected
                         >Select a real-world example...</option
@@ -1974,6 +1999,7 @@
                     class="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
                     onclick={refreshTemplateContext}
                     disabled={refreshingContext}
+                    aria-busy={refreshingContext}
                 >
                     {refreshingContext ? "Refreshing..." : "Refresh IDs"}
                 </button>
@@ -1988,48 +2014,37 @@
             </div>
         {/if}
 
-        <div class="flex flex-wrap gap-2 text-[11px]">
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >domain: {sandboxContext.domainId ?? "n/a"}</span
-            >
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >contentTypeId: {sandboxContext.contentTypeId ?? "n/a"}</span
-            >
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >contentItemId: {sandboxContext.contentItemId ?? "n/a"}</span
-            >
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >workflowId: {sandboxContext.workflowId ?? "n/a"}</span
-            >
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >transitionId: {sandboxContext.transitionId ?? "n/a"}</span
-            >
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >reviewTaskId: {sandboxContext.reviewTaskId ?? "n/a"}</span
-            >
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >webhookId: {sandboxContext.webhookId ?? "n/a"}</span
-            >
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >apiKeyId: {sandboxContext.apiKeyId ?? "n/a"}</span
-            >
-            <span
-                class="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
-                >paymentId: {sandboxContext.paymentId ?? "n/a"}</span
-            >
-        </div>
+        <dl
+            class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 text-xs"
+            aria-label="Captured sandbox context"
+        >
+            {#each contextSummaryItems as item}
+                <div
+                    class="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2"
+                >
+                    <dt class="font-medium text-gray-500 dark:text-gray-400">
+                        {item.label}
+                    </dt>
+                    <dd class="mt-1 font-mono text-gray-800 dark:text-gray-100">
+                        {item.value}
+                    </dd>
+                </div>
+            {/each}
+        </dl>
     </div>
 
-    <div class="mb-4 flex gap-4 border-b border-gray-200 dark:border-gray-700">
+    <div
+        class="mb-4 flex gap-4 border-b border-gray-200 dark:border-gray-700"
+        role="tablist"
+        aria-label="Sandbox modes"
+    >
         <button
+            id="sandbox-tab-guided"
+            role="tab"
+            type="button"
+            aria-selected={activeTab === "guided"}
+            aria-controls="sandbox-panel-guided"
+            tabindex={activeTab === "guided" ? 0 : -1}
             class="pb-2 px-1 text-sm font-medium border-b-2 {activeTab ===
             'guided'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
@@ -2039,6 +2054,12 @@
             Guided Scenarios
         </button>
         <button
+            id="sandbox-tab-advanced"
+            role="tab"
+            type="button"
+            aria-selected={activeTab === "advanced"}
+            aria-controls="sandbox-panel-advanced"
+            tabindex={activeTab === "advanced" ? 0 : -1}
             class="pb-2 px-1 text-sm font-medium border-b-2 {activeTab ===
             'advanced'
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
@@ -2051,7 +2072,14 @@
 
     {#if activeTab === "guided"}
         <div
-            class="flex flex-col md:flex-row flex-1 gap-6 overflow-hidden min-h-[600px] pb-6"
+            id="sandbox-panel-guided"
+            role="tabpanel"
+            aria-labelledby="sandbox-tab-guided"
+            tabindex="0"
+            class="flex-1"
+        >
+        <div
+            class="flex flex-col lg:flex-row flex-1 gap-6 overflow-visible lg:overflow-hidden min-h-[600px] pb-6"
         >
             <ScenarioSidebar
                 scenarios={SCENARIOS}
@@ -2060,7 +2088,7 @@
             />
 
             <div
-                class="w-full md:w-1/2 flex flex-col gap-4 overflow-y-auto pr-2"
+                class="w-full lg:w-1/2 flex flex-col gap-4 overflow-y-auto lg:pr-2"
             >
                 {#if engine.activeScenario && engine.currentStep}
                     <NarrationBlock
@@ -2172,7 +2200,7 @@
             </div>
 
             <div
-                class="w-full md:w-[35%] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
+                class="w-full lg:w-[35%] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
             >
                 {#if engine.activeScenario}
                     <div class="p-6 overflow-y-auto flex-1">
@@ -2250,12 +2278,20 @@
                 {/if}
             </div>
         </div>
+        </div>
     {:else}
         <div
-            class="flex flex-col md:flex-row flex-1 gap-6 overflow-hidden min-h-[600px]"
+            id="sandbox-panel-advanced"
+            role="tabpanel"
+            aria-labelledby="sandbox-tab-advanced"
+            tabindex="0"
+            class="flex-1"
+        >
+        <div
+            class="flex flex-col lg:flex-row flex-1 gap-6 overflow-visible lg:overflow-hidden min-h-[600px]"
         >
             <div
-                class="w-full md:w-1/2 flex flex-col gap-4 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700 p-5 overflow-y-auto"
+                class="w-full lg:w-1/2 flex flex-col gap-4 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-100 dark:border-gray-700 p-5 overflow-y-auto"
             >
                 <h3
                     class="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2"
@@ -2335,7 +2371,7 @@
             </div>
 
             <div
-                class="w-full md:w-1/2 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
+                class="w-full lg:w-1/2 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden relative"
             >
                 <div
                     class="bg-gray-100 dark:bg-gray-800 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center"
@@ -2437,6 +2473,7 @@
                     {/if}
                 </div>
             </div>
+        </div>
         </div>
     {/if}
 </div>

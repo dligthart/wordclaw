@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { Scenario, StepResult } from "$lib/types/sandbox";
-    import { Check, Circle, Loader2 } from "lucide-svelte";
+    import { Check, Circle } from "lucide-svelte";
 
     let {
         scenario,
@@ -69,10 +69,14 @@
                         {step.title}
                     </h4>
 
-                    {#if !step.narrativeOnly}
-                        <div
-                            class="mt-1 flex items-center gap-2 text-xs font-mono"
-                        >
+                    <div class="mt-1 flex items-center gap-2 text-xs font-mono">
+                        {#if step.narrativeOnly}
+                            <span
+                                class="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
+                            >
+                                Info Only
+                            </span>
+                        {:else}
                             <span
                                 class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
                             >
@@ -89,8 +93,8 @@
                             >
                                 {step.endpoint}
                             </span>
-                        </div>
-                    {/if}
+                        {/if}
+                    </div>
 
                     {#if result}
                         <div class="mt-2 text-xs flex items-center gap-2">
@@ -103,7 +107,7 @@
                                 {result.status}
                             </span>
                             <span class="text-slate-400">
-                                {result.elapsed.toFixed(0)}ms
+                                {result.elapsed.toFixed(1)}ms
                             </span>
                         </div>
                     {/if}

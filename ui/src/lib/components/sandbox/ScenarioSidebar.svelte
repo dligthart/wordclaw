@@ -26,7 +26,7 @@
 </script>
 
 <div
-    class="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800 overflow-y-auto w-64 shrink-0"
+    class="flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 overflow-y-auto w-full lg:w-64 shrink-0 rounded-lg"
 >
     <div class="p-4 border-b border-slate-200 dark:border-slate-800">
         <h2
@@ -53,6 +53,7 @@
                         {@const isActive = activeScenarioId === scenario.id}
                         <button
                             onclick={() => onSelect(scenario)}
+                            aria-pressed={isActive}
                             class="w-full text-left px-3 py-2 rounded-md transition-colors text-sm flex flex-col gap-1 border {isActive
                                 ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800'
                                 : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'}"
@@ -74,8 +75,8 @@
                                 {/if}
                             </div>
                             <span
-                                class="text-[11px] leading-tight {isActive
-                                    ? 'text-indigo-600/70 dark:text-indigo-400/70'
+                                class="text-xs leading-tight line-clamp-2 {isActive
+                                    ? 'text-indigo-700/80 dark:text-indigo-300/80'
                                     : 'text-slate-500'}"
                             >
                                 {scenario.tagline}
