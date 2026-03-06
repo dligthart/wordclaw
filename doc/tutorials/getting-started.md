@@ -82,7 +82,7 @@ npm run mcp:start
 
 ## Supervisor Web Interface
 
-WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, agent API keys, and reviewing audit logs/content approvals.
+WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, API keys, approvals, and audit review. Experimental pages remain available, but the default operator workflow is centered on those core control-plane surfaces.
 
 To run the frontend locally:
 1. Ensure the WordClaw backend is running (`npm run dev` in the root folder).
