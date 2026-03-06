@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { auditLogs, domains, payments } from '../db/schema.js';
@@ -33,13 +33,21 @@ describe('Supervisor Dashboard Domain Isolation', () => {
 
         supervisorToken = app.jwt.sign({ sub: 1, role: 'supervisor' });
 
+        const [{ nextDomainId }] = await db
+            .select({
+                nextDomainId: sql<number>`coalesce(max(${domains.id}), 0) + 1`
+            })
+            .from(domains);
+
         const [domainA] = await db.insert(domains).values({
+            id: nextDomainId,
             name: 'Supervisor Domain A',
             hostname: `supervisor-a-${Date.now()}.local`
         }).returning();
         domainAId = domainA.id;
 
         const [domainB] = await db.insert(domains).values({
+            id: nextDomainId + 1,
             name: 'Supervisor Domain B',
             hostname: `supervisor-b-${Date.now()}.local`
         }).returning();

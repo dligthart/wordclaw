@@ -30,10 +30,10 @@ describe('L402 Middleware', () => {
     expect(reply.status).toHaveBeenCalledWith(402);
     expect(reply.header).toHaveBeenCalledWith('WWW-Authenticate', expect.stringContaining('L402 macaroon='));
     expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({
-      success: false,
-      error: expect.objectContaining({
-        code: 'PAYMENT_REQUIRED'
-      })
+      code: 'PAYMENT_REQUIRED',
+      error: expect.any(String),
+      context: expect.any(Object),
+      remediation: expect.any(String)
     }));
   });
 
