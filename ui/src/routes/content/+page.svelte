@@ -184,6 +184,9 @@
             return left.name.localeCompare(right.name);
         }),
     );
+    let selectedTypeStatusSummary = $derived.by(() =>
+        selectedType ? summarizeTypeStatuses(selectedType) : [],
+    );
 
     function normalizeMeta(meta: Record<string, unknown> | null | undefined): ContentListMeta {
         return {
@@ -275,7 +278,10 @@
     }
 
     function formatStatusLabel(status: string): string {
-        return status.replaceAll("_", " ");
+        return status
+            .split("_")
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
     }
 
     function resolveSchemaSummary(type: ContentType): string {
@@ -729,6 +735,29 @@
         void loadItems(0, false);
     }
 
+    function applyStatusFilter(status: string) {
+        if (!selectedType) return;
+        filterStatus = status;
+        void loadItems(0, false);
+    }
+
+    function clearFilterChip(
+        filter: "search" | "status" | "createdAfter" | "createdBefore",
+    ) {
+        if (filter === "search") {
+            itemSearch = "";
+        } else if (filter === "status") {
+            filterStatus = "";
+        } else if (filter === "createdAfter") {
+            createdAfter = "";
+        } else if (filter === "createdBefore") {
+            createdBefore = "";
+        }
+
+        if (!selectedType) return;
+        void loadItems(0, false);
+    }
+
     function goToNextPage() {
         if (!itemsMeta.hasMore || loadingItems) return;
         void loadItems(itemsMeta.offset + itemsMeta.limit, false);
@@ -931,12 +960,12 @@
                         : 'w-full'} transition-all duration-300 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
                 >
                     <div
-                        class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"
+                        class="px-4 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-br from-gray-50 to-white dark:from-gray-700/60 dark:to-gray-800/90"
                     >
                         <div
                             class="flex items-start justify-between gap-3 flex-wrap"
                         >
-                            <div class="flex items-start gap-2">
+                            <div class="flex items-start gap-3 min-w-0">
                                 <button
                                     class="lg:hidden mt-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                                     aria-label="Back to models"
@@ -950,81 +979,90 @@
                                 >
                                     <Icon src={ChevronLeft} class="w-5 h-5" />
                                 </button>
-                                <div>
-                                    <h3
-                                        class="text-sm font-semibold text-gray-900 dark:text-white"
-                                    >
-                                        {selectedType.name}
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <h3
+                                            class="text-base font-semibold text-gray-900 dark:text-white"
+                                        >
+                                            {selectedType.name}
+                                        </h3>
+                                        {#if (selectedType.basePrice ?? 0) > 0}
+                                            <span
+                                                class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                                            >
+                                                Paid
+                                            </span>
+                                        {/if}
+                                        {#if activeWorkflow}
+                                            <span
+                                                class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
+                                            >
+                                                Workflow active
+                                            </span>
+                                        {/if}
+                                    </div>
                                     <p
-                                        class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                                        class="mt-1 text-xs font-mono text-gray-500 dark:text-gray-400"
                                     >
-                                        {currentRangeStart}-{currentRangeEnd} of
-                                        {itemsMeta.total} item(s)
+                                        {selectedType.slug}
+                                    </p>
+                                    <p
+                                        class="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300"
+                                    >
+                                        {selectedType.description ||
+                                            "Structured content model for supervised AI and operator workflows."}
                                     </p>
                                 </div>
                             </div>
-                            <span
-                                class="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-bold text-gray-700 dark:bg-gray-600 dark:text-gray-200"
-                            >
-                                {itemsMeta.total}
-                            </span>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span
+                                    class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-1 text-xs font-bold text-gray-700 dark:bg-gray-600 dark:text-gray-200"
+                                >
+                                    {itemsMeta.total} items
+                                </span>
+                                <span
+                                    class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                                >
+                                    {resolveSchemaSummary(selectedType)}
+                                </span>
+                            </div>
                         </div>
 
                         <form
-                            class="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-3"
+                            class="mt-4 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/30"
                             onsubmit={(event) => {
                                 event.preventDefault();
                                 applyFilters();
                             }}
                         >
-                            <div class="md:col-span-2 xl:col-span-1">
-                                <label
-                                    for="content-search"
-                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                >
-                                    Search
-                                </label>
-                                <input
-                                    id="content-search"
-                                    bind:value={itemSearch}
-                                    type="search"
-                                    placeholder="Title, slug, excerpt, or item ID"
-                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                />
-                            </div>
+                            <div class="grid gap-3 xl:grid-cols-[minmax(0,1.8fr)_220px_220px_auto] xl:items-end">
+                                <div>
+                                    <label
+                                        for="content-search"
+                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                    >
+                                        Find items
+                                    </label>
+                                    <input
+                                        id="content-search"
+                                        bind:value={itemSearch}
+                                        type="search"
+                                        placeholder="Search title, slug, excerpt, author, or item ID"
+                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
 
-                            <div>
-                                <label
-                                    for="status-filter"
-                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                >
-                                    Status
-                                </label>
-                                <select
-                                    id="status-filter"
-                                    bind:value={filterStatus}
-                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                >
-                                    <option value="">All statuses</option>
-                                    {#each STATUS_OPTIONS as status}
-                                        <option value={status}>{status}</option>
-                                    {/each}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label
-                                    for="sort-by"
-                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                >
-                                    Sort
-                                </label>
-                                <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label
+                                        for="sort-by"
+                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                    >
+                                        Sort by
+                                    </label>
                                     <select
                                         id="sort-by"
                                         bind:value={sortBy}
-                                        class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     >
                                         <option value="updatedAt">
                                             Updated
@@ -1036,69 +1074,239 @@
                                             Version
                                         </option>
                                     </select>
+                                </div>
+
+                                <div>
+                                    <label
+                                        for="sort-dir"
+                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                    >
+                                        Order
+                                    </label>
                                     <select
+                                        id="sort-dir"
                                         bind:value={sortDir}
-                                        class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     >
                                         <option value="desc">Newest first</option>
                                         <option value="asc">Oldest first</option>
                                     </select>
                                 </div>
-                            </div>
 
-                            <div>
-                                <label
-                                    for="created-after"
-                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                <div
+                                    class="flex flex-wrap items-center gap-2 xl:justify-end"
                                 >
-                                    Created After
-                                </label>
-                                <input
-                                    id="created-after"
-                                    bind:value={createdAfter}
-                                    type="date"
-                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                />
-                            </div>
-
-                            <div>
-                                <label
-                                    for="created-before"
-                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                >
-                                    Created Before
-                                </label>
-                                <input
-                                    id="created-before"
-                                    bind:value={createdBefore}
-                                    type="date"
-                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                />
-                            </div>
-
-                            <div
-                                class="md:col-span-2 xl:col-span-1 flex flex-wrap items-center gap-3"
-                            >
-                                <button
-                                    type="submit"
-                                    class="px-4 py-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md font-medium text-sm transition-colors border border-gray-300 dark:border-gray-600"
-                                >
-                                    Apply Filters
-                                </button>
-                                {#if hasActiveFilters}
                                     <button
-                                        type="button"
-                                        onclick={clearFilters}
-                                        class="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                        type="submit"
+                                        class="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
                                     >
-                                        Clear
+                                        Apply
                                     </button>
-                                {/if}
+                                    {#if hasActiveFilters}
+                                        <button
+                                            type="button"
+                                            onclick={clearFilters}
+                                            class="inline-flex items-center rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                                        >
+                                            Clear
+                                        </button>
+                                    {/if}
+                                </div>
                             </div>
+
+                            <div class="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px] xl:items-end">
+                                <div>
+                                    <p
+                                        class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                    >
+                                        Quick status
+                                    </p>
+                                    <div class="mt-2 flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            onclick={() => applyStatusFilter("")}
+                                            class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus ===
+                                            ''
+                                                ? 'border-blue-400 bg-blue-50 text-blue-900 dark:border-blue-600 dark:bg-blue-900/30 dark:text-blue-100'
+                                                : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}"
+                                        >
+                                            <span>All items</span>
+                                            <span class="font-mono"
+                                                >{resolveTypeItemCount(
+                                                    selectedType,
+                                                )}</span
+                                            >
+                                        </button>
+                                        {#each selectedTypeStatusSummary as summary}
+                                            <button
+                                                type="button"
+                                                onclick={() =>
+                                                    applyStatusFilter(
+                                                        summary.status,
+                                                    )}
+                                                class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus ===
+                                                summary.status
+                                                    ? 'border-blue-400 bg-blue-50 text-blue-900 dark:border-blue-600 dark:bg-blue-900/30 dark:text-blue-100'
+                                                    : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}"
+                                            >
+                                                <span
+                                                    >{formatStatusLabel(
+                                                        summary.status,
+                                                    )}</span
+                                                >
+                                                <span class="font-mono"
+                                                    >{summary.count}</span
+                                                >
+                                            </button>
+                                        {/each}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label
+                                        for="created-after"
+                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                    >
+                                        Created after
+                                    </label>
+                                    <input
+                                        id="created-after"
+                                        bind:value={createdAfter}
+                                        type="date"
+                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label
+                                        for="created-before"
+                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                    >
+                                        Created before
+                                    </label>
+                                    <input
+                                        id="created-before"
+                                        bind:value={createdBefore}
+                                        type="date"
+                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {#if hasActiveFilters}
+                                <div
+                                    class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700"
+                                >
+                                    <p
+                                        class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                    >
+                                        Active filters
+                                    </p>
+                                    <div class="mt-2 flex flex-wrap gap-2">
+                                        {#if itemSearch.trim()}
+                                            <button
+                                                type="button"
+                                                onclick={() =>
+                                                    clearFilterChip("search")}
+                                                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
+                                            >
+                                                <span
+                                                    >Search: "{itemSearch.trim()}"</span
+                                                >
+                                                <span aria-hidden="true">×</span>
+                                            </button>
+                                        {/if}
+                                        {#if filterStatus}
+                                            <button
+                                                type="button"
+                                                onclick={() =>
+                                                    clearFilterChip("status")}
+                                                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
+                                            >
+                                                <span
+                                                    >Status: {formatStatusLabel(
+                                                        filterStatus,
+                                                    )}</span
+                                                >
+                                                <span aria-hidden="true">×</span>
+                                            </button>
+                                        {/if}
+                                        {#if createdAfter}
+                                            <button
+                                                type="button"
+                                                onclick={() =>
+                                                    clearFilterChip(
+                                                        "createdAfter",
+                                                    )}
+                                                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
+                                            >
+                                                <span
+                                                    >After: {formatDate(
+                                                        `${createdAfter}T00:00:00.000Z`,
+                                                    )}</span
+                                                >
+                                                <span aria-hidden="true">×</span>
+                                            </button>
+                                        {/if}
+                                        {#if createdBefore}
+                                            <button
+                                                type="button"
+                                                onclick={() =>
+                                                    clearFilterChip(
+                                                        "createdBefore",
+                                                    )}
+                                                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
+                                            >
+                                                <span
+                                                    >Before: {formatDate(
+                                                        `${createdBefore}T00:00:00.000Z`,
+                                                    )}</span
+                                                >
+                                                <span aria-hidden="true">×</span>
+                                            </button>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/if}
                         </form>
                     </div>
 
                     <div class="flex-1 overflow-y-auto p-3 relative">
+                        <div
+                            class="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/20"
+                        >
+                            <div>
+                                <p
+                                    class="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400"
+                                >
+                                    Results
+                                </p>
+                                <p
+                                    class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100"
+                                >
+                                    Showing {currentRangeStart}-{currentRangeEnd}
+                                    of {itemsMeta.total}
+                                </p>
+                                <p
+                                    class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                                >
+                                    {hasActiveFilters
+                                        ? "Filtered list for the selected model."
+                                        : "Most recent items first. Select an item to inspect its history."}
+                                </p>
+                            </div>
+                            {#if activeWorkflow}
+                                <div
+                                    class="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-900/20 dark:text-blue-100"
+                                >
+                                    <div class="font-semibold uppercase tracking-wide">
+                                        Workflow
+                                    </div>
+                                    <div class="mt-1">{activeWorkflow.name}</div>
+                                </div>
+                            {/if}
+                        </div>
+
                         {#if loadingItems && items.length === 0}
                             <div class="flex justify-center p-10">
                                 <LoadingSpinner size="md" />
@@ -1107,7 +1315,18 @@
                             <div
                                 class="rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-8 text-center text-sm text-gray-500 dark:text-gray-400"
                             >
-                                No items found matching the current filters.
+                                <p>
+                                    No items found matching the current filters.
+                                </p>
+                                {#if hasActiveFilters}
+                                    <button
+                                        type="button"
+                                        onclick={clearFilters}
+                                        class="mt-4 inline-flex items-center rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                                    >
+                                        Reset filters
+                                    </button>
+                                {/if}
                             </div>
                         {:else}
                             <ul class="space-y-3">
@@ -1168,7 +1387,9 @@
                                                                 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
                                                                 : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
                                                     >
-                                                        {item.status}
+                                                        {formatStatusLabel(
+                                                            item.status,
+                                                        )}
                                                     </span>
                                                     <span
                                                         class="text-xs font-mono text-gray-500 dark:text-gray-400"
@@ -1270,7 +1491,7 @@
                                         {resolveItemLabel(selectedItem)}
                                     </h2>
                                     <span
-                                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider {selectedItem.status ===
+                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider {selectedItem.status ===
                                         'published'
                                             ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
                                             : selectedItem.status ===
@@ -1278,7 +1499,7 @@
                                                 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
                                                 : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
                                     >
-                                        {selectedItem.status}
+                                        {formatStatusLabel(selectedItem.status)}
                                     </span>
                                 </div>
                                 <p
@@ -1361,7 +1582,9 @@
                                                     Status
                                                 </dt>
                                                 <dd class="mt-1 text-sm">
-                                                    {selectedItem.status}
+                                                    {formatStatusLabel(
+                                                        selectedItem.status,
+                                                    )}
                                                 </dd>
                                             </div>
                                             <div>
