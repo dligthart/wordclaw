@@ -50,8 +50,19 @@
         recommendedNextAction?: string;
     };
 
+    type RequestCancelReason = "manual" | "timeout";
+
+    type ActiveRequestState = {
+        controller: AbortController;
+        reason: RequestCancelReason | null;
+    };
+
+    type ErrorAction = "refresh-context" | null;
+
     const CONTEXT_KEY = "__wc_agent_sandbox_context";
     const SCENARIO_STATE_KEY = "__wc_agent_sandbox_state_v1";
+    const REQUEST_TIMEOUT_MS = 15000;
+    const CONTEXT_REQUEST_TIMEOUT_MS = 8000;
     const DEFAULT_HEADERS = {
         "Content-Type": "application/json",
     };
@@ -72,6 +83,116 @@
     let sandboxContext = $state<SandboxContext>({});
     let activeTab = $state<"guided" | "advanced">("guided");
     let scenarioStateReady = $state(false);
+    let activeRequest = $state<ActiveRequestState | null>(null);
+    let errorTitle = $state<string | null>(null);
+    let errorDetails = $state<string[]>([]);
+    let errorAction = $state<ErrorAction>(null);
+
+    function clearError() {
+        errorTitle = null;
+        errorMsg = null;
+        errorDetails = [];
+        errorAction = null;
+    }
+
+    function setError(
+        message: string,
+        options: {
+            title?: string;
+            details?: string[];
+            action?: ErrorAction;
+        } = {},
+    ) {
+        errorTitle = options.title ?? null;
+        errorMsg = message;
+        errorDetails = options.details ?? [];
+        errorAction = options.action ?? null;
+    }
+
+    function isPlainTextPayload(payload: unknown): payload is string {
+        return typeof payload === "string";
+    }
+
+    function formatJsonParseError(field: string, error: unknown): string {
+        const detail =
+            error instanceof Error ? error.message : "Unable to parse JSON.";
+        return `Invalid JSON in ${field}: ${detail}`;
+    }
+
+    async function parseResponsePayload(response: Response): Promise<unknown> {
+        const rawText = await response.text();
+        if (!rawText) {
+            return null;
+        }
+
+        try {
+            const rawJson = JSON.parse(rawText);
+            return deepParseJson(rawJson);
+        } catch {
+            return rawText;
+        }
+    }
+
+    async function fetchWithTimeout(
+        path: string,
+        init: RequestInit,
+        options: {
+            timeoutMs?: number;
+            cancelable?: boolean;
+        } = {},
+    ): Promise<Response> {
+        const controller = new AbortController();
+        const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+        const trackedRequest = options.cancelable
+            ? {
+                  controller,
+                  reason: null as RequestCancelReason | null,
+              }
+            : null;
+
+        const timeoutId = setTimeout(() => {
+            if (trackedRequest) {
+                trackedRequest.reason = "timeout";
+            }
+            controller.abort();
+        }, timeoutMs);
+
+        if (trackedRequest) {
+            activeRequest = trackedRequest;
+        }
+
+        try {
+            return await fetch(path, {
+                ...init,
+                signal: controller.signal,
+            });
+        } catch (error) {
+            if (controller.signal.aborted) {
+                const reason = trackedRequest?.reason ?? "manual";
+                if (reason === "timeout") {
+                    throw new Error(
+                        `Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Cancel and retry, or verify the server is healthy.`,
+                    );
+                }
+                throw new Error("Request cancelled.");
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+            if (trackedRequest && activeRequest?.controller === controller) {
+                activeRequest = null;
+            }
+        }
+    }
+
+    function cancelActiveRequest() {
+        if (!activeRequest) {
+            return;
+        }
+
+        activeRequest.reason = "manual";
+        activeRequest.controller.abort();
+    }
 
     function readNumber(value: unknown): number | undefined {
         const parsed = Number(value);
@@ -306,13 +427,19 @@
 
     async function fetchSandboxData(path: string): Promise<any[] | null> {
         try {
-            const response = await fetch(path, {
+            const response = await fetchWithTimeout(
+                path,
+                {
                 headers: {
                     Accept: "application/json",
                     ...contextHeaders(),
                 },
                 credentials: "include",
-            });
+                },
+                {
+                    timeoutMs: CONTEXT_REQUEST_TIMEOUT_MS,
+                },
+            );
 
             if (!response.ok) {
                 return null;
@@ -1506,6 +1633,7 @@
     ];
 
     async function refreshTemplateContext() {
+        clearError();
         refreshingContext = true;
         sandboxContext = await hydrateSandboxContext();
         seedCapturedVarsFromContext();
@@ -1548,7 +1676,7 @@
         if (!engine.currentStep) return;
 
         loading = true;
-        errorMsg = null;
+        clearError();
 
         seedCapturedVarsFromContext();
 
@@ -1585,11 +1713,14 @@
         ]);
 
         if (unresolvedVars.size > 0) {
-            errorMsg = `Scenario prerequisites missing (${Array.from(
-                unresolvedVars,
-            ).join(
-                ", ",
-            )}). Run prerequisite steps or click Refresh IDs, then retry.`;
+            setError(
+                "Run prerequisite steps or refresh the captured IDs, then retry.",
+                {
+                    title: "Scenario prerequisites missing",
+                    details: Array.from(unresolvedVars).sort(),
+                    action: "refresh-context",
+                },
+            );
             loading = false;
             return;
         }
@@ -1601,28 +1732,27 @@
 
         const start = performance.now();
         try {
-            const res = await fetch(endpoint, {
-                method,
-                headers: parsedHeaders,
-                body: bodyPayload,
-                credentials: "include",
-            });
+            const res = await fetchWithTimeout(
+                endpoint,
+                {
+                    method,
+                    headers: parsedHeaders,
+                    body: bodyPayload,
+                    credentials: "include",
+                },
+                {
+                    cancelable: true,
+                },
+            );
 
-            let data = null;
-            const rawText = await res.text();
-            try {
-                const rawJson = JSON.parse(rawText);
-                data = deepParseJson(rawJson);
-            } catch {
-                data = rawText;
-            }
+            const data = await parseResponsePayload(res);
 
             const elapsed = Math.round(performance.now() - start);
             engine.recordResult(res.status, data, elapsed);
             captureResponseContext(endpoint, data);
             engine.advanceStep();
         } catch (err: any) {
-            errorMsg = err.message || "Network Error";
+            setError(err?.message || "Network Error");
         } finally {
             loading = false;
         }
@@ -1655,7 +1785,7 @@
         }
 
         loading = true;
-        errorMsg = null;
+        clearError();
         responseData = null;
         responseStatus = null;
         elapsedTime = null;
@@ -1666,8 +1796,8 @@
             if (headersText.trim()) {
                 parsedHeaders = normalizeHeaders(JSON.parse(headersText));
             }
-        } catch {
-            errorMsg = "Invalid JSON in Headers";
+        } catch (error) {
+            setError(formatJsonParseError("Headers", error));
             loading = false;
             return;
         }
@@ -1686,8 +1816,8 @@
                     const rawObj = JSON.parse(jsonBody);
                     bodyPayload = JSON.stringify(deepStringify(rawObj));
                 }
-            } catch {
-                errorMsg = "Invalid JSON in Request Body";
+            } catch (error) {
+                setError(formatJsonParseError("Request Body", error));
                 loading = false;
                 return;
             }
@@ -1695,28 +1825,27 @@
 
         const start = performance.now();
         try {
-            const res = await fetch(endpoint, {
-                method,
-                headers: parsedHeaders,
-                body: bodyPayload,
-                credentials: "include",
-            });
+            const res = await fetchWithTimeout(
+                endpoint,
+                {
+                    method,
+                    headers: parsedHeaders,
+                    body: bodyPayload,
+                    credentials: "include",
+                },
+                {
+                    cancelable: true,
+                },
+            );
 
             responseStatus = res.status;
 
-            const rawText = await res.text();
-            try {
-                const rawJson = JSON.parse(rawText);
-                const parsed = deepParseJson(rawJson);
-                responseData = parsed;
-                responseInsight = extractResponseInsight(parsed);
-                captureResponseContext(endpoint, parsed);
-            } catch {
-                responseData = rawText;
-                responseInsight = null;
-            }
+            const parsed = await parseResponsePayload(res);
+            responseData = parsed;
+            responseInsight = extractResponseInsight(parsed);
+            captureResponseContext(endpoint, parsed);
         } catch (err: any) {
-            errorMsg = err.message || "Network Error";
+            setError(err?.message || "Network Error");
         } finally {
             elapsedTime = Math.round(performance.now() - start);
             loading = false;
@@ -1984,13 +2113,22 @@
                             >
                                 {loading ? "Executing Step..." : "Run Step"}
                             </button>
-                            <button
-                                onclick={replayCurrentScenarioStep}
-                                disabled={loading}
-                                class="w-full py-2.5 px-4 shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-md disabled:opacity-50 transition-colors"
-                            >
-                                Replay Step
-                            </button>
+                            {#if loading}
+                                <button
+                                    type="button"
+                                    onclick={cancelActiveRequest}
+                                    class="w-full py-2.5 px-4 shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-md transition-colors"
+                                >
+                                    Cancel Request
+                                </button>
+                            {:else}
+                                <button
+                                    onclick={replayCurrentScenarioStep}
+                                    class="w-full py-2.5 px-4 shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 rounded-md transition-colors"
+                                >
+                                    Replay Step
+                                </button>
+                            {/if}
                         </div>
                     </div>
                 {:else if engine.isComplete && engine.activeScenario}
@@ -2044,6 +2182,23 @@
                             results={engine.stepResults}
                         />
                     </div>
+                    {#if errorMsg}
+                        <div
+                            class="border-t border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800"
+                        >
+                            <ErrorBanner
+                                title={errorTitle ?? undefined}
+                                message={errorMsg}
+                                details={errorDetails}
+                                actionLabel={errorAction === "refresh-context"
+                                    ? "Refresh IDs"
+                                    : undefined}
+                                onAction={errorAction === "refresh-context"
+                                    ? refreshTemplateContext
+                                    : undefined}
+                            />
+                        </div>
+                    {/if}
                     {#if engine.stepResults.size > 0 && engine.currentStepIndex > 0}
                         {@const lastResult = engine.stepResults.get(
                             engine.currentStepIndex - 1,
@@ -2067,11 +2222,29 @@
                             <div
                                 class="mt-3 max-h-[300px] overflow-auto border border-gray-100 dark:border-gray-700 rounded"
                             >
-                                <JsonCodeBlock
-                                    value={lastResult?.data}
-                                    class="m-0 text-xs !bg-gray-50 dark:!bg-gray-900"
-                                />
+                                {#if isPlainTextPayload(lastResult?.data)}
+                                    <pre
+                                        class="m-0 p-4 text-xs font-mono text-gray-800 dark:text-gray-200 bg-gray-50 dark:bg-gray-900 overflow-x-auto whitespace-pre-wrap break-words"
+                                    ><code>{lastResult?.data}</code></pre>
+                                {:else}
+                                    <JsonCodeBlock
+                                        value={lastResult?.data}
+                                        class="m-0 text-xs !bg-gray-50 dark:!bg-gray-900"
+                                    />
+                                {/if}
                             </div>
+                        </div>
+                    {/if}
+                    {#if loading}
+                        <div
+                            class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex flex-col items-center justify-center gap-3 backdrop-blur-sm"
+                        >
+                            <LoadingSpinner size="xl" />
+                            <p
+                                class="text-sm font-medium text-gray-700 dark:text-gray-200"
+                            >
+                                Executing request...
+                            </p>
                         </div>
                     {/if}
                 {/if}
@@ -2141,14 +2314,23 @@
                     {/if}
                 </div>
 
-                <div class="pt-2">
+                <div class="pt-2 flex gap-2">
                     <button
                         onclick={executeRequest}
                         disabled={loading}
-                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                        class="flex-1 flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
                     >
                         {loading ? "Sending..." : "Send Request"}
                     </button>
+                    {#if loading}
+                        <button
+                            type="button"
+                            onclick={cancelActiveRequest}
+                            class="py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                        >
+                            Cancel
+                        </button>
+                    {/if}
                 </div>
             </div>
 
@@ -2216,12 +2398,28 @@
                     {/if}
 
                     {#if errorMsg}
-                        <ErrorBanner message={errorMsg} />
-                    {:else if responseData !== null}
-                        <JsonCodeBlock
-                            value={responseData}
-                            class="m-0 w-full h-full"
+                        <ErrorBanner
+                            title={errorTitle ?? undefined}
+                            message={errorMsg}
+                            details={errorDetails}
+                            actionLabel={errorAction === "refresh-context"
+                                ? "Refresh IDs"
+                                : undefined}
+                            onAction={errorAction === "refresh-context"
+                                ? refreshTemplateContext
+                                : undefined}
                         />
+                    {:else if responseData !== null}
+                        {#if isPlainTextPayload(responseData)}
+                            <pre
+                                class="m-0 w-full h-full rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4 text-xs font-mono text-gray-800 dark:text-gray-200 overflow-x-auto whitespace-pre-wrap break-words"
+                            ><code>{responseData}</code></pre>
+                        {:else}
+                            <JsonCodeBlock
+                                value={responseData}
+                                class="m-0 w-full h-full"
+                            />
+                        {/if}
                     {:else if !loading}
                         <div
                             class="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm"

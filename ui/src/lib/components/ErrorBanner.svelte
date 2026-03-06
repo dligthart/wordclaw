@@ -2,12 +2,14 @@
     let {
         message,
         title,
+        details = [],
         actionLabel,
         onAction,
         class: className = "",
     }: {
         message: string;
         title?: string;
+        details?: string[];
         actionLabel?: string;
         onAction?: () => void;
         class?: string;
@@ -15,6 +17,8 @@
 </script>
 
 <div
+    role="alert"
+    aria-live="assertive"
     class={`bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 rounded ${className}`}
 >
     <div class="flex items-start justify-between gap-4">
@@ -25,6 +29,15 @@
                 </p>
             {/if}
             <p class="text-sm text-red-700 dark:text-red-400">{message}</p>
+            {#if details.length > 0}
+                <ul
+                    class="mt-2 list-disc pl-5 text-sm text-red-700 dark:text-red-300 space-y-1"
+                >
+                    {#each details as detail}
+                        <li>{detail}</li>
+                    {/each}
+                </ul>
+            {/if}
         </div>
         {#if actionLabel && onAction}
             <button

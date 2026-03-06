@@ -1,6 +1,63 @@
 <script lang="ts">
     import { Info } from "lucide-svelte";
-    import { marked } from "marked";
+    import { Marked, Renderer } from "marked";
+
+    const ALLOWED_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+
+    function escapeHtml(value: string): string {
+        return value
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+
+    function isSafeHref(href: string): boolean {
+        const value = href.trim();
+        if (!value) {
+            return false;
+        }
+
+        if (
+            value.startsWith("/") ||
+            value.startsWith("#") ||
+            value.startsWith("?") ||
+            value.startsWith("./") ||
+            value.startsWith("../")
+        ) {
+            return true;
+        }
+
+        if (value.startsWith("//")) {
+            return false;
+        }
+
+        try {
+            return ALLOWED_LINK_PROTOCOLS.has(new URL(value).protocol);
+        } catch {
+            return false;
+        }
+    }
+
+    const safeRenderer = new Renderer();
+    safeRenderer.html = ({ raw, text }) => escapeHtml(raw || text);
+    safeRenderer.image = ({ text }) => escapeHtml(text);
+
+    const safeMarked = new Marked({
+        breaks: true,
+        gfm: true,
+        renderer: safeRenderer,
+        walkTokens(token) {
+            if (
+                (token.type === "link" || token.type === "image") &&
+                token.href &&
+                !isSafeHref(token.href)
+            ) {
+                token.href = "#";
+            }
+        },
+    });
 
     let {
         title,
@@ -10,7 +67,7 @@
         narration: string;
     } = $props();
 
-    let htmlContent = $derived(marked.parse(narration || ""));
+    let htmlContent = $derived(String(safeMarked.parse(narration || "")));
 </script>
 
 <div
