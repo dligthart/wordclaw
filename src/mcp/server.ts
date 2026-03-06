@@ -2113,7 +2113,7 @@ server.prompt(
 
 server.tool(
     'get_my_earnings',
-    'Get agent earnings including pending, cleared, and disputed balances',
+    'Experimental: get agent earnings including pending, cleared, and disputed balances',
     {
         apiKeyId: z.number().describe('Your API Key ID')
     },

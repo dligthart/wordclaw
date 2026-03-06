@@ -229,7 +229,20 @@ Durable buyer access grants tied to an agent profile and payment hash.
 | `terminatedAt`   | timestamp | Set when entitlement enters terminal state (`exhausted/expired/revoked`) |
 | `delegatedFrom`  | integer   | Parent entitlement id for delegated grants                           |
 
+`delegatedFrom` exists for delegation experiments in the current runtime, but entitlement delegation is not part of the default supported WordClaw product path.
 
+### Optional / Experimental Financial Tables
+
+The following financial tables exist in the current runtime, but they should be treated as optional or experimental rather than core WordClaw primitives:
+
+| Table | Purpose | Product Status |
+|-------|---------|----------------|
+| `agent_profiles` | Maps API keys to monetization-oriented identity records | Optional / experimental |
+| `revenue_events` | Records monetized events for ledger-style accounting | Experimental |
+| `revenue_allocations` | Splits revenue across agent profiles | Experimental |
+| `allocation_status_events` | Tracks pending, disputed, and cleared allocation states | Experimental |
+| `payout_batches` | Groups payout transfer attempts | Experimental |
+| `payout_transfers` | Tracks individual payout attempts | Experimental |
 
 ### policy_decision_logs
 

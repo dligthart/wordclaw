@@ -3588,6 +3588,8 @@ paths:
               context: {}
   /api/entitlements/{id}/delegate:
     post:
+      summary: Experimental entitlement delegation
+      description: This endpoint remains available in the current runtime, but entitlement delegation is an experimental capability and not part of the default supported WordClaw product path.
       parameters:
         - name: body
           in: body
@@ -5440,6 +5442,8 @@ paths:
                     type: boolean
   /api/agents/me/earnings:
     get:
+      summary: Experimental agent earnings ledger
+      description: This endpoint exposes the current revenue-allocation ledger for an agent profile. It remains available, but payout-oriented accounting is not part of the default supported WordClaw product path.
       responses:
         "200":
           description: Default Response

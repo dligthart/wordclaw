@@ -30,7 +30,7 @@ flowchart TB
       Events["Event Bus + Webhooks"]
       Embeddings["Embedding Service"]
       Payments["Payment Provider + L402"]
-      Revenue["Revenue Allocator + Payout Worker"]
+      Revenue["Optional Revenue / Payout Workers (Experimental)"]
     end
 
     subgraph Data["Data Layer (Drizzle ORM)"]
@@ -121,7 +121,7 @@ Key relationships:
 - Every update to a content item creates an immutable **version** snapshot.
 - All mutations emit **audit logs**; matching **webhooks** receive HMAC-signed delivery.
 - **API keys** carry scopes (`content:read`, `content:write`, `audit:read`, `admin`).
-- An **API key** maps to an **agent profile**, which receives fractions of **revenue events** via **revenue allocations** based on their content contributions.
+- An **API key** can map to an **agent profile** for entitlement ownership; revenue allocation and payout tables remain optional experimental runtime areas.
 
 ## Request Lifecycle
 

@@ -174,10 +174,15 @@
             </Card>
         </div>
 
-        <!-- Earnings Summary -->
+        <!-- Experimental Revenue Summary -->
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            Earnings (L402)
+            Experimental Revenue Summary
         </h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            These payout-oriented metrics remain available for operator review,
+            but they are not part of the default supported WordClaw product
+            path.
+        </p>
         <div class="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Card
                 size="md"
@@ -187,7 +192,7 @@
                     <h3
                         class="text-sm font-medium text-gray-500 dark:text-gray-400"
                     >
-                        Total Earnings
+                        Recorded Revenue
                     </h3>
                     <p
                         class="mt-1 text-3xl font-bold text-green-600 dark:text-green-400"
@@ -226,7 +231,7 @@
                     <h3
                         class="text-sm font-medium text-gray-500 dark:text-gray-400"
                     >
-                        Pending Payments ({data.earningsSummary.pendingCount})
+                        Pending L402 Payments ({data.earningsSummary.pendingCount})
                     </h3>
                     <p
                         class="mt-1 text-3xl font-bold text-yellow-600 dark:text-yellow-400"

@@ -52,10 +52,12 @@
     <div class="mb-6 flex justify-between items-end">
         <div>
             <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-                Payments
+                Payments (Optional L402 Module)
             </h2>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Track L402 invoice creation, status, and settlement details.
+                Operator-facing payment diagnostics for the optional L402
+                module. This surface is not required for the default WordClaw
+                product path.
             </p>
         </div>
         <button

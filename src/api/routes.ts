@@ -2534,10 +2534,10 @@ export default async function apiRoutes(server: FastifyInstance) {
             const delegated = await LicensingService.delegateEntitlement(domainId, entitlement.id, targetProfile.id, readsAmount);
             return {
                 data: delegated,
-                meta: buildMeta('Share entitlement token', [], 'low', 0)
+                meta: buildMeta('Experimental: share entitlement grant', [], 'low', 0)
             };
         } catch (e: any) {
-            return reply.status(400).send(toErrorPayload(e.message, 'DELEGATION_FAILED', 'Check delegation rules.'));
+            return reply.status(400).send(toErrorPayload(e.message, 'DELEGATION_FAILED', 'Check delegation rules. Entitlement delegation is experimental.'));
         }
     });
 
@@ -4615,7 +4615,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const pKeyId = authPrincipal?.keyId;
 
         if (typeof pKeyId !== 'number') {
-            return reply.status(401).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can view earnings.'));
+            return reply.status(401).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can view the experimental earnings ledger.'));
         }
 
         const domainId = getDomainId(request);
@@ -4655,7 +4655,7 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         return reply.status(200).send({
             data: earnings,
-            meta: buildMeta('View your agent earnings', [], 'low', 1)
+            meta: buildMeta('Experimental: inspect your agent revenue ledger', [], 'low', 1)
         });
     });
 }

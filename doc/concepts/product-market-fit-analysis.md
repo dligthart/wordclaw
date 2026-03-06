@@ -7,16 +7,16 @@ WordClaw is positioned in an underserved, high-growth niche: **AI-to-System infr
 
 Its PMF is extremely strong for development teams building agentic workflows because it natively solves the three biggest hurdles AI agents face when interacting with external systems:
 1. **Discoverability & Formatting:** Strict JSON schema enforcement, native MCP (Model Context Protocol) integration, and `remediation` metadata embedded in errors.
-2. **Safety & Oversight:** Protocol-level parity for `?mode=dry_run`, strict policy isolation (Multi-tenant constraints), and a human-in-the-loop Supervisor UI.
-3. **Monetization:** Native L402 Lightning Network integration turns APIs into autonomous marketplaces where agents can natively negotiate and pay for resource consumption.
+2. **Safety & Oversight:** Dry-run support, strict policy isolation (Multi-tenant constraints), and a human-in-the-loop Supervisor UI.
+3. **Optional Monetization:** Native L402 Lightning integration can gate paid access without making the core product depend on marketplace, payout, or AP2 complexity.
 
 ## 2. Market Differentiation & Core Features
 
 WordClaw’s core feature set aligns tightly with its "AI-first" value proposition:
 
-*   **Model Context Protocol (MCP) Parity:** By offering 1:1 parity across REST, GraphQL, and MCP, WordClaw guarantees that any feature a human developer can build in REST is instantly available to a local LLM via MCP tools and resources.
+*   **REST + MCP Agent Surfaces:** WordClaw's strongest agent story comes from pairing a clear REST contract with a native MCP surface. GraphQL can remain available, but it should not define the default product promise.
 *   **AI-Targeted UX (Developer Ergonomics):** Returning `remediation`, `availableActions`, and `actionPriority` metadata directly in the JSON response gives LLMs deterministic pathways to self-correct (e.g., if a schema validation fails, the API tells the agent exactly how to fix the JSON payload).
-*   **Built-in L402 Micropayments:** Gating content creation/reads behind Lightning invoices allows for dynamic pricing without requiring agents to hold traditional credit cards or subscription API keys.
+*   **Built-in L402 Micropayments:** Gating content creation/reads behind Lightning invoices adds an optional monetization path without requiring fiat billing or subscription infrastructure.
 *   **Multi-Domain (Tenant) Isolation:** Critical for enterprise adoption where an agency might host multiple bespoke environments for different fine-tuned agent deployments.
 
 ## 3. Feature Creep Analysis & Technical Debt Risks
