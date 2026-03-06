@@ -5,6 +5,7 @@ import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
+import { isExperimentalRevenueEnabled } from '../config/runtime-features.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure, redactPremiumFields } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authenticateApiRequest, getDomainId } from './auth.js';
@@ -4598,64 +4599,66 @@ export default async function apiRoutes(server: FastifyInstance) {
         });
     });
 
-    server.get('/agents/me/earnings', {
-        schema: {
-            response: {
-                200: createAIResponse(Type.Object({
-                    pending: Type.Number(),
-                    cleared: Type.Number(),
-                    disputed: Type.Number()
-                })),
-                401: AIErrorResponse,
-                404: AIErrorResponse
+    if (isExperimentalRevenueEnabled()) {
+        server.get('/agents/me/earnings', {
+            schema: {
+                response: {
+                    200: createAIResponse(Type.Object({
+                        pending: Type.Number(),
+                        cleared: Type.Number(),
+                        disputed: Type.Number()
+                    })),
+                    401: AIErrorResponse,
+                    404: AIErrorResponse
+                }
             }
-        }
-    }, async (request, reply) => {
-        const authPrincipal = (request as any).authPrincipal;
-        const pKeyId = authPrincipal?.keyId;
+        }, async (request, reply) => {
+            const authPrincipal = (request as any).authPrincipal;
+            const pKeyId = authPrincipal?.keyId;
 
-        if (typeof pKeyId !== 'number') {
-            return reply.status(401).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can view the experimental earnings ledger.'));
-        }
-
-        const domainId = getDomainId(request);
-        const [profile] = await db.select().from(agentProfiles).where(and(eq(agentProfiles.apiKeyId, pKeyId), eq(agentProfiles.domainId, domainId)));
-
-        if (!profile) {
-            return reply.status(404).send(toErrorPayload('Profile not found', 'PROFILE_NOT_FOUND', 'Agent profile does not exist.'));
-        }
-
-        const latestEvents = await db.execute(sql`
-            WITH LatestStatus AS (
-                SELECT DISTINCT ON (allocation_id) allocation_id, status 
-                FROM allocation_status_events 
-                ORDER BY allocation_id, created_at DESC
-            )
-            SELECT ls.status, SUM(ra.amount_sats) as total
-            FROM revenue_allocations ra
-            JOIN LatestStatus ls ON ls.allocation_id = ra.id
-            WHERE ra.agent_profile_id = ${profile.id}
-            GROUP BY ls.status
-        `);
-
-        const rows: any[] = (latestEvents as any).rows || latestEvents;
-        const earnings = {
-            pending: 0,
-            cleared: 0,
-            disputed: 0
-        };
-
-        for (const row of rows) {
-            const status = row.status as keyof typeof earnings;
-            const total = parseInt(row.total || '0', 10);
-            if (status in earnings) {
-                earnings[status] = total;
+            if (typeof pKeyId !== 'number') {
+                return reply.status(401).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can view the experimental earnings ledger.'));
             }
-        }
 
-        return reply.status(200).send({
-            data: earnings,
-            meta: buildMeta('Experimental: inspect your agent revenue ledger', [], 'low', 1)
+            const domainId = getDomainId(request);
+            const [profile] = await db.select().from(agentProfiles).where(and(eq(agentProfiles.apiKeyId, pKeyId), eq(agentProfiles.domainId, domainId)));
+
+            if (!profile) {
+                return reply.status(404).send(toErrorPayload('Profile not found', 'PROFILE_NOT_FOUND', 'Agent profile does not exist.'));
+            }
+
+            const latestEvents = await db.execute(sql`
+                WITH LatestStatus AS (
+                    SELECT DISTINCT ON (allocation_id) allocation_id, status 
+                    FROM allocation_status_events 
+                    ORDER BY allocation_id, created_at DESC
+                )
+                SELECT ls.status, SUM(ra.amount_sats) as total
+                FROM revenue_allocations ra
+                JOIN LatestStatus ls ON ls.allocation_id = ra.id
+                WHERE ra.agent_profile_id = ${profile.id}
+                GROUP BY ls.status
+            `);
+
+            const rows: any[] = (latestEvents as any).rows || latestEvents;
+            const earnings = {
+                pending: 0,
+                cleared: 0,
+                disputed: 0
+            };
+
+            for (const row of rows) {
+                const status = row.status as keyof typeof earnings;
+                const total = parseInt(row.total || '0', 10);
+                if (status in earnings) {
+                    earnings[status] = total;
+                }
+            }
+
+            return reply.status(200).send({
+                data: earnings,
+                meta: buildMeta('Experimental: inspect your agent revenue ledger', [], 'low', 1)
+            });
         });
-    });
+    }
 }

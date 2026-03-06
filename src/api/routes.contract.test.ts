@@ -64,6 +64,7 @@ function resetMocks() {
 
 const originalAuthRequired = process.env.AUTH_REQUIRED;
 const originalApiKeys = process.env.API_KEYS;
+const originalExperimentalRevenue = process.env.ENABLE_EXPERIMENTAL_REVENUE;
 
 function restoreAuthEnv() {
     if (originalAuthRequired === undefined) {
@@ -77,6 +78,12 @@ function restoreAuthEnv() {
     } else {
         process.env.API_KEYS = originalApiKeys;
     }
+
+    if (originalExperimentalRevenue === undefined) {
+        delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
+    } else {
+        process.env.ENABLE_EXPERIMENTAL_REVENUE = originalExperimentalRevenue;
+    }
 }
 
 describe('API Route Contracts', () => {
@@ -89,6 +96,41 @@ describe('API Route Contracts', () => {
     afterEach(() => {
         resetMocks();
         restoreAuthEnv();
+    });
+
+    it('does not register the experimental earnings route by default', async () => {
+        delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/agents/me/earnings',
+            });
+
+            expect(response.statusCode).toBe(404);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('registers the experimental earnings route when explicitly enabled', async () => {
+        process.env.ENABLE_EXPERIMENTAL_REVENUE = 'true';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/agents/me/earnings',
+            });
+
+            expect(response.statusCode).toBe(401);
+
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('API_KEY_REQUIRED');
+        } finally {
+            await app.close();
+        }
     });
 
     it('returns EMPTY_UPDATE_BODY for content-type update with empty body', async () => {

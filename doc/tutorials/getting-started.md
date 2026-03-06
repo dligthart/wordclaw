@@ -42,6 +42,7 @@
    | `DATABASE_URL`  | `postgres://postgres:postgres@localhost:5432/wordclaw` | PostgreSQL connection string     |
    | `AUTH_REQUIRED` | `false`                                          | Require API key authentication   |
    | `API_KEYS`      | *(see .env.example)*                             | Comma-separated key definitions  |
+   | `ENABLE_EXPERIMENTAL_REVENUE` | `false`                           | Enable experimental earnings and payout surfaces |
 
 5. **Run database migrations**
 

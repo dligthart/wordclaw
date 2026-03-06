@@ -61,8 +61,9 @@
     AUTH_REQUIRED=true
     OPENAI_API_KEY=
     API_KEYS=writer=content:read|content:write|audit:read,reader=content:read|audit:read
+    ENABLE_EXPERIMENTAL_REVENUE=false
     ```
-    `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). If unset, semantic search returns a clear disabled response and write-side embedding sync is skipped.
+    `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). If unset, semantic search returns a clear disabled response and write-side embedding sync is skipped. `ENABLE_EXPERIMENTAL_REVENUE` remains `false` by default and should only be enabled if you explicitly want the earnings route, MCP tool, and payout workers available.
 
 ## 🗄️ Database Setup
 

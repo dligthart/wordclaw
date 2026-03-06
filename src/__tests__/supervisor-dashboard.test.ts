@@ -13,6 +13,7 @@ describe('Supervisor Dashboard Domain Isolation', () => {
     let domainAId: number;
     let domainBId: number;
     let supervisorToken: string;
+    const originalExperimentalRevenue = process.env.ENABLE_EXPERIMENTAL_REVENUE;
 
     beforeAll(async () => {
         app = Fastify({ logger: false });
@@ -90,6 +91,11 @@ describe('Supervisor Dashboard Domain Isolation', () => {
 
     afterAll(async () => {
         await app?.close();
+        if (originalExperimentalRevenue === undefined) {
+            delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
+        } else {
+            process.env.ENABLE_EXPERIMENTAL_REVENUE = originalExperimentalRevenue;
+        }
         if (domainAId) {
             await db.delete(domains).where(eq(domains.id, domainAId));
         }
@@ -112,6 +118,8 @@ describe('Supervisor Dashboard Domain Isolation', () => {
     });
 
     it('scopes dashboard aggregates and events to requested domain', async () => {
+        process.env.ENABLE_EXPERIMENTAL_REVENUE = 'true';
+
         const response = await app.inject({
             method: 'GET',
             url: '/api/supervisors/dashboard',
@@ -130,11 +138,14 @@ describe('Supervisor Dashboard Domain Isolation', () => {
                 rollbacks: number;
                 totalAgentsActive: number;
             };
+            experimentalModules: {
+                revenue: boolean;
+            };
             earningsSummary: {
                 total: number;
                 pending: number;
                 pendingCount: number;
-            };
+            } | null;
             recentEvents: Array<{ domainId: number; details: string | null }>;
             alerts: Array<{ type: string; message: string }>;
         };
@@ -145,9 +156,12 @@ describe('Supervisor Dashboard Domain Isolation', () => {
         expect(payload.activitySummary.rollbacks).toBe(1);
         expect(payload.activitySummary.totalAgentsActive).toBe(2);
 
-        expect(payload.earningsSummary.total).toBe(150);
-        expect(payload.earningsSummary.pending).toBe(70);
-        expect(payload.earningsSummary.pendingCount).toBe(1);
+        expect(payload.experimentalModules.revenue).toBe(true);
+        expect(payload.earningsSummary).not.toBeNull();
+        const earningsSummary = payload.earningsSummary!;
+        expect(earningsSummary.total).toBe(150);
+        expect(earningsSummary.pending).toBe(70);
+        expect(earningsSummary.pendingCount).toBe(1);
 
         expect(payload.recentEvents.every((event) => event.domainId === domainAId)).toBe(true);
         expect(payload.recentEvents.some((event) => event.details === 'domain-b-create')).toBe(false);
@@ -155,5 +169,29 @@ describe('Supervisor Dashboard Domain Isolation', () => {
         const alertMessages = payload.alerts.map((alert) => alert.message);
         expect(alertMessages.some((message) => message.includes('domain-a-error'))).toBe(true);
         expect(alertMessages.some((message) => message.includes('domain-b-error'))).toBe(false);
+    });
+
+    it('omits experimental revenue summary when the module is disabled', async () => {
+        delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
+
+        const response = await app.inject({
+            method: 'GET',
+            url: '/api/supervisors/dashboard',
+            headers: {
+                cookie: `supervisor_session=${supervisorToken}`,
+                'x-wordclaw-domain': String(domainAId)
+            }
+        });
+
+        expect(response.statusCode).toBe(200);
+        const payload = response.json() as {
+            experimentalModules: {
+                revenue: boolean;
+            };
+            earningsSummary: null;
+        };
+
+        expect(payload.experimentalModules.revenue).toBe(false);
+        expect(payload.earningsSummary).toBeNull();
     });
 });

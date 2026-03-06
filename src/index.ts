@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { db, pool } from './db/index.js';
+import { isExperimentalRevenueEnabled } from './config/runtime-features.js';
 import { accessEventsWorker } from './workers/access-events.js';
 import { paymentReconciliationWorker } from './workers/payment-reconciliation.js';
 import { buildServer } from './server.js';
@@ -17,20 +18,24 @@ const start = async () => {
         accessEventsWorker.start(); // Start the background worker
         paymentReconciliationWorker.start();
 
-        const { allocationStateWorker } = await import('./workers/allocation-state.worker.js');
-        allocationStateWorker.start();
+        if (isExperimentalRevenueEnabled()) {
+            const { allocationStateWorker } = await import('./workers/allocation-state.worker.js');
+            allocationStateWorker.start();
 
-        const { payoutWorker } = await import('./workers/payout.worker.js');
-        payoutWorker.start();
+            const { payoutWorker } = await import('./workers/payout.worker.js');
+            payoutWorker.start();
+        }
 
         const shutdown = async (signal: string) => {
             server.log.info(`Received ${signal}, shutting down gracefully...`);
             try {
-                const { allocationStateWorker } = await import('./workers/allocation-state.worker.js');
-                allocationStateWorker.stop();
+                if (isExperimentalRevenueEnabled()) {
+                    const { allocationStateWorker } = await import('./workers/allocation-state.worker.js');
+                    allocationStateWorker.stop();
 
-                const { payoutWorker } = await import('./workers/payout.worker.js');
-                payoutWorker.stop();
+                    const { payoutWorker } = await import('./workers/payout.worker.js');
+                    payoutWorker.stop();
+                }
 
                 accessEventsWorker.stop();
                 paymentReconciliationWorker.stop();
