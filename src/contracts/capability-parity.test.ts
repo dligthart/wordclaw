@@ -246,38 +246,13 @@ describe('Capability Parity Matrix', () => {
         expect(queryArgNames?.has('cursor')).toBe(true);
     });
 
-    it('keeps agent-run filtering contract aligned', () => {
-        const runsRouteBlock = getRestRouteBlock(routesSource, 'GET', '/agent-runs');
-        expect(runsRouteBlock?.includes('status: Type.Optional(Type.String())')).toBe(true);
-        expect(runsRouteBlock?.includes('runType: Type.Optional(Type.String())')).toBe(true);
-        expect(runsRouteBlock?.includes('definitionId: Type.Optional(Type.Number())')).toBe(true);
-
-        const runsToolBlock = getMcpToolBlock(mcpSource, 'list_agent_runs');
-        expect(runsToolBlock?.includes('status: z.string().optional()')).toBe(true);
-        expect(runsToolBlock?.includes('runType: z.string().optional()')).toBe(true);
-        expect(runsToolBlock?.includes('definitionId: z.number().optional()')).toBe(true);
-
-        const queryArgNames = graphqlSurface.queryArgs.get('agentRuns');
-        expect(queryArgNames?.has('status')).toBe(true);
-        expect(queryArgNames?.has('runType')).toBe(true);
-        expect(queryArgNames?.has('definitionId')).toBe(true);
-        expect(queryArgNames?.has('limit')).toBe(true);
-        expect(queryArgNames?.has('offset')).toBe(true);
-    });
-
-    it('keeps agent-run-definition filtering contract aligned', () => {
-        const definitionsRouteBlock = getRestRouteBlock(routesSource, 'GET', '/agent-run-definitions');
-        expect(definitionsRouteBlock?.includes('active: Type.Optional(Type.Boolean())')).toBe(true);
-        expect(definitionsRouteBlock?.includes('runType: Type.Optional(Type.String())')).toBe(true);
-
-        const definitionsToolBlock = getMcpToolBlock(mcpSource, 'list_agent_run_definitions');
-        expect(definitionsToolBlock?.includes('active: z.boolean().optional()')).toBe(true);
-        expect(definitionsToolBlock?.includes('runType: z.string().optional()')).toBe(true);
-
-        const queryArgNames = graphqlSurface.queryArgs.get('agentRunDefinitions');
-        expect(queryArgNames?.has('active')).toBe(true);
-        expect(queryArgNames?.has('runType')).toBe(true);
-        expect(queryArgNames?.has('limit')).toBe(true);
-        expect(queryArgNames?.has('offset')).toBe(true);
+    it('keeps incubator agent-run capabilities out of the core parity matrix', () => {
+        expect(
+            capabilityMatrix.some((capability) =>
+                capability.id.includes('agent_run')
+                || capability.rest.path.startsWith('/agent-run')
+                || capability.mcp.tool.includes('agent_run')
+            )
+        ).toBe(false);
     });
 });

@@ -20,6 +20,8 @@ export type Capability = {
     };
 };
 
+// Core capability coverage only. Incubator surfaces such as agent-run orchestration
+// are intentionally excluded from the default parity contract.
 export const capabilityMatrix: Capability[] = [
     {
         id: 'create_content_type',
@@ -181,62 +183,6 @@ export const capabilityMatrix: Capability[] = [
         rest: { method: 'GET', path: '/payments/:id' },
         graphql: { operation: 'Query', field: 'payment' },
         mcp: { tool: 'get_payment' }
-    },
-    {
-        id: 'create_agent_run_definition',
-        description: 'Create autonomous run definition',
-        rest: { method: 'POST', path: '/agent-run-definitions' },
-        graphql: { operation: 'Mutation', field: 'createAgentRunDefinition' },
-        mcp: { tool: 'create_agent_run_definition' }
-    },
-    {
-        id: 'list_agent_run_definitions',
-        description: 'List autonomous run definitions',
-        rest: { method: 'GET', path: '/agent-run-definitions' },
-        graphql: { operation: 'Query', field: 'agentRunDefinitions' },
-        mcp: { tool: 'list_agent_run_definitions' }
-    },
-    {
-        id: 'get_agent_run_definition',
-        description: 'Get autonomous run definition by ID',
-        rest: { method: 'GET', path: '/agent-run-definitions/:id' },
-        graphql: { operation: 'Query', field: 'agentRunDefinition' },
-        mcp: { tool: 'get_agent_run_definition' }
-    },
-    {
-        id: 'update_agent_run_definition',
-        description: 'Update autonomous run definition',
-        rest: { method: 'PUT', path: '/agent-run-definitions/:id' },
-        graphql: { operation: 'Mutation', field: 'updateAgentRunDefinition' },
-        mcp: { tool: 'update_agent_run_definition' }
-    },
-    {
-        id: 'create_agent_run',
-        description: 'Create autonomous content ops run',
-        rest: { method: 'POST', path: '/agent-runs' },
-        graphql: { operation: 'Mutation', field: 'createAgentRun' },
-        mcp: { tool: 'create_agent_run' }
-    },
-    {
-        id: 'list_agent_runs',
-        description: 'List autonomous runs',
-        rest: { method: 'GET', path: '/agent-runs' },
-        graphql: { operation: 'Query', field: 'agentRuns' },
-        mcp: { tool: 'list_agent_runs' }
-    },
-    {
-        id: 'get_agent_run',
-        description: 'Get autonomous run by ID',
-        rest: { method: 'GET', path: '/agent-runs/:id' },
-        graphql: { operation: 'Query', field: 'agentRun' },
-        mcp: { tool: 'get_agent_run' }
-    },
-    {
-        id: 'control_agent_run',
-        description: 'Control autonomous run lifecycle',
-        rest: { method: 'POST', path: '/agent-runs/:id/control' },
-        graphql: { operation: 'Mutation', field: 'controlAgentRun' },
-        mcp: { tool: 'control_agent_run' }
     }
 ];
 

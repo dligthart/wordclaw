@@ -148,4 +148,4 @@ RUN_INTEGRATION=1 npm test
 ```
 
 ### Capability Parity Contract
-Capability coverage is documented in [mcp-integration.md](../guides/mcp-integration.md) and validated in the default `npm test` run. REST and MCP are the required core surfaces; GraphQL is checked when a capability explicitly declares compatibility coverage.
+Core capability coverage is documented in [mcp-integration.md](../guides/mcp-integration.md) and validated in the default `npm test` run. REST and MCP are the required core surfaces; GraphQL is checked when a capability explicitly declares compatibility coverage. Incubator APIs such as agent runs are tested separately and are not part of the default parity matrix.

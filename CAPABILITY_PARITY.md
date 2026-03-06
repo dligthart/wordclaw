@@ -1,6 +1,8 @@
 # Capability Parity Matrix
 
-This matrix is the source of truth for capability coverage across protocol surfaces.
+This matrix is the source of truth for core capability coverage across protocol surfaces.
+
+Incubator surfaces such as agent-run orchestration are intentionally excluded from the default matrix. They may exist behind runtime feature flags, but they are not part of the supported core parity contract.
 
 - REST API (`src/api/routes.ts`)
 - MCP server (`src/mcp/server.ts`)
@@ -39,7 +41,7 @@ Contract tiers:
 
 ## Enforcement Rule
 
-Any new operational capability must be added to:
+Any new core operational capability must be added to:
 
 1. `src/contracts/capability-matrix.ts`
 2. REST route surface

@@ -2,6 +2,8 @@
 
 WordClaw ships a [Model Context Protocol](https://modelcontextprotocol.io/) server so LLM agents can manage content without writing HTTP requests. MCP is one of the two primary product surfaces alongside REST. The current runtime still exposes GraphQL, but GraphQL is treated as a compatibility layer rather than the default contract for new agent capabilities.
 
+The tool coverage documented in this guide reflects the default core parity contract. Incubator-only tools, such as agent-run orchestration, are intentionally excluded unless operators explicitly enable those runtime flags.
+
 ## Starting the MCP Server
 
 ```bash
