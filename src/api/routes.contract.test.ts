@@ -726,6 +726,77 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('accepts content-item search and sort query params', async () => {
+        const app = await buildServer();
+        const countWhereMock = vi.fn().mockResolvedValue([{ total: 1 }]);
+        const offsetMock = vi.fn().mockResolvedValue([
+            {
+                item: {
+                    id: 11,
+                    contentTypeId: 3,
+                    data: '{"title":"Hello World","slug":"hello-world"}',
+                    status: 'published',
+                    version: 4,
+                    createdAt: new Date('2026-03-05T10:00:00.000Z'),
+                    updatedAt: new Date('2026-03-06T10:00:00.000Z')
+                },
+                schema: '{"type":"object"}',
+                basePrice: 0
+            }
+        ]);
+        const limitMock = vi.fn(() => ({ offset: offsetMock }));
+        const orderByMock = vi.fn(() => ({ limit: limitMock }));
+        const whereMock = vi.fn(() => ({ orderBy: orderByMock }));
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: countWhereMock
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: () => ({
+                        where: whereMock
+                    }),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?contentTypeId=3&q=hello&sortBy=createdAt&sortDir=asc&limit=25&offset=5'
+            });
+
+            expect(response.statusCode).toBe(200);
+
+            const body = response.json() as {
+                data: Array<{ id: number; status: string; version: number }>;
+                meta: { total: number; offset: number; limit: number; hasMore: boolean };
+            };
+
+            expect(body.data).toHaveLength(1);
+            expect(body.data[0]).toMatchObject({
+                id: 11,
+                status: 'published',
+                version: 4
+            });
+            expect(body.meta).toMatchObject({
+                total: 1,
+                offset: 5,
+                limit: 25,
+                hasMore: false
+            });
+            expect(countWhereMock).toHaveBeenCalledTimes(1);
+            expect(whereMock).toHaveBeenCalledTimes(1);
+            expect(orderByMock).toHaveBeenCalledTimes(1);
+            expect(limitMock).toHaveBeenCalledWith(25);
+            expect(offsetMock).toHaveBeenCalledWith(5);
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns INVALID_WEBHOOK_EVENTS when webhook registration has empty events', async () => {
         const app = await buildServer();
 

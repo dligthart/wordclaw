@@ -2,24 +2,29 @@
     import { fetchApi, ApiError } from "$lib/api";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
-    import { formatJson } from "$lib/utils";
+    import { deepParseJson, formatJson } from "$lib/utils";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
-    import { Icon, ChevronLeft, XMark } from "svelte-hero-icons";
+    import { Icon, ArrowPath, ChevronLeft, XMark } from "svelte-hero-icons";
 
     type ContentType = {
         id: number;
         name: string;
         slug: string;
-        schema: any;
+        description?: string;
+        schema: string;
+        basePrice?: number;
+        createdAt: string;
+        updatedAt: string;
     };
 
     type ContentItem = {
         id: number;
+        contentTypeId: number;
         status: string;
         version: number;
-        data: any;
+        data: unknown;
         createdAt: string;
         updatedAt: string;
     };
@@ -28,7 +33,7 @@
         id: number;
         version: number;
         status: string;
-        data: any;
+        data: unknown;
         createdAt: string;
     };
 
@@ -55,6 +60,41 @@
         createdAt: string;
     };
 
+    type ContentListMeta = {
+        total: number;
+        offset: number;
+        limit: number;
+        hasMore: boolean;
+    };
+
+    type ItemSortKey = "updatedAt" | "createdAt" | "version";
+    type ItemSortDir = "asc" | "desc";
+
+    type DiffEntry = {
+        key: string;
+        before: string;
+        after: string;
+        change: "added" | "removed" | "changed";
+    };
+
+    const PAGE_SIZE = 20;
+    const STATUS_OPTIONS = ["draft", "in_review", "published", "archived"];
+    const PRIMARY_LABEL_FIELDS = ["title", "name", "headline", "slug"];
+    const SUMMARY_FIELDS = [
+        "summary",
+        "excerpt",
+        "description",
+        "content",
+        "body",
+        "text",
+    ];
+    const DEFAULT_ITEMS_META: ContentListMeta = {
+        total: 0,
+        offset: 0,
+        limit: PAGE_SIZE,
+        hasMore: false,
+    };
+
     let contentTypes = $state<ContentType[]>([]);
     let selectedType = $state<ContentType | null>(null);
     let items = $state<ContentItem[]>([]);
@@ -63,60 +103,317 @@
     let comments = $state<ReviewComment[]>([]);
     let activeWorkflow = $state<ActiveWorkflow | null>(null);
 
+    let itemSearch = $state("");
+    let filterStatus = $state("");
+    let createdAfter = $state("");
+    let createdBefore = $state("");
+    let sortBy = $state<ItemSortKey>("updatedAt");
+    let sortDir = $state<ItemSortDir>("desc");
+    let itemsMeta = $state<ContentListMeta>({ ...DEFAULT_ITEMS_META });
+
+    let selectedVersionForDiff = $state<number | null>(null);
     let newComment = $state("");
     let submittingReview = $state(false);
-
     let loading = $state(true);
     let loadingItems = $state(false);
     let error = $state<string | null>(null);
-
     let rollingBack = $state(false);
 
-    onMount(async () => {
+    let availableTransitions = $derived.by(() => {
+        if (!activeWorkflow || !selectedItem) {
+            return [];
+        }
+
+        const currentItem = selectedItem;
+        return activeWorkflow.transitions.filter(
+            (transition) => transition.fromState === currentItem.status,
+        );
+    });
+    let currentRangeStart = $derived(items.length === 0 ? 0 : itemsMeta.offset + 1);
+    let currentRangeEnd = $derived(
+        items.length === 0 ? 0 : itemsMeta.offset + items.length,
+    );
+    let hasActiveFilters = $derived(
+        Boolean(
+            itemSearch.trim() ||
+                filterStatus ||
+                createdAfter ||
+                createdBefore ||
+                sortBy !== "updatedAt" ||
+                sortDir !== "desc",
+        ),
+    );
+    let selectedDiffVersion = $derived(
+        selectedVersionForDiff === null
+            ? versions[0] ?? null
+            : versions.find(
+                  (version) => version.version === selectedVersionForDiff,
+              ) ?? versions[0] ?? null,
+    );
+    let selectedDiffEntries = $derived(
+        selectedDiffVersion && selectedItem
+            ? buildDiffEntries(
+                  selectedItem.data,
+                  selectedDiffVersion.data,
+                  selectedItem.status,
+                  selectedDiffVersion.status,
+              )
+            : [],
+    );
+
+    function normalizeMeta(meta: Record<string, unknown> | null | undefined): ContentListMeta {
+        return {
+            total: Number(meta?.total ?? 0),
+            offset: Number(meta?.offset ?? 0),
+            limit: Number(meta?.limit ?? PAGE_SIZE),
+            hasMore: Boolean(meta?.hasMore),
+        };
+    }
+
+    function parseStructuredData(payload: unknown): Record<string, unknown> | null {
+        const parsed = deepParseJson(payload);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return null;
+        }
+        return parsed as Record<string, unknown>;
+    }
+
+    function truncate(value: string, max = 140): string {
+        return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+    }
+
+    function stringifyPreview(value: unknown, max = 80): string {
+        if (value === null) return "null";
+        if (value === undefined) return "—";
+        if (typeof value === "string") return truncate(value, max);
+        if (typeof value === "number" || typeof value === "boolean") {
+            return String(value);
+        }
+
         try {
-            const res = await fetchApi("/content-types");
+            return truncate(JSON.stringify(value), max);
+        } catch {
+            return truncate(String(value), max);
+        }
+    }
+
+    function pickFirstString(
+        record: Record<string, unknown> | null,
+        keys: string[],
+    ): string | null {
+        if (!record) return null;
+
+        for (const key of keys) {
+            const value = record[key];
+            if (typeof value === "string" && value.trim().length > 0) {
+                return value.trim();
+            }
+        }
+
+        return null;
+    }
+
+    function resolveItemLabel(item: Pick<ContentItem, "id" | "data">): string {
+        const structured = parseStructuredData(item.data);
+        return pickFirstString(structured, PRIMARY_LABEL_FIELDS) ?? `Item #${item.id}`;
+    }
+
+    function resolveItemSummary(item: Pick<ContentItem, "data">): string {
+        const structured = parseStructuredData(item.data);
+        const preferred = pickFirstString(structured, SUMMARY_FIELDS);
+        if (preferred) {
+            return truncate(preferred, 160);
+        }
+
+        return truncate(formatJson(item.data), 160);
+    }
+
+    function resolveItemSlug(item: Pick<ContentItem, "data">): string | null {
+        return pickFirstString(parseStructuredData(item.data), ["slug"]);
+    }
+
+    function resolveItemAttribution(
+        item: Pick<ContentItem, "data">,
+    ): string | null {
+        return pickFirstString(parseStructuredData(item.data), [
+            "author",
+            "owner",
+            "editor",
+        ]);
+    }
+
+    function formatDate(value: string): string {
+        return new Date(value).toLocaleDateString();
+    }
+
+    function formatDateTime(value: string): string {
+        return new Date(value).toLocaleString();
+    }
+
+    function resolveSchemaSummary(type: ContentType): string {
+        try {
+            const parsed = JSON.parse(type.schema) as {
+                properties?: Record<string, unknown>;
+                required?: unknown[];
+            };
+            const fieldCount = Object.keys(parsed.properties ?? {}).length;
+            const requiredCount = Array.isArray(parsed.required)
+                ? parsed.required.length
+                : 0;
+
+            if (fieldCount === 0) {
+                return "Custom schema";
+            }
+
+            return `${fieldCount} fields, ${requiredCount} required`;
+        } catch {
+            return "Custom schema";
+        }
+    }
+
+    function toDateBoundary(date: string, boundary: "start" | "end"): string {
+        return boundary === "start"
+            ? `${date}T00:00:00.000Z`
+            : `${date}T23:59:59.999Z`;
+    }
+
+    function buildItemsQuery(offset = 0): string {
+        if (!selectedType) return "";
+
+        const params = new URLSearchParams({
+            contentTypeId: String(selectedType.id),
+            limit: String(PAGE_SIZE),
+            offset: String(offset),
+            sortBy,
+            sortDir,
+        });
+
+        if (itemSearch.trim()) {
+            params.set("q", itemSearch.trim());
+        }
+
+        if (filterStatus) {
+            params.set("status", filterStatus);
+        }
+
+        if (createdAfter) {
+            params.set("createdAfter", toDateBoundary(createdAfter, "start"));
+        }
+
+        if (createdBefore) {
+            params.set("createdBefore", toDateBoundary(createdBefore, "end"));
+        }
+
+        return params.toString();
+    }
+
+    function resetSelectedItemContext() {
+        selectedItem = null;
+        versions = [];
+        comments = [];
+        selectedVersionForDiff = null;
+        newComment = "";
+    }
+
+    function resetFilters() {
+        itemSearch = "";
+        filterStatus = "";
+        createdAfter = "";
+        createdBefore = "";
+        sortBy = "updatedAt";
+        sortDir = "desc";
+    }
+
+    async function loadContentTypes() {
+        loading = true;
+        error = null;
+
+        try {
+            const res = await fetchApi("/content-types?limit=200");
             contentTypes = res.data;
         } catch (err: any) {
             error = err.message || "Failed to load content types";
         } finally {
             loading = false;
         }
-    });
+    }
 
-    async function selectType(type: ContentType) {
-        selectedType = type;
-        selectedItem = null;
-        versions = [];
-        comments = [];
-        activeWorkflow = null;
+    async function loadActiveWorkflow(typeId: number) {
+        try {
+            const response = await fetchApi(
+                `/content-types/${typeId}/workflows/active`,
+            );
+            activeWorkflow = response.data ?? null;
+        } catch {
+            activeWorkflow = null;
+        }
+    }
+
+    async function loadItems(
+        offset = 0,
+        preserveSelection = true,
+    ): Promise<ContentItem[]> {
+        if (!selectedType) return [];
+
         loadingItems = true;
+        error = null;
 
         try {
-            const res = await fetchApi(
-                `/content-items?contentTypeId=${type.id}&limit=50`,
+            const response = await fetchApi(
+                `/content-items?${buildItemsQuery(offset)}`,
             );
-            items = res.data;
+            const nextItems = response.data as ContentItem[];
+            items = nextItems;
+            itemsMeta = normalizeMeta(response.meta);
 
-            try {
-                const wfRes = await fetchApi(
-                    `/content-types/${type.id}/workflows/active`,
+            if (preserveSelection && selectedItem) {
+                const matching = nextItems.find(
+                    (item) => item.id === selectedItem?.id,
                 );
-                if (wfRes.data) activeWorkflow = wfRes.data;
-            } catch (e: any) {
-                // Ignore, no active workflow
+                if (matching) {
+                    selectedItem = matching;
+                } else {
+                    resetSelectedItemContext();
+                }
+            } else if (!preserveSelection) {
+                resetSelectedItemContext();
             }
+
+            return nextItems;
         } catch (err: any) {
             error = err.message || "Failed to load items";
+            items = [];
+            itemsMeta = { ...DEFAULT_ITEMS_META };
+            if (!preserveSelection) {
+                resetSelectedItemContext();
+            }
+            return [];
         } finally {
             loadingItems = false;
         }
     }
 
+    async function selectType(type: ContentType) {
+        selectedType = type;
+        activeWorkflow = null;
+        resetFilters();
+        itemsMeta = { ...DEFAULT_ITEMS_META };
+        resetSelectedItemContext();
+
+        await Promise.all([loadItems(0, false), loadActiveWorkflow(type.id)]);
+    }
+
     async function selectItem(item: ContentItem) {
         selectedItem = item;
+        versions = [];
+        comments = [];
+        selectedVersionForDiff = null;
+        error = null;
+
         try {
-            const res = await fetchApi(`/content-items/${item.id}/versions`);
-            versions = res.data;
+            const response = await fetchApi(`/content-items/${item.id}/versions`);
+            versions = response.data;
+            selectedVersionForDiff = response.data[0]?.version ?? null;
 
             if (activeWorkflow) {
                 const commentsRes = await fetchApi(
@@ -129,30 +426,143 @@
         }
     }
 
+    function flattenValue(
+        value: unknown,
+        prefix = "",
+        output = new Map<string, string>(),
+    ): Map<string, string> {
+        if (Array.isArray(value)) {
+            output.set(prefix || "(root)", stringifyPreview(value, 120));
+            return output;
+        }
+
+        if (value && typeof value === "object") {
+            const entries = Object.entries(value as Record<string, unknown>);
+
+            if (entries.length === 0) {
+                output.set(prefix || "(root)", "{}");
+                return output;
+            }
+
+            for (const [key, child] of entries) {
+                const nextPrefix = prefix ? `${prefix}.${key}` : key;
+                flattenValue(child, nextPrefix, output);
+            }
+
+            return output;
+        }
+
+        output.set(prefix || "(root)", stringifyPreview(value, 120));
+        return output;
+    }
+
+    function buildDiffEntries(
+        currentPayload: unknown,
+        targetPayload: unknown,
+        currentStatus?: string,
+        targetStatus?: string,
+    ): DiffEntry[] {
+        const current = flattenValue(deepParseJson(currentPayload));
+        const target = flattenValue(deepParseJson(targetPayload));
+        const keys = new Set([...current.keys(), ...target.keys()]);
+        const entries: DiffEntry[] = [];
+
+        if (currentStatus && targetStatus && currentStatus !== targetStatus) {
+            entries.push({
+                key: "status",
+                before: currentStatus,
+                after: targetStatus,
+                change: "changed",
+            });
+        }
+
+        for (const key of Array.from(keys).sort()) {
+            const before = current.get(key);
+            const after = target.get(key);
+
+            if (before === after) {
+                continue;
+            }
+
+            entries.push({
+                key,
+                before: before ?? "—",
+                after: after ?? "—",
+                change:
+                    before === undefined
+                        ? "added"
+                        : after === undefined
+                            ? "removed"
+                            : "changed",
+            });
+        }
+
+        return entries;
+    }
+
+    function formatDiffSummary(entries: DiffEntry[], maxItems = 4): string {
+        if (entries.length === 0) {
+            return "No field-level payload changes are expected.";
+        }
+
+        const visible = entries.slice(0, maxItems).map((entry) => {
+            return `- ${entry.key}: ${entry.before} -> ${entry.after}`;
+        });
+        const remaining = entries.length - visible.length;
+
+        return [
+            `${entries.length} field-level change(s):`,
+            ...visible,
+            ...(remaining > 0 ? [`- +${remaining} more field(s)`] : []),
+        ].join("\n");
+    }
+
     async function rollbackToVersion(version: number) {
         if (!selectedItem) return;
 
+        const targetVersion =
+            versions.find((candidate) => candidate.version === version) ?? null;
+        const diffSummary = targetVersion
+            ? formatDiffSummary(
+                  buildDiffEntries(
+                      selectedItem.data,
+                      targetVersion.data,
+                      selectedItem.status,
+                      targetVersion.status,
+                  ),
+              )
+            : "Historical snapshot unavailable.";
+
         feedbackStore.openConfirm({
             title: "Rollback Content",
-            message: `Are you sure you want to rollback to version ${version}? This will become the active state for the content item.`,
+            message: [
+                `Rollback "${resolveItemLabel(selectedItem)}" from version ${selectedItem.version} to version ${version}?`,
+                "",
+                "Supervisor summary:",
+                diffSummary,
+            ].join("\n"),
             confirmLabel: "Rollback",
             confirmIntent: "danger",
             onConfirm: async () => {
                 rollingBack = true;
-                try {
-                    await fetchApi(
-                        `/content-items/${selectedItem!.id}/rollback`,
-                        {
-                            method: "POST",
-                            body: JSON.stringify({ version }),
-                        },
-                    );
+                const currentItemId = selectedItem!.id;
 
-                    const refreshedItem = items.find(
-                        (i) => i.id === selectedItem!.id,
-                    );
-                    await selectType(selectedType!);
-                    if (refreshedItem) await selectItem(refreshedItem);
+                try {
+                    await fetchApi(`/content-items/${currentItemId}/rollback`, {
+                        method: "POST",
+                        body: JSON.stringify({ version }),
+                    });
+
+                    const refreshedItems = await loadItems(itemsMeta.offset, true);
+                    const refreshedItem =
+                        refreshedItems.find((item) => item.id === currentItemId) ??
+                        null;
+
+                    if (refreshedItem) {
+                        await selectItem(refreshedItem);
+                    } else {
+                        resetSelectedItemContext();
+                    }
 
                     feedbackStore.pushToast({
                         severity: "success",
@@ -177,26 +587,31 @@
     }
 
     async function submitForReview(transitionId: number) {
-        if (!selectedItem) return;
+        if (!selectedItem || !selectedType) return;
         submittingReview = true;
+
         try {
             await fetchApi(`/content-items/${selectedItem.id}/submit`, {
                 method: "POST",
                 body: JSON.stringify({ workflowTransitionId: transitionId }),
             });
+
             feedbackStore.pushToast({
                 severity: "success",
                 title: "Submitted",
                 message: "Item submitted for review.",
             });
 
-            // Re-fetch item to get new status
-            const refreshed = await fetchApi(
-                `/content-items?contentTypeId=${selectedType!.id}&limit=50`,
-            );
-            items = refreshed.data;
-            selectedItem = items.find((i) => i.id === selectedItem!.id) || null;
-            if (selectedItem) await selectItem(selectedItem);
+            const refreshedItems = await loadItems(itemsMeta.offset, true);
+            const refreshedItem =
+                refreshedItems.find((item) => item.id === selectedItem?.id) ??
+                null;
+
+            if (refreshedItem) {
+                await selectItem(refreshedItem);
+            } else {
+                resetSelectedItemContext();
+            }
         } catch (err: any) {
             feedbackStore.pushToast({
                 severity: "error",
@@ -210,15 +625,16 @@
 
     async function postComment() {
         if (!newComment.trim() || !selectedItem) return;
+
         try {
-            const res = await fetchApi(
+            const response = await fetchApi(
                 `/content-items/${selectedItem.id}/comments`,
                 {
                     method: "POST",
                     body: JSON.stringify({ comment: newComment }),
                 },
             );
-            comments = [res.data, ...comments];
+            comments = [response.data, ...comments];
             newComment = "";
             feedbackStore.pushToast({
                 severity: "success",
@@ -233,6 +649,31 @@
             });
         }
     }
+
+    function applyFilters() {
+        if (!selectedType) return;
+        void loadItems(0, false);
+    }
+
+    function clearFilters() {
+        resetFilters();
+        if (!selectedType) return;
+        void loadItems(0, false);
+    }
+
+    function goToNextPage() {
+        if (!itemsMeta.hasMore || loadingItems) return;
+        void loadItems(itemsMeta.offset + itemsMeta.limit, false);
+    }
+
+    function goToPrevPage() {
+        if (itemsMeta.offset === 0 || loadingItems) return;
+        void loadItems(Math.max(0, itemsMeta.offset - itemsMeta.limit), false);
+    }
+
+    onMount(() => {
+        void loadContentTypes();
+    });
 </script>
 
 <svelte:head>
@@ -240,24 +681,43 @@
 </svelte:head>
 
 <div class="h-full flex flex-col">
-    <div class="mb-6">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-            Content Browser
-        </h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Read-only oversight of managed content and version history.
-        </p>
+    <div class="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+                Content Browser
+            </h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Find content by title, slug, status, or date, then inspect
+                version history before taking workflow or rollback actions.
+            </p>
+        </div>
+        <button
+            type="button"
+            onclick={() => {
+                if (selectedType) {
+                    void Promise.all([
+                        loadItems(itemsMeta.offset, true),
+                        loadActiveWorkflow(selectedType.id),
+                    ]);
+                } else {
+                    void loadContentTypes();
+                }
+            }}
+            class="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+        >
+            <Icon src={ArrowPath} class="w-4 h-4" />
+            Refresh
+        </button>
     </div>
 
     {#if error}
         <ErrorBanner class="mb-6" message={error} />
     {/if}
 
-    <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
-        <!-- Content Types Sidebar -->
-        <div
-            class="w-full md:w-1/4 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedType
-                ? 'hidden md:flex'
+    <div class="flex-1 flex flex-col lg:flex-row gap-6 overflow-hidden">
+        <aside
+            class="w-full lg:w-80 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedType
+                ? 'hidden lg:flex'
                 : 'flex'}"
         >
             <div
@@ -269,31 +729,63 @@
                     Models
                 </h3>
             </div>
-            <div class="flex-1 overflow-y-auto p-2">
+            <div class="flex-1 overflow-y-auto p-3">
                 {#if loading}
-                    <div class="flex justify-center p-4">
-                        <LoadingSpinner size="sm" />
+                    <div class="flex justify-center p-8">
+                        <LoadingSpinner size="md" />
                     </div>
                 {:else if contentTypes.length === 0}
-                    <p class="text-center text-sm text-gray-500 p-4">
+                    <p class="text-center text-sm text-gray-500 p-8">
                         No types defined.
                     </p>
                 {:else}
-                    <ul class="space-y-1">
+                    <ul class="space-y-2">
                         {#each contentTypes as type}
                             <li>
                                 <button
+                                    type="button"
                                     onclick={() => selectType(type)}
-                                    class="w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors {selectedType?.id ===
+                                    class="w-full text-left rounded-xl border px-4 py-3 transition-colors {selectedType?.id ===
                                     type.id
-                                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+                                        ? 'border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-100'
+                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:border-gray-600 dark:hover:bg-gray-700/60'}"
                                 >
-                                    <div class="font-medium">{type.name}</div>
                                     <div
-                                        class="text-[0.65rem] text-gray-500 font-mono mt-0.5"
+                                        class="flex items-start justify-between gap-3"
                                     >
-                                        {type.slug}
+                                        <div>
+                                            <div class="font-semibold">
+                                                {type.name}
+                                            </div>
+                                            <div
+                                                class="mt-1 text-xs font-mono text-gray-500 dark:text-gray-400"
+                                            >
+                                                {type.slug}
+                                            </div>
+                                        </div>
+                                        {#if (type.basePrice ?? 0) > 0}
+                                            <span
+                                                class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                                            >
+                                                Paid
+                                            </span>
+                                        {/if}
+                                    </div>
+                                    <p
+                                        class="mt-3 text-sm text-gray-600 dark:text-gray-300 line-clamp-2"
+                                    >
+                                        {type.description ||
+                                            "Structured content model for supervised AI and operator workflows."}
+                                    </p>
+                                    <div
+                                        class="mt-3 flex items-center justify-between text-[0.7rem] text-gray-500 dark:text-gray-400"
+                                    >
+                                        <span>{resolveSchemaSummary(type)}</span>
+                                        <span
+                                            >Updated {formatDate(
+                                                type.updatedAt,
+                                            )}</span
+                                        >
                                     </div>
                                 </button>
                             </li>
@@ -301,133 +793,353 @@
                     </ul>
                 {/if}
             </div>
-        </div>
+        </aside>
 
-        <!-- Content Items / Detail View -->
         <div
-            class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden {!selectedType
-                ? 'hidden md:flex'
+            class="flex-1 flex flex-col xl:flex-row gap-6 overflow-hidden {!selectedType
+                ? 'hidden lg:flex'
                 : 'flex'}"
         >
             {#if !selectedType}
                 <div
                     class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-400 italic text-sm"
                 >
-                    Select a content model to view items
+                    Select a content model to view items.
                 </div>
             {:else}
-                <!-- Items List -->
-                <div
+                <section
                     class="{selectedItem
-                        ? 'hidden md:flex md:w-1/3'
+                        ? 'hidden xl:flex xl:w-[30rem]'
                         : 'w-full'} transition-all duration-300 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
                 >
                     <div
-                        class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center"
+                        class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"
                     >
-                        <div class="flex items-center gap-2">
-                            <button
-                                class="md:hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                                aria-label="Back to models"
-                                onclick={() => (selectedType = null)}
-                            >
-                                <Icon src={ChevronLeft} class="w-5 h-5" />
-                            </button>
-                            <h3
-                                class="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                            >
-                                Items in "{selectedType.name}"
-                            </h3>
-                        </div>
-                        <span
-                            class="bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 py-0.5 px-2 rounded-full text-xs font-bold"
-                            >{items.length}</span
+                        <div
+                            class="flex items-start justify-between gap-3 flex-wrap"
                         >
+                            <div class="flex items-start gap-2">
+                                <button
+                                    class="lg:hidden mt-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                    aria-label="Back to models"
+                                    onclick={() => {
+                                        selectedType = null;
+                                        activeWorkflow = null;
+                                        items = [];
+                                        itemsMeta = { ...DEFAULT_ITEMS_META };
+                                        resetSelectedItemContext();
+                                    }}
+                                >
+                                    <Icon src={ChevronLeft} class="w-5 h-5" />
+                                </button>
+                                <div>
+                                    <h3
+                                        class="text-sm font-semibold text-gray-900 dark:text-white"
+                                    >
+                                        {selectedType.name}
+                                    </h3>
+                                    <p
+                                        class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                                    >
+                                        {currentRangeStart}-{currentRangeEnd} of
+                                        {itemsMeta.total} item(s)
+                                    </p>
+                                </div>
+                            </div>
+                            <span
+                                class="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-bold text-gray-700 dark:bg-gray-600 dark:text-gray-200"
+                            >
+                                {itemsMeta.total}
+                            </span>
+                        </div>
+
+                        <form
+                            class="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-3"
+                            onsubmit={(event) => {
+                                event.preventDefault();
+                                applyFilters();
+                            }}
+                        >
+                            <div class="md:col-span-2 xl:col-span-1">
+                                <label
+                                    for="content-search"
+                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                >
+                                    Search
+                                </label>
+                                <input
+                                    id="content-search"
+                                    bind:value={itemSearch}
+                                    type="search"
+                                    placeholder="Title, slug, excerpt, or item ID"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label
+                                    for="status-filter"
+                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                >
+                                    Status
+                                </label>
+                                <select
+                                    id="status-filter"
+                                    bind:value={filterStatus}
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                >
+                                    <option value="">All statuses</option>
+                                    {#each STATUS_OPTIONS as status}
+                                        <option value={status}>{status}</option>
+                                    {/each}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label
+                                    for="sort-by"
+                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                >
+                                    Sort
+                                </label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <select
+                                        id="sort-by"
+                                        bind:value={sortBy}
+                                        class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="updatedAt">
+                                            Updated
+                                        </option>
+                                        <option value="createdAt">
+                                            Created
+                                        </option>
+                                        <option value="version">
+                                            Version
+                                        </option>
+                                    </select>
+                                    <select
+                                        bind:value={sortDir}
+                                        class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    >
+                                        <option value="desc">Newest first</option>
+                                        <option value="asc">Oldest first</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label
+                                    for="created-after"
+                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                >
+                                    Created After
+                                </label>
+                                <input
+                                    id="created-after"
+                                    bind:value={createdAfter}
+                                    type="date"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label
+                                    for="created-before"
+                                    class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
+                                >
+                                    Created Before
+                                </label>
+                                <input
+                                    id="created-before"
+                                    bind:value={createdBefore}
+                                    type="date"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div
+                                class="md:col-span-2 xl:col-span-1 flex flex-wrap items-center gap-3"
+                            >
+                                <button
+                                    type="submit"
+                                    class="px-4 py-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md font-medium text-sm transition-colors border border-gray-300 dark:border-gray-600"
+                                >
+                                    Apply Filters
+                                </button>
+                                {#if hasActiveFilters}
+                                    <button
+                                        type="button"
+                                        onclick={clearFilters}
+                                        class="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                    >
+                                        Clear
+                                    </button>
+                                {/if}
+                            </div>
+                        </form>
                     </div>
-                    <div class="flex-1 overflow-y-auto p-2">
-                        {#if loadingItems}
-                            <div class="flex justify-center p-8">
+
+                    <div class="flex-1 overflow-y-auto p-3 relative">
+                        {#if loadingItems && items.length === 0}
+                            <div class="flex justify-center p-10">
                                 <LoadingSpinner size="md" />
                             </div>
                         {:else if items.length === 0}
                             <div
-                                class="text-center p-8 text-sm text-gray-500 dark:text-gray-400"
+                                class="rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-8 text-center text-sm text-gray-500 dark:text-gray-400"
                             >
-                                No items found in this model.
+                                No items found matching the current filters.
                             </div>
                         {:else}
-                            <ul class="space-y-2">
+                            <ul class="space-y-3">
                                 {#each items as item}
-                                    <!-- A small card for each item -->
-                                    <button
-                                        onclick={() => selectItem(item)}
-                                        class="w-full text-left bg-white dark:bg-gray-800 border {selectedItem?.id ===
-                                        item.id
-                                            ? 'border-blue-500 ring-1 ring-blue-500 shadow-sm'
-                                            : 'border-gray-200 dark:border-gray-700 shadow-sm hover:border-gray-300 dark:hover:border-gray-600'} rounded-lg p-3 transition-all relative"
-                                    >
-                                        <div
-                                            class="flex justify-between items-start mb-2"
+                                    <li>
+                                        <button
+                                            type="button"
+                                            onclick={() => selectItem(item)}
+                                            class="w-full text-left rounded-xl border p-4 transition-all {selectedItem?.id ===
+                                            item.id
+                                                ? 'border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 bg-blue-50/70 dark:bg-blue-900/20'
+                                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:border-gray-600 dark:hover:bg-gray-700/40'}"
                                         >
-                                            <span
-                                                class="inline-flex items-center px-2 py-0.5 rounded text-[0.65rem] font-bold uppercase tracking-wider
-                                                {item.status === 'published'
-                                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
-                                                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
+                                            <div
+                                                class="flex items-start justify-between gap-3"
                                             >
-                                                {item.status}
-                                            </span>
-                                            <span
-                                                class="text-[0.65rem] font-mono text-gray-400"
-                                                >v{item.version}</span
-                                            >
-                                        </div>
+                                                <div class="min-w-0">
+                                                    <p
+                                                        class="text-sm font-semibold text-gray-900 dark:text-white truncate"
+                                                    >
+                                                        {resolveItemLabel(item)}
+                                                    </p>
+                                                    <div
+                                                        class="mt-1 flex flex-wrap items-center gap-2 text-[0.7rem] text-gray-500 dark:text-gray-400"
+                                                    >
+                                                        <span
+                                                            class="font-mono"
+                                                        >
+                                                            #{item.id}
+                                                        </span>
+                                                        {#if resolveItemSlug(item)}
+                                                            <span
+                                                                class="font-mono"
+                                                            >
+                                                                {resolveItemSlug(
+                                                                    item,
+                                                                )}
+                                                            </span>
+                                                        {/if}
+                                                        {#if resolveItemAttribution(item)}
+                                                            <span>
+                                                                by {resolveItemAttribution(
+                                                                    item,
+                                                                )}
+                                                            </span>
+                                                        {/if}
+                                                    </div>
+                                                </div>
+                                                <div
+                                                    class="flex items-center gap-2 shrink-0"
+                                                >
+                                                    <span
+                                                        class="inline-flex items-center rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider {item.status ===
+                                                        'published'
+                                                            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
+                                                            : item.status ===
+                                                                    'in_review'
+                                                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                                                                : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
+                                                    >
+                                                        {item.status}
+                                                    </span>
+                                                    <span
+                                                        class="text-xs font-mono text-gray-500 dark:text-gray-400"
+                                                    >
+                                                        v{item.version}
+                                                    </span>
+                                                </div>
+                                            </div>
 
-                                        <div
-                                            class="text-xs text-gray-800 dark:text-gray-200 font-mono line-clamp-2 break-all opacity-80 mb-2"
-                                        >
-                                            <!-- Simple preview of JSON data -->
-                                            {formatJson(item.data).substring(
-                                                0,
-                                                100,
-                                            )}...
-                                        </div>
-
-                                        <div
-                                            class="flex justify-between items-end text-[0.65rem] text-gray-400"
-                                        >
-                                            <span
-                                                title={new Date(
-                                                    item.updatedAt,
-                                                ).toLocaleString()}
-                                                >Updated {new Date(
-                                                    item.updatedAt,
-                                                ).toLocaleDateString()}</span
+                                            <p
+                                                class="mt-3 text-sm text-gray-600 dark:text-gray-300 line-clamp-3"
                                             >
-                                            <span>ID: {item.id}</span>
-                                        </div>
-                                    </button>
+                                                {resolveItemSummary(item)}
+                                            </p>
+
+                                            <div
+                                                class="mt-4 flex flex-wrap items-center gap-2 text-[0.7rem] text-gray-500 dark:text-gray-400"
+                                            >
+                                                <span
+                                                    class="rounded-full bg-gray-100 px-2 py-1 dark:bg-gray-700"
+                                                >
+                                                    Updated {formatDate(
+                                                        item.updatedAt,
+                                                    )}
+                                                </span>
+                                                <span
+                                                    class="rounded-full bg-gray-100 px-2 py-1 dark:bg-gray-700"
+                                                >
+                                                    Created {formatDate(
+                                                        item.createdAt,
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </button>
+                                    </li>
                                 {/each}
                             </ul>
                         {/if}
-                    </div>
-                </div>
 
-                <!-- Item Detail & Versions -->
-                {#if selectedItem}
+                        {#if loadingItems && items.length > 0}
+                            <div
+                                class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex items-center justify-center"
+                            >
+                                <LoadingSpinner size="lg" />
+                            </div>
+                        {/if}
+                    </div>
+
                     <div
-                        class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden transition-all duration-300 w-full"
+                        class="border-t border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between gap-3 text-sm"
                     >
-                        <!-- Top header -->
+                        <p class="text-gray-600 dark:text-gray-300">
+                            Showing {currentRangeStart}-{currentRangeEnd} of
+                            {itemsMeta.total}
+                        </p>
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onclick={goToPrevPage}
+                                disabled={itemsMeta.offset === 0 || loadingItems}
+                                class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Previous
+                            </button>
+                            <button
+                                type="button"
+                                onclick={goToNextPage}
+                                disabled={!itemsMeta.hasMore || loadingItems}
+                                class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                {#if selectedItem}
+                    <section
+                        class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+                    >
                         <div
-                            class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center"
+                            class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex items-start justify-between gap-4"
                         >
-                            <div>
+                            <div class="min-w-0">
                                 <div class="flex items-center gap-3">
                                     <button
-                                        class="md:hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                        class="xl:hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                                         aria-label="Close detail"
-                                        onclick={() => (selectedItem = null)}
+                                        onclick={() => resetSelectedItemContext()}
                                     >
                                         <Icon
                                             src={ChevronLeft}
@@ -435,36 +1147,258 @@
                                         />
                                     </button>
                                     <h2
-                                        class="text-lg font-bold text-gray-900 dark:text-white"
+                                        class="text-lg font-bold text-gray-900 dark:text-white truncate"
                                     >
-                                        Item #{selectedItem.id}
+                                        {resolveItemLabel(selectedItem)}
                                     </h2>
                                     <span
-                                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider
-                                        {selectedItem.status === 'published'
+                                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider {selectedItem.status ===
+                                        'published'
                                             ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
-                                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
+                                            : selectedItem.status ===
+                                                    'in_review'
+                                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                                                : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
                                     >
                                         {selectedItem.status}
                                     </span>
                                 </div>
-                                <p class="text-[0.7rem] text-gray-500 mt-1">
-                                    Current Version: v{selectedItem.version}
+                                <p
+                                    class="mt-2 text-sm text-gray-600 dark:text-gray-300"
+                                >
+                                    {resolveItemSummary(selectedItem)}
                                 </p>
+                                <div
+                                    class="mt-3 flex flex-wrap items-center gap-2 text-[0.7rem] text-gray-500 dark:text-gray-400"
+                                >
+                                    <span class="font-mono"
+                                        >Item #{selectedItem.id}</span
+                                    >
+                                    <span class="font-mono"
+                                        >Current version v{selectedItem.version}</span
+                                    >
+                                    <span
+                                        >Updated {formatDateTime(
+                                            selectedItem.updatedAt,
+                                        )}</span
+                                    >
+                                </div>
                             </div>
                             <button
+                                type="button"
                                 aria-label="Close detail view"
-                                onclick={() => (selectedItem = null)}
+                                onclick={() => resetSelectedItemContext()}
                                 class="text-gray-400 hover:text-gray-500"
                             >
                                 <Icon src={XMark} class="w-5 h-5" />
                             </button>
                         </div>
 
-                        <div
-                            class="flex-1 overflow-y-auto p-6 flex flex-col gap-6"
-                        >
-                            <!-- Current Data Display -->
+                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                            <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4">
+                                <div
+                                    class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900/30"
+                                >
+                                    <h4
+                                        class="text-sm font-semibold text-gray-900 dark:text-white"
+                                    >
+                                        Current Snapshot
+                                    </h4>
+                                    <p
+                                        class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                                    >
+                                        Readable summary of the current content
+                                        item before reviewing raw JSON.
+                                    </p>
+                                    <dl class="mt-4 grid grid-cols-1 gap-3 text-sm">
+                                        <div>
+                                            <dt
+                                                class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                            >
+                                                Primary label
+                                            </dt>
+                                            <dd
+                                                class="mt-1 text-gray-900 dark:text-white"
+                                            >
+                                                {resolveItemLabel(selectedItem)}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt
+                                                class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                            >
+                                                Summary
+                                            </dt>
+                                            <dd
+                                                class="mt-1 text-gray-700 dark:text-gray-300"
+                                            >
+                                                {resolveItemSummary(selectedItem)}
+                                            </dd>
+                                        </div>
+                                        <div
+                                            class="grid grid-cols-2 gap-3 text-xs text-gray-500 dark:text-gray-400"
+                                        >
+                                            <div>
+                                                <dt class="font-semibold uppercase">
+                                                    Status
+                                                </dt>
+                                                <dd class="mt-1 text-sm">
+                                                    {selectedItem.status}
+                                                </dd>
+                                            </div>
+                                            <div>
+                                                <dt class="font-semibold uppercase">
+                                                    Version
+                                                </dt>
+                                                <dd class="mt-1 text-sm">
+                                                    v{selectedItem.version}
+                                                </dd>
+                                            </div>
+                                        </div>
+                                    </dl>
+                                </div>
+
+                                <div
+                                    class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900/10"
+                                >
+                                    <div
+                                        class="flex items-start justify-between gap-3 flex-wrap"
+                                    >
+                                        <div>
+                                            <h4
+                                                class="text-sm font-semibold text-gray-900 dark:text-white"
+                                            >
+                                                Version Diff
+                                            </h4>
+                                            <p
+                                                class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                                            >
+                                                Compare the current item to a
+                                                historical version before
+                                                rollback.
+                                            </p>
+                                        </div>
+                                        {#if versions.length > 0}
+                                            <select
+                                                onchange={(event) => {
+                                                    selectedVersionForDiff = Number(
+                                                        (
+                                                            event.currentTarget as HTMLSelectElement
+                                                        ).value,
+                                                    );
+                                                }}
+                                                class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                                            >
+                                                {#each versions as version}
+                                                    <option
+                                                        value={version.version}
+                                                        selected={selectedDiffVersion?.version ===
+                                                            version.version}
+                                                    >
+                                                        Compare with v{version.version}
+                                                    </option>
+                                                {/each}
+                                            </select>
+                                        {/if}
+                                    </div>
+
+                                    {#if !selectedDiffVersion}
+                                        <p
+                                            class="mt-4 text-sm text-gray-500 dark:text-gray-400 italic"
+                                        >
+                                            No historical versions available for
+                                            comparison.
+                                        </p>
+                                    {:else}
+                                        <div class="mt-4 space-y-3">
+                                            <div
+                                                class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-900 dark:text-blue-200"
+                                            >
+                                                Comparing current version
+                                                v{selectedItem.version} with
+                                                v{selectedDiffVersion.version}.
+                                                {selectedDiffEntries.length}
+                                                field-level difference(s)
+                                                detected.
+                                            </div>
+
+                                            {#if selectedDiffEntries.length === 0}
+                                                <p
+                                                    class="text-sm text-gray-500 dark:text-gray-400 italic"
+                                                >
+                                                    No payload changes detected
+                                                    between the selected
+                                                    versions.
+                                                </p>
+                                            {:else}
+                                                <div
+                                                    class="max-h-72 overflow-y-auto space-y-2 pr-1"
+                                                >
+                                                    {#each selectedDiffEntries as entry}
+                                                        <div
+                                                            class="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-3"
+                                                        >
+                                                            <div
+                                                                class="flex items-center justify-between gap-3"
+                                                            >
+                                                                <code
+                                                                    class="text-xs font-semibold text-gray-800 dark:text-gray-100"
+                                                                >
+                                                                    {entry.key}
+                                                                </code>
+                                                                <span
+                                                                    class="text-[0.65rem] font-semibold uppercase tracking-wide {entry.change ===
+                                                                    'added'
+                                                                        ? 'text-green-600 dark:text-green-400'
+                                                                        : entry.change ===
+                                                                                'removed'
+                                                                            ? 'text-red-600 dark:text-red-400'
+                                                                            : 'text-amber-600 dark:text-amber-300'}"
+                                                                >
+                                                                    {entry.change}
+                                                                </span>
+                                                            </div>
+                                                            <div
+                                                                class="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-2 text-xs"
+                                                            >
+                                                                <div
+                                                                    class="rounded-md bg-gray-50 dark:bg-gray-900/50 p-2"
+                                                                >
+                                                                    <p
+                                                                        class="font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                                                                    >
+                                                                        Current
+                                                                    </p>
+                                                                    <p
+                                                                        class="mt-1 font-mono text-gray-700 dark:text-gray-200 break-words"
+                                                                    >
+                                                                        {entry.before}
+                                                                    </p>
+                                                                </div>
+                                                                <div
+                                                                    class="rounded-md bg-gray-50 dark:bg-gray-900/50 p-2"
+                                                                >
+                                                                    <p
+                                                                        class="font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                                                                    >
+                                                                        Selected
+                                                                    </p>
+                                                                    <p
+                                                                        class="mt-1 font-mono text-gray-700 dark:text-gray-200 break-words"
+                                                                    >
+                                                                        {entry.after}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    {/each}
+                                                </div>
+                                            {/if}
+                                        </div>
+                                    {/if}
+                                </div>
+                            </div>
+
                             <div>
                                 <h4
                                     class="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide"
@@ -474,45 +1408,46 @@
                                 <JsonCodeBlock value={selectedItem.data} />
                             </div>
 
-                            <hr class="border-gray-200 dark:border-gray-700" />
-
-                            <!-- Workflow Actions (If Active) -->
                             {#if activeWorkflow}
-                                <div>
-                                    <h4
-                                        class="text-sm font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide"
-                                    >
-                                        Workflow: {activeWorkflow.name}
-                                    </h4>
-
-                                    {#if activeWorkflow.transitions.filter((t) => t.fromState === selectedItem?.status).length > 0}
-                                        <div class="flex flex-wrap gap-2 mb-6">
-                                            {#each activeWorkflow.transitions.filter((t) => t.fromState === selectedItem?.status) as transition}
-                                                <button
-                                                    onclick={() =>
-                                                        submitForReview(
-                                                            transition.id,
-                                                        )}
-                                                    disabled={submittingReview}
-                                                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
-                                                >
-                                                    {transition.toState ===
-                                                    "published"
-                                                        ? "Publish"
-                                                        : `Submit for ${transition.toState}`}
-                                                </button>
-                                            {/each}
-                                        </div>
-                                    {:else}
-                                        <p
-                                            class="text-xs text-gray-500 mb-6 italic"
+                                <div class="space-y-4">
+                                    <hr class="border-gray-200 dark:border-gray-700" />
+                                    <div>
+                                        <h4
+                                            class="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide"
                                         >
-                                            No transitions available from
-                                            current state.
-                                        </p>
-                                    {/if}
+                                            Workflow: {activeWorkflow.name}
+                                        </h4>
+                                        {#if availableTransitions.length > 0}
+                                            <div
+                                                class="flex flex-wrap gap-2 mb-4"
+                                            >
+                                                {#each availableTransitions as transition}
+                                                    <button
+                                                        type="button"
+                                                        onclick={() =>
+                                                            submitForReview(
+                                                                transition.id,
+                                                            )}
+                                                        disabled={submittingReview}
+                                                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm disabled:opacity-50"
+                                                    >
+                                                        {transition.toState ===
+                                                        "published"
+                                                            ? "Publish"
+                                                            : `Submit for ${transition.toState}`}
+                                                    </button>
+                                                {/each}
+                                            </div>
+                                        {:else}
+                                            <p
+                                                class="text-sm text-gray-500 dark:text-gray-400 italic mb-4"
+                                            >
+                                                No transitions available from the
+                                                current state.
+                                            </p>
+                                        {/if}
+                                    </div>
 
-                                    <!-- Comments -->
                                     <div
                                         class="bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 p-4"
                                     >
@@ -537,18 +1472,20 @@
                                                         class="bg-white dark:bg-gray-800 p-3 rounded shadow-sm border border-gray-100 dark:border-gray-700"
                                                     >
                                                         <div
-                                                            class="flex justify-between items-center mb-1"
+                                                            class="flex justify-between items-center mb-1 gap-2"
                                                         >
                                                             <span
                                                                 class="text-xs font-bold text-gray-800 dark:text-gray-200"
-                                                                >{comment.authorId}</span
                                                             >
+                                                                {comment.authorId}
+                                                            </span>
                                                             <span
-                                                                class="text-[0.6rem] text-gray-500"
-                                                                >{new Date(
-                                                                    comment.createdAt,
-                                                                ).toLocaleString()}</span
+                                                                class="text-[0.65rem] text-gray-500"
                                                             >
+                                                                {formatDateTime(
+                                                                    comment.createdAt,
+                                                                )}
+                                                            </span>
                                                         </div>
                                                         <p
                                                             class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap"
@@ -561,9 +1498,9 @@
                                         </div>
 
                                         <form
-                                            onsubmit={(e) => {
-                                                e.preventDefault();
-                                                postComment();
+                                            onsubmit={(event) => {
+                                                event.preventDefault();
+                                                void postComment();
                                             }}
                                             class="flex gap-2"
                                         >
@@ -583,12 +1520,10 @@
                                         </form>
                                     </div>
                                 </div>
-                                <hr
-                                    class="border-gray-200 dark:border-gray-700 my-6"
-                                />
                             {/if}
 
-                            <!-- Version History -->
+                            <hr class="border-gray-200 dark:border-gray-700" />
+
                             <div>
                                 <h4
                                     class="text-sm font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide"
@@ -596,92 +1531,153 @@
                                     Version Timeline
                                 </h4>
 
-                                <div
-                                    class="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-300 dark:before:via-gray-600 before:to-transparent"
-                                >
-                                    <!-- Current Version Node -->
+                                <div class="space-y-4">
                                     <div
-                                        class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active"
+                                        class="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4"
                                     >
                                         <div
-                                            class="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white dark:border-gray-800 bg-blue-500 text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10 font-bold text-xs font-mono"
+                                            class="flex items-start justify-between gap-3"
                                         >
-                                            v{selectedItem.version}
-                                        </div>
-                                        <div
-                                            class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800 shadow-sm"
-                                        >
-                                            <div
-                                                class="flex justify-between items-center mb-1"
-                                            >
-                                                <span
+                                            <div>
+                                                <p
                                                     class="text-sm font-bold text-blue-900 dark:text-blue-200"
-                                                    >Current State ({selectedItem.status})</span
                                                 >
-                                                <time
-                                                    class="text-[0.65rem] text-blue-600 dark:text-blue-400 font-medium"
-                                                    >{new Date(
+                                                    Current State
+                                                </p>
+                                                <p
+                                                    class="mt-1 text-xs text-blue-700 dark:text-blue-300"
+                                                >
+                                                    v{selectedItem.version} ·
+                                                    {selectedItem.status} ·
+                                                    {formatDateTime(
                                                         selectedItem.updatedAt,
-                                                    ).toLocaleString()}</time
-                                                >
+                                                    )}
+                                                </p>
                                             </div>
-                                            <div
-                                                class="text-xs font-mono text-gray-600 dark:text-gray-400 bg-white/50 dark:bg-gray-900/50 p-2 rounded mt-2 max-h-24 overflow-y-auto"
+                                            <span
+                                                class="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300"
                                             >
-                                                {formatJson(
-                                                    selectedItem.data,
-                                                ).substring(0, 150)}...
-                                            </div>
+                                                Live
+                                            </span>
                                         </div>
+                                        <p
+                                            class="mt-3 text-sm text-blue-900 dark:text-blue-100"
+                                        >
+                                            {resolveItemSummary(selectedItem)}
+                                        </p>
                                     </div>
 
-                                    {#each versions as v}
+                                    {#each versions as version}
+                                        {@const versionDiff = buildDiffEntries(
+                                            selectedItem.data,
+                                            version.data,
+                                            selectedItem.status,
+                                            version.status,
+                                        )}
                                         <div
-                                            class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group"
+                                            class="rounded-xl border p-4 {selectedDiffVersion?.version ===
+                                            version.version
+                                                ? 'border-blue-300 bg-blue-50/70 dark:border-blue-700 dark:bg-blue-900/20'
+                                                : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}"
                                         >
                                             <div
-                                                class="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10 font-bold text-xs font-mono"
+                                                class="flex items-start justify-between gap-3 flex-wrap"
                                             >
-                                                v{v.version}
-                                            </div>
-                                            <div
-                                                class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow group-hover:border-gray-300 dark:group-hover:border-gray-600"
-                                            >
-                                                <div
-                                                    class="flex justify-between items-center mb-2"
-                                                >
-                                                    <span
-                                                        class="text-sm font-bold text-gray-700 dark:text-gray-300"
-                                                        >Historical ({v.status})</span
+                                                <div>
+                                                    <p
+                                                        class="text-sm font-bold text-gray-900 dark:text-white"
                                                     >
-                                                    <time
-                                                        class="text-[0.65rem] text-gray-500 font-medium"
-                                                        >{new Date(
-                                                            v.createdAt,
-                                                        ).toLocaleString()}</time
+                                                        Version {version.version}
+                                                    </p>
+                                                    <p
+                                                        class="mt-1 text-xs text-gray-500 dark:text-gray-400"
                                                     >
-                                                </div>
-                                                <div
-                                                    class="text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 p-2 rounded mb-3 max-h-24 overflow-y-auto"
-                                                >
-                                                    {formatJson(
-                                                        v.data,
-                                                    ).substring(0, 150)}...
-                                                </div>
-                                                <button
-                                                    onclick={() =>
-                                                        rollbackToVersion(
-                                                            v.version,
+                                                        {version.status} ·
+                                                        {formatDateTime(
+                                                            version.createdAt,
                                                         )}
-                                                    disabled={rollingBack}
-                                                    class="text-xs font-medium px-3 py-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60 rounded transition-colors disabled:opacity-50"
+                                                    </p>
+                                                </div>
+                                                <div
+                                                    class="flex items-center gap-2"
                                                 >
-                                                    Rollback to this version
-                                                </button>
+                                                    <button
+                                                        type="button"
+                                                        onclick={() => {
+                                                            selectedVersionForDiff = version.version;
+                                                        }}
+                                                        class="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
+                                                    >
+                                                        Compare
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onclick={() =>
+                                                            rollbackToVersion(
+                                                                version.version,
+                                                            )}
+                                                        disabled={rollingBack}
+                                                        class="px-3 py-1.5 rounded-md bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 text-xs font-medium disabled:opacity-50"
+                                                    >
+                                                        Rollback
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <p
+                                                class="mt-3 text-sm text-gray-600 dark:text-gray-300"
+                                            >
+                                                {resolveItemSummary(version)}
+                                            </p>
+
+                                            <div
+                                                class="mt-4 rounded-lg bg-gray-50 dark:bg-gray-900/40 p-3"
+                                            >
+                                                <p
+                                                    class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                                >
+                                                    Diff Summary
+                                                </p>
+                                                <p
+                                                    class="mt-2 text-sm text-gray-700 dark:text-gray-300"
+                                                >
+                                                    {versionDiff.length}
+                                                    change(s) from the current
+                                                    item.
+                                                </p>
+                                                {#if versionDiff.length > 0}
+                                                    <ul
+                                                        class="mt-3 space-y-2 text-xs text-gray-600 dark:text-gray-300"
+                                                    >
+                                                        {#each versionDiff.slice(0, 3) as entry}
+                                                            <li>
+                                                                <code
+                                                                    class="font-semibold text-gray-800 dark:text-gray-100"
+                                                                >
+                                                                    {entry.key}
+                                                                </code>
+                                                                <span>
+                                                                    : {entry.before}
+                                                                    -> {entry.after}
+                                                                </span>
+                                                            </li>
+                                                        {/each}
+                                                        {#if versionDiff.length > 3}
+                                                            <li
+                                                                class="text-gray-500 dark:text-gray-400"
+                                                            >
+                                                                +{versionDiff.length -
+                                                                    3} more
+                                                                change(s)
+                                                            </li>
+                                                        {/if}
+                                                    </ul>
+                                                {/if}
                                             </div>
                                         </div>
                                     {/each}
                                 </div>
+
                                 {#if versions.length === 0}
                                     <p
                                         class="text-sm text-gray-500 italic mt-4"
@@ -691,7 +1687,7 @@
                                 {/if}
                             </div>
                         </div>
-                    </div>
+                    </section>
                 {/if}
             {/if}
         </div>

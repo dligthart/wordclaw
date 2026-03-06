@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
@@ -34,8 +34,11 @@ type ContentItemUpdate = Partial<typeof contentItems.$inferInsert>;
 type ContentItemsQuery = {
     contentTypeId?: number;
     status?: string;
+    q?: string;
     createdAfter?: string;
     createdBefore?: string;
+    sortBy?: 'updatedAt' | 'createdAt' | 'version';
+    sortDir?: 'asc' | 'desc';
     limit?: number;
     offset?: number;
 };
@@ -1777,8 +1780,18 @@ export default async function apiRoutes(server: FastifyInstance) {
             querystring: Type.Object({
                 contentTypeId: Type.Optional(Type.Number()),
                 status: Type.Optional(Type.String()),
+                q: Type.Optional(Type.String()),
                 createdAfter: Type.Optional(Type.String()),
                 createdBefore: Type.Optional(Type.String()),
+                sortBy: Type.Optional(Type.Union([
+                    Type.Literal('updatedAt'),
+                    Type.Literal('createdAt'),
+                    Type.Literal('version')
+                ])),
+                sortDir: Type.Optional(Type.Union([
+                    Type.Literal('asc'),
+                    Type.Literal('desc')
+                ])),
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
                 offset: Type.Optional(Type.Number({ minimum: 0 }))
             }),
@@ -1800,14 +1813,26 @@ export default async function apiRoutes(server: FastifyInstance) {
         const {
             contentTypeId,
             status,
+            q,
             createdAfter,
             createdBefore,
+            sortBy,
+            sortDir,
             limit: rawLimit,
             offset: rawOffset
         } = request.query as ContentItemsQuery;
 
         const limit = clampLimit(rawLimit);
         const offset = clampOffset(rawOffset);
+        const searchQuery = q?.trim();
+        const searchPattern = searchQuery ? `%${searchQuery}%` : null;
+        const sortColumn =
+            sortBy === 'createdAt'
+                ? contentItems.createdAt
+                : sortBy === 'version'
+                    ? contentItems.version
+                    : contentItems.updatedAt;
+        const orderByClause = sortDir === 'asc' ? asc(sortColumn) : desc(sortColumn);
 
         const afterDate = createdAfter ? new Date(createdAfter) : null;
         if (afterDate && Number.isNaN(afterDate.getTime())) {
@@ -1831,6 +1856,13 @@ export default async function apiRoutes(server: FastifyInstance) {
             eq(contentItems.domainId, getDomainId(request)),
             contentTypeId !== undefined ? eq(contentItems.contentTypeId, contentTypeId) : undefined,
             status ? eq(contentItems.status, status) : undefined,
+            searchPattern
+                ? or(
+                    ilike(contentItems.data, searchPattern),
+                    ilike(contentItems.status, searchPattern),
+                    sql<boolean>`CAST(${contentItems.id} AS TEXT) ILIKE ${searchPattern}`
+                )
+                : undefined,
             afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
             beforeDate ? lte(contentItems.createdAt, beforeDate) : undefined,
         ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
@@ -1845,6 +1877,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             .from(contentItems)
             .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
             .where(whereClause)
+            .orderBy(orderByClause)
             .limit(limit)
             .offset(offset);
 
