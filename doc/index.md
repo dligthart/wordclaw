@@ -3,7 +3,7 @@ layout: home
 hero:
   name: "WordClaw"
   text: "Documentation"
-  tagline: Content API and Human Supervisor Web Interface
+  tagline: Safe content runtime for AI agents and human supervisors
   actions:
     - theme: brand
       text: Get Started
@@ -12,10 +12,10 @@ hero:
       text: View on GitHub
       link: https://github.com/dligthart/wordclaw
 features:
-  - title: Multi-Protocol Ready
-    details: Build over REST, GraphQL, or Model Context Protocol from a single truth source.
-  - title: Native L402
-    details: Built-in agentic monetization via the Lightning Network.
-  - title: Production-Grade Stack
-    details: Fastify backend, SvelteKit frontend, SQLite database with vector search.
+  - title: REST + MCP First
+    details: Primary agent surfaces with remediation metadata, dry-run support, and policy-aware mutations.
+  - title: Governed Content Ops
+    details: Structured content, approval workflows, audit trails, idempotency, and tenant isolation in one runtime.
+  - title: Optional Search + L402
+    details: Add semantic retrieval and Lightning-gated access without turning the core product into a marketplace suite.
 ---

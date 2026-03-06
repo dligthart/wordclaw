@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WordClaw - The AI-Native Content Engine</title>
+    <title>WordClaw - Safe Content Runtime for AI Agents</title>
     <meta name="description"
-        content="WordClaw is a headless CMS built ground-up for autonomous AI agents, featuring native Vector RAG, lightning network (L402) micropayments, and an intelligent MCP server.">
+        content="WordClaw is a safe content runtime for AI agents, combining structured content, workflow approvals, dry-run safety, MCP access, and optional L402 monetization.">
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -45,12 +45,13 @@
         <section class="hero">
             <div class="container">
                 <div class="hero-content">
-                    <div class="badge fade-in-up">v1.0 Ready for Production</div>
-                    <h1 class="fade-in-up delay-1">The Headless CMS for <span class="text-gradient">Agentic
-                            Workflows</span></h1>
+                    <div class="badge fade-in-up">Focused Product Direction</div>
+                    <h1 class="fade-in-up delay-1">The Safe Content Runtime for <span class="text-gradient">AI
+                            Agents</span></h1>
                     <p class="hero-subtitle fade-in-up delay-2">
-                        Designed explicitly for AI. WordClaw combines a bleeding-edge MCP server, native Vector RAG
-                        pipelines, and L402 Lightning Network micropayments into a single, headless architecture.
+                        Designed for governed automation. WordClaw combines structured content contracts, dry-run
+                        safety, workflow approvals, auditability, and agent-native REST/MCP access in one runtime,
+                        with optional semantic search and Lightning-gated access when you need them.
                     </p>
                     <div class="hero-actions fade-in-up delay-3">
                         <a href="/wordclaw/docs/" class="btn btn-primary">Read Documentation</a>
@@ -87,22 +88,22 @@
             <div class="container">
                 <div class="section-header fade-in-up">
                     <h2>Core Capabilities</h2>
-                    <p>WordClaw acts as the ultimate bridge between LLMs and your content repository.</p>
+                    <p>WordClaw helps agents work on content without removing human oversight or governance.</p>
                 </div>
 
                 <div class="feature-grid">
                     <div class="feature-card fade-in-up">
                         <div class="feature-icon">🔌</div>
-                        <h3>MCP Server Native</h3>
-                        <p>Exposes all CMS functionality via the Model Context Protocol (MCP). Agents can perform
-                            semantic searches, draft content, and run workflow transitions autonomously.</p>
+                        <h3>REST + MCP Surfaces</h3>
+                        <p>Expose the core runtime through primary agent-facing surfaces with deterministic guidance,
+                            simulation hooks, and policy-aware mutations.</p>
                     </div>
 
                     <div class="feature-card fade-in-up delay-1">
                         <div class="feature-icon">⚡</div>
-                        <h3>L402 Lightning Billing</h3>
-                        <p>Natively monetize your API and content with Lightning Network micropayments. Build
-                            programmatic paywalls for AI consumption.</p>
+                        <h3>Optional L402 Access</h3>
+                        <p>Add Lightning-gated offers and entitlement-based reads when paid machine access is part of
+                            the workflow.</p>
                     </div>
 
                     <div class="feature-card fade-in-up delay-2">
@@ -114,23 +115,23 @@
 
                     <div class="feature-card fade-in-up">
                         <div class="feature-icon">🛡️</div>
-                        <h3>Agent Sandbox</h3>
-                        <p>Safely isolate agent activity. Supervisor UI tracks agent actions, approvals, and dry-run
-                            outputs before they hit the live content repository.</p>
+                        <h3>Workflow + Approvals</h3>
+                        <p>Route content changes through review gates so agents can draft and propose safely while
+                            humans retain final control over sensitive transitions.</p>
                     </div>
 
                     <div class="feature-card fade-in-up delay-1">
                         <div class="feature-icon">🌐</div>
-                        <h3>Multi-Tenant Architecture</h3>
-                        <p>Host multiple projects or organizations on a single WordClaw instance. Robust domain-based
-                            scoping secures content and configurations.</p>
+                        <h3>Multi-Tenant Governance</h3>
+                        <p>Host multiple projects or organizations on one instance with domain-scoped content,
+                            credentials, and workflow boundaries.</p>
                     </div>
 
                     <div class="feature-card fade-in-up delay-2">
                         <div class="feature-icon">📝</div>
-                        <h3>Supervisor UI</h3>
-                        <p>A beautiful SvelteKit dashboard providing human oversight. Approve agent drafts, track audit
-                            logs, manage schemas, and configure L402 instances.</p>
+                        <h3>Supervisor Control Plane</h3>
+                        <p>A focused oversight UI for approvals, audits, schemas, content inspection, and agent-key
+                            management.</p>
                     </div>
                 </div>
             </div>
@@ -140,20 +141,21 @@
             <div class="container">
                 <div class="arch-content">
                     <div class="arch-text fade-in-up">
-                        <h2>Built for the Future of Automation</h2>
-                        <p>WordClaw leverages a modern, high-performance stack designed for scale and developer
-                            ergonomics.</p>
+                        <h2>Built for Governed Automation</h2>
+                        <p>WordClaw uses a modern stack designed for high-trust agent operations, not just generic CMS
+                            CRUD.</p>
                         <ul class="arch-list">
                             <li><strong>Backend:</strong> Node.js, Fastify, Drizzle ORM</li>
                             <li><strong>Database:</strong> PostgreSQL with pgvector</li>
-                            <li><strong>Frontend:</strong> SvelteKit, TailwindCSS</li>
-                            <li><strong>Integration:</strong> Model Context Protocol (MCP)</li>
+                            <li><strong>Control Plane:</strong> SvelteKit supervisor UI</li>
+                            <li><strong>Agent Surface:</strong> REST and Model Context Protocol (MCP)</li>
                         </ul>
                     </div>
                     <div class="arch-visual fade-in-up delay-2">
                         <div class="glass-panel">
                             <h3>Ready to integrate?</h3>
-                            <p>Check out the open source repository to start building your agentic content engine today.
+                            <p>Check out the open source repository to start building a safer agent-facing content
+                                runtime today.
                             </p>
                             <a href="https://github.com/dligthart/wordclaw" class="btn btn-primary mt-4">Fork on
                                 GitHub</a>

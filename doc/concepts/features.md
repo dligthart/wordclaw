@@ -1,109 +1,73 @@
 # Features
 
-## Content Management
+WordClaw now describes its capabilities in product tiers so the supported runtime is clearly separated from optional modules and incubating ideas.
+
+## Tier 1: Core Product
+
+### Structured Content
 
 - **Content Types** — Define reusable JSON schemas that content items must conform to. Schemas are validated on creation and enforced on every content write.
 - **Content Items** — Versioned content entities with `draft`, `published`, and `archived` status. Every update auto-increments the version and stores an immutable snapshot.
-- **Batch Operations** — Create, update, or delete multiple items in a single call. Supports two modes:
-  - **Atomic** — All-or-nothing transaction; rolls back on first error.
-  - **Partial** — Best-effort; returns per-item success/failure results.
-- **Version History** — Browse the full history of any content item.
-- **Rollback** — Restore a content item to any previous version. Creates a new version entry so history is never lost.
+- **Batch Operations** — Create, update, or delete multiple items in a single call in atomic or partial mode.
+- **Version History and Rollback** — Browse the full history of any content item and restore prior versions without losing auditability.
 
-## Human Supervisor Web Interface
+### Governance and Safety
 
-A built-in SvelteKit control plane served under `/ui` providing robust human oversight over agent-driven operations:
+- **Policy Engine** — A centralized authorization layer that maps identities, operations, and resources into one strict evaluation geometry.
+- **Dry-Run Mode** — Supported write paths can be simulated before mutation (`?mode=dry_run` for REST and `dryRun: true` for GraphQL/MCP where implemented).
+- **Workflow and Approvals** — Human supervisors can review pending or drafted content and approve or reject critical transitions.
+- **Audit Logging** — Mutations record action, entity, actor, and request trace data for inspection and forensics.
+- **Idempotency** — Replayed POST/PUT/DELETE requests can return cached responses instead of creating duplicate writes.
+- **Multi-Tenant Isolation** — Domains scope content, keys, and workflows to prevent cross-tenant overlap.
+- **Request Tracing and Rate Limiting** — Every request carries an `x-request-id`, and per-IP throttling protects the runtime.
 
-- **Dashboard** — System health and activity telemetry at a glance.
-- **Audit Log Viewer** — Searchable, paginated history of all agent mutations with raw payload inspection.
-- **Content Browser** — Read-only oversight of all content models and items, featuring a 1-click **Rollback** mechanism.
-- **Schema Manager** — Visual JSON schema editor with a live dry-run Validation Sandbox for content types.
-- **Agent Sandbox** — Interactive API testing environment tailored for exploring WordClaw's structured AI-friendly responses, including `remediation` metadata.
-- **Agent Keys** — Provision, rotate, and securely revoke API keys for individual LLM agents.
-- **Approval Queue** — Review pending or drafted content payloads and approve (publish) or reject them.
-- **UI Safety & Accessibility** — Consistent `Toast` notifications, standardized `ConfirmDialog` gates for destructive actions, responsive `DataTable` data layouts, and WCAG AA compliant focus management.
+### Primary Agent Surfaces
 
-## Policy Engine & Context Geometry
+- **REST API** — The main HTTP contract, documented at `/documentation`, with agent-oriented guidance metadata in responses.
+- **MCP Server** — The primary agent-native tool surface for MCP-compatible clients.
+- **AI-Friendly Errors** — Auth and validation failures include deterministic remediation guidance so agents can recover programmatically.
 
-A centralized authorization layer ensuring that any rule mapping identities to actions applies equally across all interfaces:
-- **Protocol Agnostic** — Transforms REST headers, GraphQL context, and MCP tool signatures into one strict `OperationContext` validation geometry.
-- **Fail-Closed Mutations** — Non-idempotent write operations instantly rollback and deny access upon encountering internal policy evaluation errors.
-- **Simulation** — Agents can dry-run permission checks (`policyEvaluate`) to verify if their current credentials satisfy the required operation scopes before executing mutations.
+### Supervisor Control Plane
 
-## Protocol Parity
+The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not a full human-first CMS:
 
-Core multi-protocol capabilities are defined in the [capability matrix test](../src/contracts/capability-parity.test.ts). These matrix entries are enforced across three interfaces:
+- **Dashboard** — System health and activity telemetry.
+- **Audit Log Viewer** — Searchable history of mutations and raw payloads.
+- **Content Browser** — Read-only oversight with rollback access.
+- **Schema Manager** — Visual schema administration for content models.
+- **Approval Queue** — Review and decide pending workflow items.
+- **Agent Keys** — Provision, rotate, and revoke API credentials.
 
-| Protocol  | Transport      | Playground           |
-|-----------|----------------|----------------------|
-| REST      | HTTP           | Swagger at `/documentation` |
-| GraphQL   | HTTP           | GraphiQL at `/graphql`     |
-| MCP       | stdio          | Any MCP-compatible client  |
+## Tier 2: Optional Modules
 
-Parity is enforced by an automated [capability matrix test](../src/contracts/capability-parity.test.ts) that fails CI if any matrix capability falls behind.
+### Native Vector RAG and Semantic Search
 
-## Dry-Run Mode
+- **Automated Embeddings** — Published content can be chunked and embedded into `pgvector`.
+- **Semantic Search** — Agents can query the CMS using natural-language relevance without external vector infrastructure.
 
-Dry-run support is guaranteed for write capabilities listed in the capability matrix `dryRunCapabilities` contract set (`?mode=dry_run` for REST, `dryRun: true` for GraphQL/MCP). Operations outside that set may not expose simulation semantics.
+### L402 Monetization
 
-## Native Vector RAG & Semantic Search
+- **Offer / Entitlement Licensing** — Offer purchases create entitlements in `pending_payment`, then activate on successful payment verification.
+- **Offer-First Read Gating** — If active offers exist for an item, reads require entitlement resolution.
+- **Lightning Network (L402)** — Runtime-supported payment rail using HTTP 402 challenges and Macaroon + preimage verification.
 
-By bringing `pgvector` into the primary PostgreSQL database alongside WordClaw's Policy Engine, we provide an all-in-one Agentic Database layer.
-- **Automated Embeddings**: When a content item is published, a background service chunks the JSON payload and generates vector embeddings (e.g. OpenAI `text-embedding-3-small`).
-- **Semantic Search**: Agents can query the CMS using natural language and semantic relevance (`GET /api/search/semantic`), completely removing the need to manage parallel LangChain / Pinecone infrastructure.
+## Tier 3: Compatibility and Incubating
 
-## Multi-Tenant Data Isolation
+### GraphQL Compatibility Surface
 
-WordClaw natively supports secure domain-level data segregation. Resources like API keys, content types, and items belong to explicit domains. All REST, GraphQL, and MCP APIs filter strictly by the `domainId` detected from the authenticated request, guaranteeing non-overlapping data environments.
+- The current runtime still exposes GraphQL.
+- Product focus is shifting toward REST and MCP as the primary agent surfaces.
+- New product framing should not require GraphQL to lead or define the core concept.
 
-## Authentication & Authorization
+### Experimental / Non-Core Areas
 
-- **Scope-based** — Fine-grained permissions: `content:read`, `content:write`, `audit:read`, `admin`.
-- **Dual key sources** — Environment variables for development, database-managed keys for production with expiration, rotation, and revocation.
-- **AI-friendly errors** — Auth failures include a `remediation` field telling agents exactly which scope they need.
-- **Native Data Ingestion** — AI agents can supply native JSON objects directly to the APIs or fall back to stringified formats.
+- **AP2** — Documented as an RFC-stage expansion path, not a supported runtime payment rail today.
+- **Revenue Attribution and Payouts** — Present in the runtime, but no longer treated as central to the default product story.
+- **Autonomous-Run Platformization** — Broader agent-orchestration ambitions remain under active review rather than default scope.
+- **Marketplace-Style Demos** — Useful for exploration, but not representative of the core supported WordClaw path.
 
-## Audit Logging
+## Integrations
 
-Every mutation is recorded with:
-
-- Action performed (`create`, `update`, `delete`, `rollback`)
-- Entity type and ID
-- Change payload
-- Actor (API key ID)
-- Request ID for cross-referencing
-
-Audit logs use cursor-based pagination for efficient traversal.
-
-## Webhooks
-
-- Register callback URLs with event pattern subscriptions (e.g. `content_item.create`, `audit.*`, `*`).
-- Payloads are signed with HMAC-SHA256 using a per-webhook secret (`x-wordclaw-signature` header).
-- Delivery is non-blocking with automatic retries and exponential backoff.
-
-## Idempotency
-
-Send an `Idempotency-Key` header on any POST/PUT/DELETE. If the same key is seen within the TTL window (default 5 minutes), the server returns the cached response with `x-idempotent-replayed: true` — no duplicate writes occur.
-
-## Agentic Monetization (L402)
-
-WordClaw implements a unified Paid Content Consumption Contract (RFC 0015):
-- **Offer / Entitlement Licensing**: Offer purchases create entitlements in `pending_payment`, then activate on successful payment verification. Active entitlements are metered with deterministic transitions (`active`, `exhausted`, `expired`, `revoked`).
-- **Offer-First Read Gating**: If active offers exist for an item, reads require entitlement resolution (`x-entitlement-id`, single auto-select, or explicit ambiguity error).
-- **Lightning Network (L402)**: Runtime-enabled payment rail using HTTP 402 challenges and Macaroon + preimage verification.
-- **AP2 Boundary**: AP2 is specified in RFC 0016 and tracked for implementation, but not enabled in current runtime payment paths.
-
-## Revenue Attribution & Agent Payouts
-
-- **Contribution Tracking** — Log agent interactions (authoring, editing, distributing) against specific content items using weighted roles.
-- **Automated Revenue Splits** — When offers are purchased, the system automatically divides the net revenue (gross minus fees) among contributing agents based on predetermined allocation ratios (e.g., 70/10/20).
-- **Dispute & Auto-Clear Ledger** — Revenue allocations enter a `pending` state, allowing supervisors time to dispute funds. A background worker automatically advances undisputed funds to `cleared` after a set period (7 days).
-- **Lightning Payouts** — Automatically batches cleared funds per agent and executes batched transfers to their registered Lightning Addresses once balances exceed the configured 500-satoshi threshold.
-
-## Rate Limiting
-
-Per-IP request throttling via the Fastify rate-limit plugin. Returns `429 Too Many Requests` with `Retry-After` headers when limits are exceeded.
-
-## Request Tracing
-
-Every response includes an `x-request-id` header. If the client sends one, it is propagated; otherwise the server generates a UUID. The same ID appears in audit logs for end-to-end traceability.
+- **Webhooks** — Register callback URLs with event subscriptions such as `content_item.create`, `audit.*`, or `*`.
+- **Signed Delivery** — Payloads are signed with HMAC-SHA256 using a per-webhook secret.
+- **Retry Semantics** — Delivery is non-blocking with automatic retries and exponential backoff.

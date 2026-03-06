@@ -9,20 +9,27 @@
 
 [![Node.js CI](https://github.com/dligthart/wordclaw/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dligthart/wordclaw/actions/workflows/test.yml)
 
-**WordClaw** is an AI-first Headless CMS designed to bridge the gap between human content creation and AI agent consumption. It features standardized API responses with action guidance, a built-in Model Context Protocol (MCP) server, and robust safety features like dry-run modes.
+**WordClaw** is a safe content runtime for AI agents and human supervisors. It combines structured content contracts, approval-aware workflows, dry-run safety, auditability, and agent-native access patterns so autonomous systems can operate on content without losing governance.
 
 ## 🚀 Features
 
--   **AI-Friendly API**: REST endpoints return `recommendedNextAction`, `availableActions`, and `actionPriority` to guide agents.
+### Core Today
+
+-   **Structured Content**: JSON schema-based content types with runtime validation, version history, and rollback.
+-   **Agent-Friendly API**: REST responses include `recommendedNextAction`, `availableActions`, and `actionPriority` to guide automated clients.
+-   **REST + MCP Surfaces**: Primary agent access paths with strong content and governance semantics.
+-   **Governance by Default**: Dry-run support, approval workflows, audit logs, idempotency, and multi-tenant isolation.
+-   **Supervisor Control Plane**: Human oversight for content, schemas, approvals, audit, and agent-key management.
+
+### Optional Modules
+
 -   **Native Vector & RAG**: Built-in pgvector embeddings generation and semantic search for AI agents.
--   **Agentic Monetization (L402)**: Micropayment gates using Lightning invoices.
--   **Multi-Tenant Data Isolation**: Secure domain-level data segregation across all APIs.
--   **Runtime Content Validation**: Content item payloads are validated against content-type JSON schema at runtime.
--   **Policy-Aware API Auth**: Optional API key auth with deterministic scope errors for agent remediation.
--   **Protocol Parity**: REST, GraphQL, and MCP capabilities are mapped and enforced via automated parity tests.
--   **Structured Content**: Flexible JSON schema-based content types.
--   **Developer Ready**: Built with Fastify, TypeScript, and Drizzle ORM.
--   **Database Agnostic**: Supports PostgreSQL (production) and others via Drizzle.
+-   **L402 Monetization**: Lightning-gated offer and entitlement flows for machine-native paid access.
+
+### Compatibility / Experimental
+
+-   **GraphQL**: Available in the current runtime as a compatibility surface.
+-   **Incubating Ideas**: AP2, payouts, marketplace-oriented demos, and broader agent-economy features are not part of the default supported product path.
 
 ## 🛠️ Prerequisites
 
@@ -86,24 +93,28 @@ The server will start at `http://localhost:4000`.
 
 ## 🎮 Demos
 
-WordClaw comes with several built-in interactive demos located in the `demos/` and `scripts/` directories to showcase its capabilities:
+WordClaw includes a mix of core and experimental demos in `demos/` and `scripts/`:
 
-1. **Headless React Blog (`demos/demo-blog`)**
+1. **Headless React Blog (`demos/demo-blog`)**  
+   Core demo.
    A beautiful Vite + React frontend demonstrating how to fetch and join Content Types (Authors & Posts) using the WordClaw REST API.
    - Run the seeder: `node scripts/populate-demo.mjs`
    - Start the blog: `cd demos/demo-blog && npm run dev`
 
-2. **Multi-Tenant Data Isolation (`demos/multi-tenant`)**
+2. **Multi-Tenant Data Isolation (`demos/multi-tenant`)**  
+   Core demo.
    A vanilla HTML/JS UI that proves WordClaw's strict Domain-level data isolation. It swaps API keys between "Acme Corp" and "Globex Inc" to fetch segmented data.
    - Run the provisioner: `npx tsx scripts/setup-multi-tenant.ts`
    - Start the UI: `cd demos/multi-tenant && python3 -m http.server 5175`
 
-3. **L402 Agent Payment Demo (`demos/agent-l402-demo.ts`)**
+3. **L402 Agent Payment Demo (`demos/agent-l402-demo.ts`)**  
+   Optional module demo.
    An autonomous TypeScript agent that encounters a `402 Payment Required` L402 invoice when trying to publish a Guest Post. It programmatically parses the Macaroon, dummy-pays the Lightning invoice, and retries the request successfully.
    - Run the demo: `npx tsx demos/agent-l402-demo.ts`
 
-4. **Agent Skills Marketplace (`demos/agent-skills-marketplace`)**
-   A full end-to-end sandbox demonstrating L402 gating and AP2 revenue routing for AI agents. It features a React UI where you can browse programmatic skills, simulate lightning network payments to unlock them, and test executions in a sandbox.
+4. **Agent Skills Marketplace (`demos/agent-skills-marketplace`)**  
+   Experimental / incubating demo.
+   A sandbox for broader marketplace-style ideas, including AP2-adjacent revenue-routing concepts. It is not part of the default supported WordClaw product path.
    - Run the setup script: `npx tsx scripts/setup-skills-marketplace.ts`
    - Start the marketplace: `cd demos/agent-skills-marketplace && npm run dev`
 
