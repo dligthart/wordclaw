@@ -1,5 +1,6 @@
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 export type ScenarioProtocol = "REST" | "GRAPHQL" | "MCP";
+export type ScenarioTrack = "core" | "l402" | "archived";
 
 export type ScenarioStep = {
     title: string;
@@ -22,6 +23,8 @@ export type Scenario = {
     icon: string;
     tagline: string;
     differentiator: string;
+    track: ScenarioTrack;
+    archiveReason?: string;
     steps: ScenarioStep[];
 };
 

@@ -40,6 +40,7 @@
 
     type TemplateGroup = {
         label: string;
+        archived?: boolean;
         options: Array<{ value: string; label: string }>;
     };
 
@@ -66,6 +67,10 @@
     const DEFAULT_HEADERS = {
         "Content-Type": "application/json",
     };
+    const DEFAULT_SCENARIO =
+        SCENARIOS.find((scenario) => scenario.track !== "archived") ??
+        SCENARIOS[0] ??
+        null;
 
     let method: HttpMethod = $state("GET");
     let endpoint = $state("/api/content-types");
@@ -87,29 +92,23 @@
     let errorTitle = $state<string | null>(null);
     let errorDetails = $state<string[]>([]);
     let errorAction = $state<ErrorAction>(null);
-    let contextSummaryItems = $derived([
-        { label: "domain", value: sandboxContext.domainId ?? "n/a" },
-        {
-            label: "contentTypeId",
-            value: sandboxContext.contentTypeId ?? "n/a",
-        },
-        {
-            label: "contentItemId",
-            value: sandboxContext.contentItemId ?? "n/a",
-        },
-        { label: "workflowId", value: sandboxContext.workflowId ?? "n/a" },
-        {
-            label: "transitionId",
-            value: sandboxContext.transitionId ?? "n/a",
-        },
-        {
-            label: "reviewTaskId",
-            value: sandboxContext.reviewTaskId ?? "n/a",
-        },
-        { label: "webhookId", value: sandboxContext.webhookId ?? "n/a" },
-        { label: "apiKeyId", value: sandboxContext.apiKeyId ?? "n/a" },
-        { label: "paymentId", value: sandboxContext.paymentId ?? "n/a" },
-    ]);
+    let contextSummaryItems = $derived.by(() =>
+        [
+            { label: "domain", value: sandboxContext.domainId },
+            { label: "contentType", value: sandboxContext.contentTypeId },
+            { label: "paidType", value: sandboxContext.paidContentTypeId },
+            { label: "contentItem", value: sandboxContext.contentItemId },
+            { label: "workflow", value: sandboxContext.workflowId },
+            { label: "transition", value: sandboxContext.transitionId },
+            { label: "reviewTask", value: sandboxContext.reviewTaskId },
+            { label: "payment", value: sandboxContext.paymentId },
+            { label: "apiKey", value: sandboxContext.apiKeyId },
+            { label: "webhook", value: sandboxContext.webhookId },
+        ].filter((item) => item.value !== undefined),
+    );
+    let activeScenarioIsArchived = $derived.by(
+        () => engine.activeScenario?.track === "archived",
+    );
 
     function clearError() {
         errorTitle = null;
@@ -963,6 +962,17 @@
                 endpoint: `/api/content-items/${contentItemId}`,
                 guide: "Fetch one content item by ID.",
             },
+            "mcp-get-content-item": {
+                method: "POST",
+                endpoint: "/api/sandbox/mcp/execute",
+                body: {
+                    tool: "get_content_item",
+                    args: {
+                        id: contentItemId,
+                    },
+                },
+                guide: "Run the same read through the MCP bridge used by default agent tooling.",
+            },
             "update-blog-post": {
                 method: "PUT",
                 endpoint: `/api/content-items/${contentItemId}`,
@@ -1319,221 +1329,39 @@
         };
     }
 
-    const scenarioTemplateMap: Record<string, { base: string; guide: string }> =
-        {
-            "scenario-lifecycle-1": {
-                base: "create-blog-type",
-                guide: "Scenario 1/5 (Full Content Lifecycle): Create a content type first.",
-            },
-            "scenario-lifecycle-2": {
-                base: "create-blog-post",
-                guide: "Scenario 2/5: Create a content item using the type from step 1.",
-            },
-            "scenario-lifecycle-3": {
-                base: "update-blog-post",
-                guide: "Scenario 3/5: Update the item to generate a new version.",
-            },
-            "scenario-lifecycle-4": {
-                base: "view-item-versions",
-                guide: "Scenario 4/5: List version history and pick rollback target.",
-            },
-            "scenario-lifecycle-5": {
-                base: "rollback-item",
-                guide: "Scenario 5/5: Roll back to a previous version.",
-            },
-            "scenario-workflow-1": {
-                base: "create-workflow",
-                guide: "Scenario 1/7 (Editorial Workflow): Create workflow for active content type.",
-            },
-            "scenario-workflow-2": {
-                base: "add-workflow-transition-draft-review",
-                guide: "Scenario 2/7: Add draft -> in_review transition.",
-            },
-            "scenario-workflow-3": {
-                base: "add-workflow-transition-review-published",
-                guide: "Scenario 3/7: Add in_review -> published transition.",
-            },
-            "scenario-workflow-4": {
-                base: "create-blog-post-draft",
-                guide: "Scenario 4/7: Create draft content item.",
-            },
-            "scenario-workflow-5": {
-                base: "submit-for-review",
-                guide: "Scenario 5/7: Submit draft for review with transition ID.",
-            },
-            "scenario-workflow-6": {
-                base: "add-comment",
-                guide: "Scenario 6/7: Add review feedback comment.",
-            },
-            "scenario-workflow-7": {
-                base: "decide-review-task",
-                guide: "Scenario 7/7: Decide review task (approve/reject).",
-            },
-            "scenario-l402-1": {
-                base: "create-paid-content-type",
-                guide: "Scenario 1/3 (L402): Create a paid content type with basePrice.",
-            },
-            "scenario-l402-2": {
-                base: "l402-payment-required",
-                guide: "Scenario 2/3: Attempt write without L402 auth and inspect 402 payload.",
-            },
-            "scenario-l402-3": {
-                base: "list-payments",
-                guide: "Scenario 3/3: Inspect payment records/status updates.",
-            },
-            "scenario-webhook-1": {
-                base: "register-webhook",
-                guide: "Scenario 1/4 (Webhook Integration): Register webhook endpoint.",
-            },
-            "scenario-webhook-2": {
-                base: "create-blog-post",
-                guide: "Scenario 2/4: Trigger content event that should dispatch webhook.",
-            },
-            "scenario-webhook-3": {
-                base: "list-webhooks",
-                guide: "Scenario 3/4: Verify webhook registration state.",
-            },
-            "scenario-webhook-4": {
-                base: "delete-webhook",
-                guide: "Scenario 4/4: Delete webhook registration.",
-            },
-            "scenario-batch-1": {
-                base: "batch-create-items",
-                guide: "Scenario 1/3 (Batch Operations): Batch-create items.",
-            },
-            "scenario-batch-2": {
-                base: "batch-update-items",
-                guide: "Scenario 2/3: Batch-update selected items.",
-            },
-            "scenario-batch-3": {
-                base: "batch-delete-items",
-                guide: "Scenario 3/3: Batch-delete selected items.",
-            },
-        };
-
     const templateGroups: TemplateGroup[] = [
         {
-            label: "Quick Start",
+            label: "Core: Content Runtime",
             options: [
                 { value: "list-content-types", label: "List Content Types" },
                 { value: "create-blog-type", label: "Create Blog Type" },
-                {
-                    value: "create-blog-post",
-                    label: "Create Valid Blog Post",
-                },
-                { value: "view-audit-logs", label: "View Audit Logs" },
-            ],
-        },
-        {
-            label: "Coverage: Content Types",
-            options: [
-                {
-                    value: "create-paid-content-type",
-                    label: "Create Paid Content Type",
-                },
                 { value: "get-content-type", label: "Get Content Type by ID" },
                 {
                     value: "update-content-type",
                     label: "Update Content Type",
                 },
                 {
-                    value: "delete-content-type",
-                    label: "Delete Content Type",
+                    value: "create-blog-post",
+                    label: "Create Valid Blog Post",
                 },
-            ],
-        },
-        {
-            label: "Coverage: Content Items & Versioning",
-            options: [
-                {
-                    value: "create-blog-post-draft",
-                    label: "Create Draft Item",
-                },
-                { value: "create-post-invalid", label: "Create Invalid Item" },
                 { value: "list-blog-posts", label: "List Content Items" },
                 { value: "get-content-item", label: "Get Item by ID" },
                 { value: "update-blog-post", label: "Update Item" },
-                { value: "delete-content-item", label: "Delete Item" },
-                { value: "dry-run-create", label: "Dry Run Create" },
                 { value: "view-item-versions", label: "View Versions" },
                 { value: "rollback-item", label: "Rollback Item" },
-                { value: "list-comments", label: "List Review Comments" },
-                { value: "add-comment", label: "Add Review Comment" },
+                { value: "delete-content-item", label: "Delete Item" },
                 {
-                    value: "l402-payment-required",
-                    label: "L402 Payment Challenge",
+                    value: "delete-content-type",
+                    label: "Delete Content Type",
                 },
+                { value: "view-audit-logs", label: "View Audit Logs" },
             ],
         },
         {
-            label: "Coverage: Batch Operations",
+            label: "Core: Validation and Dry Run",
             options: [
-                {
-                    value: "batch-create-items",
-                    label: "Batch Create Items",
-                },
-                {
-                    value: "batch-update-items",
-                    label: "Batch Update Items",
-                },
-                {
-                    value: "batch-delete-items",
-                    label: "Batch Delete Items",
-                },
-            ],
-        },
-        {
-            label: "Coverage: Workflow & Review",
-            options: [
-                { value: "create-workflow", label: "Create Workflow" },
-                {
-                    value: "add-workflow-transition-draft-review",
-                    label: "Add Transition: draft -> in_review",
-                },
-                {
-                    value: "add-workflow-transition-review-published",
-                    label: "Add Transition: in_review -> published",
-                },
-                {
-                    value: "get-active-workflow",
-                    label: "Get Active Workflow",
-                },
-                { value: "submit-for-review", label: "Submit for Review" },
-                { value: "list-review-tasks", label: "List Review Tasks" },
-                { value: "decide-review-task", label: "Decide Review Task" },
-            ],
-        },
-        {
-            label: "Coverage: API Keys & Webhooks",
-            options: [
-                { value: "list-api-keys", label: "List API Keys" },
-                { value: "create-api-key", label: "Create API Key" },
-                { value: "rotate-api-key", label: "Rotate API Key" },
-                { value: "revoke-api-key", label: "Revoke API Key" },
-                { value: "register-webhook", label: "Register Webhook" },
-                { value: "list-webhooks", label: "List Webhooks" },
-                { value: "get-webhook", label: "Get Webhook" },
-                { value: "update-webhook", label: "Update Webhook" },
-                { value: "delete-webhook", label: "Delete Webhook" },
-            ],
-        },
-        {
-            label: "Coverage: Domain, Policy, Search, Payments",
-            options: [
-                { value: "list-domains", label: "List Domains" },
-                { value: "evaluate-policy", label: "Evaluate Policy" },
-                { value: "semantic-search", label: "Semantic Search" },
-                { value: "list-payments", label: "List Payments" },
-                { value: "get-payment", label: "Get Payment by ID" },
-            ],
-        },
-        {
-            label: "Error Scenarios (AI Remediation)",
-            options: [
-                {
-                    value: "error-missing-auth",
-                    label: "Missing Authentication",
-                },
+                { value: "create-post-invalid", label: "Create Invalid Item" },
+                { value: "dry-run-create", label: "Dry Run Create" },
                 {
                     value: "error-empty-update",
                     label: "Empty Update Body",
@@ -1550,10 +1378,57 @@
                     value: "error-duplicate-slug",
                     label: "Duplicate Content Type Slug",
                 },
+            ],
+        },
+        {
+            label: "Core: Workflow and Review",
+            options: [
                 {
-                    value: "error-cross-domain",
-                    label: "Cross-Domain Access Probe",
+                    value: "create-blog-post-draft",
+                    label: "Create Draft Item",
                 },
+                { value: "create-workflow", label: "Create Workflow" },
+                {
+                    value: "add-workflow-transition-draft-review",
+                    label: "Add Transition: draft -> in_review",
+                },
+                {
+                    value: "add-workflow-transition-review-published",
+                    label: "Add Transition: in_review -> published",
+                },
+                {
+                    value: "get-active-workflow",
+                    label: "Get Active Workflow",
+                },
+                { value: "submit-for-review", label: "Submit for Review" },
+                { value: "list-review-tasks", label: "List Review Tasks" },
+                { value: "list-comments", label: "List Review Comments" },
+                { value: "add-comment", label: "Add Review Comment" },
+                { value: "decide-review-task", label: "Decide Review Task" },
+            ],
+        },
+        {
+            label: "Core: REST and MCP",
+            options: [
+                {
+                    value: "mcp-get-content-item",
+                    label: "Fetch Item via MCP",
+                },
+            ],
+        },
+        {
+            label: "L402",
+            options: [
+                {
+                    value: "create-paid-content-type",
+                    label: "Create Paid Content Type",
+                },
+                {
+                    value: "l402-payment-required",
+                    label: "Trigger 402 Challenge",
+                },
+                { value: "list-payments", label: "List Payments" },
+                { value: "get-payment", label: "Get Payment by ID" },
                 {
                     value: "error-payment-required",
                     label: "Payment Required (402)",
@@ -1561,99 +1436,106 @@
             ],
         },
         {
-            label: "Scenario Walkthroughs",
+            label: "Archived: Batch Operations",
+            archived: true,
             options: [
                 {
-                    value: "scenario-lifecycle-1",
-                    label: "Lifecycle 1/5: Create Type",
+                    value: "batch-create-items",
+                    label: "Batch Create Items",
                 },
                 {
-                    value: "scenario-lifecycle-2",
-                    label: "Lifecycle 2/5: Create Item",
+                    value: "batch-update-items",
+                    label: "Batch Update Items",
                 },
                 {
-                    value: "scenario-lifecycle-3",
-                    label: "Lifecycle 3/5: Update Item",
+                    value: "batch-delete-items",
+                    label: "Batch Delete Items",
+                },
+            ],
+        },
+        {
+            label: "Archived: API Keys and Webhooks",
+            archived: true,
+            options: [
+                {
+                    value: "list-api-keys",
+                    label: "List API Keys",
                 },
                 {
-                    value: "scenario-lifecycle-4",
-                    label: "Lifecycle 4/5: Versions",
+                    value: "create-api-key",
+                    label: "Create API Key",
                 },
                 {
-                    value: "scenario-lifecycle-5",
-                    label: "Lifecycle 5/5: Rollback",
+                    value: "rotate-api-key",
+                    label: "Rotate API Key",
                 },
                 {
-                    value: "scenario-workflow-1",
-                    label: "Workflow 1/7: Create Workflow",
+                    value: "revoke-api-key",
+                    label: "Revoke API Key",
                 },
                 {
-                    value: "scenario-workflow-2",
-                    label: "Workflow 2/7: Add draft -> review",
+                    value: "register-webhook",
+                    label: "Register Webhook",
                 },
                 {
-                    value: "scenario-workflow-3",
-                    label: "Workflow 3/7: Add review -> published",
+                    value: "list-webhooks",
+                    label: "List Webhooks",
                 },
                 {
-                    value: "scenario-workflow-4",
-                    label: "Workflow 4/7: Create Draft",
+                    value: "get-webhook",
+                    label: "Get Webhook",
                 },
                 {
-                    value: "scenario-workflow-5",
-                    label: "Workflow 5/7: Submit Review",
+                    value: "update-webhook",
+                    label: "Update Webhook",
                 },
                 {
-                    value: "scenario-workflow-6",
-                    label: "Workflow 6/7: Add Comment",
+                    value: "delete-webhook",
+                    label: "Delete Webhook",
+                },
+            ],
+        },
+        {
+            label: "Archived: Domains, Policy, and Search",
+            archived: true,
+            options: [
+                {
+                    value: "list-domains",
+                    label: "List Domains",
                 },
                 {
-                    value: "scenario-workflow-7",
-                    label: "Workflow 7/7: Approve Task",
+                    value: "evaluate-policy",
+                    label: "Evaluate Policy",
                 },
                 {
-                    value: "scenario-l402-1",
-                    label: "L402 1/3: Create Paid Type",
+                    value: "semantic-search",
+                    label: "Semantic Search",
+                },
+            ],
+        },
+        {
+            label: "Archived: Historical Error Probes",
+            archived: true,
+            options: [
+                {
+                    value: "error-missing-auth",
+                    label: "Missing Authentication",
                 },
                 {
-                    value: "scenario-l402-2",
-                    label: "L402 2/3: Trigger 402",
-                },
-                {
-                    value: "scenario-l402-3",
-                    label: "L402 3/3: List Payments",
-                },
-                {
-                    value: "scenario-webhook-1",
-                    label: "Webhook 1/4: Register",
-                },
-                {
-                    value: "scenario-webhook-2",
-                    label: "Webhook 2/4: Trigger Event",
-                },
-                {
-                    value: "scenario-webhook-3",
-                    label: "Webhook 3/4: List",
-                },
-                {
-                    value: "scenario-webhook-4",
-                    label: "Webhook 4/4: Delete",
-                },
-                {
-                    value: "scenario-batch-1",
-                    label: "Batch 1/3: Create",
-                },
-                {
-                    value: "scenario-batch-2",
-                    label: "Batch 2/3: Update",
-                },
-                {
-                    value: "scenario-batch-3",
-                    label: "Batch 3/3: Delete",
+                    value: "error-cross-domain",
+                    label: "Cross-Domain Access Probe",
                 },
             ],
         },
     ];
+
+    let activeTemplateGroups = $derived.by(() =>
+        templateGroups.filter((group) => !group.archived),
+    );
+
+    let archivedTemplateGroups = $derived.by(() =>
+        templateGroups.filter((group) => group.archived),
+    );
 
     async function refreshTemplateContext() {
         clearError();
@@ -1668,25 +1550,7 @@
         context: SandboxContext,
     ): TemplatePreset | null {
         const templates = buildTemplates(context);
-
-        if (templates[name]) {
-            return templates[name];
-        }
-
-        const scenario = scenarioTemplateMap[name];
-        if (!scenario) {
-            return null;
-        }
-
-        const baseTemplate = templates[scenario.base];
-        if (!baseTemplate) {
-            return null;
-        }
-
-        return {
-            ...baseTemplate,
-            guide: scenario.guide,
-        };
+        return templates[name] ?? null;
     }
 
     function selectScenario(scenario: Scenario) {
@@ -1929,8 +1793,8 @@
             } else if (persistedSnapshot && persistedScenario) {
                 engine.startScenario(persistedScenario);
                 engine.restoreFromSnapshot(persistedSnapshot);
-            } else {
-                engine.startScenario(SCENARIOS[0]);
+            } else if (DEFAULT_SCENARIO) {
+                engine.startScenario(DEFAULT_SCENARIO);
             }
         }
         scenarioStateReady = true;
@@ -1964,37 +1828,39 @@
                     Agent Sandbox (Experimental)
                 </h2>
                 <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                    Explore API calls, inspect AI-ready response metadata, and
-                    run scenario walkthroughs. This page is for exploration and
-                    demos, not the default supported supervisor workflow.
+                    Focused on the supported runtime path: core content
+                    operations, workflow review, REST/MCP surfaces, and L402.
+                    Historical demos stay available under archived sections.
                 </p>
             </div>
             <div
-                class="flex w-full lg:w-auto flex-col sm:flex-row items-stretch sm:items-center gap-2"
+                class="flex w-full lg:w-auto flex-col sm:flex-row items-stretch sm:items-end gap-3"
             >
-                <label
-                    for="template-select"
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                    >Templates:</label
-                >
-                <select
-                    id="template-select"
-                    onchange={applyTemplate}
-                    class="block w-full sm:w-auto min-w-0 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-1.5 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-xs sm:min-w-[320px]"
-                >
-                    <option value="" disabled selected
-                        >Select a real-world example...</option
+                <div class="min-w-0">
+                    <label
+                        for="template-select"
+                        class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
+                        >Active Templates</label
                     >
-                    {#each templateGroups as group}
-                        <optgroup label={group.label}>
-                            {#each group.options as option}
-                                <option value={option.value}
-                                    >{option.label}</option
-                                >
-                            {/each}
-                        </optgroup>
-                    {/each}
-                </select>
+                    <select
+                        id="template-select"
+                        onchange={applyTemplate}
+                        class="block w-full sm:w-auto min-w-0 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-1.5 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-xs sm:min-w-[320px]"
+                    >
+                        <option value="" disabled selected
+                            >Select a core or L402 example...</option
+                        >
+                        {#each activeTemplateGroups as group}
+                            <optgroup label={group.label}>
+                                {#each group.options as option}
+                                    <option value={option.value}
+                                        >{option.label}</option
+                                    >
+                                {/each}
+                            </optgroup>
+                        {/each}
+                    </select>
+                </div>
                 <button
                     class="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
                     onclick={refreshTemplateContext}
@@ -2006,6 +1872,51 @@
             </div>
         </div>
 
+        {#if archivedTemplateGroups.length > 0}
+            <details
+                class="rounded-lg border border-gray-200 bg-white/70 dark:border-gray-700 dark:bg-gray-800/40"
+            >
+                <summary
+                    class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200"
+                >
+                    Archived Templates
+                </summary>
+                <div
+                    class="border-t border-gray-200 px-4 py-3 dark:border-gray-700 flex flex-col gap-3 lg:flex-row lg:items-end"
+                >
+                    <p class="text-xs leading-5 text-gray-500 dark:text-gray-400 lg:max-w-md">
+                        Historical module, enterprise, and legacy demo requests
+                        that are outside the focused core runtime and L402 path.
+                    </p>
+                    <div class="min-w-0">
+                        <label
+                            for="archived-template-select"
+                            class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
+                            >Archived Templates</label
+                        >
+                        <select
+                            id="archived-template-select"
+                            onchange={applyTemplate}
+                            class="block w-full sm:w-auto min-w-0 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white px-3 py-1.5 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-xs sm:min-w-[320px]"
+                        >
+                            <option value="" disabled selected
+                                >Load archived example...</option
+                            >
+                            {#each archivedTemplateGroups as group}
+                                <optgroup label={group.label}>
+                                    {#each group.options as option}
+                                        <option value={option.value}
+                                            >{option.label}</option
+                                        >
+                                    {/each}
+                                </optgroup>
+                            {/each}
+                        </select>
+                    </div>
+                </div>
+            </details>
+        {/if}
+
         {#if templateGuide}
             <div
                 class="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-900/20 text-blue-900 dark:text-blue-200 px-3 py-2 text-xs whitespace-pre-line"
@@ -2014,23 +1925,43 @@
             </div>
         {/if}
 
-        <dl
-            class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 text-xs"
-            aria-label="Captured sandbox context"
-        >
-            {#each contextSummaryItems as item}
-                <div
-                    class="rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2"
+        {#if contextSummaryItems.length > 0}
+            <div
+                class="rounded-lg border border-gray-200 bg-gray-50/60 dark:border-gray-700 dark:bg-gray-800/50 p-3"
+            >
+                <p
+                    class="mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
                 >
-                    <dt class="font-medium text-gray-500 dark:text-gray-400">
-                        {item.label}
-                    </dt>
-                    <dd class="mt-1 font-mono text-gray-800 dark:text-gray-100">
-                        {item.value}
-                    </dd>
-                </div>
-            {/each}
-        </dl>
+                    Captured Context
+                </p>
+                <dl
+                    class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 text-xs"
+                    aria-label="Captured sandbox context"
+                >
+                    {#each contextSummaryItems as item}
+                        <div
+                            class="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/40 px-3 py-2"
+                        >
+                            <dt class="font-medium text-gray-500 dark:text-gray-400">
+                                {item.label}
+                            </dt>
+                            <dd
+                                class="mt-1 font-mono text-gray-800 dark:text-gray-100"
+                            >
+                                {item.value}
+                            </dd>
+                        </div>
+                    {/each}
+                </dl>
+            </div>
+        {:else}
+            <div
+                class="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 px-4 py-3 text-xs text-gray-500 dark:text-gray-400"
+            >
+                Run a scenario or apply a template to hydrate IDs for follow-up
+                requests.
+            </div>
+        {/if}
     </div>
 
     <div
@@ -2066,7 +1997,7 @@
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}"
             onclick={() => (activeTab = "advanced")}
         >
-            Advanced (Free-form)
+            Advanced Requests
         </button>
     </div>
 
@@ -2091,6 +2022,17 @@
                 class="w-full lg:w-1/2 flex flex-col gap-4 overflow-y-auto lg:pr-2"
             >
                 {#if engine.activeScenario && engine.currentStep}
+                    {#if activeScenarioIsArchived}
+                        <div
+                            class="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100"
+                        >
+                            <p class="font-medium">Archived scenario</p>
+                            <p class="mt-1 text-xs leading-5">
+                                {engine.activeScenario.archiveReason ??
+                                    "This walkthrough is retained for historical reference and is outside the focused core runtime + L402 sandbox path."}
+                            </p>
+                        </div>
+                    {/if}
                     <NarrationBlock
                         title={engine.currentStep.title}
                         narration={engine.currentStep.narration}

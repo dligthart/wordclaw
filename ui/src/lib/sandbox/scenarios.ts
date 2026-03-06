@@ -3,10 +3,11 @@ import type { Scenario } from "$lib/types/sandbox";
 export const SCENARIOS: Scenario[] = [
     {
         id: "quick-start",
-        title: "Quick Start: Content Lifecycle",
+        title: "Content Lifecycle Basics",
         icon: "zap",
-        tagline: "Create, read, update, and trace content.",
-        differentiator: "Fundamentals",
+        tagline: "Create, update, version, and audit content through the core runtime.",
+        differentiator: "Content Runtime",
+        track: "core",
         steps: [
             {
                 title: "Create Content Type",
@@ -84,10 +85,11 @@ export const SCENARIOS: Scenario[] = [
     },
     {
         id: "ai-errors",
-        title: "AI-Friendly Error Remediation",
+        title: "Validation and Dry Run",
         icon: "alert-triangle",
-        tagline: "Watch agents self-correct using structured error feedback.",
-        differentiator: "AI Usability",
+        tagline: "Exercise structured validation feedback before content is persisted.",
+        differentiator: "Safety and Validation",
+        track: "core",
         steps: [
             {
                 title: "Create Scenario Content Type",
@@ -129,20 +131,6 @@ export const SCENARIOS: Scenario[] = [
                 expectedStatus: 400
             },
             {
-                title: "Trigger Missing Dependency Error",
-                narration: "Referencing a non-existent Content Type ID triggers a `CONTENT_TYPE_NOT_FOUND` error, with a recommendation to query the types endpoint.",
-                method: "POST",
-                endpoint: "/api/content-items",
-                body: {
-                    contentTypeId: 9999999,
-                    data: {
-                        title: "Lost in space"
-                    },
-                    status: "draft"
-                },
-                expectedStatus: 400
-            },
-            {
                 title: "Dry-Run Validation",
                 narration: "Agents can validate payloads *without* saving them by passing `?mode=dry_run`. The system confirms validity and expected policy outcomes.",
                 method: "POST",
@@ -161,10 +149,11 @@ export const SCENARIOS: Scenario[] = [
     },
     {
         id: "editorial-workflow",
-        title: "Policy-Driven Editorial Workflow",
+        title: "Editorial Workflow and Review",
         icon: "git-merge",
-        tagline: "Enforce review pipelines before publication.",
-        differentiator: "Governance",
+        tagline: "Move draft content into supervised review before publication.",
+        differentiator: "Workflow and Review",
+        track: "core",
         steps: [
             {
                 title: "Create Workflow Content Type",
@@ -246,7 +235,9 @@ export const SCENARIOS: Scenario[] = [
         title: "Semantic Vector RAG Search",
         icon: "search",
         tagline: "Discover content contextually using pgvector embeddings.",
-        differentiator: "Native Vector DB",
+        differentiator: "Archived Search",
+        track: "archived",
+        archiveReason: "Search is optional and outside the focused core runtime sandbox.",
         steps: [
             {
                 title: "Natural Language Semantic Query",
@@ -268,8 +259,9 @@ export const SCENARIOS: Scenario[] = [
         id: "l402-payment",
         title: "L402 Lightning Payment Flow",
         icon: "zap",
-        tagline: "Machine-to-machine payments via the Lightning Network.",
-        differentiator: "Monetization",
+        tagline: "Trigger and inspect the paywall flow used by paid content operations.",
+        differentiator: "L402 Monetization",
+        track: "l402",
         steps: [
             {
                 title: "Create Paid Content Type",
@@ -311,10 +303,11 @@ export const SCENARIOS: Scenario[] = [
     },
     {
         id: "tri-protocol",
-        title: "REST + MCP Core Surfaces",
+        title: "REST and MCP Core Surfaces",
         icon: "layers",
-        tagline: "Run the core workflow through REST and MCP, with GraphQL shown as compatibility-only.",
-        differentiator: "Runtime Surfaces",
+        tagline: "Verify the supported agent-facing interfaces used in the focused product path.",
+        differentiator: "Agent Interfaces",
+        track: "core",
         steps: [
             {
                 title: "Create Shared Fixture via REST",
@@ -351,17 +344,6 @@ export const SCENARIOS: Scenario[] = [
                 captureFromResponse: { "parityItemId": "data.id" }
             },
             {
-                title: "Query via GraphQL",
-                narration: "The same item is available via the GraphQL compatibility endpoint when that surface is enabled.",
-                method: "POST",
-                endpoint: "/api/graphql",
-                protocol: "GRAPHQL",
-                body: {
-                    query: "{ contentItem(id: {{parityItemId}}) { id data } }"
-                },
-                expectedStatus: 200
-            },
-            {
                 title: "Fetch via MCP Tool",
                 narration: "Use the sandbox MCP bridge to execute the same read operation through the default agent-tooling surface.",
                 method: "POST",
@@ -382,7 +364,9 @@ export const SCENARIOS: Scenario[] = [
         title: "Multi-Domain Tenant Isolation",
         icon: "shield",
         tagline: "Run isolated publications on a single deployment.",
-        differentiator: "Enterprise",
+        differentiator: "Archived Enterprise",
+        track: "archived",
+        archiveReason: "Tenant-isolation demos are retained for reference but are not part of the core sandbox path.",
         steps: [
             {
                 title: "Discover Available Domains",
@@ -440,10 +424,12 @@ export const SCENARIOS: Scenario[] = [
     },
     {
         id: "agent-keys",
-        title: "Agent Key Management",
+        title: "API Key Management",
         icon: "key",
         tagline: "Fine-grained, scoped credentials for agent swarms.",
-        differentiator: "Security",
+        differentiator: "Archived Security",
+        track: "archived",
+        archiveReason: "Credential-management demos are historical and not part of the active sandbox focus.",
         steps: [
             {
                 title: "Provision Key",

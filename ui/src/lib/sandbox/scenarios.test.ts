@@ -16,6 +16,30 @@ describe("sandbox scenarios", () => {
         expect(mcpStep).toBeDefined();
     });
 
+    it("limits active sandbox tracks to core runtime and l402 flows", () => {
+        const activeScenarios = SCENARIOS.filter(
+            (scenario) => scenario.track !== "archived",
+        );
+
+        expect(activeScenarios.length).toBeGreaterThan(0);
+        expect(
+            activeScenarios.every(
+                (scenario) =>
+                    scenario.track === "core" || scenario.track === "l402",
+            ),
+        ).toBe(true);
+    });
+
+    it("keeps GraphQL out of the active scenario set", () => {
+        const activeSteps = SCENARIOS.filter(
+            (scenario) => scenario.track !== "archived",
+        ).flatMap((scenario) => scenario.steps);
+
+        expect(
+            activeSteps.some((step) => step.protocol === "GRAPHQL"),
+        ).toBe(false);
+    });
+
     it("avoids hardcoded fallback IDs in scenario definitions", () => {
         const serializedScenarios = JSON.stringify(SCENARIOS);
         expect(serializedScenarios).not.toContain('"contentTypeId":1');

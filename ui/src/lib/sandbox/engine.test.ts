@@ -8,6 +8,7 @@ const replayScenario: Scenario = {
     icon: "test",
     tagline: "Replay scenario for engine tests",
     differentiator: "Tests",
+    track: "core",
     steps: [
         {
             title: "Step 1",
