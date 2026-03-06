@@ -67,17 +67,19 @@
                             <span class="dot green"></span>
                         </div>
                         <div class="window-body">
-                            <pre><code><span class="keyword">const</span> <span class="variable">wordclaw</span> = <span class="keyword">await</span> <span class="function">AgentSandbox</span>.<span class="property">init</span>({
-  <span class="property">mcp</span>: <span class="string">'enabled'</span>,
-  <span class="property">vectorRag</span>: <span class="boolean">true</span>,
-  <span class="property">l402</span>: {
-    <span class="property">provider</span>: <span class="string">'lnbits'</span>,
-    <span class="property">costPerToken</span>: <span class="number">1</span>
-  }
+                            <pre><code><span class="keyword">const</span> <span class="variable">session</span> = <span class="keyword">await</span> <span class="function">WordClaw</span>.<span class="property">connect</span>({
+  <span class="property">surface</span>: <span class="string">'mcp'</span>,
+  <span class="property">dryRun</span>: <span class="boolean">true</span>,
+  <span class="property">domain</span>: <span class="string">'docs'</span>
 });
 
-<span class="comment">// 🤖 Agent immediately begins creating via MCP</span>
-<span class="keyword">const</span> <span class="variable">draft</span> = <span class="keyword">await</span> <span class="variable">wordclaw</span>.<span class="function">draft</span>(<span class="string">"Explain L402."</span>);</code></pre>
+<span class="comment">// Draft via MCP, then route through approval-aware workflow</span>
+<span class="keyword">const</span> <span class="variable">draft</span> = <span class="keyword">await</span> <span class="variable">session</span>.<span class="function">callTool</span>(<span class="string">'create_content_item'</span>, {
+  <span class="property">contentTypeId</span>: <span class="number">7</span>,
+  <span class="property">data</span>: { <span class="property">title</span>: <span class="string">'Explain L402'</span> },
+  <span class="property">status</span>: <span class="string">'draft'</span>,
+  <span class="property">dryRun</span>: <span class="boolean">true</span>
+});</code></pre>
                         </div>
                     </div>
                 </div>
@@ -130,7 +132,7 @@
                     <div class="feature-card fade-in-up delay-2">
                         <div class="feature-icon">📝</div>
                         <h3>Supervisor Control Plane</h3>
-                        <p>A focused oversight UI for approvals, audits, schemas, content inspection, and agent-key
+                        <p>A focused oversight UI for approvals, audits, schemas, content inspection, and API key
                             management.</p>
                     </div>
                 </div>
