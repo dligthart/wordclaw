@@ -547,6 +547,111 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns content-type stats when includeStats is requested', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ total: 2 }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockReturnValue({
+                        limit: vi.fn().mockReturnValue({
+                            offset: vi.fn().mockResolvedValue([
+                                {
+                                    id: 11,
+                                    name: 'Article',
+                                    slug: 'article',
+                                    description: 'Long-form editorial content',
+                                    schema: '{"type":"object"}',
+                                    basePrice: 0,
+                                    createdAt: '2026-03-01T10:00:00.000Z',
+                                    updatedAt: '2026-03-06T08:00:00.000Z'
+                                },
+                                {
+                                    id: 12,
+                                    name: 'Changelog',
+                                    slug: 'changelog',
+                                    description: null,
+                                    schema: '{"type":"object"}',
+                                    basePrice: 100,
+                                    createdAt: '2026-03-02T10:00:00.000Z',
+                                    updatedAt: '2026-03-04T09:30:00.000Z'
+                                }
+                            ]),
+                        }),
+                    }),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockReturnValue({
+                        groupBy: vi.fn().mockResolvedValue([
+                            {
+                                contentTypeId: 11,
+                                status: 'draft',
+                                itemCount: 2,
+                                lastItemUpdatedAt: '2026-03-05T10:00:00.000Z'
+                            },
+                            {
+                                contentTypeId: 11,
+                                status: 'published',
+                                itemCount: 3,
+                                lastItemUpdatedAt: '2026-03-06T08:00:00.000Z'
+                            }
+                        ]),
+                    }),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-types?limit=25&offset=5&includeStats=true'
+            });
+
+            expect(response.statusCode).toBe(200);
+
+            const body = response.json() as {
+                data: Array<{
+                    id: number;
+                    stats?: {
+                        itemCount: number;
+                        lastItemUpdatedAt: string | null;
+                        statusCounts: Record<string, number>;
+                    };
+                }>;
+            };
+
+            expect(body.data).toEqual([
+                expect.objectContaining({
+                    id: 11,
+                    stats: {
+                        itemCount: 5,
+                        lastItemUpdatedAt: '2026-03-06T08:00:00.000Z',
+                        statusCounts: {
+                            draft: 2,
+                            published: 3
+                        }
+                    }
+                }),
+                expect.objectContaining({
+                    id: 12,
+                    stats: {
+                        itemCount: 0,
+                        lastItemUpdatedAt: null,
+                        statusCounts: {}
+                    }
+                })
+            ]);
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns AUTH_MISSING_API_KEY when auth is required', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'writer=content:read|content:write|audit:read';

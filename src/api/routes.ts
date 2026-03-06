@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import { and, asc, desc, eq, gte, ilike, lte, or, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, lt, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
@@ -45,6 +45,9 @@ type ContentItemsQuery = {
 type PaginationQuery = {
     limit?: number;
     offset?: number;
+};
+type ContentTypesQuery = PaginationQuery & {
+    includeStats?: boolean;
 };
 type AgentRunsQuery = {
     status?: string;
@@ -253,11 +256,61 @@ function notFoundAgentRunDefinition(id: number): AIErrorPayload {
     );
 }
 
-function toIsoString(value: Date | null): string | null {
+function toIsoString(value: Date | string | null | undefined): string | null {
     if (!value) {
         return null;
     }
+    if (typeof value === 'string') {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+    }
     return value.toISOString();
+}
+
+type ContentTypeStatsSummary = {
+    itemCount: number;
+    lastItemUpdatedAt: string | null;
+    statusCounts: Record<string, number>;
+};
+
+type ContentTypeStatsRow = {
+    contentTypeId: number;
+    status: string;
+    itemCount: number;
+    lastItemUpdatedAt: Date | string | null;
+};
+
+function withContentTypeStats(
+    types: Array<typeof contentTypes.$inferSelect>,
+    rows: ContentTypeStatsRow[]
+): Array<typeof contentTypes.$inferSelect & { stats: ContentTypeStatsSummary }> {
+    const statsByType = new Map<number, ContentTypeStatsSummary>();
+
+    for (const row of rows) {
+        const existing = statsByType.get(row.contentTypeId) ?? {
+            itemCount: 0,
+            lastItemUpdatedAt: null,
+            statusCounts: {}
+        };
+        const lastItemUpdatedAt = toIsoString(row.lastItemUpdatedAt);
+
+        existing.itemCount += row.itemCount;
+        existing.statusCounts[row.status] = (existing.statusCounts[row.status] ?? 0) + row.itemCount;
+        if (lastItemUpdatedAt && (!existing.lastItemUpdatedAt || lastItemUpdatedAt > existing.lastItemUpdatedAt)) {
+            existing.lastItemUpdatedAt = lastItemUpdatedAt;
+        }
+
+        statsByType.set(row.contentTypeId, existing);
+    }
+
+    return types.map((type) => ({
+        ...type,
+        stats: statsByType.get(type.id) ?? {
+            itemCount: 0,
+            lastItemUpdatedAt: null,
+            statusCounts: {}
+        }
+    }));
 }
 
 function serializeAgentRun(run: {
@@ -1288,7 +1341,8 @@ export default async function apiRoutes(server: FastifyInstance) {
         schema: {
             querystring: Type.Object({
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
-                offset: Type.Optional(Type.Number({ minimum: 0 }))
+                offset: Type.Optional(Type.Number({ minimum: 0 })),
+                includeStats: Type.Optional(Type.Boolean())
             }),
             response: {
                 200: createAIResponse(Type.Array(Type.Object({
@@ -1299,24 +1353,46 @@ export default async function apiRoutes(server: FastifyInstance) {
                     schema: Type.String(),
                     basePrice: Type.Optional(Type.Number()),
                     createdAt: Type.String(),
-                    updatedAt: Type.String()
+                    updatedAt: Type.String(),
+                    stats: Type.Optional(Type.Object({
+                        itemCount: Type.Number(),
+                        lastItemUpdatedAt: Type.Union([Type.String(), Type.Null()]),
+                        statusCounts: Type.Record(Type.String(), Type.Number())
+                    }))
                 })))
             }
         }
     }, async (request, reply) => {
-        const { limit: rawLimit, offset: rawOffset } = request.query as PaginationQuery;
+        const { limit: rawLimit, offset: rawOffset, includeStats } = request.query as ContentTypesQuery;
         const limit = clampLimit(rawLimit);
         const offset = clampOffset(rawOffset);
-        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes).where(eq(contentTypes.domainId, getDomainId(request)));
+        const domainId = getDomainId(request);
+        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentTypes).where(eq(contentTypes.domainId, domainId));
         const types = await db.select()
             .from(contentTypes)
-            .where(eq(contentTypes.domainId, getDomainId(request)))
+            .where(eq(contentTypes.domainId, domainId))
             .limit(limit)
             .offset(offset);
+        const typeIds = types.map((type) => type.id);
+        const stats = includeStats === true && typeIds.length > 0
+            ? await db.select({
+                contentTypeId: contentItems.contentTypeId,
+                status: contentItems.status,
+                itemCount: sql<number>`count(*)::int`,
+                lastItemUpdatedAt: sql<string | null>`max(${contentItems.updatedAt})::text`
+            })
+                .from(contentItems)
+                .where(and(
+                    eq(contentItems.domainId, domainId),
+                    inArray(contentItems.contentTypeId, typeIds)
+                ))
+                .groupBy(contentItems.contentTypeId, contentItems.status)
+            : [];
+        const data = includeStats === true ? withContentTypeStats(types, stats) : types;
 
-        const hasMore = offset + types.length < total;
+        const hasMore = offset + data.length < total;
         return {
-            data: types,
+            data,
             meta: buildMeta(
                 types.length > 0 ? 'Select a content type to create items' : 'Create a new content type',
                 ['POST /api/content-types'],

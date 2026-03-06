@@ -8,6 +8,12 @@
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
     import { Icon, ArrowPath, ChevronLeft, XMark } from "svelte-hero-icons";
 
+    type ContentTypeStats = {
+        itemCount: number;
+        lastItemUpdatedAt: string | null;
+        statusCounts: Record<string, number>;
+    };
+
     type ContentType = {
         id: number;
         name: string;
@@ -17,6 +23,7 @@
         basePrice?: number;
         createdAt: string;
         updatedAt: string;
+        stats?: ContentTypeStats;
     };
 
     type ContentItem = {
@@ -160,6 +167,23 @@
               )
             : [],
     );
+    let sortedContentTypes = $derived.by(() =>
+        [...contentTypes].sort((left, right) => {
+            const leftLastActivity = left.stats?.lastItemUpdatedAt ?? "";
+            const rightLastActivity = right.stats?.lastItemUpdatedAt ?? "";
+            if (leftLastActivity !== rightLastActivity) {
+                return rightLastActivity.localeCompare(leftLastActivity);
+            }
+
+            const leftCount = left.stats?.itemCount ?? 0;
+            const rightCount = right.stats?.itemCount ?? 0;
+            if (leftCount !== rightCount) {
+                return rightCount - leftCount;
+            }
+
+            return left.name.localeCompare(right.name);
+        }),
+    );
 
     function normalizeMeta(meta: Record<string, unknown> | null | undefined): ContentListMeta {
         return {
@@ -250,6 +274,10 @@
         return new Date(value).toLocaleString();
     }
 
+    function formatStatusLabel(status: string): string {
+        return status.replaceAll("_", " ");
+    }
+
     function resolveSchemaSummary(type: ContentType): string {
         try {
             const parsed = JSON.parse(type.schema) as {
@@ -275,6 +303,33 @@
         return boundary === "start"
             ? `${date}T00:00:00.000Z`
             : `${date}T23:59:59.999Z`;
+    }
+
+    function resolveTypeItemCount(type: ContentType): number {
+        return type.stats?.itemCount ?? 0;
+    }
+
+    function resolveTypeLastActivity(type: ContentType): string {
+        if (!type.stats?.lastItemUpdatedAt) {
+            return "No items yet";
+        }
+
+        return formatDateTime(type.stats.lastItemUpdatedAt);
+    }
+
+    function summarizeTypeStatuses(
+        type: ContentType,
+    ): Array<{ status: string; count: number }> {
+        return Object.entries(type.stats?.statusCounts ?? {})
+            .sort(([leftStatus, leftCount], [rightStatus, rightCount]) => {
+                if (leftCount !== rightCount) {
+                    return rightCount - leftCount;
+                }
+
+                return leftStatus.localeCompare(rightStatus);
+            })
+            .slice(0, 3)
+            .map(([status, count]) => ({ status, count }));
     }
 
     function buildItemsQuery(offset = 0): string {
@@ -329,8 +384,21 @@
         error = null;
 
         try {
-            const res = await fetchApi("/content-types?limit=200");
-            contentTypes = res.data;
+            const res = await fetchApi("/content-types?limit=200&includeStats=true");
+            const nextTypes = res.data as ContentType[];
+            const selectedTypeId = selectedType?.id ?? null;
+
+            contentTypes = nextTypes;
+            if (selectedTypeId !== null) {
+                selectedType =
+                    nextTypes.find((type) => type.id === selectedTypeId) ?? null;
+                if (!selectedType) {
+                    items = [];
+                    itemsMeta = { ...DEFAULT_ITEMS_META };
+                    activeWorkflow = null;
+                    resetSelectedItemContext();
+                }
+            }
         } catch (err: any) {
             error = err.message || "Failed to load content types";
         } finally {
@@ -694,10 +762,12 @@
         <button
             type="button"
             onclick={() => {
-                if (selectedType) {
+                const selectedTypeId = selectedType?.id;
+                if (selectedTypeId) {
                     void Promise.all([
+                        loadContentTypes(),
                         loadItems(itemsMeta.offset, true),
-                        loadActiveWorkflow(selectedType.id),
+                        loadActiveWorkflow(selectedTypeId),
                     ]);
                 } else {
                     void loadContentTypes();
@@ -740,7 +810,9 @@
                     </p>
                 {:else}
                     <ul class="space-y-2">
-                        {#each contentTypes as type}
+                        {#each sortedContentTypes as type}
+                            {@const typeStatusSummary =
+                                summarizeTypeStatuses(type)}
                             <li>
                                 <button
                                     type="button"
@@ -777,12 +849,58 @@
                                         {type.description ||
                                             "Structured content model for supervised AI and operator workflows."}
                                     </p>
+                                    <div class="mt-3 grid grid-cols-2 gap-2">
+                                        <div
+                                            class="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-700/60"
+                                        >
+                                            <div
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                            >
+                                                Items
+                                            </div>
+                                            <div
+                                                class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100"
+                                            >
+                                                {resolveTypeItemCount(type)}
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-700/60"
+                                        >
+                                            <div
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                                            >
+                                                Last item
+                                            </div>
+                                            <div
+                                                class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100"
+                                            >
+                                                {resolveTypeLastActivity(type)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {#if typeStatusSummary.length > 0}
+                                        <div class="mt-3 flex flex-wrap gap-1.5">
+                                            {#each typeStatusSummary as summary}
+                                                <span
+                                                    class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-[0.65rem] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                                                >
+                                                    {formatStatusLabel(
+                                                        summary.status,
+                                                    )}
+                                                    <span class="ml-1 font-mono"
+                                                        >{summary.count}</span
+                                                    >
+                                                </span>
+                                            {/each}
+                                        </div>
+                                    {/if}
                                     <div
                                         class="mt-3 flex items-center justify-between text-[0.7rem] text-gray-500 dark:text-gray-400"
                                     >
                                         <span>{resolveSchemaSummary(type)}</span>
                                         <span
-                                            >Updated {formatDate(
+                                            >Model updated {formatDate(
                                                 type.updatedAt,
                                             )}</span
                                         >
