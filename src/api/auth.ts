@@ -31,11 +31,40 @@ type AuthResult = AuthSuccess | AuthFailure;
 
 const ENV_AUTH_REQUIRED = 'AUTH_REQUIRED';
 const ENV_API_KEYS = 'API_KEYS';
+const ENV_ALLOW_INSECURE_LOCAL_ADMIN = 'ALLOW_INSECURE_LOCAL_ADMIN';
 const HEADER_API_KEY = 'x-api-key';
+const TRUE_VALUE = 'true';
 
 function isAuthRequired(): boolean {
-    // SECURITY HARDENING: Default to true. Only explicit "false" allows bypass, and we may restrict that further.
-    return (process.env[ENV_AUTH_REQUIRED] || 'true').toLowerCase() === 'true';
+    return (process.env[ENV_AUTH_REQUIRED] || TRUE_VALUE).toLowerCase() === TRUE_VALUE;
+}
+
+function isInsecureLocalAdminEnabled(): boolean {
+    return process.env.NODE_ENV !== 'production'
+        && (process.env[ENV_ALLOW_INSECURE_LOCAL_ADMIN] || 'false').toLowerCase() === TRUE_VALUE;
+}
+
+function buildMissingApiKeyRemediation(requiredScope?: Scope): string {
+    const base = `Provide ${HEADER_API_KEY} header or Authorization: Bearer <key>${requiredScope ? `. Required scope: ${requiredScope}.` : '.'}`;
+
+    if (!isAuthRequired() && !isInsecureLocalAdminEnabled() && process.env.NODE_ENV !== 'production') {
+        return `${base} For local-only unauthenticated admin access during development, also set ${ENV_ALLOW_INSECURE_LOCAL_ADMIN}=true.`;
+    }
+
+    return base;
+}
+
+function anonymousLocalPrincipal(): AuthPrincipal {
+    console.warn(
+        `[WARNING] INSECURE FALLBACK: Proceeding as anonymous admin because ${ENV_AUTH_REQUIRED}=false and ${ENV_ALLOW_INSECURE_LOCAL_ADMIN}=true in a non-production environment.`
+    );
+
+    return {
+        keyId: 'anonymous',
+        domainId: 1,
+        scopes: new Set(['admin']),
+        source: 'anonymous'
+    };
 }
 
 function parseApiKeyConfig(raw: string | undefined): Map<string, Set<string>> {
@@ -176,25 +205,19 @@ export async function authorizeApiRequest(method: string, routePath: string, hea
     const mustAuthenticate = isAuthRequired();
 
     if (!key) {
-        if (mustAuthenticate || process.env.NODE_ENV === 'production') {
-            return authError(
-                401,
-                'Missing API key',
-                'AUTH_MISSING_API_KEY',
-                `Provide ${HEADER_API_KEY} header or Authorization: Bearer <key>. Required scope: ${required}.`
-            );
+        if (!mustAuthenticate && isInsecureLocalAdminEnabled()) {
+            return {
+                ok: true,
+                principal: anonymousLocalPrincipal()
+            };
         }
 
-        console.warn(`[WARNING] INSECURE FALLBACK: Proceeding as anonymous admin without an API key because AUTH_REQUIRED is false and NODE_ENV is not production.`);
-        return {
-            ok: true,
-            principal: {
-                keyId: 'anonymous',
-                domainId: 1, // Default unprotected local execution tenant
-                scopes: new Set(['admin']),
-                source: 'anonymous'
-            }
-        };
+        return authError(
+            401,
+            'Missing API key',
+            'AUTH_MISSING_API_KEY',
+            buildMissingApiKeyRemediation(required)
+        );
     }
 
     const resolved = await resolvePrincipalFromKey(key, configuredKeys);
@@ -227,25 +250,19 @@ export async function authenticateApiRequest(headers: IncomingHttpHeaders): Prom
     const mustAuthenticate = isAuthRequired();
 
     if (!key) {
-        if (mustAuthenticate || process.env.NODE_ENV === 'production') {
-            return authError(
-                401,
-                'Missing API key',
-                'AUTH_MISSING_API_KEY',
-                `Provide ${HEADER_API_KEY} header or Authorization: Bearer <key>.`
-            );
+        if (!mustAuthenticate && isInsecureLocalAdminEnabled()) {
+            return {
+                ok: true,
+                principal: anonymousLocalPrincipal()
+            };
         }
 
-        console.warn(`[WARNING] INSECURE FALLBACK: Proceeding as anonymous admin without an API key because AUTH_REQUIRED is false and NODE_ENV is not production.`);
-        return {
-            ok: true,
-            principal: {
-                keyId: 'anonymous',
-                domainId: 1, // Default local fallback tenant
-                scopes: new Set(['admin']),
-                source: 'anonymous'
-            }
-        };
+        return authError(
+            401,
+            'Missing API key',
+            'AUTH_MISSING_API_KEY',
+            buildMissingApiKeyRemediation()
+        );
     }
 
     const resolved = await resolvePrincipalFromKey(key, configuredKeys);

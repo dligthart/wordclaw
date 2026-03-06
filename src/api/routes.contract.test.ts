@@ -64,6 +64,7 @@ function resetMocks() {
 
 const originalAuthRequired = process.env.AUTH_REQUIRED;
 const originalApiKeys = process.env.API_KEYS;
+const originalAllowInsecureLocalAdmin = process.env.ALLOW_INSECURE_LOCAL_ADMIN;
 const originalExperimentalRevenue = process.env.ENABLE_EXPERIMENTAL_REVENUE;
 const originalExperimentalDelegation = process.env.ENABLE_EXPERIMENTAL_DELEGATION;
 const originalExperimentalAgentRuns = process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
@@ -79,6 +80,12 @@ function restoreAuthEnv() {
         delete process.env.API_KEYS;
     } else {
         process.env.API_KEYS = originalApiKeys;
+    }
+
+    if (originalAllowInsecureLocalAdmin === undefined) {
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+    } else {
+        process.env.ALLOW_INSECURE_LOCAL_ADMIN = originalAllowInsecureLocalAdmin;
     }
 
     if (originalExperimentalRevenue === undefined) {
@@ -104,6 +111,7 @@ describe('API Route Contracts', () => {
     beforeEach(() => {
         resetMocks();
         process.env.AUTH_REQUIRED = 'false';
+        process.env.ALLOW_INSECURE_LOCAL_ADMIN = 'true';
         delete process.env.API_KEYS;
         delete process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
     });
