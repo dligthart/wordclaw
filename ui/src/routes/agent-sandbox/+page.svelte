@@ -1801,7 +1801,7 @@
 </script>
 
 <svelte:head>
-    <title>Agent Sandbox | WordClaw Supervisor</title>
+    <title>Agent Sandbox (Experimental) | WordClaw Supervisor</title>
 </svelte:head>
 
 <div class="h-full flex flex-col">
@@ -1809,11 +1809,12 @@
         <div class="flex justify-between items-end gap-4 flex-wrap">
             <div>
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-                    Agent Sandbox
+                    Agent Sandbox (Experimental)
                 </h2>
                 <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                    Simulate API calls, inspect AI-ready response metadata, and
-                    run multi-step scenario walkthroughs.
+                    Explore API calls, inspect AI-ready response metadata, and
+                    run scenario walkthroughs. This page is for exploration and
+                    demos, not the default supported supervisor workflow.
                 </p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">

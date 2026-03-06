@@ -111,8 +111,17 @@
         goto("/ui/login");
     }
 
+    type NavItem = {
+        name: string;
+        href: string;
+        icon: typeof Home;
+        match: (path: string) => boolean;
+        experimental?: boolean;
+        notice?: string;
+    };
+
     // Nav Definitions mapping route substrings to Heroicons & names
-    const navItems = [
+    const coreNavItems: NavItem[] = [
         {
             name: "Dashboard",
             href: "/ui",
@@ -148,28 +157,43 @@
             href: "/ui/approvals",
             icon: CheckCircle,
             match: (p: string) => p.includes("/approvals"),
-        },
+        }
+    ];
+
+    const experimentalNavItems: NavItem[] = [
         {
             name: "Agent Sandbox",
             href: "/ui/agent-sandbox",
             icon: CodeBracketSquare,
             match: (p: string) => p.includes("/agent-sandbox"),
+            experimental: true,
+            notice:
+                "Agent Sandbox is experimental. It remains useful for exploration and demos, but it is outside the default supported supervisor workflow.",
         },
         {
             name: "Payments",
             href: "/ui/payments",
             icon: CreditCard,
             match: (p: string) => p.includes("/payments"),
+            experimental: true,
+            notice:
+                "Payments is an optional L402 operations surface, not part of the default supported control plane.",
         },
         {
             name: "L402 Readiness",
             href: "/ui/l402-readiness",
             icon: CheckBadge,
             match: (p: string) => p.includes("/l402-readiness"),
-        },
+            experimental: true,
+            notice:
+                "L402 readiness is an optional operator tool for the Lightning payment module, not a required part of the default product path.",
+        }
     ];
 
     let currentPath = $derived($page.url.pathname);
+    let activeExperimentalItem = $derived(
+        experimentalNavItems.find((item) => item.match(currentPath)) ?? null,
+    );
 
     // Active drawer function
     const toggleSidebar = () => {
@@ -265,7 +289,12 @@
                     class="bg-transparent dark:bg-transparent px-3 py-4 overflow-y-auto"
                 >
                     <SidebarGroup class="space-y-2">
-                        {#each navItems as item}
+                        <div
+                            class="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500"
+                        >
+                            Core Control Plane
+                        </div>
+                        {#each coreNavItems as item}
                             <SidebarItem
                                 label={item.name}
                                 href={item.href}
@@ -285,6 +314,40 @@
                             </SidebarItem>
                         {/each}
                     </SidebarGroup>
+
+                    <SidebarGroup class="space-y-2 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                        <div
+                            class="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-600 dark:text-amber-400"
+                        >
+                            Experimental / Optional
+                        </div>
+                        <p
+                            class="px-2 text-xs leading-5 text-gray-500 dark:text-gray-400"
+                        >
+                            These pages are available for exploration and
+                            module operations, but they are outside the default
+                            supported supervisor workflow.
+                        </p>
+                        {#each experimentalNavItems as item}
+                            <SidebarItem
+                                label={item.name}
+                                href={item.href}
+                                active={item.match(currentPath)}
+                                class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group"
+                            >
+                                {#snippet icon()}
+                                    <Icon
+                                        src={item.icon}
+                                        class="w-5 h-5 text-gray-500 transition duration-75 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white {item.match(
+                                            currentPath,
+                                        )
+                                            ? 'text-amber-600 dark:text-amber-400'
+                                            : ''}"
+                                    />
+                                {/snippet}
+                            </SidebarItem>
+                        {/each}
+                    </SidebarGroup>
                 </SidebarWrapper>
             </Sidebar>
 
@@ -293,6 +356,18 @@
                 class="relative w-full h-[calc(100vh-4rem)] overflow-y-auto bg-gray-50 dark:bg-gray-900 md:ml-64 p-4 pt-8 lg:p-8 lg:pt-10 transition-all"
             >
                 <div class="max-w-7xl mx-auto h-full">
+                    {#if activeExperimentalItem}
+                        <div
+                            class="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
+                        >
+                            <span class="font-semibold uppercase tracking-wide text-[11px]"
+                                >Experimental Surface</span
+                            >
+                            <p class="mt-1 leading-6">
+                                {activeExperimentalItem.notice}
+                            </p>
+                        </div>
+                    {/if}
                     {@render children()}
                 </div>
             </main>
