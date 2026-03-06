@@ -229,7 +229,7 @@ Durable buyer access grants tied to an agent profile and payment hash.
 | `terminatedAt`   | timestamp | Set when entitlement enters terminal state (`exhausted/expired/revoked`) |
 | `delegatedFrom`  | integer   | Parent entitlement id for delegated grants                           |
 
-`delegatedFrom` exists for delegation experiments in the current runtime, but entitlement delegation is not part of the default supported WordClaw product path.
+`delegatedFrom` exists for delegation experiments in the current runtime, but entitlement delegation is not part of the default supported WordClaw product path and is disabled by default unless explicitly enabled.
 
 ### Optional / Experimental Financial Tables
 

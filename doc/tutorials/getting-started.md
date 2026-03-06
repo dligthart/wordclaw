@@ -43,6 +43,7 @@
    | `AUTH_REQUIRED` | `false`                                          | Require API key authentication   |
    | `API_KEYS`      | *(see .env.example)*                             | Comma-separated key definitions  |
    | `ENABLE_EXPERIMENTAL_REVENUE` | `false`                           | Enable experimental earnings and payout surfaces |
+   | `ENABLE_EXPERIMENTAL_DELEGATION` | `false`                        | Enable experimental entitlement delegation APIs |
 
 5. **Run database migrations**
 

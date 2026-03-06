@@ -5,7 +5,7 @@ import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
-import { isExperimentalRevenueEnabled } from '../config/runtime-features.js';
+import { isExperimentalDelegationEnabled, isExperimentalRevenueEnabled } from '../config/runtime-features.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure, redactPremiumFields } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authenticateApiRequest, getDomainId } from './auth.js';
@@ -2476,71 +2476,73 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
-    server.post('/entitlements/:id/delegate', {
-        schema: {
-            params: Type.Object({
-                id: Type.Number()
-            }),
-            body: Type.Object({
-                targetApiKeyId: Type.Number(),
-                readsAmount: Type.Number()
-            }),
-            response: {
-                200: createAIResponse(Type.Object({
-                    id: Type.Number(),
-                    domainId: Type.Number(),
-                    offerId: Type.Number(),
-                    policyId: Type.Number(),
-                    policyVersion: Type.Number(),
-                    agentProfileId: Type.Number(),
-                    paymentHash: Type.String(),
-                    status: Type.String(),
-                    remainingReads: Type.Union([Type.Number(), Type.Null()]),
-                    expiresAt: Type.Optional(Type.String()),
-                    delegatedFrom: Type.Union([Type.Number(), Type.Null()])
-                })),
-                403: AIErrorResponse,
-                404: AIErrorResponse,
-                400: AIErrorResponse
+    if (isExperimentalDelegationEnabled()) {
+        server.post('/entitlements/:id/delegate', {
+            schema: {
+                params: Type.Object({
+                    id: Type.Number()
+                }),
+                body: Type.Object({
+                    targetApiKeyId: Type.Number(),
+                    readsAmount: Type.Number()
+                }),
+                response: {
+                    200: createAIResponse(Type.Object({
+                        id: Type.Number(),
+                        domainId: Type.Number(),
+                        offerId: Type.Number(),
+                        policyId: Type.Number(),
+                        policyVersion: Type.Number(),
+                        agentProfileId: Type.Number(),
+                        paymentHash: Type.String(),
+                        status: Type.String(),
+                        remainingReads: Type.Union([Type.Number(), Type.Null()]),
+                        expiresAt: Type.Optional(Type.String()),
+                        delegatedFrom: Type.Union([Type.Number(), Type.Null()])
+                    })),
+                    403: AIErrorResponse,
+                    404: AIErrorResponse,
+                    400: AIErrorResponse
+                }
             }
-        }
-    }, async (request, reply) => {
-        const { id } = request.params as IdParams;
-        const { targetApiKeyId, readsAmount } = request.body as { targetApiKeyId: number, readsAmount: number };
-        const domainId = getDomainId(request);
+        }, async (request, reply) => {
+            const { id } = request.params as IdParams;
+            const { targetApiKeyId, readsAmount } = request.body as { targetApiKeyId: number, readsAmount: number };
+            const domainId = getDomainId(request);
 
-        const pKeyId = (request as any).authPrincipal?.keyId;
-        if (typeof pKeyId !== 'number') {
-            return reply.status(403).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Supervisors cannot delegate entitlements.'));
-        }
+            const pKeyId = (request as any).authPrincipal?.keyId;
+            if (typeof pKeyId !== 'number') {
+                return reply.status(403).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Supervisors cannot delegate entitlements.'));
+            }
 
-        const [sourceProfile] = await db.select().from(agentProfiles).where(and(
-            eq(agentProfiles.apiKeyId, pKeyId),
-            eq(agentProfiles.domainId, domainId)
-        ));
-        if (!sourceProfile) return reply.status(403).send(toErrorPayload('Profile missing', 'PROFILE_MISSING', 'You do not have any entitlements.'));
+            const [sourceProfile] = await db.select().from(agentProfiles).where(and(
+                eq(agentProfiles.apiKeyId, pKeyId),
+                eq(agentProfiles.domainId, domainId)
+            ));
+            if (!sourceProfile) return reply.status(403).send(toErrorPayload('Profile missing', 'PROFILE_MISSING', 'You do not have any entitlements.'));
 
-        const [entitlement] = await db.select().from(entitlements).where(and(eq(entitlements.id, id), eq(entitlements.agentProfileId, sourceProfile.id), eq(entitlements.domainId, domainId)));
-        if (!entitlement) return reply.status(404).send(toErrorPayload('Entitlement missing', 'ENTITLEMENT_NOT_FOUND', 'Could not locate the parent entitlement.'));
+            const [entitlement] = await db.select().from(entitlements).where(and(eq(entitlements.id, id), eq(entitlements.agentProfileId, sourceProfile.id), eq(entitlements.domainId, domainId)));
+            if (!entitlement) return reply.status(404).send(toErrorPayload('Entitlement missing', 'ENTITLEMENT_NOT_FOUND', 'Could not locate the parent entitlement.'));
 
-        let [targetProfile] = await db.select().from(agentProfiles).where(and(
-            eq(agentProfiles.apiKeyId, targetApiKeyId),
-            eq(agentProfiles.domainId, domainId)
-        ));
-        if (!targetProfile) {
-            [targetProfile] = await db.insert(agentProfiles).values({ domainId, apiKeyId: targetApiKeyId }).returning();
-        }
+            let [targetProfile] = await db.select().from(agentProfiles).where(and(
+                eq(agentProfiles.apiKeyId, targetApiKeyId),
+                eq(agentProfiles.domainId, domainId)
+            ));
+            if (!targetProfile) {
+                [targetProfile] = await db.insert(agentProfiles).values({ domainId, apiKeyId: targetApiKeyId }).returning();
+            }
 
-        try {
-            const delegated = await LicensingService.delegateEntitlement(domainId, entitlement.id, targetProfile.id, readsAmount);
-            return {
-                data: delegated,
-                meta: buildMeta('Experimental: share entitlement grant', [], 'low', 0)
-            };
-        } catch (e: any) {
-            return reply.status(400).send(toErrorPayload(e.message, 'DELEGATION_FAILED', 'Check delegation rules. Entitlement delegation is experimental.'));
-        }
-    });
+            try {
+                const delegated = await LicensingService.delegateEntitlement(domainId, entitlement.id, targetProfile.id, readsAmount);
+                return {
+                    data: delegated,
+                    meta: buildMeta('Experimental: share entitlement grant', [], 'low', 0)
+                };
+            } catch (e: any) {
+                return reply.status(400).send(toErrorPayload(e.message, 'DELEGATION_FAILED', 'Check delegation rules. Entitlement delegation is experimental.'));
+            }
+        });
+    }
 
     server.put('/content-items/:id', {
         preHandler: globalL402Middleware,

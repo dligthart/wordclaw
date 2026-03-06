@@ -50,6 +50,7 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 - **Offer / Entitlement Licensing** — Offer purchases create entitlements in `pending_payment`, then activate on successful payment verification.
 - **Offer-First Read Gating** — If active offers exist for an item, reads require entitlement resolution.
 - **Lightning Network (L402)** — Runtime-supported payment rail using HTTP 402 challenges and Macaroon + preimage verification.
+- **Default Scope** — The supported path stops at purchase, activation, and read enforcement; delegation-style grant sharing is not part of the default module.
 
 ## Tier 3: Compatibility and Incubating
 

@@ -65,6 +65,7 @@ function resetMocks() {
 const originalAuthRequired = process.env.AUTH_REQUIRED;
 const originalApiKeys = process.env.API_KEYS;
 const originalExperimentalRevenue = process.env.ENABLE_EXPERIMENTAL_REVENUE;
+const originalExperimentalDelegation = process.env.ENABLE_EXPERIMENTAL_DELEGATION;
 
 function restoreAuthEnv() {
     if (originalAuthRequired === undefined) {
@@ -83,6 +84,12 @@ function restoreAuthEnv() {
         delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
     } else {
         process.env.ENABLE_EXPERIMENTAL_REVENUE = originalExperimentalRevenue;
+    }
+
+    if (originalExperimentalDelegation === undefined) {
+        delete process.env.ENABLE_EXPERIMENTAL_DELEGATION;
+    } else {
+        process.env.ENABLE_EXPERIMENTAL_DELEGATION = originalExperimentalDelegation;
     }
 }
 
@@ -125,6 +132,49 @@ describe('API Route Contracts', () => {
             });
 
             expect(response.statusCode).toBe(401);
+
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('API_KEY_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('does not register the delegation route by default', async () => {
+        delete process.env.ENABLE_EXPERIMENTAL_DELEGATION;
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/entitlements/1/delegate',
+                payload: {
+                    targetApiKeyId: 2,
+                    readsAmount: 1
+                }
+            });
+
+            expect(response.statusCode).toBe(404);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('registers the delegation route when explicitly enabled', async () => {
+        process.env.ENABLE_EXPERIMENTAL_DELEGATION = 'true';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/entitlements/1/delegate',
+                payload: {
+                    targetApiKeyId: 2,
+                    readsAmount: 1
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
 
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('API_KEY_REQUIRED');
