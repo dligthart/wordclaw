@@ -6,9 +6,17 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -35,7 +43,7 @@ jobs:
         cache: 'npm'
         
     - name: Install dependencies (Backend)
-      run: npm install
+      run: npm ci
 
     - name: Run Backend Migrations
       run: npx tsx src/db/migrate.ts
@@ -54,7 +62,7 @@ jobs:
       run: npm run docs:build
         
     - name: Install dependencies (Frontend)
-      run: npm install
+      run: npm ci
       working-directory: ./ui
       
     - name: Run Frontend Static Checks

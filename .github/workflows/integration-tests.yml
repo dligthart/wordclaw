@@ -6,9 +6,17 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   integration-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -29,6 +37,8 @@ jobs:
       DATABASE_URL: postgres://wordclaw_test_user:wordclaw_test_password@localhost:5432/wordclaw_test
       PORT: 3000
       JWT_SECRET: test-secret-key-1234567890
+      COOKIE_SECRET: test-cookie-secret-1234567890
+      L402_SECRET: test-l402-secret-1234567890
 
     steps:
     - uses: actions/checkout@v4
@@ -43,7 +53,44 @@ jobs:
       run: npm ci
 
     - name: Apply DB Migrations
-      run: npx drizzle-kit push
+      run: npx tsx src/db/migrate.ts
 
     - name: Run Integration Tests
       run: npm run test:integration
+
+    - name: Build Server
+      run: npm run build
+
+    - name: Start Built Server
+      run: |
+        AUTH_REQUIRED=false ALLOW_INSECURE_LOCAL_ADMIN=true npm start > /tmp/wordclaw-smoke.log 2>&1 &
+        echo $! > /tmp/wordclaw-smoke.pid
+
+    - name: Wait For Server Health
+      run: |
+        for attempt in $(seq 1 30); do
+          if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null; then
+            exit 0
+          fi
+          sleep 1
+        done
+
+        cat /tmp/wordclaw-smoke.log
+        exit 1
+
+    - name: Run Live Server Smoke Tests
+      run: RUN_INTEGRATION=1 API_URL="http://127.0.0.1:${PORT}/api" npm test -- src/__tests__/api.smoke.test.ts
+
+    - name: Upload Smoke Server Log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: wordclaw-smoke-server-log
+        path: /tmp/wordclaw-smoke.log
+
+    - name: Stop Built Server
+      if: always()
+      run: |
+        if [ -f /tmp/wordclaw-smoke.pid ]; then
+          kill "$(cat /tmp/wordclaw-smoke.pid)" || true
+        fi
