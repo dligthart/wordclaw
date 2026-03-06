@@ -46,11 +46,25 @@ jobs:
       run: npm test
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/wordclaw
+
+    - name: Run Backend Build
+      run: npm run build
+
+    - name: Run Docs Build
+      run: npm run docs:build
         
     - name: Install dependencies (Frontend)
       run: npm install
       working-directory: ./ui
       
+    - name: Run Frontend Static Checks
+      run: npm run check
+      working-directory: ./ui
+
     - name: Run Frontend Tests
       run: npx vitest run
+      working-directory: ./ui
+
+    - name: Run Frontend Build
+      run: npm run build
       working-directory: ./ui

@@ -1965,9 +1965,9 @@
 
                         {#if engine.interpolatedBody}
                             <div class="mt-2 text-sm">
-                                <label
+                                <p
                                     class="block text-xs font-semibold text-gray-500 mb-1"
-                                    >PAYLOAD</label
+                                    >PAYLOAD</p
                                 >
                                 <JsonCodeBlock
                                     value={engine.interpolatedBody}
