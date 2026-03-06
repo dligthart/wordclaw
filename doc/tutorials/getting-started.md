@@ -81,6 +81,30 @@ For AI agent integration over stdio:
 npm run mcp:start
 ```
 
+## Use the CLI
+
+The repo also ships with a JSON-first CLI for MCP and REST automation:
+
+```bash
+# Source mode
+npx tsx src/cli/index.ts mcp inspect
+npx tsx src/cli/index.ts content-types list --limit 10
+
+# Built mode
+npm run build
+node dist/cli/index.js content list --limit 10
+```
+
+Recommended environment variables:
+
+```bash
+export WORDCLAW_BASE_URL=http://localhost:4000
+export WORDCLAW_API_KEY=writer
+export WORDCLAW_DOMAIN_ID=1
+```
+
+Use `node dist/cli/index.js --help` (or `npx tsx src/cli/index.ts --help`) to see the available command groups for MCP, REST, workflows, and L402.
+
 ## Supervisor Web Interface
 
 WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, API keys, approvals, and audit review. Experimental pages remain available, but the default operator workflow is centered on those core control-plane surfaces.

@@ -95,6 +95,36 @@ npm run dev
 
 The server will start at `http://localhost:4000`.
 
+### CLI
+
+WordClaw now includes a repo-native CLI for MCP and REST workflows:
+
+```bash
+# Run from source
+npx tsx src/cli/index.ts mcp inspect
+npx tsx src/cli/index.ts content-types list --limit 10
+npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
+
+# Or build first and run the compiled CLI
+npm run build
+node dist/cli/index.js mcp smoke
+node dist/cli/index.js l402 offers --item 123
+```
+
+The CLI is JSON-first so agents can script it reliably. It supports:
+- MCP discovery, direct tool calls, prompt reads, resource reads, and smoke testing
+- REST content type and content item CRUD
+- REST workflow submission and approval decisions
+- REST L402 consumption flows for offers, purchase confirmation, entitlements, and paid reads
+
+Use environment variables for REST auth:
+
+```bash
+export WORDCLAW_BASE_URL=http://localhost:4000
+export WORDCLAW_API_KEY=writer
+export WORDCLAW_DOMAIN_ID=1
+```
+
 ## 🎮 Demos
 
 WordClaw includes core demos plus a clearly separated experimental sandbox in `demos/` and `scripts/`:
@@ -116,7 +146,14 @@ WordClaw includes core demos plus a clearly separated experimental sandbox in `d
    An autonomous TypeScript agent that encounters a `402 Payment Required` L402 invoice when trying to publish a Guest Post. It programmatically parses the Macaroon, dummy-pays the Lightning invoice, and retries the request successfully.
    - Run the demo: `npx tsx demos/agent-l402-demo.ts`
 
-4. **Marketplace Sandbox (`demos/agent-skills-marketplace`)**  
+4. **MCP Demo Agent (`demos/mcp-demo-agent.ts`)**  
+   Core demo.
+   A headless MCP client that starts the local WordClaw MCP server over stdio, discovers tools/resources/prompts, and runs a smoke suite across content, workflow, prompts, audit, API key, and webhook features.
+   - Inspect the MCP surface: `npx tsx demos/mcp-demo-agent.ts inspect`
+   - Run the smoke suite: `npx tsx demos/mcp-demo-agent.ts smoke`
+   - Call one tool directly: `npx tsx demos/mcp-demo-agent.ts call list_content_types '{"limit":5}'`
+
+5. **Marketplace Sandbox (`demos/agent-skills-marketplace`)**  
    Experimental / incubating demo.
    An isolated sandbox for marketplace-style ideas, including AP2-adjacent revenue-routing concepts. It sits outside the default supported WordClaw product path and should not shape the main operator story.
    - Run the setup script: `npx tsx scripts/setup-skills-marketplace.ts`
