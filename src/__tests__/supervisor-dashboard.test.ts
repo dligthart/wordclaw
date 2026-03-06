@@ -136,7 +136,7 @@ describe('Supervisor Dashboard Domain Isolation', () => {
                 updates: number;
                 deletes: number;
                 rollbacks: number;
-                totalAgentsActive: number;
+                activeActors: number;
             };
             experimentalModules: {
                 revenue: boolean;
@@ -154,7 +154,7 @@ describe('Supervisor Dashboard Domain Isolation', () => {
         expect(payload.activitySummary.updates).toBe(0);
         expect(payload.activitySummary.deletes).toBe(0);
         expect(payload.activitySummary.rollbacks).toBe(1);
-        expect(payload.activitySummary.totalAgentsActive).toBe(2);
+        expect(payload.activitySummary.activeActors).toBe(2);
 
         expect(payload.experimentalModules.revenue).toBe(true);
         expect(payload.earningsSummary).not.toBeNull();

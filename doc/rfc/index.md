@@ -8,7 +8,6 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0015: Paid Content Consumption Contract](/rfc/proposed/0015-paid-content-consumption-contract)
 - [RFC-0017: Tenant Boundary and Contract Hardening](/rfc/proposed/0017-tenant-boundary-and-contract-hardening)
 - [RFC-0019: Internal Agentic Content Recommender Engine](/rfc/proposed/0019-internal-agentic-content-recommender-engine)
-- [RFC-0020: Autonomous Content Ops Agent](/rfc/proposed/0020-autonomous-content-ops-agent)
 - [RFC-0021: Core Product Focus and Feature Pruning](/rfc/proposed/0021-core-product-focus-and-feature-pruning)
 
 ## Historical / Non-Core Proposals
@@ -17,6 +16,7 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0005: Multi-Channel Distribution Orchestrator](/rfc/proposed/0005-multi-channel-distribution-orchestrator)
 - [RFC-0009: Content Discovery and Consumption API](/rfc/proposed/0009-content-discovery-and-consumption-api)
 - [RFC-0016: AP2 Agentic Monetization](/rfc/proposed/0016-ap2-agentic-monetization)
+- [RFC-0020: Autonomous Content Ops Agent](/rfc/proposed/0020-autonomous-content-ops-agent)
 
 ## Partially Implemented
 

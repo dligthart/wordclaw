@@ -58,7 +58,6 @@ export default withMermaid(defineConfig({
                             { text: '0015 Paid Content Consumption Contract', link: '/rfc/proposed/0015-paid-content-consumption-contract' },
                             { text: '0017 Tenant Boundary and Contract Hardening', link: '/rfc/proposed/0017-tenant-boundary-and-contract-hardening' },
                             { text: '0019 Internal Agentic Content Recommender Engine', link: '/rfc/proposed/0019-internal-agentic-content-recommender-engine' },
-                            { text: '0020 Autonomous Content Ops Agent', link: '/rfc/proposed/0020-autonomous-content-ops-agent' },
                             { text: '0021 Core Product Focus and Feature Pruning', link: '/rfc/proposed/0021-core-product-focus-and-feature-pruning' }
                         ]
                     },
@@ -68,7 +67,8 @@ export default withMermaid(defineConfig({
                             { text: '0001 Blog Valuation Architecture', link: '/rfc/proposed/0001-blog-valuation-architecture' },
                             { text: '0005 Multi-Channel Distribution Orchestrator', link: '/rfc/proposed/0005-multi-channel-distribution-orchestrator' },
                             { text: '0009 Content Discovery and Consumption API', link: '/rfc/proposed/0009-content-discovery-and-consumption-api' },
-                            { text: '0016 AP2 Agentic Monetization', link: '/rfc/proposed/0016-ap2-agentic-monetization' }
+                            { text: '0016 AP2 Agentic Monetization', link: '/rfc/proposed/0016-ap2-agentic-monetization' },
+                            { text: '0020 Autonomous Content Ops Agent', link: '/rfc/proposed/0020-autonomous-content-ops-agent' }
                         ]
                     },
                     {

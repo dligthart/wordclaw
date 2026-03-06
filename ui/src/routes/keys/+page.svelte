@@ -169,7 +169,7 @@
 </script>
 
 <svelte:head>
-    <title>Agent Keys | WordClaw Supervisor</title>
+    <title>API Keys | WordClaw Supervisor</title>
 </svelte:head>
 
 <!-- Generate Key Result Modal -->
@@ -221,10 +221,10 @@
     <div class="flex justify-between items-center mb-6">
         <div>
             <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-                Agent Keys
+                API Keys
             </h2>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Manage API credentials for autonomous agents
+                Manage API credentials for AI agents and operator integrations
             </p>
         </div>
         <button
@@ -250,7 +250,7 @@
                     <h3
                         class="text-lg font-medium text-gray-900 dark:text-white"
                     >
-                        Create Agent Key
+                        Create API Key
                     </h3>
                     <button
                         aria-label="Close dialog"

@@ -40,7 +40,7 @@
         { key: "createdAt", label: "Timestamp" },
         { key: "action", label: "Action" },
         { key: "entity", label: "Entity" },
-        { key: "userId", label: "Agent/User" },
+        { key: "userId", label: "Actor" },
     ];
 
     async function loadEvents(reset = false) {

@@ -147,7 +147,7 @@
             match: (p: string) => p.includes("/schema"),
         },
         {
-            name: "Agent Keys",
+            name: "API Keys",
             href: "/ui/keys",
             icon: Key,
             match: (p: string) => p.includes("/keys"),

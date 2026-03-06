@@ -33,7 +33,7 @@
             updates: number;
             deletes: number;
             rollbacks: number;
-            totalAgentsActive: number;
+            activeActors: number;
         };
         experimentalModules: {
             revenue: boolean;
@@ -343,12 +343,12 @@
                 <p
                     class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
                 >
-                    Active Agents
+                    Active Actors
                 </p>
                 <p
                     class="mt-1 text-2xl font-bold text-green-600 dark:text-green-400"
                 >
-                    {data.activitySummary.totalAgentsActive}
+                    {data.activitySummary.activeActors}
                 </p>
             </Card>
         </div>
@@ -369,7 +369,7 @@
                     <TableHeadCell>Timestamp</TableHeadCell>
                     <TableHeadCell>Action</TableHeadCell>
                     <TableHeadCell>Entity</TableHeadCell>
-                    <TableHeadCell>Agent/User</TableHeadCell>
+                    <TableHeadCell>Actor</TableHeadCell>
                 </TableHead>
                 <TableBody>
                     {#each data.recentEvents as event}

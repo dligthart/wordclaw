@@ -1,6 +1,6 @@
 # Architecture Overview
 
-WordClaw is a safe content runtime for AI agents and human supervisors. The current runtime is available through REST, MCP (Model Context Protocol), and GraphQL, but REST and MCP are the primary product surfaces while GraphQL is maintained as a compatibility layer.
+WordClaw is a safe content runtime for AI agents and human supervisors. The current runtime is available through REST, MCP (Model Context Protocol), and GraphQL, but REST and MCP are the primary product surfaces while GraphQL is maintained as a compatibility layer. Agent-run orchestration remains an incubating capability behind `ENABLE_EXPERIMENTAL_AGENT_RUNS`, not part of the default supervisor control plane.
 
 ## System Diagram
 
@@ -83,6 +83,8 @@ WordClaw exposes two core interfaces, one compatibility surface, and a dedicated
 - **MCP** — Primary Model Context Protocol surface over stdio for LLM agents.
 - **GraphQL** — Compatibility surface at `/graphql` with GraphiQL playground.
 - **Supervisor UI** — A SvelteKit application served at `/ui` for human oversight, schema management, and audit log review.
+
+Experimental agent-run APIs exist only when operators explicitly enable the incubator flag. They should be treated as optional runtime surfaces rather than part of the default control-plane contract.
 
 The capability contract requires REST and MCP coverage for core features. GraphQL coverage is tracked when explicitly declared in the compatibility matrix.
 

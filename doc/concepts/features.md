@@ -36,7 +36,7 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 - **Content Browser** — Read-only oversight with rollback access.
 - **Schema Manager** — Visual schema administration for content models.
 - **Approval Queue** — Review and decide pending workflow items.
-- **Agent Keys** — Provision, rotate, and revoke API credentials.
+- **API Keys** — Provision, rotate, and revoke API credentials for agents and operator integrations.
 
 ## Tier 2: Optional Modules
 

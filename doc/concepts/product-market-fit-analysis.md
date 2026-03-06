@@ -3,7 +3,7 @@
 ## 1. Executive Summary & Product-Market Fit (PMF)
 
 **Product-Market Fit Strategy:** 
-WordClaw is positioned in an underserved, high-growth niche: **safe content infrastructure for AI operations**. While traditional headless CMS platforms (like Contentful, Sanity, or Strapi) are designed around human-centric workflows (rich text editors, visual page builders), WordClaw is fundamentally designed for **autonomous AI agents operating under supervision**.
+WordClaw is positioned in an underserved, high-growth niche: **safe content infrastructure for AI-assisted operations**. While traditional headless CMS platforms (like Contentful, Sanity, or Strapi) are designed around human-centric workflows (rich text editors, visual page builders), WordClaw is fundamentally designed for **AI agents and operator-controlled integrations working under supervision**.
 
 Its PMF is extremely strong for development teams building agentic workflows because it natively solves the three biggest hurdles AI agents face when interacting with external systems:
 1. **Discoverability & Formatting:** Strict JSON schema enforcement, native MCP (Model Context Protocol) integration, and `remediation` metadata embedded in errors.
@@ -43,5 +43,5 @@ Here are the primary areas where feature creep threatens the project's core focu
 ## 4. Strategic Recommendations
 
 1.  **Double Down on REST + MCP:** WordClaw's clearest product story is a strong REST contract paired with an MCP surface for agent tooling. Prioritize those two surfaces over expanding GraphQL-first behavior.
-2.  **Lean into the "Dry-Run" Narrative:** Emphasize the `?mode=dry_run` and `policyEvaluate` tools in marketing. The biggest fear enterprises have regarding autonomous AI is unintended destructive mutations. WordClaw's ability to safely simulate transactions before database execution is a killer feature.
+2.  **Lean into the "Dry-Run" Narrative:** Emphasize the `?mode=dry_run` and `policyEvaluate` tools in marketing. The biggest fear enterprises have regarding AI-driven automation is unintended destructive mutation. WordClaw's ability to safely simulate transactions before database execution is a killer feature.
 3.  **Strictly Bound the Value Proposition:** WordClaw is a safe content runtime and supervisor control plane for AI agents. It should not try to be a user-facing frontend CMS, a marketplace suite, or a full Lightning infrastructure product. Keep the API footprint lean, the TypeScript validations strict, and the remediation messages explicit.

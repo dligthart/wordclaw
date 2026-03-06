@@ -459,7 +459,7 @@ export const SCENARIOS: Scenario[] = [
             },
             {
                 title: "Revoke Key",
-                narration: "Instantly revoke compromised or decommissioned agent keys.",
+                narration: "Instantly revoke compromised or decommissioned API keys.",
                 method: "DELETE",
                 endpoint: "/api/auth/keys/{{newKeyId}}",
                 expectedStatus: 200

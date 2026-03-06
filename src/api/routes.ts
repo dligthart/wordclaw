@@ -2109,7 +2109,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         if (typeof pKeyId !== 'number') {
-            return reply.status(403).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can hold entitlements and purchase offers.'));
+            return reply.status(403).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only API-key clients can hold entitlements and purchase offers.'));
         }
 
         let [profile] = await db.select().from(agentProfiles).where(and(
@@ -2203,7 +2203,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(403).send(toErrorPayload(
                 'API Key required',
                 'API_KEY_REQUIRED',
-                'Only autonomous agents (via API key) can confirm offer purchases.'
+                'Only API-key clients can confirm offer purchases.'
             ));
         }
 
@@ -4624,7 +4624,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             const pKeyId = authPrincipal?.keyId;
 
             if (typeof pKeyId !== 'number') {
-                return reply.status(401).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only autonomous agents (via API key) can view the experimental earnings ledger.'));
+                return reply.status(401).send(toErrorPayload('API Key required', 'API_KEY_REQUIRED', 'Only API-key clients can view the experimental earnings ledger.'));
             }
 
             const domainId = getDomainId(request);
