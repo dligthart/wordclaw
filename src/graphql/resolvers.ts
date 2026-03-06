@@ -3,6 +3,7 @@ import { getDomainId } from '../api/auth.js';
 import { GraphQLError } from 'graphql';
 import GraphQLJSON from 'graphql-type-json';
 
+import { isExperimentalAgentRunsEnabled } from '../config/runtime-features.js';
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
@@ -19,6 +20,217 @@ const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
     'content_types_slug_unique',
     'content_types_domain_slug_unique'
 ]);
+
+const experimentalAgentRunQueryResolvers = isExperimentalAgentRunsEnabled() ? {
+    agentRuns: withPolicy('content.read', () => ({ type: 'agent_run' }), async (_parent: unknown, { status, runType, definitionId, limit, offset }: AgentRunsArgs, context?: unknown) => {
+        if (status && !isAgentRunStatus(status)) {
+            throw toError(
+                'Invalid run status',
+                'AGENT_RUN_INVALID_STATUS',
+                'Use one of: queued, planning, waiting_approval, running, succeeded, failed, cancelled.'
+            );
+        }
+
+        const parsedDefinitionId = parseOptionalId(definitionId, 'definitionId');
+        const runs = await AgentRunService.listRuns(getDomainId(context), {
+            status: status as any,
+            runType,
+            definitionId: parsedDefinitionId,
+            limit,
+            offset
+        });
+
+        return runs.items.map(serializeAgentRun);
+    }),
+
+    agentRun: withPolicy('content.read', (args) => ({ type: 'agent_run', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
+        const numericId = parseId(id);
+        const details = await AgentRunService.getRun(getDomainId(context), numericId);
+        if (!details) {
+            return null;
+        }
+
+        return {
+            ...serializeAgentRun(details.run),
+            steps: details.steps.map(serializeAgentRunStep),
+            checkpoints: details.checkpoints.map(serializeAgentRunCheckpoint)
+        };
+    }),
+
+    agentRunDefinitions: withPolicy('content.read', () => ({ type: 'agent_run_definition' }), async (_parent: unknown, { active, runType, limit, offset }: AgentRunDefinitionsArgs, context?: unknown) => {
+        const definitions = await AgentRunService.listDefinitions(getDomainId(context), {
+            active,
+            runType,
+            limit,
+            offset
+        });
+        return definitions.items.map(serializeAgentRunDefinition);
+    }),
+
+    agentRunDefinition: withPolicy('content.read', (args) => ({ type: 'agent_run_definition', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
+        const numericId = parseId(id);
+        const definition = await AgentRunService.getDefinition(getDomainId(context), numericId);
+        return definition ? serializeAgentRunDefinition(definition) : null;
+    })
+} : {};
+
+const experimentalAgentRunMutationResolvers = isExperimentalAgentRunsEnabled() ? {
+    createAgentRunDefinition: withPolicy('content.write', () => ({ type: 'agent_run_definition' }), async (_parent: unknown, args: CreateAgentRunDefinitionArgs, context?: unknown) => {
+        try {
+            const definition = await AgentRunService.createDefinition(getDomainId(context), {
+                name: args.name,
+                runType: args.runType,
+                strategyConfig: args.strategyConfig,
+                active: args.active
+            });
+            return serializeAgentRunDefinition(definition);
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NAME_CONFLICT') {
+                    throw toError(
+                        'Run definition name already exists',
+                        error.code,
+                        'Choose a unique run definition name in this domain.'
+                    );
+                }
+                if (error.code === 'AGENT_RUN_DEFINITION_INVALID_NAME' || error.code === 'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE') {
+                    throw toError(
+                        'Invalid run definition payload',
+                        error.code,
+                        error.message
+                    );
+                }
+            }
+            throw error;
+        }
+    }),
+
+    updateAgentRunDefinition: withPolicy('content.write', (args) => ({ type: 'agent_run_definition', id: args.id }), async (_parent: unknown, args: UpdateAgentRunDefinitionArgs, context?: unknown) => {
+        const definitionId = parseId(args.id);
+
+        try {
+            const definition = await AgentRunService.updateDefinition(getDomainId(context), definitionId, {
+                name: args.name,
+                runType: args.runType,
+                strategyConfig: args.strategyConfig,
+                active: args.active
+            });
+            return serializeAgentRunDefinition(definition);
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
+                    throw toError(
+                        'Run definition not found',
+                        error.code,
+                        `The run definition with ID ${definitionId} does not exist in this domain.`
+                    );
+                }
+                if (error.code === 'AGENT_RUN_DEFINITION_NAME_CONFLICT') {
+                    throw toError(
+                        'Run definition name already exists',
+                        error.code,
+                        'Choose a unique run definition name in this domain.'
+                    );
+                }
+                if (
+                    error.code === 'AGENT_RUN_DEFINITION_INVALID_NAME'
+                    || error.code === 'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE'
+                    || error.code === 'AGENT_RUN_DEFINITION_EMPTY_UPDATE'
+                ) {
+                    throw toError(
+                        'Invalid run definition update',
+                        error.code,
+                        error.message
+                    );
+                }
+            }
+            throw error;
+        }
+    }),
+
+    createAgentRun: withPolicy('content.write', () => ({ type: 'agent_run' }), async (_parent: unknown, args: CreateAgentRunArgs, context?: unknown) => {
+        const definitionId = args.definitionId !== undefined
+            ? parseId(args.definitionId, 'definitionId')
+            : undefined;
+        const requestedBy = contextView(context).authPrincipal?.keyId?.toString();
+
+        try {
+            const run = await AgentRunService.createRun(getDomainId(context), {
+                goal: args.goal,
+                runType: args.runType,
+                definitionId,
+                requireApproval: args.requireApproval,
+                metadata: args.metadata,
+                requestedBy
+            });
+            return serializeAgentRun(run);
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
+                    throw toError(
+                        'Run definition not found',
+                        error.code,
+                        'Provide a valid definitionId owned by this domain.'
+                    );
+                }
+
+                if (error.code === 'AGENT_RUN_DEFINITION_INACTIVE') {
+                    throw toError(
+                        'Run definition inactive',
+                        error.code,
+                        'Activate the run definition before creating new runs from it.'
+                    );
+                }
+
+                if (error.code === 'AGENT_RUN_INVALID_GOAL') {
+                    throw toError(
+                        'Invalid run goal',
+                        error.code,
+                        'Provide a non-empty goal string.'
+                    );
+                }
+            }
+
+            throw error;
+        }
+    }),
+
+    controlAgentRun: withPolicy('content.write', (args) => ({ type: 'agent_run', id: args.id }), async (_parent: unknown, args: ControlAgentRunArgs, context?: unknown) => {
+        const runId = parseId(args.id);
+        if (!isAgentRunControlAction(args.action)) {
+            throw toError(
+                'Invalid control action',
+                'AGENT_RUN_INVALID_ACTION',
+                'Use one of: approve, pause, resume, cancel.'
+            );
+        }
+
+        try {
+            const updated = await AgentRunService.controlRun(getDomainId(context), runId, args.action);
+            return serializeAgentRun(updated);
+        } catch (error) {
+            if (error instanceof AgentRunServiceError) {
+                if (error.code === 'AGENT_RUN_NOT_FOUND') {
+                    throw toError(
+                        'Agent run not found',
+                        error.code,
+                        `The agent run with ID ${runId} does not exist in the current domain.`
+                    );
+                }
+
+                if (error.code === 'AGENT_RUN_INVALID_TRANSITION') {
+                    throw toError(
+                        'Invalid run transition',
+                        error.code,
+                        error.message
+                    );
+                }
+            }
+
+            throw error;
+        }
+    })
+} : {};
 
 type ResolverContext = {
     requestId?: string;
@@ -860,60 +1072,11 @@ export const resolvers = {
             };
         }),
 
-        agentRuns: withPolicy('content.read', () => ({ type: 'agent_run' }), async (_parent: unknown, { status, runType, definitionId, limit, offset }: AgentRunsArgs, context?: unknown) => {
-            if (status && !isAgentRunStatus(status)) {
-                throw toError(
-                    'Invalid run status',
-                    'AGENT_RUN_INVALID_STATUS',
-                    'Use one of: queued, planning, waiting_approval, running, succeeded, failed, cancelled.'
-                );
-            }
-
-            const parsedDefinitionId = parseOptionalId(definitionId, 'definitionId');
-            const runs = await AgentRunService.listRuns(getDomainId(context), {
-                status: status as any,
-                runType,
-                definitionId: parsedDefinitionId,
-                limit,
-                offset
-            });
-
-            return runs.items.map(serializeAgentRun);
-        }),
-
-        agentRun: withPolicy('content.read', (args) => ({ type: 'agent_run', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
-            const numericId = parseId(id);
-            const details = await AgentRunService.getRun(getDomainId(context), numericId);
-            if (!details) {
-                return null;
-            }
-
-            return {
-                ...serializeAgentRun(details.run),
-                steps: details.steps.map(serializeAgentRunStep),
-                checkpoints: details.checkpoints.map(serializeAgentRunCheckpoint)
-            };
-        }),
-
-        agentRunDefinitions: withPolicy('content.read', () => ({ type: 'agent_run_definition' }), async (_parent: unknown, { active, runType, limit, offset }: AgentRunDefinitionsArgs, context?: unknown) => {
-            const definitions = await AgentRunService.listDefinitions(getDomainId(context), {
-                active,
-                runType,
-                limit,
-                offset
-            });
-            return definitions.items.map(serializeAgentRunDefinition);
-        }),
-
-        agentRunDefinition: withPolicy('content.read', (args) => ({ type: 'agent_run_definition', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
-            const numericId = parseId(id);
-            const definition = await AgentRunService.getDefinition(getDomainId(context), numericId);
-            return definition ? serializeAgentRunDefinition(definition) : null;
-        }),
-
         semanticSearch: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, args: { query: string, limit?: number }, context: unknown) => {
             return await EmbeddingService.searchSemanticKnowledge(getDomainId(context), args.query, args.limit);
-        })
+        }),
+
+        ...experimentalAgentRunQueryResolvers
     },
 
     Mutation: {
@@ -1903,162 +2066,7 @@ export const resolvers = {
             );
             return PolicyEngine.evaluate(operationContext);
         }),
-
-        createAgentRunDefinition: withPolicy('content.write', () => ({ type: 'agent_run_definition' }), async (_parent: unknown, args: CreateAgentRunDefinitionArgs, context?: unknown) => {
-            try {
-                const definition = await AgentRunService.createDefinition(getDomainId(context), {
-                    name: args.name,
-                    runType: args.runType,
-                    strategyConfig: args.strategyConfig,
-                    active: args.active
-                });
-                return serializeAgentRunDefinition(definition);
-            } catch (error) {
-                if (error instanceof AgentRunServiceError) {
-                    if (error.code === 'AGENT_RUN_DEFINITION_NAME_CONFLICT') {
-                        throw toError(
-                            'Run definition name already exists',
-                            error.code,
-                            'Choose a unique run definition name in this domain.'
-                        );
-                    }
-                    if (error.code === 'AGENT_RUN_DEFINITION_INVALID_NAME' || error.code === 'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE') {
-                        throw toError(
-                            'Invalid run definition payload',
-                            error.code,
-                            error.message
-                        );
-                    }
-                }
-                throw error;
-            }
-        }),
-
-        updateAgentRunDefinition: withPolicy('content.write', (args) => ({ type: 'agent_run_definition', id: args.id }), async (_parent: unknown, args: UpdateAgentRunDefinitionArgs, context?: unknown) => {
-            const definitionId = parseId(args.id);
-
-            try {
-                const definition = await AgentRunService.updateDefinition(getDomainId(context), definitionId, {
-                    name: args.name,
-                    runType: args.runType,
-                    strategyConfig: args.strategyConfig,
-                    active: args.active
-                });
-                return serializeAgentRunDefinition(definition);
-            } catch (error) {
-                if (error instanceof AgentRunServiceError) {
-                    if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
-                        throw toError(
-                            'Run definition not found',
-                            error.code,
-                            `The run definition with ID ${definitionId} does not exist in this domain.`
-                        );
-                    }
-                    if (error.code === 'AGENT_RUN_DEFINITION_NAME_CONFLICT') {
-                        throw toError(
-                            'Run definition name already exists',
-                            error.code,
-                            'Choose a unique run definition name in this domain.'
-                        );
-                    }
-                    if (
-                        error.code === 'AGENT_RUN_DEFINITION_INVALID_NAME'
-                        || error.code === 'AGENT_RUN_DEFINITION_INVALID_RUN_TYPE'
-                        || error.code === 'AGENT_RUN_DEFINITION_EMPTY_UPDATE'
-                    ) {
-                        throw toError(
-                            'Invalid run definition update',
-                            error.code,
-                            error.message
-                        );
-                    }
-                }
-                throw error;
-            }
-        }),
-
-        createAgentRun: withPolicy('content.write', () => ({ type: 'agent_run' }), async (_parent: unknown, args: CreateAgentRunArgs, context?: unknown) => {
-            const definitionId = args.definitionId !== undefined
-                ? parseId(args.definitionId, 'definitionId')
-                : undefined;
-            const requestedBy = contextView(context).authPrincipal?.keyId?.toString();
-
-            try {
-                const run = await AgentRunService.createRun(getDomainId(context), {
-                    goal: args.goal,
-                    runType: args.runType,
-                    definitionId,
-                    requireApproval: args.requireApproval,
-                    metadata: args.metadata,
-                    requestedBy
-                });
-                return serializeAgentRun(run);
-            } catch (error) {
-                if (error instanceof AgentRunServiceError) {
-                    if (error.code === 'AGENT_RUN_DEFINITION_NOT_FOUND') {
-                        throw toError(
-                            'Run definition not found',
-                            error.code,
-                            'Provide a valid definitionId owned by this domain.'
-                        );
-                    }
-
-                    if (error.code === 'AGENT_RUN_DEFINITION_INACTIVE') {
-                        throw toError(
-                            'Run definition inactive',
-                            error.code,
-                            'Activate the run definition before creating new runs from it.'
-                        );
-                    }
-
-                    if (error.code === 'AGENT_RUN_INVALID_GOAL') {
-                        throw toError(
-                            'Invalid run goal',
-                            error.code,
-                            'Provide a non-empty goal string.'
-                        );
-                    }
-                }
-
-                throw error;
-            }
-        }),
-
-        controlAgentRun: withPolicy('content.write', (args) => ({ type: 'agent_run', id: args.id }), async (_parent: unknown, args: ControlAgentRunArgs, context?: unknown) => {
-            const runId = parseId(args.id);
-            if (!isAgentRunControlAction(args.action)) {
-                throw toError(
-                    'Invalid control action',
-                    'AGENT_RUN_INVALID_ACTION',
-                    'Use one of: approve, pause, resume, cancel.'
-                );
-            }
-
-            try {
-                const updated = await AgentRunService.controlRun(getDomainId(context), runId, args.action);
-                return serializeAgentRun(updated);
-            } catch (error) {
-                if (error instanceof AgentRunServiceError) {
-                    if (error.code === 'AGENT_RUN_NOT_FOUND') {
-                        throw toError(
-                            'Agent run not found',
-                            error.code,
-                            `The agent run with ID ${runId} does not exist in the current domain.`
-                        );
-                    }
-
-                    if (error.code === 'AGENT_RUN_INVALID_TRANSITION') {
-                        throw toError(
-                            'Invalid run transition',
-                            error.code,
-                            error.message
-                        );
-                    }
-                }
-
-                throw error;
-            }
-        }),
+        ...experimentalAgentRunMutationResolvers,
 
         createWorkflow: withPolicy('system.config', () => ({ type: 'system' }), async (_parent: unknown, args: { name: string; contentTypeId: IdValue; active?: boolean }, context?: unknown) => {
             const contentTypeId = parseId(args.contentTypeId, 'contentTypeId');

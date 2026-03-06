@@ -5,7 +5,11 @@ import { and, desc, eq, gte, lte, or, lt, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
-import { isExperimentalDelegationEnabled, isExperimentalRevenueEnabled } from '../config/runtime-features.js';
+import {
+    isExperimentalAgentRunsEnabled,
+    isExperimentalDelegationEnabled,
+    isExperimentalRevenueEnabled
+} from '../config/runtime-features.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure, redactPremiumFields } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authenticateApiRequest, getDomainId } from './auth.js';
@@ -3935,7 +3939,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     });
 
     // --- Autonomous Agent Run Definitions ---
-
+    if (isExperimentalAgentRunsEnabled()) {
     server.post('/agent-run-definitions', {
         schema: {
             body: Type.Object({
@@ -4336,6 +4340,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             throw error;
         }
     });
+    }
 
     // --- Workflows & Review Tasks ---
 

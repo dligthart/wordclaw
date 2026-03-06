@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { isExperimentalRevenueEnabled } from '../config/runtime-features.js';
+import { isExperimentalAgentRunsEnabled, isExperimentalRevenueEnabled } from '../config/runtime-features.js';
 import { db } from '../db/index.js';
 import { agentProfiles, auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
@@ -1670,6 +1670,7 @@ server.tool(
     }
     ));
 
+if (isExperimentalAgentRunsEnabled()) {
 server.tool(
     'create_agent_run_definition',
     'Create a reusable autonomous run definition',
@@ -1922,6 +1923,7 @@ server.tool(
         }
     })
 );
+}
 
 server.tool(
     'evaluate_policy',

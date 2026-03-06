@@ -44,6 +44,9 @@
    | `API_KEYS`      | *(see .env.example)*                             | Comma-separated key definitions  |
    | `ENABLE_EXPERIMENTAL_REVENUE` | `false`                           | Enable experimental earnings and payout surfaces |
    | `ENABLE_EXPERIMENTAL_DELEGATION` | `false`                        | Enable experimental entitlement delegation APIs |
+   | `ENABLE_EXPERIMENTAL_AGENT_RUNS` | `false`                         | Enable experimental autonomous-run APIs and MCP tools |
+
+   `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). The three `ENABLE_EXPERIMENTAL_*` flags stay off by default and should only be enabled if you explicitly want those incubator surfaces available.
 
 5. **Run database migrations**
 

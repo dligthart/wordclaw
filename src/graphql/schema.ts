@@ -1,3 +1,104 @@
+import { isExperimentalAgentRunsEnabled } from '../config/runtime-features.js';
+
+const agentRunTypeDefs = isExperimentalAgentRunsEnabled() ? `
+  """A single deterministic action within an autonomous run."""
+  type AgentRunStep {
+    id: ID!
+    runId: ID!
+    domainId: ID!
+    stepIndex: Int!
+    stepKey: String!
+    actionType: String!
+    status: String!
+    requestSnapshot: JSON
+    responseSnapshot: JSON
+    errorMessage: String
+    startedAt: String
+    completedAt: String
+    createdAt: String
+    updatedAt: String
+  }
+
+  """A resumable checkpoint persisted during run execution."""
+  type AgentRunCheckpoint {
+    id: ID!
+    runId: ID!
+    domainId: ID!
+    checkpointKey: String!
+    payload: JSON!
+    createdAt: String
+  }
+
+  """An autonomous content-operations execution instance."""
+  type AgentRun {
+    id: ID!
+    domainId: ID!
+    definitionId: ID
+    goal: String!
+    runType: String!
+    status: String!
+    requestedBy: String
+    metadata: JSON
+    startedAt: String
+    completedAt: String
+    createdAt: String
+    updatedAt: String
+    steps: [AgentRunStep!]!
+    checkpoints: [AgentRunCheckpoint!]!
+  }
+
+  """Reusable template for autonomous run creation."""
+  type AgentRunDefinition {
+    id: ID!
+    domainId: ID!
+    name: String!
+    runType: String!
+    strategyConfig: JSON!
+    active: Boolean!
+    createdAt: String
+    updatedAt: String
+  }
+` : '';
+
+const agentRunQueryDefs = isExperimentalAgentRunsEnabled() ? `
+    """List autonomous runs for the current domain."""
+    agentRuns(status: String, runType: String, definitionId: ID, limit: Int = 50, offset: Int = 0): [AgentRun!]!
+    """Get one autonomous run with steps/checkpoints by id."""
+    agentRun(id: ID!): AgentRun
+    """List autonomous run definitions for the current domain."""
+    agentRunDefinitions(active: Boolean, runType: String, limit: Int = 50, offset: Int = 0): [AgentRunDefinition!]!
+    """Get one autonomous run definition by id."""
+    agentRunDefinition(id: ID!): AgentRunDefinition
+` : '';
+
+const agentRunMutationDefs = isExperimentalAgentRunsEnabled() ? `
+    """Create a new autonomous run."""
+    createAgentRun(
+      goal: String!,
+      runType: String,
+      definitionId: ID,
+      requireApproval: Boolean = true,
+      metadata: JSON
+    ): AgentRun!
+    """Apply a control action on an autonomous run."""
+    controlAgentRun(id: ID!, action: String!): AgentRun!
+    """Create a reusable autonomous run definition."""
+    createAgentRunDefinition(
+      name: String!,
+      runType: String!,
+      strategyConfig: JSON,
+      active: Boolean = true
+    ): AgentRunDefinition!
+    """Update a reusable autonomous run definition."""
+    updateAgentRunDefinition(
+      id: ID!,
+      name: String,
+      runType: String,
+      strategyConfig: JSON,
+      active: Boolean
+    ): AgentRunDefinition!
+` : '';
+
 export const schema = `
   scalar JSON
 
@@ -182,63 +283,7 @@ export const schema = `
     createdAt: String
   }
 
-  """A single deterministic action within an autonomous run."""
-  type AgentRunStep {
-    id: ID!
-    runId: ID!
-    domainId: ID!
-    stepIndex: Int!
-    stepKey: String!
-    actionType: String!
-    status: String!
-    requestSnapshot: JSON
-    responseSnapshot: JSON
-    errorMessage: String
-    startedAt: String
-    completedAt: String
-    createdAt: String
-    updatedAt: String
-  }
-
-  """A resumable checkpoint persisted during run execution."""
-  type AgentRunCheckpoint {
-    id: ID!
-    runId: ID!
-    domainId: ID!
-    checkpointKey: String!
-    payload: JSON!
-    createdAt: String
-  }
-
-  """An autonomous content-operations execution instance."""
-  type AgentRun {
-    id: ID!
-    domainId: ID!
-    definitionId: ID
-    goal: String!
-    runType: String!
-    status: String!
-    requestedBy: String
-    metadata: JSON
-    startedAt: String
-    completedAt: String
-    createdAt: String
-    updatedAt: String
-    steps: [AgentRunStep!]!
-    checkpoints: [AgentRunCheckpoint!]!
-  }
-
-  """Reusable template for autonomous run creation."""
-  type AgentRunDefinition {
-    id: ID!
-    domainId: ID!
-    name: String!
-    runType: String!
-    strategyConfig: JSON!
-    active: Boolean!
-    createdAt: String
-    updatedAt: String
-  }
+${agentRunTypeDefs}
 
   """Per-item result in batch operations."""
   type BatchItemResult {
@@ -304,14 +349,7 @@ export const schema = `
     webhooks: [Webhook!]!
     """Get one webhook registration by id."""
     webhook(id: ID!): Webhook
-    """List autonomous runs for the current domain."""
-    agentRuns(status: String, runType: String, definitionId: ID, limit: Int = 50, offset: Int = 0): [AgentRun!]!
-    """Get one autonomous run with steps/checkpoints by id."""
-    agentRun(id: ID!): AgentRun
-    """List autonomous run definitions for the current domain."""
-    agentRunDefinitions(active: Boolean, runType: String, limit: Int = 50, offset: Int = 0): [AgentRunDefinition!]!
-    """Get one autonomous run definition by id."""
-    agentRunDefinition(id: ID!): AgentRunDefinition
+${agentRunQueryDefs}
   }
 
   type PolicyDecision {
@@ -400,31 +438,7 @@ export const schema = `
     rollbackContentItem(id: ID!, version: Int!, dryRun: Boolean = false): RollbackResult!
     """Evaluate a policy decision without side effects."""
     policyEvaluate(operation: String!, resource: ResourceInput!): PolicyDecision!
-    """Create a new autonomous run."""
-    createAgentRun(
-      goal: String!,
-      runType: String,
-      definitionId: ID,
-      requireApproval: Boolean = true,
-      metadata: JSON
-    ): AgentRun!
-    """Apply a control action on an autonomous run."""
-    controlAgentRun(id: ID!, action: String!): AgentRun!
-    """Create a reusable autonomous run definition."""
-    createAgentRunDefinition(
-      name: String!,
-      runType: String!,
-      strategyConfig: JSON,
-      active: Boolean = true
-    ): AgentRunDefinition!
-    """Update a reusable autonomous run definition."""
-    updateAgentRunDefinition(
-      id: ID!,
-      name: String,
-      runType: String,
-      strategyConfig: JSON,
-      active: Boolean
-    ): AgentRunDefinition!
+${agentRunMutationDefs}
     
     """Create a new Workflow for a given ContentType."""
     createWorkflow(name: String!, contentTypeId: ID!, active: Boolean): Workflow!

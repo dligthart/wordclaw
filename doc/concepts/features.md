@@ -65,7 +65,7 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 - **Historical Payment-Rail Experiments** — AP2 and related agent-payment expansion work remain documented in RFC history, not as part of the supported runtime path.
 - **Revenue Attribution and Payouts** — Runtime artifacts remain available, but the accounting and payout narrative is quarantined to non-core RFC history rather than the default product roadmap.
 - **Marketplace and Buyer-Side Platformization** — Marketplace demos, buyer-facing catalog expansion, and broader distribution suites remain reference material, not the core supported WordClaw path.
-- **Autonomous-Run Platformization** — Broader agent-orchestration ambitions remain under active review rather than default scope.
+- **Autonomous-Run Platformization** — Broader agent-orchestration ambitions remain under active review rather than default scope, and the runtime surfaces stay behind `ENABLE_EXPERIMENTAL_AGENT_RUNS`.
 
 ## Integrations
 

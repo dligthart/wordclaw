@@ -66,6 +66,7 @@ const originalAuthRequired = process.env.AUTH_REQUIRED;
 const originalApiKeys = process.env.API_KEYS;
 const originalExperimentalRevenue = process.env.ENABLE_EXPERIMENTAL_REVENUE;
 const originalExperimentalDelegation = process.env.ENABLE_EXPERIMENTAL_DELEGATION;
+const originalExperimentalAgentRuns = process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
 
 function restoreAuthEnv() {
     if (originalAuthRequired === undefined) {
@@ -91,6 +92,12 @@ function restoreAuthEnv() {
     } else {
         process.env.ENABLE_EXPERIMENTAL_DELEGATION = originalExperimentalDelegation;
     }
+
+    if (originalExperimentalAgentRuns === undefined) {
+        delete process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
+    } else {
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = originalExperimentalAgentRuns;
+    }
 }
 
 describe('API Route Contracts', () => {
@@ -98,6 +105,7 @@ describe('API Route Contracts', () => {
         resetMocks();
         process.env.AUTH_REQUIRED = 'false';
         delete process.env.API_KEYS;
+        delete process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
     });
 
     afterEach(() => {
@@ -178,6 +186,41 @@ describe('API Route Contracts', () => {
 
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('API_KEY_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('does not register agent-run routes when explicitly disabled', async () => {
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/agent-runs?status=queued',
+            });
+
+            expect(response.statusCode).toBe(404);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('registers agent-run routes when explicitly enabled', async () => {
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'true';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/agent-runs?status=not-a-status',
+            });
+
+            expect(response.statusCode).toBe(400);
+
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('AGENT_RUN_INVALID_STATUS');
         } finally {
             await app.close();
         }

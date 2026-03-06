@@ -290,7 +290,7 @@ describe('GraphQL Resolver Contracts', () => {
 
     it('agentRuns rejects invalid status filter with deterministic code', async () => {
         await expect(
-            resolvers.Query.agentRuns({}, { status: 'not-a-status' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+            resolvers.Query.agentRuns!({}, { status: 'not-a-status' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
         ).rejects.toMatchObject({
             extensions: {
                 code: 'AGENT_RUN_INVALID_STATUS'
@@ -307,7 +307,7 @@ describe('GraphQL Resolver Contracts', () => {
             hasMore: false
         });
 
-        const result = await resolvers.Query.agentRunDefinitions({}, {
+        const result = await resolvers.Query.agentRunDefinitions!({}, {
             active: true,
             runType: 'quality_refiner',
             limit: 25,
@@ -327,7 +327,7 @@ describe('GraphQL Resolver Contracts', () => {
 
     it('controlAgentRun rejects invalid action with deterministic code', async () => {
         await expect(
-            resolvers.Mutation.controlAgentRun({}, { id: '1', action: 'launch' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+            resolvers.Mutation.controlAgentRun!({}, { id: '1', action: 'launch' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
         ).rejects.toMatchObject({
             extensions: {
                 code: 'AGENT_RUN_INVALID_ACTION'
@@ -337,7 +337,7 @@ describe('GraphQL Resolver Contracts', () => {
 
     it('updateAgentRunDefinition rejects empty payload with deterministic code', async () => {
         await expect(
-            resolvers.Mutation.updateAgentRunDefinition({}, { id: '1' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+            resolvers.Mutation.updateAgentRunDefinition!({}, { id: '1' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
         ).rejects.toMatchObject({
             extensions: {
                 code: 'AGENT_RUN_DEFINITION_EMPTY_UPDATE'
@@ -350,7 +350,7 @@ describe('GraphQL Resolver Contracts', () => {
             .mockRejectedValue(new AgentRunServiceError('AGENT_RUN_DEFINITION_INACTIVE', 'inactive'));
 
         await expect(
-            resolvers.Mutation.createAgentRun({}, {
+            resolvers.Mutation.createAgentRun!({}, {
                 goal: 'test',
                 definitionId: '1'
             }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
