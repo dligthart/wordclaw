@@ -1,9 +1,11 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { sql, and, desc, eq, gt } from 'drizzle-orm';
-import { isExperimentalRevenueEnabled } from '../config/runtime-features.js';
+import { isExperimentalAgentRunsEnabled, isExperimentalRevenueEnabled } from '../config/runtime-features.js';
 import { db } from '../db/index.js';
 import { auditLogs, contentItems, contentTypes, payments } from '../db/schema.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
+import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
+import { agentRunWorker } from '../workers/agent-run.worker.js';
 
 export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: FastifyInstance) => {
     // Shared authenticaton hook for these routes
@@ -59,6 +61,34 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
             pending: number;
             pendingCount: number;
         } | null = null;
+        let agentRunSummary: {
+            queue: {
+                backlog: number;
+                waitingApproval: number;
+                running: number;
+            };
+            throughput: {
+                completedRuns: number;
+                reviewActionsSucceeded: number;
+                qualityChecksSucceeded: number;
+            };
+            failures: {
+                settledFailed: number;
+                policyDenied: number;
+            };
+            worker: {
+                started: boolean;
+                sweepInProgress: boolean;
+                intervalMs: number;
+                maxRunsPerSweep: number;
+                lastSweepCompletedAt: string | null;
+                totalSweeps: number;
+                lastError: {
+                    message: string;
+                    at: string;
+                } | null;
+            };
+        } | null = null;
 
         if (isExperimentalRevenueEnabled()) {
             const allPaid = await db
@@ -77,6 +107,39 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
                 total: totalEarnings,
                 pending: pendingEarnings,
                 pendingCount: pendingPayments.length
+            };
+        }
+
+        if (isExperimentalAgentRunsEnabled()) {
+            const metrics = await AgentRunMetricsService.getMetrics(domainId, {
+                windowHours: 24
+            });
+            const workerStatus = agentRunWorker.getStatus();
+
+            agentRunSummary = {
+                queue: {
+                    backlog: metrics.queue.backlog,
+                    waitingApproval: metrics.queue.waitingApproval,
+                    running: metrics.queue.running
+                },
+                throughput: {
+                    completedRuns: metrics.throughput.completedRuns,
+                    reviewActionsSucceeded: metrics.throughput.reviewActionsSucceeded,
+                    qualityChecksSucceeded: metrics.throughput.qualityChecksSucceeded
+                },
+                failures: {
+                    settledFailed: metrics.failureClasses.settledFailed,
+                    policyDenied: metrics.failureClasses.policyDenied
+                },
+                worker: {
+                    started: workerStatus.started,
+                    sweepInProgress: workerStatus.sweepInProgress,
+                    intervalMs: workerStatus.intervalMs,
+                    maxRunsPerSweep: workerStatus.maxRunsPerSweep,
+                    lastSweepCompletedAt: workerStatus.lastSweepCompletedAt,
+                    totalSweeps: workerStatus.totalSweeps,
+                    lastError: workerStatus.lastError
+                }
             };
         }
 
@@ -107,13 +170,35 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
             alerts.push({ type: 'warning', message: `High rollback activity in the last 24 hours (${activitySummary.rollbacks})` });
         }
 
+        if (agentRunSummary) {
+            if (!agentRunSummary.worker.started) {
+                alerts.push({ type: 'warning', message: 'Autonomous-run worker is enabled but not started.' });
+            }
+
+            if (agentRunSummary.worker.lastError) {
+                alerts.push({
+                    type: 'warning',
+                    message: `Autonomous-run worker error: ${agentRunSummary.worker.lastError.message}`
+                });
+            }
+
+            if (agentRunSummary.queue.backlog > 25) {
+                alerts.push({
+                    type: 'warning',
+                    message: `Autonomous-run backlog is elevated (${agentRunSummary.queue.backlog} queued or active runs).`
+                });
+            }
+        }
+
         return {
             health,
             activitySummary,
             experimentalModules: {
-                revenue: isExperimentalRevenueEnabled()
+                revenue: isExperimentalRevenueEnabled(),
+                agentRuns: isExperimentalAgentRunsEnabled()
             },
             earningsSummary,
+            agentRunSummary,
             recentEvents,
             alerts
         };

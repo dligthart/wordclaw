@@ -37,11 +37,40 @@
         };
         experimentalModules: {
             revenue: boolean;
+            agentRuns: boolean;
         };
         earningsSummary: {
             total: number;
             pending: number;
             pendingCount: number;
+        } | null;
+        agentRunSummary: {
+            queue: {
+                backlog: number;
+                waitingApproval: number;
+                running: number;
+            };
+            throughput: {
+                completedRuns: number;
+                reviewActionsSucceeded: number;
+                qualityChecksSucceeded: number;
+            };
+            failures: {
+                settledFailed: number;
+                policyDenied: number;
+            };
+            worker: {
+                started: boolean;
+                sweepInProgress: boolean;
+                intervalMs: number;
+                maxRunsPerSweep: number;
+                lastSweepCompletedAt: string | null;
+                totalSweeps: number;
+                lastError: {
+                    message: string;
+                    at: string;
+                } | null;
+            };
         } | null;
         recentEvents: any[];
         alerts: { type: string; message: string }[];
@@ -63,6 +92,18 @@
 
     function formatDate(dateString: string) {
         return new Date(dateString).toLocaleString();
+    }
+
+    function formatRelativeTime(dateString: string | null) {
+        if (!dateString) return "No sweep yet";
+        const diffMs = Date.now() - new Date(dateString).getTime();
+        const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+        if (diffMinutes < 1) return "Just now";
+        if (diffMinutes < 60) return `${diffMinutes}m ago`;
+        const diffHours = Math.round(diffMinutes / 60);
+        if (diffHours < 24) return `${diffHours}h ago`;
+        const diffDays = Math.round(diffHours / 24);
+        return `${diffDays}d ago`;
     }
 </script>
 
@@ -264,6 +305,167 @@
                                 d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                             ></path></svg
                         >
+                    </div>
+                </Card>
+            </div>
+        {/if}
+
+        {#if data.experimentalModules.agentRuns && data.agentRunSummary}
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                Experimental Autonomous Runtime
+            </h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Autonomous runs remain incubating. These controls show queue
+                pressure and worker health without making them part of the
+                default operator workflow.
+            </p>
+            <div class="mb-8 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <Card
+                    size="md"
+                    class="px-5 py-4 border border-gray-100 dark:border-gray-700"
+                >
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <h4
+                                class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                            >
+                                Worker
+                            </h4>
+                            <p
+                                class="mt-1 text-xl font-semibold text-gray-900 dark:text-white"
+                            >
+                                {data.agentRunSummary.worker.started
+                                    ? data.agentRunSummary.worker.sweepInProgress
+                                        ? "Running sweep"
+                                        : "Active"
+                                    : "Stopped"}
+                            </p>
+                        </div>
+                        <span
+                            class={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                data.agentRunSummary.worker.lastError
+                                    ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                                    : data.agentRunSummary.worker.started
+                                      ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                                      : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+                            }`}
+                        >
+                            {data.agentRunSummary.worker.lastError
+                                ? "Attention"
+                                : data.agentRunSummary.worker.started
+                                  ? "Healthy"
+                                  : "Offline"}
+                        </span>
+                    </div>
+                    <dl
+                        class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm text-gray-600 dark:text-gray-300"
+                    >
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                Interval
+                            </dt>
+                            <dd>{Math.round(
+                                data.agentRunSummary.worker.intervalMs / 1000,
+                            )}s</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                Batch Size
+                            </dt>
+                            <dd>{data.agentRunSummary.worker.maxRunsPerSweep}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                Last Sweep
+                            </dt>
+                            <dd>{formatRelativeTime(
+                                data.agentRunSummary.worker.lastSweepCompletedAt,
+                            )}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                Total Sweeps
+                            </dt>
+                            <dd>{data.agentRunSummary.worker.totalSweeps}</dd>
+                        </div>
+                    </dl>
+                    {#if data.agentRunSummary.worker.lastError}
+                        <p
+                            class="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                        >
+                            {data.agentRunSummary.worker.lastError.message}
+                        </p>
+                    {/if}
+                </Card>
+
+                <Card
+                    size="md"
+                    class="px-5 py-4 border border-gray-100 dark:border-gray-700"
+                >
+                    <h4
+                        class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                    >
+                        Queue
+                    </h4>
+                    <p class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">
+                        {data.agentRunSummary.queue.backlog} open run(s)
+                    </p>
+                    <div class="mt-4 space-y-3">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Waiting approval</span>
+                            <span class="font-medium text-gray-900 dark:text-white">
+                                {data.agentRunSummary.queue.waitingApproval}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Currently running</span>
+                            <span class="font-medium text-gray-900 dark:text-white">
+                                {data.agentRunSummary.queue.running}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">24h completed</span>
+                            <span class="font-medium text-gray-900 dark:text-white">
+                                {data.agentRunSummary.throughput.completedRuns}
+                            </span>
+                        </div>
+                    </div>
+                </Card>
+
+                <Card
+                    size="md"
+                    class="px-5 py-4 border border-gray-100 dark:border-gray-700"
+                >
+                    <h4
+                        class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                    >
+                        Execution Outcomes
+                    </h4>
+                    <div class="mt-4 space-y-3">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Review steps succeeded</span>
+                            <span class="font-medium text-gray-900 dark:text-white">
+                                {data.agentRunSummary.throughput.reviewActionsSucceeded}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Quality checks succeeded</span>
+                            <span class="font-medium text-gray-900 dark:text-white">
+                                {data.agentRunSummary.throughput.qualityChecksSucceeded}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Settled failures</span>
+                            <span class="font-medium text-gray-900 dark:text-white">
+                                {data.agentRunSummary.failures.settledFailed}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Policy denials</span>
+                            <span class="font-medium text-gray-900 dark:text-white">
+                                {data.agentRunSummary.failures.policyDenied}
+                            </span>
+                        </div>
                     </div>
                 </Card>
             </div>
