@@ -103,6 +103,7 @@ WordClaw now includes a repo-native CLI for MCP and REST workflows:
 # Run from source
 npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts content-types list --limit 10
+npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
 
 # Or build first and run the compiled CLI
@@ -111,7 +112,7 @@ node dist/cli/index.js mcp smoke
 node dist/cli/index.js l402 offers --item 123
 ```
 
-The CLI is JSON-first so agents can script it reliably. It supports:
+The CLI is JSON-first so agents can script it reliably, and `--raw` is available when you want only the response body or MCP text. It supports:
 - MCP discovery, direct tool calls, prompt reads, resource reads, and smoke testing
 - REST content type and content item CRUD
 - REST workflow submission and approval decisions

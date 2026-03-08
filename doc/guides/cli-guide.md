@@ -46,6 +46,7 @@ The CLI prints JSON by default so agents can consume it reliably.
 - Successful REST commands return transport metadata plus the API response body.
 - Successful MCP commands return the discovered data or parsed tool output.
 - Failures return a JSON error object and exit with code `1`.
+- Use `--raw` when you want only the response body or MCP text without the CLI envelope.
 
 Example:
 
@@ -65,6 +66,12 @@ node dist/cli/index.js content-types list --limit 2
     "meta": {}
   }
 }
+```
+
+Plain output example:
+
+```bash
+node dist/cli/index.js mcp prompt workflow-guidance --raw
 ```
 
 ## Supported Command Groups
@@ -97,6 +104,13 @@ Important transport note:
 
 If WordClaw later adds a networked MCP transport, the CLI can be extended to connect to a long-running MCP endpoint instead.
 
+Usability details:
+
+- unknown commands and subcommands return nearest-match suggestions, for example `mcp inspec` suggests `inspect`
+- `content-types ls` is a shorthand for `content-types list`
+- `content ls` is a shorthand for `content list`
+- top-level aliases `ct` and `wf` expand to `content-types` and `workflow`
+
 ### Generic REST
 
 Use the generic request command when a dedicated subcommand does not exist yet:
@@ -116,6 +130,7 @@ Supported flags:
 
 ```bash
 node dist/cli/index.js content-types list --limit 10 --include-stats
+node dist/cli/index.js ct ls --limit 10 --raw
 node dist/cli/index.js content-types get --id 12
 node dist/cli/index.js content-types create \
   --name "Article" \
@@ -139,6 +154,7 @@ Supported features:
 
 ```bash
 node dist/cli/index.js content list --content-type-id 12 --status draft --limit 20
+node dist/cli/index.js content ls --status draft --raw
 node dist/cli/index.js content get --id 345
 node dist/cli/index.js content create --content-type-id 12 --data-file item.json
 node dist/cli/index.js content update --id 345 --data-json '{"title":"Updated"}'
@@ -242,7 +258,6 @@ Recommended agent pattern:
 
 - The MCP transport is still `stdio`, so the CLI spawns a new local MCP server process for each MCP session.
 - L402 purchase confirmation depends on a live offer, a valid invoice challenge, and payment-provider state in the target environment.
-- The current MCP `evaluate_policy` path still has a server-side domain-context issue, so `mcp smoke` reports it as a warning rather than a pass.
 
 ## Related Docs
 

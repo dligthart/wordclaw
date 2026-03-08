@@ -2,7 +2,6 @@
 
 import {
     getNumberFlag,
-    getOptionalBooleanFlag,
     getStringFlag,
     hasFlag,
     loadJsonFlag,
@@ -10,14 +9,76 @@ import {
     parseArgs,
     requirePositional,
     requireStringFlag,
+    type ParsedArgs,
 } from './lib/args.js';
-import { resolveRepoRoot, inspectCapabilities, runSmoke, WordClawMcpClient } from './lib/mcp-client.js';
-import { RestCliClient, RestCliError, type RestCliResponse } from './lib/rest-client.js';
+import {
+    buildUnknownCommandError,
+    resolveAlias,
+} from './lib/command-resolution.js';
+import {
+    inspectCapabilities,
+    resolveRepoRoot,
+    runSmoke,
+    WordClawMcpClient,
+} from './lib/mcp-client.js';
+import {
+    RestCliClient,
+    RestCliError,
+    type RestCliResponse,
+} from './lib/rest-client.js';
 
 type JsonMap = Record<string, unknown>;
 
+const TOP_LEVEL_COMMANDS = [
+    'mcp',
+    'rest',
+    'content-types',
+    'content',
+    'workflow',
+    'l402',
+] as const;
+const MCP_SUBCOMMANDS = ['inspect', 'call', 'prompt', 'resource', 'smoke'] as const;
+const REST_SUBCOMMANDS = ['request'] as const;
+const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
+const CONTENT_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
+const WORKFLOW_SUBCOMMANDS = ['active', 'submit', 'tasks', 'decide'] as const;
+const L402_SUBCOMMANDS = ['offers', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
+
+const TOP_LEVEL_ALIASES: Record<string, string> = {
+    ct: 'content-types',
+    wf: 'workflow',
+};
+const CONTENT_TYPES_SUBCOMMAND_ALIASES: Record<string, string> = {
+    ls: 'list',
+};
+const CONTENT_SUBCOMMAND_ALIASES: Record<string, string> = {
+    ls: 'list',
+};
+
 function printJson(value: unknown) {
     console.log(JSON.stringify(value, null, 2));
+}
+
+function printRaw(value: unknown) {
+    if (typeof value === 'string') {
+        console.log(value);
+        return;
+    }
+
+    printJson(value);
+}
+
+function wantsRawOutput(args: ParsedArgs) {
+    return hasFlag(args, 'raw');
+}
+
+function printStructured(args: ParsedArgs, structured: unknown, rawValue = structured) {
+    if (wantsRawOutput(args)) {
+        printRaw(rawValue);
+        return;
+    }
+
+    printJson(structured);
 }
 
 function buildUsage() {
@@ -62,6 +123,18 @@ Commands:
   l402 entitlement --id <n>
   l402 read --item <n> [--entitlement-id <n>]
 
+Aliases:
+  ct -> content-types
+  wf -> workflow
+  content-types ls -> content-types list
+  content ls -> content list
+
+Global options:
+  --raw               Print plain body/text without the CLI envelope when possible
+  --help, -h          Show this help message
+  --base-url <url>    Override WORDCLAW_BASE_URL for REST commands
+  --api-key <key>     Override WORDCLAW_API_KEY for REST commands
+
 Environment:
   WORDCLAW_BASE_URL   Default: http://localhost:4000
   WORDCLAW_API_KEY    API key used for REST requests
@@ -78,6 +151,10 @@ function bodyFromResponse(response: RestCliResponse) {
         headers: response.headers,
         body: response.body,
     };
+}
+
+function printResponse(args: ParsedArgs, response: RestCliResponse) {
+    printStructured(args, bodyFromResponse(response), response.body);
 }
 
 function maybeNumber(value: number | undefined): number | undefined {
@@ -104,15 +181,37 @@ function assertHasUpdateFields(body: JsonMap, context: string) {
     }
 }
 
-async function handleMcp(repoRoot: string, args: ReturnType<typeof parseArgs>) {
-    const action = requirePositional(args, 1, 'mcp subcommand');
+function resolveSupportedSubcommand(
+    args: ParsedArgs,
+    index: number,
+    label: string,
+    supported: readonly string[],
+    aliases: Record<string, string> = {},
+) {
+    const raw = requirePositional(args, index, label);
+    const resolved = resolveAlias(raw, aliases) ?? raw;
+
+    if (!supported.includes(resolved)) {
+        throw buildUnknownCommandError(label, raw, supported);
+    }
+
+    return resolved;
+}
+
+async function handleMcp(repoRoot: string, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'mcp subcommand',
+        MCP_SUBCOMMANDS,
+    );
     const client = new WordClawMcpClient(repoRoot);
 
     try {
         await client.initialize();
 
         if (action === 'inspect') {
-            printJson(await inspectCapabilities(client));
+            printStructured(args, await inspectCapabilities(client));
             return;
         }
 
@@ -123,14 +222,18 @@ async function handleMcp(repoRoot: string, args: ReturnType<typeof parseArgs>) {
                 'MCP tool arguments',
             );
             const result = await client.callTool(toolName, payload);
-            printJson({
-                transport: 'mcp',
-                action: 'call',
-                tool: toolName,
-                rawText: result.rawText,
-                parsed: result.parsed,
-                isError: result.isError,
-            });
+            printStructured(
+                args,
+                {
+                    transport: 'mcp',
+                    action: 'call',
+                    tool: toolName,
+                    rawText: result.rawText,
+                    parsed: result.parsed,
+                    isError: result.isError,
+                },
+                result.rawText,
+            );
             if (result.isError) {
                 process.exitCode = 1;
             }
@@ -144,50 +247,62 @@ async function handleMcp(repoRoot: string, args: ReturnType<typeof parseArgs>) {
                 'MCP prompt arguments',
             );
             const text = await client.getPrompt(promptName, payload);
-            printJson({
-                transport: 'mcp',
-                action: 'prompt',
-                prompt: promptName,
+            printStructured(
+                args,
+                {
+                    transport: 'mcp',
+                    action: 'prompt',
+                    prompt: promptName,
+                    text,
+                },
                 text,
-            });
+            );
             return;
         }
 
         if (action === 'resource') {
             const uri = requirePositional(args, 2, 'resource URI');
             const text = await client.readResource(uri);
-            printJson({
-                transport: 'mcp',
-                action: 'resource',
-                uri,
+            printStructured(
+                args,
+                {
+                    transport: 'mcp',
+                    action: 'resource',
+                    uri,
+                    text,
+                },
                 text,
-            });
+            );
             return;
         }
 
-        if (action === 'smoke') {
-            const summary = await runSmoke(client);
-            printJson({
+        const summary = await runSmoke(client);
+        printStructured(
+            args,
+            {
                 transport: 'mcp',
                 action: 'smoke',
                 ...summary,
-            });
-            if (summary.failedCount > 0) {
-                process.exitCode = 1;
-            }
-            return;
+            },
+        );
+        if (summary.failedCount > 0) {
+            process.exitCode = 1;
         }
-
-        throw new Error(`Unknown mcp subcommand: ${action}`);
     } finally {
         await client.stop();
     }
 }
 
-async function handleRest(client: RestCliClient, args: ReturnType<typeof parseArgs>) {
-    const action = requirePositional(args, 1, 'rest subcommand');
+async function handleRest(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'rest subcommand',
+        REST_SUBCOMMANDS,
+    );
+
     if (action !== 'request') {
-        throw new Error(`Unknown rest subcommand: ${action}`);
+        throw buildUnknownCommandError('rest subcommand', action, REST_SUBCOMMANDS);
     }
 
     const method = requirePositional(args, 2, 'HTTP method');
@@ -204,11 +319,17 @@ async function handleRest(client: RestCliClient, args: ReturnType<typeof parseAr
         query: query as Record<string, string | number | boolean | undefined>,
         body,
     });
-    printJson(bodyFromResponse(response));
+    printResponse(args, response);
 }
 
-async function handleContentTypes(client: RestCliClient, args: ReturnType<typeof parseArgs>) {
-    const action = requirePositional(args, 1, 'content-types subcommand');
+async function handleContentTypes(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'content-types subcommand',
+        CONTENT_TYPES_SUBCOMMANDS,
+        CONTENT_TYPES_SUBCOMMAND_ALIASES,
+    );
 
     if (action === 'list') {
         const response = await client.request({
@@ -220,7 +341,7 @@ async function handleContentTypes(client: RestCliClient, args: ReturnType<typeof
                 includeStats: hasFlag(args, 'include-stats') ? true : undefined,
             },
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -233,7 +354,7 @@ async function handleContentTypes(client: RestCliClient, args: ReturnType<typeof
             method: 'GET',
             path: `/content-types/${id}`,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -258,7 +379,7 @@ async function handleContentTypes(client: RestCliClient, args: ReturnType<typeof
             }),
             acceptStatuses: hasFlag(args, 'dry-run') ? [200] : undefined,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -286,32 +407,33 @@ async function handleContentTypes(client: RestCliClient, args: ReturnType<typeof
             },
             body,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
-    if (action === 'delete') {
-        const id = getNumberFlag(args, 'id');
-        if (id === undefined) {
-            throw new Error('content-types delete requires --id.');
-        }
-
-        const response = await client.request({
-            method: 'DELETE',
-            path: `/content-types/${id}`,
-            query: {
-                mode: hasFlag(args, 'dry-run') ? 'dry_run' : undefined,
-            },
-        });
-        printJson(bodyFromResponse(response));
-        return;
+    const id = getNumberFlag(args, 'id');
+    if (id === undefined) {
+        throw new Error('content-types delete requires --id.');
     }
 
-    throw new Error(`Unknown content-types subcommand: ${action}`);
+    const response = await client.request({
+        method: 'DELETE',
+        path: `/content-types/${id}`,
+        query: {
+            mode: hasFlag(args, 'dry-run') ? 'dry_run' : undefined,
+        },
+    });
+    printResponse(args, response);
 }
 
-async function handleContent(client: RestCliClient, args: ReturnType<typeof parseArgs>) {
-    const action = requirePositional(args, 1, 'content subcommand');
+async function handleContent(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'content subcommand',
+        CONTENT_SUBCOMMANDS,
+        CONTENT_SUBCOMMAND_ALIASES,
+    );
 
     if (action === 'list') {
         const response = await client.request({
@@ -329,7 +451,7 @@ async function handleContent(client: RestCliClient, args: ReturnType<typeof pars
                 offset: maybeNumber(getNumberFlag(args, 'offset')),
             },
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -343,7 +465,7 @@ async function handleContent(client: RestCliClient, args: ReturnType<typeof pars
             method: 'GET',
             path: `/content-items/${id}`,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -371,7 +493,7 @@ async function handleContent(client: RestCliClient, args: ReturnType<typeof pars
             }),
             acceptStatuses: hasFlag(args, 'dry-run') ? [200] : undefined,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -397,7 +519,7 @@ async function handleContent(client: RestCliClient, args: ReturnType<typeof pars
             },
             body,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -411,7 +533,7 @@ async function handleContent(client: RestCliClient, args: ReturnType<typeof pars
             method: 'GET',
             path: `/content-items/${id}/versions`,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -430,32 +552,32 @@ async function handleContent(client: RestCliClient, args: ReturnType<typeof pars
             },
             body: { version },
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
-    if (action === 'delete') {
-        const id = getNumberFlag(args, 'id');
-        if (id === undefined) {
-            throw new Error('content delete requires --id.');
-        }
-
-        const response = await client.request({
-            method: 'DELETE',
-            path: `/content-items/${id}`,
-            query: {
-                mode: hasFlag(args, 'dry-run') ? 'dry_run' : undefined,
-            },
-        });
-        printJson(bodyFromResponse(response));
-        return;
+    const id = getNumberFlag(args, 'id');
+    if (id === undefined) {
+        throw new Error('content delete requires --id.');
     }
 
-    throw new Error(`Unknown content subcommand: ${action}`);
+    const response = await client.request({
+        method: 'DELETE',
+        path: `/content-items/${id}`,
+        query: {
+            mode: hasFlag(args, 'dry-run') ? 'dry_run' : undefined,
+        },
+    });
+    printResponse(args, response);
 }
 
-async function handleWorkflow(client: RestCliClient, args: ReturnType<typeof parseArgs>) {
-    const action = requirePositional(args, 1, 'workflow subcommand');
+async function handleWorkflow(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'workflow subcommand',
+        WORKFLOW_SUBCOMMANDS,
+    );
 
     if (action === 'active') {
         const contentTypeId = getNumberFlag(args, 'content-type-id');
@@ -467,7 +589,7 @@ async function handleWorkflow(client: RestCliClient, args: ReturnType<typeof par
             method: 'GET',
             path: `/content-types/${contentTypeId}/workflows/active`,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -487,7 +609,7 @@ async function handleWorkflow(client: RestCliClient, args: ReturnType<typeof par
             }),
             acceptStatuses: [201],
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -496,31 +618,31 @@ async function handleWorkflow(client: RestCliClient, args: ReturnType<typeof par
             method: 'GET',
             path: '/review-tasks',
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
-    if (action === 'decide') {
-        const id = getNumberFlag(args, 'id');
-        const decision = getStringFlag(args, 'decision');
-        if (id === undefined || !decision) {
-            throw new Error('workflow decide requires --id and --decision.');
-        }
-
-        const response = await client.request({
-            method: 'POST',
-            path: `/review-tasks/${id}/decide`,
-            body: { decision },
-        });
-        printJson(bodyFromResponse(response));
-        return;
+    const id = getNumberFlag(args, 'id');
+    const decision = getStringFlag(args, 'decision');
+    if (id === undefined || !decision) {
+        throw new Error('workflow decide requires --id and --decision.');
     }
 
-    throw new Error(`Unknown workflow subcommand: ${action}`);
+    const response = await client.request({
+        method: 'POST',
+        path: `/review-tasks/${id}/decide`,
+        body: { decision },
+    });
+    printResponse(args, response);
 }
 
-async function handleL402(client: RestCliClient, args: ReturnType<typeof parseArgs>) {
-    const action = requirePositional(args, 1, 'l402 subcommand');
+async function handleL402(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'l402 subcommand',
+        L402_SUBCOMMANDS,
+    );
 
     if (action === 'offers') {
         const itemId = getNumberFlag(args, 'item');
@@ -532,7 +654,7 @@ async function handleL402(client: RestCliClient, args: ReturnType<typeof parseAr
             method: 'GET',
             path: `/content-items/${itemId}/offers`,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -550,7 +672,7 @@ async function handleL402(client: RestCliClient, args: ReturnType<typeof parseAr
             }),
             acceptStatuses: [402],
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -572,7 +694,7 @@ async function handleL402(client: RestCliClient, args: ReturnType<typeof parseAr
                 'x-payment-hash': paymentHash,
             }) as Record<string, string>,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -581,7 +703,7 @@ async function handleL402(client: RestCliClient, args: ReturnType<typeof parseAr
             method: 'GET',
             path: '/entitlements/me',
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
@@ -594,42 +716,45 @@ async function handleL402(client: RestCliClient, args: ReturnType<typeof parseAr
             method: 'GET',
             path: `/entitlements/${id}`,
         });
-        printJson(bodyFromResponse(response));
+        printResponse(args, response);
         return;
     }
 
-    if (action === 'read') {
-        const itemId = getNumberFlag(args, 'item');
-        if (itemId === undefined) {
-            throw new Error('l402 read requires --item.');
-        }
-
-        const entitlementId = getNumberFlag(args, 'entitlement-id');
-        const response = await client.request({
-            method: 'GET',
-            path: `/content-items/${itemId}`,
-            headers: omitUndefined({
-                'x-entitlement-id': entitlementId !== undefined ? String(entitlementId) : undefined,
-            }) as Record<string, string>,
-            acceptStatuses: [402, 403, 409],
-        });
-        printJson(bodyFromResponse(response));
-        if (!response.ok) {
-            process.exitCode = 1;
-        }
-        return;
+    const itemId = getNumberFlag(args, 'item');
+    if (itemId === undefined) {
+        throw new Error('l402 read requires --item.');
     }
 
-    throw new Error(`Unknown l402 subcommand: ${action}`);
+    const entitlementId = getNumberFlag(args, 'entitlement-id');
+    const response = await client.request({
+        method: 'GET',
+        path: `/content-items/${itemId}`,
+        headers: omitUndefined({
+            'x-entitlement-id': entitlementId !== undefined ? String(entitlementId) : undefined,
+        }) as Record<string, string>,
+        acceptStatuses: [402, 403, 409],
+    });
+    printResponse(args, response);
+    if (!response.ok) {
+        process.exitCode = 1;
+    }
 }
 
-async function main() {
-    const repoRoot = resolveRepoRoot();
-    const args = parseArgs(process.argv.slice(2));
-    const command = optionalPositional(args, 0);
+async function main(args: ParsedArgs) {
+    const rawCommand = optionalPositional(args, 0);
 
-    if (!command || hasFlag(args, 'help') || hasFlag(args, 'h')) {
+    if (!rawCommand || hasFlag(args, 'help') || hasFlag(args, 'h')) {
         console.log(buildUsage());
+        return;
+    }
+
+    const command = resolveAlias(rawCommand, TOP_LEVEL_ALIASES) ?? rawCommand;
+    if (!(TOP_LEVEL_COMMANDS as readonly string[]).includes(command)) {
+        throw buildUnknownCommandError('command', rawCommand, TOP_LEVEL_COMMANDS);
+    }
+
+    if (command === 'mcp') {
+        await handleMcp(resolveRepoRoot(), args);
         return;
     }
 
@@ -639,10 +764,6 @@ async function main() {
         domainId: getNumberFlag(args, 'domain-id'),
     });
 
-    if (command === 'mcp') {
-        await handleMcp(repoRoot, args);
-        return;
-    }
     if (command === 'rest') {
         await handleRest(client, args);
         return;
@@ -659,25 +780,30 @@ async function main() {
         await handleWorkflow(client, args);
         return;
     }
-    if (command === 'l402') {
-        await handleL402(client, args);
-        return;
-    }
 
-    throw new Error(`Unknown command: ${command}`);
+    await handleL402(client, args);
 }
 
-main().catch((error) => {
+const parsedArgs = parseArgs(process.argv.slice(2));
+
+main(parsedArgs).catch((error) => {
     if (error instanceof RestCliError) {
-        printJson({
-            error: error.message,
-            response: bodyFromResponse(error.response),
-        });
+        if (wantsRawOutput(parsedArgs)) {
+            printRaw(error.response.body);
+        } else {
+            printJson({
+                error: error.message,
+                response: bodyFromResponse(error.response),
+            });
+        }
         process.exit(1);
     }
 
-    printJson({
-        error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    if (wantsRawOutput(parsedArgs)) {
+        printRaw(message);
+    } else {
+        printJson({ error: message });
+    }
     process.exit(1);
 });
