@@ -1,8 +1,12 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { agentRunCheckpoints, agentRunDefinitions, agentRunSteps, agentRuns, contentItems } from '../db/schema.js';
+import { agentRunCheckpoints, agentRunDefinitions, agentRunSteps, agentRuns, apiKeys, contentItems, contentTypes } from '../db/schema.js';
 import { logAudit } from './audit.js';
+import { parseScopes } from './api-key.js';
+import { validateContentDataAgainstSchema } from './content-schema.js';
+import { buildOperationContext } from './policy-adapters.js';
+import { PolicyEngine } from './policy.js';
 import { WorkflowService } from './workflow.js';
 
 export const AGENT_RUN_STATUSES = [
@@ -130,6 +134,28 @@ function parseBooleanFlag(value: unknown, fallback: boolean): boolean {
     return fallback;
 }
 
+function parseStringList(value: unknown): string[] | undefined {
+    const rawItems = Array.isArray(value)
+        ? value
+        : typeof value === 'string'
+            ? value.split(',')
+            : [];
+
+    if (rawItems.length === 0) {
+        return undefined;
+    }
+
+    const normalized = rawItems
+        .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+        .filter((entry) => entry.length > 0);
+
+    if (normalized.length === 0) {
+        return undefined;
+    }
+
+    return Array.from(new Set(normalized));
+}
+
 function extractReviewCandidateIds(payload: unknown): number[] {
     if (!isRecord(payload) || !Array.isArray(payload.candidates)) {
         return [];
@@ -243,6 +269,90 @@ export function resolveAgentRunTransition(
 }
 
 export class AgentRunService {
+    private static async resolveRunExecutionPrincipal(
+        domainId: number,
+        runId: number
+    ): Promise<{ keyId: string; domainId: number; scopes: Set<string>; source: string }> {
+        const fallbackPrincipal = {
+            keyId: `agent-run:${runId}`,
+            domainId,
+            scopes: new Set<string>(['content:write']),
+            source: 'agent_run_runtime'
+        };
+
+        const [run] = await db.select({ requestedBy: agentRuns.requestedBy })
+            .from(agentRuns)
+            .where(and(
+                eq(agentRuns.id, runId),
+                eq(agentRuns.domainId, domainId)
+            ));
+
+        if (!run?.requestedBy) {
+            return fallbackPrincipal;
+        }
+
+        const requesterKeyId = parseOptionalPositiveInt(run.requestedBy);
+        if (!requesterKeyId) {
+            return {
+                ...fallbackPrincipal,
+                keyId: `agent-run:${runId}:${run.requestedBy}`
+            };
+        }
+
+        const [requesterKey] = await db.select({
+            id: apiKeys.id,
+            scopes: apiKeys.scopes
+        })
+            .from(apiKeys)
+            .where(and(
+                eq(apiKeys.id, requesterKeyId),
+                eq(apiKeys.domainId, domainId)
+            ));
+
+        if (!requesterKey) {
+            return {
+                ...fallbackPrincipal,
+                keyId: `agent-run:${runId}:missing-key:${requesterKeyId}`
+            };
+        }
+
+        const scopes = parseScopes(requesterKey.scopes);
+        if (scopes.size === 0) {
+            scopes.add('content:write');
+        }
+
+        return {
+            keyId: requesterKey.id.toString(),
+            domainId,
+            scopes,
+            source: 'agent_run_runtime'
+        };
+    }
+
+    private static async evaluateRuntimeMutationPolicy(
+        principal: { keyId: string; domainId: number; scopes: Set<string>; source: string },
+        resourceType: string,
+        resourceId: string
+    ) {
+        const operationContext = buildOperationContext(
+            'rest',
+            {
+                keyId: principal.keyId,
+                domainId: principal.domainId,
+                scopes: principal.scopes,
+                source: principal.source
+            },
+            'content.write',
+            {
+                type: resourceType,
+                id: resourceId,
+                domainId: principal.domainId
+            }
+        );
+
+        return PolicyEngine.evaluate(operationContext);
+    }
+
     private static async executeReviewSubmissionSteps(
         domainId: number,
         runId: number,
@@ -251,6 +361,7 @@ export class AgentRunService {
         const assignee = metadata && typeof metadata.reviewAssignee === 'string' && metadata.reviewAssignee.trim().length > 0
             ? metadata.reviewAssignee.trim()
             : undefined;
+        const executionPrincipal = await AgentRunService.resolveRunExecutionPrincipal(domainId, runId);
 
         const pendingSteps = await db.select()
             .from(agentRunSteps)
@@ -343,6 +454,36 @@ export class AgentRunService {
                 continue;
             }
 
+            const policyDecision = await AgentRunService.evaluateRuntimeMutationPolicy(
+                executionPrincipal,
+                'content_item',
+                contentItem.id.toString()
+            );
+            if (policyDecision.outcome !== 'allow') {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: `POLICY_DENIED: ${policyDecision.code}`
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+
+                await db.insert(agentRunCheckpoints).values({
+                    runId,
+                    domainId,
+                    checkpointKey: 'policy_denied',
+                    payload: {
+                        stepId: step.id,
+                        actionType: 'submit_review',
+                        code: policyDecision.code,
+                        remediation: policyDecision.remediation ?? null
+                    }
+                });
+                continue;
+            }
+
             try {
                 const reviewTask = await WorkflowService.submitForReview({
                     domainId,
@@ -350,7 +491,7 @@ export class AgentRunService {
                     workflowTransitionId: transition.id,
                     assignee,
                     authPrincipal: {
-                        scopes: new Set<string>(['admin']),
+                        scopes: executionPrincipal.scopes,
                         domainId
                     }
                 });
@@ -490,6 +631,211 @@ export class AgentRunService {
         });
     }
 
+    private static async executeQualityValidationSteps(
+        domainId: number,
+        runId: number
+    ) {
+        const pendingSteps = await db.select()
+            .from(agentRunSteps)
+            .where(and(
+                eq(agentRunSteps.runId, runId),
+                eq(agentRunSteps.domainId, domainId),
+                eq(agentRunSteps.actionType, 'validate_schema'),
+                eq(agentRunSteps.status, 'pending')
+            ))
+            .orderBy(asc(agentRunSteps.stepIndex), asc(agentRunSteps.id));
+
+        for (const step of pendingSteps) {
+            const stepStart = new Date();
+            await db.update(agentRunSteps)
+                .set({
+                    status: 'executing',
+                    startedAt: step.startedAt ?? stepStart,
+                    updatedAt: stepStart
+                })
+                .where(and(
+                    eq(agentRunSteps.id, step.id),
+                    eq(agentRunSteps.domainId, domainId),
+                    eq(agentRunSteps.runId, runId),
+                    eq(agentRunSteps.status, 'pending')
+                ));
+
+            const requestSnapshot = isRecord(step.requestSnapshot) ? step.requestSnapshot : {};
+            const contentItemId = parseOptionalPositiveInt(requestSnapshot.contentItemId);
+            if (!contentItemId) {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: 'Missing contentItemId in validate_schema request snapshot.'
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+                continue;
+            }
+
+            const [target] = await db.select({
+                id: contentItems.id,
+                contentTypeId: contentItems.contentTypeId,
+                status: contentItems.status,
+                data: contentItems.data,
+                schema: contentTypes.schema
+            })
+                .from(contentItems)
+                .innerJoin(contentTypes, and(
+                    eq(contentTypes.id, contentItems.contentTypeId),
+                    eq(contentTypes.domainId, contentItems.domainId)
+                ))
+                .where(and(
+                    eq(contentItems.id, contentItemId),
+                    eq(contentItems.domainId, domainId)
+                ));
+
+            if (!target) {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: `Content item ${contentItemId} not found in this domain.`
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+                continue;
+            }
+
+            const failure = validateContentDataAgainstSchema(target.schema, target.data);
+            if (failure) {
+                const failedAt = new Date();
+                await db.update(agentRunSteps)
+                    .set({
+                        status: 'failed',
+                        completedAt: failedAt,
+                        updatedAt: failedAt,
+                        errorMessage: failure.error,
+                        responseSnapshot: {
+                            valid: false,
+                            code: failure.code,
+                            details: failure.context?.details ?? null
+                        }
+                    })
+                    .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+                continue;
+            }
+
+            const succeededAt = new Date();
+            await db.update(agentRunSteps)
+                .set({
+                    status: 'succeeded',
+                    completedAt: succeededAt,
+                    updatedAt: succeededAt,
+                    errorMessage: null,
+                    responseSnapshot: {
+                        valid: true,
+                        contentItemId: target.id,
+                        contentTypeId: target.contentTypeId,
+                        itemStatus: target.status
+                    }
+                })
+                .where(and(eq(agentRunSteps.id, step.id), eq(agentRunSteps.domainId, domainId)));
+        }
+
+        const validationSteps = await db.select({ status: agentRunSteps.status })
+            .from(agentRunSteps)
+            .where(and(
+                eq(agentRunSteps.runId, runId),
+                eq(agentRunSteps.domainId, domainId),
+                eq(agentRunSteps.actionType, 'validate_schema')
+            ));
+
+        if (validationSteps.length === 0) {
+            const settledAt = new Date();
+            const [settledRun] = await db.update(agentRuns)
+                .set({
+                    status: 'succeeded',
+                    completedAt: settledAt,
+                    updatedAt: settledAt
+                })
+                .where(and(
+                    eq(agentRuns.id, runId),
+                    eq(agentRuns.domainId, domainId),
+                    eq(agentRuns.status, 'running')
+                ))
+                .returning();
+
+            if (settledRun) {
+                await db.insert(agentRunCheckpoints).values({
+                    runId,
+                    domainId,
+                    checkpointKey: 'quality_validation_completed',
+                    payload: {
+                        succeededCount: 0,
+                        noop: true
+                    }
+                });
+            }
+            return;
+        }
+
+        const pendingCount = validationSteps.filter(
+            (step) => step.status === 'pending' || step.status === 'executing'
+        ).length;
+        if (pendingCount > 0) {
+            return;
+        }
+
+        const failedCount = validationSteps.filter((step) => step.status === 'failed').length;
+        const succeededCount = validationSteps.filter((step) => step.status === 'succeeded').length;
+        const settledAt = new Date();
+
+        if (failedCount > 0) {
+            await db.update(agentRuns)
+                .set({
+                    status: 'failed',
+                    completedAt: settledAt,
+                    updatedAt: settledAt
+                })
+                .where(and(
+                    eq(agentRuns.id, runId),
+                    eq(agentRuns.domainId, domainId),
+                    eq(agentRuns.status, 'running')
+                ));
+
+            await db.insert(agentRunCheckpoints).values({
+                runId,
+                domainId,
+                checkpointKey: 'quality_validation_failed',
+                payload: {
+                    failedCount,
+                    succeededCount
+                }
+            });
+            return;
+        }
+
+        await db.update(agentRuns)
+            .set({
+                status: 'succeeded',
+                completedAt: settledAt,
+                updatedAt: settledAt
+            })
+            .where(and(
+                eq(agentRuns.id, runId),
+                eq(agentRuns.domainId, domainId),
+                eq(agentRuns.status, 'running')
+            ));
+
+        await db.insert(agentRunCheckpoints).values({
+            runId,
+            domainId,
+            checkpointKey: 'quality_validation_completed',
+            payload: {
+                succeededCount
+            }
+        });
+    }
+
     private static async buildReviewBacklogPlanSnapshot(domainId: number, metadata: Record<string, unknown>) {
         const maxCandidates = clampLimit(parseOptionalPositiveInt(metadata.maxCandidates), 25, 250);
         const requestedContentTypeId = parseOptionalPositiveInt(metadata.contentTypeId);
@@ -529,6 +875,58 @@ export class AgentRunService {
             },
             summary: {
                 backlogCount: totalDrafts,
+                selectedCount: candidates.length,
+                maxCandidates
+            },
+            candidates: candidates.map((candidate) => ({
+                id: candidate.id,
+                contentTypeId: candidate.contentTypeId,
+                status: candidate.status,
+                updatedAt: candidate.updatedAt.toISOString()
+            }))
+        };
+    }
+
+    private static async buildQualityRefinerPlanSnapshot(domainId: number, metadata: Record<string, unknown>) {
+        const maxCandidates = clampLimit(parseOptionalPositiveInt(metadata.maxCandidates), 25, 250);
+        const requestedContentTypeId = parseOptionalPositiveInt(metadata.contentTypeId);
+        const requestedStatuses = parseStringList(metadata.statuses ?? metadata.status);
+        const dryRun = parseBooleanFlag(metadata.dryRun, true);
+
+        const whereConditions = [
+            eq(contentItems.domainId, domainId),
+            requestedContentTypeId ? eq(contentItems.contentTypeId, requestedContentTypeId) : undefined,
+            requestedStatuses && requestedStatuses.length > 0 ? inArray(contentItems.status, requestedStatuses) : undefined
+        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+        const whereClause = whereConditions.length > 1
+            ? and(...whereConditions)
+            : whereConditions[0];
+
+        const [{ totalCandidates }] = await db.select({ totalCandidates: sql<number>`count(*)::int` })
+            .from(contentItems)
+            .where(whereClause);
+
+        const candidates = await db.select({
+            id: contentItems.id,
+            contentTypeId: contentItems.contentTypeId,
+            status: contentItems.status,
+            updatedAt: contentItems.updatedAt
+        })
+            .from(contentItems)
+            .where(whereClause)
+            .orderBy(asc(contentItems.updatedAt), asc(contentItems.id))
+            .limit(maxCandidates);
+
+        return {
+            mode: dryRun ? 'dry_run' : 'live_preview',
+            runType: 'quality_refiner',
+            criteria: {
+                contentTypeId: requestedContentTypeId ?? null,
+                statuses: requestedStatuses ?? null
+            },
+            summary: {
+                candidatePoolCount: totalCandidates,
                 selectedCount: candidates.length,
                 maxCandidates
             },
@@ -758,9 +1156,15 @@ export class AgentRunService {
             ...baseMetadata,
             ...(input.metadata ?? {})
         };
-        const planningSnapshot = runType === 'review_backlog_manager'
-            ? await AgentRunService.buildReviewBacklogPlanSnapshot(domainId, metadata)
-            : null;
+        let planningCheckpointKey: string | null = null;
+        let planningSnapshot: Record<string, unknown> | null = null;
+        if (runType === 'review_backlog_manager') {
+            planningCheckpointKey = 'plan_review_backlog';
+            planningSnapshot = await AgentRunService.buildReviewBacklogPlanSnapshot(domainId, metadata);
+        } else if (runType === 'quality_refiner') {
+            planningCheckpointKey = 'plan_quality_refiner';
+            planningSnapshot = await AgentRunService.buildQualityRefinerPlanSnapshot(domainId, metadata);
+        }
         const status: AgentRunStatus = input.requireApproval ? 'waiting_approval' : 'queued';
 
         const created = await db.transaction(async (tx) => {
@@ -797,11 +1201,11 @@ export class AgentRunService {
                 }
             });
 
-            if (planningSnapshot) {
+            if (planningSnapshot && planningCheckpointKey) {
                 await tx.insert(agentRunCheckpoints).values({
                     runId: newRun.id,
                     domainId,
-                    checkpointKey: 'plan_review_backlog',
+                    checkpointKey: planningCheckpointKey,
                     payload: planningSnapshot
                 });
             }
@@ -1052,6 +1456,79 @@ export class AgentRunService {
                             }
                         });
                     }
+                } else if (updatedRun.runType === 'quality_refiner') {
+                    const [existingQualityStep] = await tx.select({ id: agentRunSteps.id })
+                        .from(agentRunSteps)
+                        .where(and(
+                            eq(agentRunSteps.runId, runId),
+                            eq(agentRunSteps.domainId, domainId),
+                            eq(agentRunSteps.actionType, 'validate_schema')
+                        ))
+                        .limit(1);
+
+                    if (!existingQualityStep) {
+                        const [planCheckpoint] = await tx.select({ payload: agentRunCheckpoints.payload })
+                            .from(agentRunCheckpoints)
+                            .where(and(
+                                eq(agentRunCheckpoints.runId, runId),
+                                eq(agentRunCheckpoints.domainId, domainId),
+                                eq(agentRunCheckpoints.checkpointKey, 'plan_quality_refiner')
+                            ))
+                            .orderBy(desc(agentRunCheckpoints.createdAt), desc(agentRunCheckpoints.id))
+                            .limit(1);
+
+                        const candidateIds = extractReviewCandidateIds(planCheckpoint?.payload);
+                        const [stepStats] = await tx.select({
+                            maxStepIndex: sql<number>`coalesce(max(${agentRunSteps.stepIndex}), -1)`
+                        })
+                            .from(agentRunSteps)
+                            .where(and(
+                                eq(agentRunSteps.runId, runId),
+                                eq(agentRunSteps.domainId, domainId)
+                            ));
+                        const nextStepIndex = (stepStats?.maxStepIndex ?? -1) + 1;
+
+                        if (candidateIds.length > 0) {
+                            await tx.insert(agentRunSteps).values(candidateIds.map((contentItemId, index) => ({
+                                runId,
+                                domainId,
+                                stepIndex: nextStepIndex + index,
+                                stepKey: `validate_schema_${contentItemId}`,
+                                actionType: 'validate_schema',
+                                status: 'pending',
+                                requestSnapshot: {
+                                    contentItemId
+                                }
+                            })));
+                        }
+
+                        await tx.update(agentRunSteps)
+                            .set({
+                                status: 'succeeded',
+                                completedAt: now,
+                                updatedAt: now,
+                                responseSnapshot: {
+                                    selectedCount: candidateIds.length,
+                                    checkpointKey: 'planned_quality_checks'
+                                }
+                            })
+                            .where(and(
+                                eq(agentRunSteps.runId, runId),
+                                eq(agentRunSteps.domainId, domainId),
+                                eq(agentRunSteps.stepIndex, 0),
+                                inArray(agentRunSteps.status, ['pending', 'executing'])
+                            ));
+
+                        await tx.insert(agentRunCheckpoints).values({
+                            runId,
+                            domainId,
+                            checkpointKey: 'planned_quality_checks',
+                            payload: {
+                                selectedCount: candidateIds.length,
+                                candidateIds
+                            }
+                        });
+                    }
                 }
             }
 
@@ -1092,6 +1569,50 @@ export class AgentRunService {
                         runId,
                         domainId,
                         checkpointKey: 'review_retry_scheduled',
+                        payload: {
+                            failedCount: retryStats.failedCount
+                        }
+                    });
+                }
+            }
+
+            if (
+                updatedRun.status === 'queued'
+                && run.status === 'failed'
+                && updatedRun.runType === 'quality_refiner'
+            ) {
+                const [retryStats] = await tx.select({
+                    failedCount: sql<number>`count(*)::int`
+                })
+                    .from(agentRunSteps)
+                    .where(and(
+                        eq(agentRunSteps.runId, runId),
+                        eq(agentRunSteps.domainId, domainId),
+                        eq(agentRunSteps.actionType, 'validate_schema'),
+                        eq(agentRunSteps.status, 'failed')
+                    ));
+
+                if ((retryStats?.failedCount ?? 0) > 0) {
+                    await tx.update(agentRunSteps)
+                        .set({
+                            status: 'pending',
+                            startedAt: null,
+                            completedAt: null,
+                            updatedAt: now,
+                            errorMessage: null,
+                            responseSnapshot: null
+                        })
+                        .where(and(
+                            eq(agentRunSteps.runId, runId),
+                            eq(agentRunSteps.domainId, domainId),
+                            eq(agentRunSteps.actionType, 'validate_schema'),
+                            eq(agentRunSteps.status, 'failed')
+                        ));
+
+                    await tx.insert(agentRunCheckpoints).values({
+                        runId,
+                        domainId,
+                        checkpointKey: 'quality_retry_scheduled',
                         payload: {
                             failedCount: retryStats.failedCount
                         }
@@ -1142,6 +1663,13 @@ export class AgentRunService {
             && parseBooleanFlag(updated.metadata.autoSubmitReview, false)
         ) {
             await AgentRunService.executeReviewSubmissionSteps(domainId, runId, updated.metadata);
+        } else if (
+            updated.status === 'running'
+            && updated.runType === 'quality_refiner'
+            && isRecord(updated.metadata)
+            && parseBooleanFlag(updated.metadata.autoValidateQuality, false)
+        ) {
+            await AgentRunService.executeQualityValidationSteps(domainId, runId);
         }
 
         const [latestRun] = await db.select()

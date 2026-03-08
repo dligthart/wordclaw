@@ -40,6 +40,18 @@ Introduce an **Autonomous Content Ops Agent runtime** with:
 5. **Protocol parity**
 - Run lifecycle and status available through REST, GraphQL, and MCP.
 
+### 3.1 How This Works (Plain English)
+Think of a content ops agent run as a supervised to-do list that the system executes step by step.
+
+1. An operator starts a run with a goal (for example: "clear draft review backlog" or "run quality checks").
+2. The system first plans what it would do and records that plan as checkpoints.
+3. If approval is required, the run waits for a human to approve it.
+4. After approval, the run stages concrete actions (for example: submit items for review, validate item schema quality).
+5. If auto-execution is enabled for that run type, those staged actions are executed immediately.
+6. Every action writes trace data (request snapshot, result snapshot, and checkpoints) so operators can inspect exactly what happened.
+7. If something fails, the run is marked failed with explicit error details; operators can fix the underlying issue and resume the run from the recorded checkpoint.
+8. The same lifecycle is available through REST, GraphQL, and MCP so agents and tools all see the same behavior.
+
 ## 4. Technical Design (Architecture)
 ### 4.1 Core Runtime Model
 Add run-level entities:

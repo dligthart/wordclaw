@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
 import { agentRunDefinitions, agentRuns, apiKeys, domains, contentItems, contentTypes, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
 import { hashApiKey } from '../services/api-key.js';
@@ -832,6 +832,126 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         }
     });
 
+    it('review_backlog_manager auto-submit does not bypass required workflow roles', async () => {
+        let scopedTypeId: number | null = null;
+        let workflowId: number | null = null;
+        let transitionId: number | null = null;
+        let draftItemId: number | null = null;
+        let runId: number | null = null;
+        let limitedKeyId: number | null = null;
+        const limitedRawKey = `wc_test_limited_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
+
+        try {
+            const [limitedKey] = await db.insert(apiKeys).values({
+                keyHash: hashApiKey(limitedRawKey),
+                keyPrefix: limitedRawKey.slice(0, 12),
+                name: `Limited Runtime Key ${crypto.randomUUID().slice(0, 6)}`,
+                domainId: domain1Id,
+                scopes: 'content:write'
+            }).returning();
+            limitedKeyId = limitedKey.id;
+
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Backlog Role Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `backlog-role-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({ type: 'object' }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [workflow] = await db.insert(workflows).values({
+                domainId: domain1Id,
+                name: `Role Guard Workflow ${crypto.randomUUID().slice(0, 6)}`,
+                contentTypeId: scopedTypeId,
+                active: true
+            }).returning();
+            workflowId = workflow.id;
+
+            const [transition] = await db.insert(workflowTransitions).values({
+                workflowId: workflowId,
+                fromState: 'draft',
+                toState: 'pending_review',
+                requiredRoles: ['admin']
+            }).returning();
+            transitionId = transition.id;
+
+            const [draftItem] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'role-guard-item' }),
+                status: 'draft'
+            }).returning();
+            draftItemId = draftItem.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': limitedRawKey },
+                payload: {
+                    goal: `review-role-guard-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'review_backlog_manager',
+                    requireApproval: true,
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        autoSubmitReview: true
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const approveRun = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': limitedRawKey },
+                payload: { action: 'approve' }
+            });
+            expect(approveRun.statusCode).toBe(200);
+            expect(JSON.parse(approveRun.payload).data.status).toBe('failed');
+
+            const details = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': limitedRawKey }
+            });
+            expect(details.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(details.payload) as {
+                data: {
+                    steps: Array<{
+                        actionType: string;
+                        status: string;
+                        errorMessage?: string | null;
+                    }>;
+                };
+            };
+
+            const submitStep = detailsPayload.data.steps.find((step) => step.actionType === 'submit_review');
+            expect(submitStep?.status).toBe('failed');
+            expect(submitStep?.errorMessage).toContain('UNAUTHORIZED_WORKFLOW_TRANSITION');
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (draftItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, draftItemId));
+            }
+            if (transitionId) {
+                await db.delete(reviewTasks).where(eq(reviewTasks.workflowTransitionId, transitionId));
+                await db.delete(workflowTransitions).where(eq(workflowTransitions.id, transitionId));
+            }
+            if (workflowId) {
+                await db.delete(workflows).where(eq(workflows.id, workflowId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+            if (limitedKeyId) {
+                await db.delete(apiKeys).where(eq(apiKeys.id, limitedKeyId));
+            }
+        }
+    });
+
     it('review_backlog_manager auto-submit succeeds with noop completion when no candidates are staged', async () => {
         let scopedTypeId: number | null = null;
         let runId: number | null = null;
@@ -1189,6 +1309,264 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
             if (workflowId) {
                 await db.delete(workflows).where(eq(workflows.id, workflowId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
+    it('quality_refiner approve auto-validates staged schema checks when enabled', async () => {
+        let scopedTypeId: number | null = null;
+        let contentItemId: number | null = null;
+        let runId: number | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Quality Refiner Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `quality-refiner-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: {
+                        title: { type: 'string' }
+                    },
+                    required: ['title']
+                }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [item] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({ title: 'valid-quality-item' }),
+                status: 'draft'
+            }).returning();
+            contentItemId = item.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `quality-refiner-success-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'quality_refiner',
+                    requireApproval: true,
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        autoValidateQuality: true,
+                        maxCandidates: 5
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const approveRun = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(approveRun.statusCode).toBe(200);
+            expect(JSON.parse(approveRun.payload).data.status).toBe('succeeded');
+
+            const details = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(details.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(details.payload) as {
+                data: {
+                    run: { status: string };
+                    steps: Array<{
+                        actionType: string;
+                        status: string;
+                        responseSnapshot?: {
+                            valid?: boolean;
+                            contentItemId?: number;
+                        } | null;
+                    }>;
+                    checkpoints: Array<{
+                        checkpointKey: string;
+                        payload?: {
+                            selectedCount?: number;
+                            succeededCount?: number;
+                            settledStatus?: string;
+                        };
+                    }>;
+                };
+            };
+
+            expect(detailsPayload.data.run.status).toBe('succeeded');
+            const validationSteps = detailsPayload.data.steps.filter((step) => step.actionType === 'validate_schema');
+            expect(validationSteps).toHaveLength(1);
+            expect(validationSteps[0].status).toBe('succeeded');
+            expect(validationSteps[0].responseSnapshot?.valid).toBe(true);
+            expect(validationSteps[0].responseSnapshot?.contentItemId).toBe(contentItemId);
+
+            const stagedCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'planned_quality_checks'
+            );
+            expect(stagedCheckpoint?.payload?.selectedCount).toBe(1);
+
+            const completionCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'quality_validation_completed'
+            );
+            expect(completionCheckpoint?.payload?.succeededCount).toBe(1);
+
+            const settledCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'control_approve_settled'
+            );
+            expect(settledCheckpoint?.payload?.settledStatus).toBe('succeeded');
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (contentItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, contentItemId));
+            }
+            if (scopedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
+            }
+        }
+    });
+
+    it('quality_refiner resume retries failed validations after content is fixed', async () => {
+        let scopedTypeId: number | null = null;
+        let contentItemId: number | null = null;
+        let runId: number | null = null;
+
+        try {
+            const [scopedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: `Quality Retry Type ${crypto.randomUUID().slice(0, 6)}`,
+                slug: `quality-retry-${crypto.randomUUID().slice(0, 8)}`,
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: {
+                        title: { type: 'string' }
+                    },
+                    required: ['title']
+                }),
+                basePrice: 0
+            }).returning();
+            scopedTypeId = scopedType.id;
+
+            const [item] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: scopedTypeId,
+                data: JSON.stringify({}),
+                status: 'draft'
+            }).returning();
+            contentItemId = item.id;
+
+            const createRun = await fastify.inject({
+                method: 'POST',
+                url: '/api/agent-runs',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    goal: `quality-refiner-retry-${crypto.randomUUID().slice(0, 8)}`,
+                    runType: 'quality_refiner',
+                    requireApproval: true,
+                    metadata: {
+                        contentTypeId: scopedTypeId,
+                        autoValidateQuality: true
+                    }
+                }
+            });
+            expect(createRun.statusCode).toBe(201);
+            runId = JSON.parse(createRun.payload).data.id as number;
+
+            const initialApprove = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(initialApprove.statusCode).toBe(200);
+            expect(JSON.parse(initialApprove.payload).data.status).toBe('failed');
+
+            await db.update(contentItems)
+                .set({
+                    data: JSON.stringify({ title: 'fixed-quality-item' })
+                })
+                .where(and(
+                    eq(contentItems.id, contentItemId),
+                    eq(contentItems.domainId, domain1Id)
+                ));
+
+            const resumeRun = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'resume' }
+            });
+            expect(resumeRun.statusCode).toBe(200);
+            expect(JSON.parse(resumeRun.payload).data.status).toBe('queued');
+
+            const finalApprove = await fastify.inject({
+                method: 'POST',
+                url: `/api/agent-runs/${runId}/control`,
+                headers: { 'x-api-key': rawKey1 },
+                payload: { action: 'approve' }
+            });
+            expect(finalApprove.statusCode).toBe(200);
+            expect(JSON.parse(finalApprove.payload).data.status).toBe('succeeded');
+
+            const details = await fastify.inject({
+                method: 'GET',
+                url: `/api/agent-runs/${runId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+            expect(details.statusCode).toBe(200);
+            const detailsPayload = JSON.parse(details.payload) as {
+                data: {
+                    run: {
+                        status: string;
+                    };
+                    steps: Array<{
+                        actionType: string;
+                        status: string;
+                        errorMessage?: string | null;
+                        responseSnapshot?: {
+                            valid?: boolean;
+                        } | null;
+                    }>;
+                    checkpoints: Array<{
+                        checkpointKey: string;
+                        payload?: {
+                            failedCount?: number;
+                            succeededCount?: number;
+                        };
+                    }>;
+                };
+            };
+
+            expect(detailsPayload.data.run.status).toBe('succeeded');
+            const validationSteps = detailsPayload.data.steps.filter((step) => step.actionType === 'validate_schema');
+            expect(validationSteps).toHaveLength(1);
+            expect(validationSteps[0].status).toBe('succeeded');
+            expect(validationSteps[0].errorMessage).toBeNull();
+            expect(validationSteps[0].responseSnapshot?.valid).toBe(true);
+
+            const retryCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'quality_retry_scheduled'
+            );
+            expect(retryCheckpoint?.payload?.failedCount).toBe(1);
+
+            const completionCheckpoint = detailsPayload.data.checkpoints.find(
+                (checkpoint) => checkpoint.checkpointKey === 'quality_validation_completed'
+            );
+            expect(completionCheckpoint?.payload?.succeededCount).toBe(1);
+        } finally {
+            if (runId) {
+                await db.delete(agentRuns).where(eq(agentRuns.id, runId));
+            }
+            if (contentItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, contentItemId));
             }
             if (scopedTypeId) {
                 await db.delete(contentTypes).where(eq(contentTypes.id, scopedTypeId));
