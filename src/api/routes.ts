@@ -26,6 +26,7 @@ import { transitionPaymentStatus } from '../services/payment-ledger.js';
 import { paymentFlowMetrics } from '../services/payment-metrics.js';
 import { parsePaymentWebhookEvent, verifyPaymentWebhookSignature } from '../services/payment-webhook.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
+import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
@@ -56,6 +57,10 @@ type AgentRunsQuery = {
     definitionId?: number;
     limit?: number;
     offset?: number;
+};
+type AgentRunMetricsQuery = {
+    windowHours?: number;
+    runType?: string;
 };
 type AgentRunDefinitionsQuery = {
     active?: boolean;
@@ -4353,6 +4358,75 @@ export default async function apiRoutes(server: FastifyInstance) {
                     limit: runs.limit,
                     hasMore: runs.hasMore
                 }
+            )
+        };
+    });
+
+    server.get('/agent-runs/metrics', {
+        schema: {
+            querystring: Type.Object({
+                windowHours: Type.Optional(Type.Number({ minimum: 1, maximum: 720 })),
+                runType: Type.Optional(Type.String())
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    window: Type.Object({
+                        hours: Type.Number(),
+                        from: Type.String(),
+                        to: Type.String(),
+                        runType: Type.Union([Type.String(), Type.Null()])
+                    }),
+                    queue: Type.Object({
+                        backlog: Type.Number(),
+                        queued: Type.Number(),
+                        planning: Type.Number(),
+                        waitingApproval: Type.Number(),
+                        running: Type.Number()
+                    }),
+                    outcomes: Type.Object({
+                        succeeded: Type.Number(),
+                        failed: Type.Number(),
+                        cancelled: Type.Number(),
+                        completionRate: Type.Union([Type.Number(), Type.Null()])
+                    }),
+                    latencyMs: Type.Object({
+                        queueToStartAvg: Type.Union([Type.Number(), Type.Null()]),
+                        queueToStartSamples: Type.Number(),
+                        completionAvg: Type.Union([Type.Number(), Type.Null()]),
+                        completionSamples: Type.Number()
+                    }),
+                    throughput: Type.Object({
+                        createdRuns: Type.Number(),
+                        startedRuns: Type.Number(),
+                        completedRuns: Type.Number(),
+                        reviewActionsPlanned: Type.Number(),
+                        reviewActionsSucceeded: Type.Number(),
+                        qualityChecksPlanned: Type.Number(),
+                        qualityChecksSucceeded: Type.Number()
+                    }),
+                    failureClasses: Type.Object({
+                        policyDenied: Type.Number(),
+                        reviewExecutionFailed: Type.Number(),
+                        qualityValidationFailed: Type.Number(),
+                        settledFailed: Type.Number()
+                    })
+                }))
+            }
+        }
+    }, async (request) => {
+        const { windowHours, runType } = request.query as AgentRunMetricsQuery;
+        const metrics = await AgentRunMetricsService.getMetrics(getDomainId(request), {
+            windowHours,
+            runType
+        });
+
+        return {
+            data: metrics,
+            meta: buildMeta(
+                'Inspect autonomous runtime queue health and throughput',
+                ['GET /api/agent-runs', 'POST /api/agent-runs'],
+                'low',
+                1
             )
         };
     });

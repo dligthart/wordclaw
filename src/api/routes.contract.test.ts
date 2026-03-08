@@ -37,6 +37,7 @@ import { errorHandler } from './error-handler.js';
 import apiRoutes from './routes.js';
 import { WorkflowService } from '../services/workflow.js';
 import { AgentRunService } from '../services/agent-runs.js';
+import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 
 type ApiErrorBody = {
     error: string;
@@ -525,6 +526,69 @@ describe('API Route Contracts', () => {
             });
         } finally {
             listDefinitionsSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('forwards metrics query options for agent-run metrics route', async () => {
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'true';
+        const app = await buildServer();
+        const metricsSpy = vi.spyOn(AgentRunMetricsService, 'getMetrics').mockResolvedValue({
+            window: {
+                hours: 48,
+                from: '2026-03-06T00:00:00.000Z',
+                to: '2026-03-08T00:00:00.000Z',
+                runType: 'quality_refiner'
+            },
+            queue: {
+                backlog: 2,
+                queued: 1,
+                planning: 0,
+                waitingApproval: 1,
+                running: 0
+            },
+            outcomes: {
+                succeeded: 3,
+                failed: 1,
+                cancelled: 0,
+                completionRate: 0.75
+            },
+            latencyMs: {
+                queueToStartAvg: 1000,
+                queueToStartSamples: 2,
+                completionAvg: 2000,
+                completionSamples: 2
+            },
+            throughput: {
+                createdRuns: 4,
+                startedRuns: 2,
+                completedRuns: 4,
+                reviewActionsPlanned: 0,
+                reviewActionsSucceeded: 0,
+                qualityChecksPlanned: 5,
+                qualityChecksSucceeded: 4
+            },
+            failureClasses: {
+                policyDenied: 0,
+                reviewExecutionFailed: 0,
+                qualityValidationFailed: 1,
+                settledFailed: 1
+            }
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/agent-runs/metrics?windowHours=48&runType=quality_refiner'
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(metricsSpy).toHaveBeenCalledWith(1, {
+                windowHours: 48,
+                runType: 'quality_refiner'
+            });
+        } finally {
+            metricsSpy.mockRestore();
             await app.close();
         }
     });
