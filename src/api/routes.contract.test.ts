@@ -38,6 +38,7 @@ import apiRoutes from './routes.js';
 import { WorkflowService } from '../services/workflow.js';
 import { AgentRunService } from '../services/agent-runs.js';
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
+import { agentRunWorker } from '../workers/agent-run.worker.js';
 
 type ApiErrorBody = {
     error: string;
@@ -589,6 +590,36 @@ describe('API Route Contracts', () => {
             });
         } finally {
             metricsSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns agent-run worker status for the operational status route', async () => {
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'true';
+        const app = await buildServer();
+        const statusSpy = vi.spyOn(agentRunWorker, 'getStatus').mockReturnValue({
+            started: true,
+            sweepInProgress: false,
+            intervalMs: 1000,
+            maxRunsPerSweep: 25,
+            lastSweepStartedAt: '2026-03-08T09:00:00.000Z',
+            lastSweepCompletedAt: '2026-03-08T09:00:01.000Z',
+            lastSweepProcessedRuns: 3,
+            totalSweeps: 12,
+            totalProcessedRuns: 20,
+            lastError: null
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/agent-runs/worker-status'
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(statusSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            statusSpy.mockRestore();
             await app.close();
         }
     });

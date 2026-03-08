@@ -65,8 +65,10 @@
     ENABLE_EXPERIMENTAL_REVENUE=false
     ENABLE_EXPERIMENTAL_DELEGATION=false
     ENABLE_EXPERIMENTAL_AGENT_RUNS=false
+    AGENT_RUN_WORKER_INTERVAL_MS=1000
+    AGENT_RUN_WORKER_BATCH_SIZE=25
     ```
-    `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). If unset, semantic search returns a clear disabled response and write-side embedding sync is skipped. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth. `ENABLE_EXPERIMENTAL_REVENUE`, `ENABLE_EXPERIMENTAL_DELEGATION`, and `ENABLE_EXPERIMENTAL_AGENT_RUNS` remain `false` by default and should only be enabled if you explicitly want those incubator surfaces available.
+    `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). If unset, semantic search returns a clear disabled response and write-side embedding sync is skipped. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth. `ENABLE_EXPERIMENTAL_REVENUE`, `ENABLE_EXPERIMENTAL_DELEGATION`, and `ENABLE_EXPERIMENTAL_AGENT_RUNS` remain `false` by default and should only be enabled if you explicitly want those incubator surfaces available. When experimental agent runs are enabled, `AGENT_RUN_WORKER_INTERVAL_MS` and `AGENT_RUN_WORKER_BATCH_SIZE` control async sweep cadence and per-sweep run volume.
 
 ## 🗄️ Database Setup
 
@@ -175,6 +177,10 @@ For detailed guides on setting up the Supervisor UI, authentication, testing, an
 Interactive Swagger/OpenAPI documentation is natively available while running the dev server:
 
 [http://localhost:4000/documentation](http://localhost:4000/documentation)
+
+When experimental agent runs are enabled, the runtime also exposes operational endpoints for the worker:
+- `GET /api/agent-runs/metrics`
+- `GET /api/agent-runs/worker-status`
 
 ## 🤝 Contributing
 

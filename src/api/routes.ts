@@ -28,6 +28,7 @@ import { parsePaymentWebhookEvent, verifyPaymentWebhookSignature } from '../serv
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
+import { agentRunWorker } from '../workers/agent-run.worker.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -4425,6 +4426,41 @@ export default async function apiRoutes(server: FastifyInstance) {
             meta: buildMeta(
                 'Inspect autonomous runtime queue health and throughput',
                 ['GET /api/agent-runs', 'POST /api/agent-runs'],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.get('/agent-runs/worker-status', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Object({
+                    started: Type.Boolean(),
+                    sweepInProgress: Type.Boolean(),
+                    intervalMs: Type.Number(),
+                    maxRunsPerSweep: Type.Number(),
+                    lastSweepStartedAt: Type.Union([Type.String(), Type.Null()]),
+                    lastSweepCompletedAt: Type.Union([Type.String(), Type.Null()]),
+                    lastSweepProcessedRuns: Type.Number(),
+                    totalSweeps: Type.Number(),
+                    totalProcessedRuns: Type.Number(),
+                    lastError: Type.Union([
+                        Type.Object({
+                            message: Type.String(),
+                            at: Type.String()
+                        }),
+                        Type.Null()
+                    ])
+                }))
+            }
+        }
+    }, async () => {
+        return {
+            data: agentRunWorker.getStatus(),
+            meta: buildMeta(
+                'Inspect autonomous worker sweep status and last error',
+                ['GET /api/agent-runs/metrics', 'POST /api/agent-runs'],
                 'low',
                 1
             )
