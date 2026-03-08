@@ -10,6 +10,7 @@ import {
     domains,
     reviewTasks,
 } from '../db/schema.js';
+import { settleAgentRun } from '../test/agent-run-test-helpers.js';
 
 function asObject(value: unknown, context: string): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -188,10 +189,11 @@ describe.sequential('MCP Agent Run Integration', () => {
                     id: runId,
                     action: 'approve',
                 });
-                expect(asString(approvedRun.status, 'control_agent_run.status')).toBe(
-                    'succeeded',
+                expect(['running', 'succeeded']).toContain(
+                    asString(approvedRun.status, 'control_agent_run.status'),
                 );
-                expect(approvedRun.completedAt).not.toBeNull();
+
+                await settleAgentRun(domainId, runId!);
 
                 const runDetails = await callToolJson(client, 'get_agent_run', {
                     id: runId,
@@ -346,9 +348,11 @@ describe.sequential('MCP Agent Run Integration', () => {
                     id: runId,
                     action: 'approve',
                 });
-                expect(asString(initialApprove.status, 'control_agent_run.status')).toBe(
-                    'failed',
+                expect(['running', 'failed']).toContain(
+                    asString(initialApprove.status, 'control_agent_run.status'),
                 );
+
+                await settleAgentRun(domainId, runId!);
 
                 const workflow = await callToolJson(client, 'create_workflow', {
                     name: `MCP Retry Workflow ${crypto.randomUUID().slice(0, 6)}`,
@@ -380,10 +384,11 @@ describe.sequential('MCP Agent Run Integration', () => {
                     id: runId,
                     action: 'approve',
                 });
-                expect(asString(finalApprove.status, 'control_agent_run.status')).toBe(
-                    'succeeded',
+                expect(['running', 'succeeded']).toContain(
+                    asString(finalApprove.status, 'control_agent_run.status'),
                 );
-                expect(finalApprove.completedAt).not.toBeNull();
+
+                await settleAgentRun(domainId, runId!);
 
                 const runDetails = await callToolJson(client, 'get_agent_run', {
                     id: runId,

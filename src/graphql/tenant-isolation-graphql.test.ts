@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { parseSupervisorDomainHeader } from '../api/domain-context.js';
 import { db } from '../db/index.js';
 import { agentRunDefinitions, agentRuns, contentItems, contentTypes, domains, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
+import { settleAgentRun } from '../test/agent-run-test-helpers.js';
 import { resolvers } from './resolvers.js';
 import { schema } from './schema.js';
 
@@ -527,8 +528,10 @@ describe('GraphQL Tenant Isolation', () => {
                     };
                 };
             };
-            expect(approveRunPayload.data?.controlAgentRun?.status).toBe('succeeded');
-            expect(approveRunPayload.data?.controlAgentRun?.completedAt).not.toBeNull();
+            expect(approveRunPayload.data?.controlAgentRun?.status).toBe('running');
+            expect(approveRunPayload.data?.controlAgentRun?.completedAt).toBeNull();
+
+            await settleAgentRun(1, Number.parseInt(runId!, 10));
 
             const runDetailsResponse = await app.inject({
                 method: 'POST',
@@ -715,7 +718,9 @@ describe('GraphQL Tenant Isolation', () => {
                     };
                 };
             };
-            expect(initialApprovePayload.data?.controlAgentRun?.status).toBe('failed');
+            expect(initialApprovePayload.data?.controlAgentRun?.status).toBe('running');
+
+            await settleAgentRun(1, Number.parseInt(runId!, 10));
 
             const [workflow] = await db.insert(workflows).values({
                 domainId: 1,
@@ -795,8 +800,10 @@ describe('GraphQL Tenant Isolation', () => {
                     };
                 };
             };
-            expect(finalApprovePayload.data?.controlAgentRun?.status).toBe('succeeded');
-            expect(finalApprovePayload.data?.controlAgentRun?.completedAt).not.toBeNull();
+            expect(finalApprovePayload.data?.controlAgentRun?.status).toBe('running');
+            expect(finalApprovePayload.data?.controlAgentRun?.completedAt).toBeNull();
+
+            await settleAgentRun(1, Number.parseInt(runId!, 10));
 
             const runDetailsResponse = await app.inject({
                 method: 'POST',

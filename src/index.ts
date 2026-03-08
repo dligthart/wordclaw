@@ -1,7 +1,8 @@
 import dotenv from 'dotenv';
 import { db, pool } from './db/index.js';
-import { isExperimentalRevenueEnabled } from './config/runtime-features.js';
+import { isExperimentalAgentRunsEnabled, isExperimentalRevenueEnabled } from './config/runtime-features.js';
 import { accessEventsWorker } from './workers/access-events.js';
+import { agentRunWorker } from './workers/agent-run.worker.js';
 import { paymentReconciliationWorker } from './workers/payment-reconciliation.js';
 import { buildServer } from './server.js';
 
@@ -17,6 +18,9 @@ const start = async () => {
 
         accessEventsWorker.start(); // Start the background worker
         paymentReconciliationWorker.start();
+        if (isExperimentalAgentRunsEnabled()) {
+            agentRunWorker.start();
+        }
 
         if (isExperimentalRevenueEnabled()) {
             const { allocationStateWorker } = await import('./workers/allocation-state.worker.js');
@@ -39,6 +43,9 @@ const start = async () => {
 
                 accessEventsWorker.stop();
                 paymentReconciliationWorker.stop();
+                if (isExperimentalAgentRunsEnabled()) {
+                    agentRunWorker.stop();
+                }
                 await server.close();
                 await pool.end();
                 process.exit(0);

@@ -82,6 +82,8 @@ export type AgentRunWithDetails = {
     checkpoints: Array<typeof agentRunCheckpoints.$inferSelect>;
 };
 
+const CONTROL_SETTLEMENT_ACTIONS = ['approve', 'resume'] as const;
+
 export class AgentRunServiceError extends Error {
     readonly code: string;
 
@@ -269,6 +271,90 @@ export function resolveAgentRunTransition(
 }
 
 export class AgentRunService {
+    private static isAutoReviewRun(run: typeof agentRuns.$inferSelect): run is typeof agentRuns.$inferSelect & {
+        metadata: Record<string, unknown>;
+    } {
+        return run.runType === 'review_backlog_manager'
+            && isRecord(run.metadata)
+            && parseBooleanFlag(run.metadata.autoSubmitReview, false);
+    }
+
+    private static isAutoQualityRun(run: typeof agentRuns.$inferSelect): run is typeof agentRuns.$inferSelect & {
+        metadata: Record<string, unknown>;
+    } {
+        return run.runType === 'quality_refiner'
+            && isRecord(run.metadata)
+            && parseBooleanFlag(run.metadata.autoValidateQuality, false);
+    }
+
+    private static async recordDeferredControlSettlement(
+        domainId: number,
+        runId: number,
+        settledStatus: AgentRunStatus
+    ) {
+        const [latestControlCheckpoint] = await db.select({
+            id: agentRunCheckpoints.id,
+            checkpointKey: agentRunCheckpoints.checkpointKey,
+            payload: agentRunCheckpoints.payload
+        })
+            .from(agentRunCheckpoints)
+            .where(and(
+                eq(agentRunCheckpoints.runId, runId),
+                eq(agentRunCheckpoints.domainId, domainId),
+                inArray(
+                    agentRunCheckpoints.checkpointKey,
+                    CONTROL_SETTLEMENT_ACTIONS.map((action) => `control_${action}`)
+                )
+            ))
+            .orderBy(desc(agentRunCheckpoints.createdAt), desc(agentRunCheckpoints.id))
+            .limit(1);
+
+        if (!latestControlCheckpoint) {
+            return;
+        }
+
+        const payload = isRecord(latestControlCheckpoint.payload) ? latestControlCheckpoint.payload : {};
+        const action = typeof payload.action === 'string'
+            ? payload.action
+            : latestControlCheckpoint.checkpointKey.replace(/^control_/, '');
+
+        if (!(CONTROL_SETTLEMENT_ACTIONS as readonly string[]).includes(action)) {
+            return;
+        }
+
+        const interimStatus = typeof payload.toStatus === 'string' ? payload.toStatus : 'running';
+        if (interimStatus === settledStatus) {
+            return;
+        }
+
+        const settledCheckpointKey = `control_${action}_settled`;
+        const [existingSettledCheckpoint] = await db.select({ id: agentRunCheckpoints.id })
+            .from(agentRunCheckpoints)
+            .where(and(
+                eq(agentRunCheckpoints.runId, runId),
+                eq(agentRunCheckpoints.domainId, domainId),
+                eq(agentRunCheckpoints.checkpointKey, settledCheckpointKey),
+                sql`${agentRunCheckpoints.id} > ${latestControlCheckpoint.id}`
+            ))
+            .limit(1);
+
+        if (existingSettledCheckpoint) {
+            return;
+        }
+
+        await db.insert(agentRunCheckpoints).values({
+            runId,
+            domainId,
+            checkpointKey: settledCheckpointKey,
+            payload: {
+                action,
+                interimStatus,
+                settledStatus,
+                at: new Date().toISOString()
+            }
+        });
+    }
+
     private static async resolveRunExecutionPrincipal(
         domainId: number,
         runId: number
@@ -375,7 +461,7 @@ export class AgentRunService {
 
         for (const step of pendingSteps) {
             const stepStart = new Date();
-            await db.update(agentRunSteps)
+            const [claimedStep] = await db.update(agentRunSteps)
                 .set({
                     status: 'executing',
                     startedAt: step.startedAt ?? stepStart,
@@ -386,7 +472,12 @@ export class AgentRunService {
                     eq(agentRunSteps.domainId, domainId),
                     eq(agentRunSteps.runId, runId),
                     eq(agentRunSteps.status, 'pending')
-                ));
+                ))
+                .returning({ id: agentRunSteps.id });
+
+            if (!claimedStep) {
+                continue;
+            }
 
             const requestSnapshot = isRecord(step.requestSnapshot) ? step.requestSnapshot : {};
             const contentItemId = parseOptionalPositiveInt(requestSnapshot.contentItemId);
@@ -647,7 +738,7 @@ export class AgentRunService {
 
         for (const step of pendingSteps) {
             const stepStart = new Date();
-            await db.update(agentRunSteps)
+            const [claimedStep] = await db.update(agentRunSteps)
                 .set({
                     status: 'executing',
                     startedAt: step.startedAt ?? stepStart,
@@ -658,7 +749,12 @@ export class AgentRunService {
                     eq(agentRunSteps.domainId, domainId),
                     eq(agentRunSteps.runId, runId),
                     eq(agentRunSteps.status, 'pending')
-                ));
+                ))
+                .returning({ id: agentRunSteps.id });
+
+            if (!claimedStep) {
+                continue;
+            }
 
             const requestSnapshot = isRecord(step.requestSnapshot) ? step.requestSnapshot : {};
             const contentItemId = parseOptionalPositiveInt(requestSnapshot.contentItemId);
@@ -1299,6 +1395,54 @@ export class AgentRunService {
         };
     }
 
+    static async processPendingExecutions(limit = 25): Promise<number> {
+        const runningRuns = await db.select()
+            .from(agentRuns)
+            .where(eq(agentRuns.status, 'running'))
+            .orderBy(asc(agentRuns.updatedAt), asc(agentRuns.id))
+            .limit(clampLimit(limit, 25, 250));
+
+        let processed = 0;
+
+        for (const run of runningRuns) {
+            let nextStatus: AgentRunStatus | null = null;
+
+            if (AgentRunService.isAutoReviewRun(run)) {
+                processed += 1;
+                await AgentRunService.executeReviewSubmissionSteps(run.domainId, run.id, run.metadata);
+            } else if (AgentRunService.isAutoQualityRun(run)) {
+                processed += 1;
+                await AgentRunService.executeQualityValidationSteps(run.domainId, run.id);
+            } else {
+                continue;
+            }
+
+            const [latestRun] = await db.select()
+                .from(agentRuns)
+                .where(and(
+                    eq(agentRuns.id, run.id),
+                    eq(agentRuns.domainId, run.domainId)
+                ));
+
+            if (!latestRun || latestRun.status === run.status || !isAgentRunStatus(latestRun.status)) {
+                continue;
+            }
+
+            nextStatus = latestRun.status;
+            await AgentRunService.recordDeferredControlSettlement(run.domainId, run.id, nextStatus);
+
+            await logAudit(run.domainId, 'update', 'agent_run', latestRun.id, {
+                action: 'worker_execute',
+                fromStatus: run.status,
+                toStatus: nextStatus,
+                startedAt: latestRun.startedAt,
+                completedAt: latestRun.completedAt
+            });
+        }
+
+        return processed;
+    }
+
     static async controlRun(domainId: number, runId: number, action: AgentRunControlAction) {
         if (!isAgentRunControlAction(action)) {
             throw new AgentRunServiceError(
@@ -1654,22 +1798,6 @@ export class AgentRunService {
                 'AGENT_RUN_NOT_FOUND',
                 `Agent run ${runId} was not found in this domain.`
             );
-        }
-
-        if (
-            updated.status === 'running'
-            && updated.runType === 'review_backlog_manager'
-            && isRecord(updated.metadata)
-            && parseBooleanFlag(updated.metadata.autoSubmitReview, false)
-        ) {
-            await AgentRunService.executeReviewSubmissionSteps(domainId, runId, updated.metadata);
-        } else if (
-            updated.status === 'running'
-            && updated.runType === 'quality_refiner'
-            && isRecord(updated.metadata)
-            && parseBooleanFlag(updated.metadata.autoValidateQuality, false)
-        ) {
-            await AgentRunService.executeQualityValidationSteps(domainId, runId);
         }
 
         const [latestRun] = await db.select()

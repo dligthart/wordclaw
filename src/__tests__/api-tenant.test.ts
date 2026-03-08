@@ -2,10 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
 import { agentRunDefinitions, agentRuns, apiKeys, domains, contentItems, contentTypes, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
 import { hashApiKey } from '../services/api-key.js';
+import { settleAgentRun } from '../test/agent-run-test-helpers.js';
 import crypto from 'crypto';
 
 describe('Multi-Tenant Domain Isolation Tests', () => {
@@ -304,15 +305,10 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             expect(domain2Ids.has(domain2Item.id)).toBe(true);
             expect(domain2Ids.has(domain1Item.id)).toBe(false);
 
-            const [{ total: domain1Total }] = await db.select({ total: sql<number>`count(*)::int` })
-                .from(contentItems)
-                .where(eq(contentItems.domainId, domain1Id));
-            const [{ total: domain2Total }] = await db.select({ total: sql<number>`count(*)::int` })
-                .from(contentItems)
-                .where(eq(contentItems.domainId, domain2Id));
-
-            expect(domain1Payload.meta.total).toBe(domain1Total);
-            expect(domain2Payload.meta.total).toBe(domain2Total);
+            // Other suites may create content in parallel, so assert scoping and pagination invariants
+            // instead of exact live totals from a separate query.
+            expect(domain1Payload.meta.total).toBeGreaterThanOrEqual(domain1Payload.data.length);
+            expect(domain2Payload.meta.total).toBeGreaterThanOrEqual(domain2Payload.data.length);
         } finally {
             if (domain1ItemId) {
                 await db.delete(contentItems).where(eq(contentItems.id, domain1ItemId));
@@ -738,8 +734,10 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                     completedAt: string | null;
                 };
             };
-            expect(approvePayload.data.status).toBe('succeeded');
-            expect(approvePayload.data.completedAt).not.toBeNull();
+            expect(approvePayload.data.status).toBe('running');
+            expect(approvePayload.data.completedAt).toBeNull();
+
+            await settleAgentRun(domain1Id, runId!);
 
             const details = await fastify.inject({
                 method: 'GET',
@@ -908,7 +906,9 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 payload: { action: 'approve' }
             });
             expect(approveRun.statusCode).toBe(200);
-            expect(JSON.parse(approveRun.payload).data.status).toBe('failed');
+            expect(JSON.parse(approveRun.payload).data.status).toBe('running');
+
+            await settleAgentRun(domain1Id, runId!);
 
             const details = await fastify.inject({
                 method: 'GET',
@@ -990,7 +990,9 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 payload: { action: 'approve' }
             });
             expect(approveRun.statusCode).toBe(200);
-            expect(JSON.parse(approveRun.payload).data.status).toBe('succeeded');
+            expect(JSON.parse(approveRun.payload).data.status).toBe('running');
+
+            await settleAgentRun(domain1Id, runId!);
 
             const details = await fastify.inject({
                 method: 'GET',
@@ -1087,7 +1089,9 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 payload: { action: 'approve' }
             });
             expect(approveRun.statusCode).toBe(200);
-            expect(JSON.parse(approveRun.payload).data.status).toBe('failed');
+            expect(JSON.parse(approveRun.payload).data.status).toBe('running');
+
+            await settleAgentRun(domain1Id, runId!);
 
             const details = await fastify.inject({
                 method: 'GET',
@@ -1192,7 +1196,9 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 payload: { action: 'approve' }
             });
             expect(initialApprove.statusCode).toBe(200);
-            expect(JSON.parse(initialApprove.payload).data.status).toBe('failed');
+            expect(JSON.parse(initialApprove.payload).data.status).toBe('running');
+
+            await settleAgentRun(domain1Id, runId!);
 
             const [workflow] = await db.insert(workflows).values({
                 domainId: domain1Id,
@@ -1226,7 +1232,9 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 payload: { action: 'approve' }
             });
             expect(finalApprove.statusCode).toBe(200);
-            expect(JSON.parse(finalApprove.payload).data.status).toBe('succeeded');
+            expect(JSON.parse(finalApprove.payload).data.status).toBe('running');
+
+            await settleAgentRun(domain1Id, runId!);
 
             const details = await fastify.inject({
                 method: 'GET',
@@ -1370,7 +1378,9 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 payload: { action: 'approve' }
             });
             expect(approveRun.statusCode).toBe(200);
-            expect(JSON.parse(approveRun.payload).data.status).toBe('succeeded');
+            expect(JSON.parse(approveRun.payload).data.status).toBe('running');
+
+            await settleAgentRun(domain1Id, runId!);
 
             const details = await fastify.inject({
                 method: 'GET',
@@ -1487,7 +1497,9 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 payload: { action: 'approve' }
             });
             expect(initialApprove.statusCode).toBe(200);
-            expect(JSON.parse(initialApprove.payload).data.status).toBe('failed');
+            expect(JSON.parse(initialApprove.payload).data.status).toBe('running');
+
+            await settleAgentRun(domain1Id, runId!);
 
             await db.update(contentItems)
                 .set({
@@ -1514,7 +1526,9 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
                 payload: { action: 'approve' }
             });
             expect(finalApprove.statusCode).toBe(200);
-            expect(JSON.parse(finalApprove.payload).data.status).toBe('succeeded');
+            expect(JSON.parse(finalApprove.payload).data.status).toBe('running');
+
+            await settleAgentRun(domain1Id, runId!);
 
             const details = await fastify.inject({
                 method: 'GET',
