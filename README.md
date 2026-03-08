@@ -155,11 +155,11 @@ WordClaw includes core demos plus a clearly separated experimental sandbox in `d
    - Run the smoke suite: `npx tsx demos/mcp-demo-agent.ts smoke`
    - Call one tool directly: `npx tsx demos/mcp-demo-agent.ts call list_content_types '{"limit":5}'`
 
-5. **Marketplace Sandbox (`demos/agent-skills-marketplace`)**  
-   Experimental / incubating demo.
-   An isolated sandbox for marketplace-style ideas, including AP2-adjacent revenue-routing concepts. It sits outside the default supported WordClaw product path and should not shape the main operator story.
+5. **Paid Capability Library (`demos/agent-skills-marketplace`)**  
+   Experimental demo aligned to current runtime behavior.
+   A frontend showcase for the supported paid-content flow: published capability items, offers, entitlement activation, L402 confirmation, and local execution after unlock. It remains a demo surface, not the main product story.
    - Run the setup script: `npx tsx scripts/setup-skills-marketplace.ts`
-   - Start the marketplace: `cd demos/agent-skills-marketplace && npm run dev`
+   - Start the demo: `cd demos/agent-skills-marketplace && npm run dev`
 
 ## 📚 Documentation
 

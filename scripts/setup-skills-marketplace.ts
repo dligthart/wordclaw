@@ -1,7 +1,7 @@
 import { db } from '../src/db/index.js';
-import { domains, apiKeys, offers, licensePolicies } from '../src/db/schema.js';
+import { domains, offers, licensePolicies } from '../src/db/schema.js';
 import { createApiKey } from '../src/services/api-key.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -33,38 +33,38 @@ async function request(path: string, options: RequestInit = {}, apiKey?: string)
 }
 
 async function setupSkillsMarketplace() {
-    console.log("Setting up Agent Skills Marketplace Environment...");
+    console.log("Setting up Paid Capability Library demo environment...");
 
     // 1. Setup Domain & API Key
     let [domain] = await db.insert(domains).values({
-        name: "Agent Skills Marketplace",
-        hostname: "marketplace.agent.local"
+        name: "Paid Capability Library",
+        hostname: "capability-library.agent.local"
     }).onConflictDoNothing().returning();
 
     if (!domain) {
-        [domain] = await db.select().from(domains).where(eq(domains.hostname, "marketplace.agent.local")).limit(1);
+        [domain] = await db.select().from(domains).where(eq(domains.hostname, "capability-library.agent.local")).limit(1);
     }
 
     const { plaintext } = await createApiKey({
         domainId: domain.id,
-        name: "Marketplace Admin Key",
+        name: "Capability Library Demo Key",
         scopes: ['content:write', 'content:read', 'admin']
     });
 
-    console.log(`Created Marketplace API Key: ${plaintext}`);
+    console.log(`Created Demo API Key: ${plaintext}`);
 
-    // 2. Create Skill Content Type (Price = 0 initially)
+    // 2. Create content type used by the demo library.
     const skillSchema = {
         type: "object",
         properties: {
-            title: { type: "string", description: "Name of the skill" },
+            title: { type: "string", description: "Name of the capability" },
             slug: { type: "string" },
-            description: { type: "string", description: "What the skill does" },
-            authorName: { type: "string", description: "Creator agent name" },
-            authorAvatar: { type: "string", description: "Creator agent avatar" },
+            description: { type: "string", description: "What the capability does" },
+            authorName: { type: "string", description: "Creator agent or team name" },
+            authorAvatar: { type: "string", description: "Creator avatar" },
             category: { type: "string", enum: ["Data Analysis", "Code Generation", "Research", "Copywriting", "Other"] },
             promptTemplate: { type: "string", description: "The actual prompt or instructions for the agent", premium: true },
-            basePrice: { type: "number", description: "Price in Satoshis" }
+            basePrice: { type: "number", description: "Suggested offer price in Satoshis" }
         },
         required: ["title", "slug", "description", "authorName", "category", "promptTemplate", "basePrice"]
     };
@@ -73,14 +73,14 @@ async function setupSkillsMarketplace() {
     let skillCtId = ctListRes.data?.find((ct: any) => ct.slug === 'agent-skill')?.id;
 
     if (!skillCtId) {
-        console.log("Creating 'Agent Skill' Content Type...");
+        console.log("Creating 'Agent Skill' content type...");
         const res = await request('/content-types', {
             method: 'POST',
             body: JSON.stringify({
-                name: "Agent Skill",
+                name: "Agent Capability",
                 slug: "agent-skill",
                 schema: JSON.stringify(skillSchema),
-                basePrice: 0 // Base price on the type is 0 initially
+                basePrice: 0
             })
         }, plaintext);
         skillCtId = res.data.id;
@@ -88,19 +88,17 @@ async function setupSkillsMarketplace() {
 
     console.log(`Skill Content Type ID: ${skillCtId}`);
 
-    // Ensure price is 0 for setup
-    console.log(`Temporarily setting basePrice to 0 on Agent Skill Content Type for data insertion...`);
+    console.log(`Ensuring content type pricing remains offer-first...`);
     await request(`/content-types/${skillCtId}`, {
         method: 'PUT',
         body: JSON.stringify({
-            name: "Agent Skill",
+            name: "Agent Capability",
             schema: JSON.stringify(skillSchema),
             basePrice: 0
         })
     }, plaintext);
 
-    // 3. Insert Dummy Skills
-    // Load elaborate skill
+    // 3. Insert capability content items.
     const reactSkillPayload = fs.existsSync(path.join(process.cwd(), 'demos/agent-skills-marketplace/sample-skills/react.md'))
         ? fs.readFileSync(path.join(process.cwd(), 'demos/agent-skills-marketplace/sample-skills/react.md'), 'utf-8')
         : "You are an expert React UI developer. Generate a functional component for: {{input}}.";
@@ -109,7 +107,7 @@ async function setupSkillsMarketplace() {
         {
             title: "React 19 Engineering System",
             slug: "react-19-engineering",
-            description: "Production-grade React engineering. This skill transforms how you build React applications — from component architecture to deployment. Includes core rules, state management, Next.js Server Components, use() hook, forms, and strict performance targets.",
+            description: "A production-grade React capability pack covering component architecture, data flow, form handling, and shipping constraints for a modern frontend team.",
             authorName: "UI_Architect_Bot",
             authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=UI_Architect_Bot&backgroundColor=b6e3f4",
             category: "Code Generation",
@@ -117,53 +115,56 @@ async function setupSkillsMarketplace() {
             basePrice: 500
         },
         {
-            title: "Long-term Memory (KV Store)",
-            slug: "memory-kv",
-            description: "Store and retrieve key-value pairs for long-term agent memory across sessions.",
-            authorName: "DataCore",
-            authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=DataCore&backgroundColor=c0aede",
-            category: "Data Analysis",
-            promptTemplate: "Store the following context under the key '{{key}}': '{{value}}'. If retrieving, fetch the value for key '{{key}}'.",
-            basePrice: 100
-        },
-        {
-            title: "X (Twitter) Auto-Poster",
-            slug: "x-poster",
-            description: "Automatically format, schedule, and post content to X (Twitter). Enforces character limits and thread formatting.",
-            authorName: "SocialBot",
-            authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=SocialBot&backgroundColor=ffdfbf",
+            title: "Approval Decision Brief",
+            slug: "approval-decision-brief",
+            description: "Generate a concise approve or reject brief for operators reviewing content changes in a governed workflow.",
+            authorName: "ReviewDesk",
+            authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=ReviewDesk&backgroundColor=c0aede",
             category: "Copywriting",
-            promptTemplate: "Format this text into a compelling X post or thread: '{{text}}'. Ensure it includes engaging hooks and relevant hashtags.",
-            basePrice: 200
+            promptTemplate: "Review this content payload: '{{payload}}'. Return a short approval brief with risks, missing checks, and a final recommendation.",
+            basePrice: 180
         },
         {
-            title: "GitHub Repository Reader",
-            slug: "github-repo-reader",
-            description: "Ingest and analyze the file structure, README, and recent commits of a public GitHub repository.",
-            authorName: "CodeSmith",
-            authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=CodeSmith&backgroundColor=b6e3f4",
+            title: "Policy Remediation Formatter",
+            slug: "policy-remediation-formatter",
+            description: "Turn policy denials or validation failures into deterministic remediation steps for an agent loop.",
+            authorName: "SafetyLoop",
+            authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=SafetyLoop&backgroundColor=ffdfbf",
+            category: "Other",
+            promptTemplate: "Given this policy error: '{{error}}' and context '{{context}}', produce a numbered remediation plan that the caller can execute.",
+            basePrice: 0
+        },
+        {
+            title: "Schema Change Explainer",
+            slug: "schema-change-explainer",
+            description: "Explain a content-type schema update in operator language, highlighting breaking changes and rollout risks.",
+            authorName: "SchemaSmith",
+            authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=SchemaSmith&backgroundColor=b6e3f4",
             category: "Code Generation",
-            promptTemplate: "Analyze the repository at '{{repo_url}}'. Provide an overview of the architecture and list the most important files.",
+            promptTemplate: "Compare the previous schema '{{previous_schema}}' with the proposed schema '{{next_schema}}'. Summarize the key changes, migration risks, and safe rollout advice.",
             basePrice: 300
         },
         {
-            title: "Website Scraper (Markdown)",
-            slug: "website-scraper",
-            description: "Extracts the main content from any URL and converts it into clean, readable Markdown for LLM context inclusion.",
-            authorName: "CrawlerOS",
-            authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=CrawlerOS&backgroundColor=bbf7d0",
+            title: "Content Research Summarizer",
+            slug: "content-research-summarizer",
+            description: "Condense source material into a structured summary with claims, evidence, and editorial caveats.",
+            authorName: "SignalDesk",
+            authorAvatar: "https://api.dicebear.com/7.x/bottts/svg?seed=SignalDesk&backgroundColor=bbf7d0",
             category: "Research",
-            promptTemplate: "Fetch the content from '{{url}}' and return it formatted as clean Markdown, stripping out all navigations and ads.",
+            promptTemplate: "Summarize this research input: '{{source_material}}'. Return key findings, uncertain claims, and suggested follow-up questions.",
             basePrice: 150
         }
     ];
 
     for (const skill of skills) {
-        console.log(`Inserting Skill: ${skill.title}`);
+        console.log(`Upserting capability: ${skill.title}`);
         try {
             // Check if already exists by slug
             const searchRes = await request(`/content-items?contentTypeId=${skillCtId}`, {}, plaintext);
-            const exists = searchRes.data?.find((item: any) => item.data.slug === skill.slug);
+            const exists = searchRes.data?.find((item: any) => {
+                const payload = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+                return payload?.slug === skill.slug;
+            });
 
             let skillItemId = exists?.id;
 
@@ -178,16 +179,26 @@ async function setupSkillsMarketplace() {
                 }, plaintext);
                 skillItemId = res.data?.id;
             } else {
-                console.log(`Skill ${skill.title} already exists, skipping.`);
+                await request(`/content-items/${exists.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        data: skill,
+                        status: "published"
+                    })
+                }, plaintext);
+                console.log(`Updated ${skill.title}.`);
             }
 
             if (skillItemId) {
-                const existingOffer = await db.select().from(offers).where(eq(offers.scopeRef, skillItemId));
-                if (existingOffer.length === 0) {
+                const existingOffer = await db.select().from(offers).where(and(
+                    eq(offers.domainId, domain.id),
+                    eq(offers.scopeRef, skillItemId)
+                ));
+                if (skill.basePrice > 0 && existingOffer.length === 0) {
                     const [newOffer] = await db.insert(offers).values({
                         domainId: domain.id,
                         slug: `${skill.slug}-access`,
-                        name: `${skill.title} Permanent Access`,
+                        name: `${skill.title} Access`,
                         scopeType: 'item',
                         scopeRef: skillItemId,
                         priceSats: skill.basePrice,
@@ -201,26 +212,25 @@ async function setupSkillsMarketplace() {
                         maxReads: null,
                         allowRedistribution: false
                     });
-                    console.log(`Created permanent access offer for ${skill.title}`);
+                    console.log(`Created offer for ${skill.title}`);
+                } else if (skill.basePrice > 0 && existingOffer.length > 0) {
+                    await db.update(offers).set({
+                        name: `${skill.title} Access`,
+                        priceSats: skill.basePrice,
+                        active: true
+                    }).where(eq(offers.id, existingOffer[0].id));
+                    console.log(`Updated offer for ${skill.title}`);
+                } else if (skill.basePrice <= 0 && existingOffer.length > 0) {
+                    await db.update(offers).set({ active: false }).where(eq(offers.id, existingOffer[0].id));
+                    console.log(`Disabled paid offer for free capability ${skill.title}`);
                 }
             }
         } catch (e) {
-            console.error(`Failed to insert skill ${skill.title}`, e);
+            console.error(`Failed to upsert capability ${skill.title}`, e);
         }
     }
 
-    // 4. Update CT to have a basePrice for read/write gating for L402
-    console.log(`Setting basePrice to 200 on Agent Skill Content Type for L402 gating...`);
-    await request(`/content-types/${skillCtId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-            name: "Agent Skill",
-            schema: JSON.stringify(skillSchema),
-            basePrice: 200
-        })
-    }, plaintext);
-
-    console.log("\nMarketplace setup complete! Note down the API key above for your frontend env.");
+    console.log("\nPaid Capability Library setup complete. Use the API key above in the demo frontend env.");
 }
 
 setupSkillsMarketplace().catch(console.error);

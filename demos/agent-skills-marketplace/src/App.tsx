@@ -1,634 +1,1068 @@
-import { useState, useEffect } from 'react';
-import { Bot, TerminalSquare, ShoppingCart, Zap, CheckCircle2, Code2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useState,
+} from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  BookOpenText,
+  CheckCircle2,
+  ChevronRight,
+  FileCode2,
+  KeyRound,
+  LockKeyhole,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Wallet,
+  Zap,
+} from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_WORDCLAW_URL;
-const API_KEY = import.meta.env.VITE_WORDCLAW_API_KEY;
+const API_URL = (import.meta.env.VITE_WORDCLAW_URL || '').replace(/\/$/, '');
+const API_KEY = import.meta.env.VITE_WORDCLAW_API_KEY || '';
+const MOCK_PREIMAGE = 'mock_preimage_12345';
 
-interface Skill {
-  id: string;
-  data: {
-    title: string;
-    slug: string;
-    description: string;
-    authorName: string;
-    authorAvatar: string;
-    category: string;
-    promptTemplate: string;
-    basePrice: number;
+type CapabilityCategory =
+  | 'Data Analysis'
+  | 'Code Generation'
+  | 'Research'
+  | 'Copywriting'
+  | 'Other';
+
+type CapabilityData = {
+  title: string;
+  slug: string;
+  description: string;
+  authorName: string;
+  authorAvatar: string;
+  category: CapabilityCategory;
+  promptTemplate: string;
+  basePrice: number;
+};
+
+type Capability = {
+  id: number;
+  contentTypeId: number;
+  status: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  data: CapabilityData;
+};
+
+type Offer = {
+  id: number;
+  domainId: number;
+  slug: string;
+  name: string;
+  scopeType: string;
+  scopeRef: number | null;
+  priceSats: number;
+  active: boolean;
+};
+
+type Entitlement = {
+  id: number;
+  offerId: number;
+  paymentHash: string;
+  status: string;
+  remainingReads: number | null;
+  activatedAt: string | null;
+  expiresAt: string | null;
+};
+
+type InvoiceChallenge = {
+  invoice: string;
+  macaroon: string;
+  amountSatoshis: number;
+  paymentHash: string;
+  offerId: number;
+};
+
+type AccessState = 'idle' | 'loading' | 'challenge' | 'confirming' | 'ready';
+
+type ApiEnvelope<T> = {
+  data: T;
+  meta?: Record<string, unknown>;
+};
+
+function getErrorMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== 'object') return fallback;
+  const candidate = payload as {
+    error?: string;
+    remediation?: string;
+    message?: string;
+  };
+  if (candidate.error && candidate.remediation) {
+    return `${candidate.error}. ${candidate.remediation}`;
+  }
+  return candidate.error || candidate.message || fallback;
+}
+
+function parseCapability(item: {
+  id: number;
+  contentTypeId: number;
+  status: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  data: string | CapabilityData;
+}): Capability {
+  return {
+    ...item,
+    data:
+      typeof item.data === 'string'
+        ? (JSON.parse(item.data) as CapabilityData)
+        : item.data,
   };
 }
 
+function formatRelativeDate(dateString: string) {
+  const target = new Date(dateString).getTime();
+  const minutes = Math.max(1, Math.round((Date.now() - target) / 60000));
+
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function extractTemplateVariables(template: string) {
+  const matches = template.match(/{{([^}]+)}}/g) || [];
+  return [...new Set(matches.map((match) => match.replace(/[{}]/g, '').trim()))];
+}
+
 export default function App() {
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'guide'>('marketplace');
+  const [error, setError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'library' | 'flow'>('library');
+  const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
 
-  // L402 State
-  const [invoiceStatus, setInvoiceStatus] = useState<'idle' | 'required' | 'paying' | 'paid'>('idle');
-  const [invoiceData, setInvoiceData] = useState<{ invoice: string, macaroon: string, amount: number } | null>(null);
-  const [purchasedSkillData, setPurchasedSkillData] = useState<Skill | null>(null);
+  const [selectedCapabilityId, setSelectedCapabilityId] = useState<number | null>(
+    null,
+  );
+  const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const [selectedEntitlement, setSelectedEntitlement] =
+    useState<Entitlement | null>(null);
+  const [invoiceChallenge, setInvoiceChallenge] =
+    useState<InvoiceChallenge | null>(null);
+  const [unlockedCapability, setUnlockedCapability] =
+    useState<Capability | null>(null);
+  const [accessState, setAccessState] = useState<AccessState>('idle');
 
-  // Sandbox State
   const [sandboxMode, setSandboxMode] = useState(false);
-  const [sandboxVariables, setSandboxVariables] = useState<Record<string, string>>({});
+  const [sandboxVariables, setSandboxVariables] = useState<Record<string, string>>(
+    {},
+  );
   const [sandboxResult, setSandboxResult] = useState<string | null>(null);
   const [simulating, setSimulating] = useState(false);
 
+  const filteredCapabilities = (() => {
+    const normalized = deferredQuery.trim().toLowerCase();
+    if (!normalized) return capabilities;
+
+    return capabilities.filter((capability) => {
+      const haystack = [
+        capability.data.title,
+        capability.data.slug,
+        capability.data.description,
+        capability.data.authorName,
+        capability.data.category,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(normalized);
+    });
+  })();
+
+  const selectedCapability =
+    filteredCapabilities.find((capability) => capability.id === selectedCapabilityId) ??
+    filteredCapabilities[0] ??
+    null;
+
   useEffect(() => {
-    fetchSkills();
-  }, []);
+    let cancelled = false;
 
-  const fetchSkills = async () => {
-    try {
-      // 1. First fetch the content type ID for 'agent-skill'
-      const ctRes = await fetch(`${API_URL}/content-types`, {
-        headers: {
-          'x-api-key': API_KEY
-        }
-      });
-      const ctJson = await ctRes.json();
-      const skillCt = (ctJson.data || []).find((ct: any) => ct.slug === 'agent-skill');
-
-      if (!skillCt) {
-        console.error("Agent Skill content type not found");
+    async function loadLibrary() {
+      if (!API_URL || !API_KEY) {
+        setError(
+          'Set VITE_WORDCLAW_URL and VITE_WORDCLAW_API_KEY before starting the demo.',
+        );
         setLoading(false);
         return;
       }
 
-      // 2. Fetch skills using the specific contentTypeId
-      const res = await fetch(`${API_URL}/content-items?contentTypeId=${skillCt.id}`, {
-        headers: {
-          'x-api-key': API_KEY
-        }
-      });
-      const resJson = await res.json();
-      if (resJson.data) {
-        // WordClaw stores content item 'data' as stringified JSON, need to parse it for the UI
-        const parsedSkills = resJson.data.map((item: any) => ({
-          ...item,
-          data: typeof item.data === 'string' ? JSON.parse(item.data) : item.data
-        }));
-        setSkills(parsedSkills);
-      }
-    } catch (err) {
-      console.error("Failed to fetch skills", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      setLoading(true);
+      setError(null);
 
-  const attemptToReadSkill = async (skillId: string) => {
-    setInvoiceStatus('idle');
-    setInvoiceData(null);
-    setPurchasedSkillData(null);
-    setSandboxMode(false);
-    setSandboxVariables({});
-    setSandboxResult(null);
-    setSelectedSkill(skills.find(s => s.id === skillId) || null);
+      try {
+        const contentTypesResponse = await fetch(`${API_URL}/content-types`, {
+          headers: { 'x-api-key': API_KEY },
+        });
+        const contentTypesPayload = (await contentTypesResponse.json()) as ApiEnvelope<
+          Array<{ id: number; slug: string }>
+        >;
+
+        if (!contentTypesResponse.ok) {
+          throw new Error(
+            getErrorMessage(
+              contentTypesPayload,
+              'Failed to load content types for the demo library.',
+            ),
+          );
+        }
+
+        const capabilityType = contentTypesPayload.data.find(
+          (contentType) => contentType.slug === 'agent-skill',
+        );
+
+        if (!capabilityType) {
+          throw new Error(
+            'Content type "agent-skill" was not found. Run npx tsx scripts/setup-skills-marketplace.ts first.',
+          );
+        }
+
+        const contentItemsResponse = await fetch(
+          `${API_URL}/content-items?contentTypeId=${capabilityType.id}`,
+          {
+            headers: { 'x-api-key': API_KEY },
+          },
+        );
+        const contentItemsPayload = (await contentItemsResponse.json()) as ApiEnvelope<
+          Array<{
+            id: number;
+            contentTypeId: number;
+            status: string;
+            version: number;
+            createdAt: string;
+            updatedAt: string;
+            data: string | CapabilityData;
+          }>
+        >;
+
+        if (!contentItemsResponse.ok) {
+          throw new Error(
+            getErrorMessage(
+              contentItemsPayload,
+              'Failed to load capability content items.',
+            ),
+          );
+        }
+
+        const nextCapabilities = contentItemsPayload.data
+          .map(parseCapability)
+          .filter((capability) => capability.status === 'published')
+          .sort(
+            (left, right) =>
+              new Date(right.updatedAt).getTime() -
+              new Date(left.updatedAt).getTime(),
+          );
+
+        if (!cancelled) {
+          startTransition(() => {
+            setCapabilities(nextCapabilities);
+            setSelectedCapabilityId((current) => {
+              if (
+                current &&
+                nextCapabilities.some((capability) => capability.id === current)
+              ) {
+                return current;
+              }
+              return nextCapabilities[0]?.id ?? null;
+            });
+          });
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError((loadError as Error).message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadLibrary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (filteredCapabilities.length === 0) return;
+    if (
+      selectedCapabilityId &&
+      filteredCapabilities.some((capability) => capability.id === selectedCapabilityId)
+    ) {
+      return;
+    }
+
+    setSelectedCapabilityId(filteredCapabilities[0].id);
+  }, [filteredCapabilities, selectedCapabilityId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAccessContext(capabilityId: number) {
+      setAccessState('loading');
+      setSelectedOffer(null);
+      setSelectedEntitlement(null);
+      setInvoiceChallenge(null);
+      setUnlockedCapability(null);
+      setSandboxMode(false);
+      setSandboxVariables({});
+      setSandboxResult(null);
+
+      try {
+        const [offersResponse, entitlementsResponse] = await Promise.all([
+          fetch(`${API_URL}/content-items/${capabilityId}/offers`, {
+            headers: { 'x-api-key': API_KEY },
+          }),
+          fetch(`${API_URL}/entitlements/me`, {
+            headers: { 'x-api-key': API_KEY },
+          }),
+        ]);
+
+        const offersPayload = (await offersResponse.json()) as ApiEnvelope<Offer[]>;
+        const entitlementsPayload = (await entitlementsResponse.json()) as ApiEnvelope<
+          Entitlement[]
+        >;
+
+        if (!offersResponse.ok) {
+          throw new Error(
+            getErrorMessage(
+              offersPayload,
+              'Failed to inspect purchase offers for this capability.',
+            ),
+          );
+        }
+
+        if (!entitlementsResponse.ok) {
+          throw new Error(
+            getErrorMessage(
+              entitlementsPayload,
+              'Failed to inspect entitlement ownership for this API key.',
+            ),
+          );
+        }
+
+        const primaryOffer = offersPayload.data[0] ?? null;
+        const activeEntitlement = primaryOffer
+          ? entitlementsPayload.data.find(
+              (entitlement) =>
+                entitlement.offerId === primaryOffer.id &&
+                entitlement.status === 'active',
+            ) ?? null
+          : null;
+
+        if (!cancelled) {
+          setSelectedOffer(primaryOffer);
+          setSelectedEntitlement(activeEntitlement);
+          setAccessState(activeEntitlement || !primaryOffer ? 'ready' : 'idle');
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError((loadError as Error).message);
+          setAccessState('idle');
+        }
+      }
+    }
+
+    if (selectedCapabilityId) {
+      void loadAccessContext(selectedCapabilityId);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCapabilityId]);
+
+  async function openCapability(entitlement: Entitlement | null) {
+    if (!selectedCapability) return;
+
+    const headers: Record<string, string> = { 'x-api-key': API_KEY };
+    if (entitlement) {
+      headers['x-entitlement-id'] = String(entitlement.id);
+    }
+
+    setAccessState('loading');
+    setError(null);
 
     try {
-      // 1. Fetch available offers for this skill
-      const offersRes = await fetch(`${API_URL}/content-items/${skillId}/offers`, {
-        headers: {
-          'x-api-key': API_KEY
-        }
+      const response = await fetch(`${API_URL}/content-items/${selectedCapability.id}`, {
+        headers,
       });
-      const offersData = await offersRes.json();
-      const availableOffers = offersData.data || [];
+      const payload = (await response.json()) as ApiEnvelope<{
+        id: number;
+        contentTypeId: number;
+        status: string;
+        version: number;
+        createdAt: string;
+        updatedAt: string;
+        data: string | CapabilityData;
+      }>;
 
-      if (availableOffers.length > 0) {
-        const offer = availableOffers[0];
+      if (!response.ok) {
+        throw new Error(
+          getErrorMessage(payload, 'Failed to unlock the capability payload.'),
+        );
+      }
 
-        // 2. Initiate purchase to get invoice/macaroon
-        const purchaseRes = await fetch(`${API_URL}/offers/${offer.id}/purchase`, {
+      setUnlockedCapability(parseCapability(payload.data));
+      setAccessState('ready');
+    } catch (openError) {
+      setError((openError as Error).message);
+      setAccessState('ready');
+    }
+  }
+
+  async function startPurchase() {
+    if (!selectedOffer) return;
+
+    setAccessState('loading');
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_URL}/offers/${selectedOffer.id}/purchase`, {
+        method: 'POST',
+        headers: { 'x-api-key': API_KEY },
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        remediation?: string;
+        code?: string;
+        context?: {
+          invoice?: string;
+          macaroon?: string;
+          amountSatoshis?: number;
+        };
+        paymentHash?: string;
+      };
+
+      if (response.status !== 402) {
+        throw new Error(
+          getErrorMessage(payload, 'Expected an L402 challenge but got another response.'),
+        );
+      }
+
+      if (
+        !payload.context?.invoice ||
+        !payload.context?.macaroon ||
+        typeof payload.context.amountSatoshis !== 'number' ||
+        !payload.paymentHash
+      ) {
+        throw new Error('The purchase challenge did not include the expected L402 fields.');
+      }
+
+      setInvoiceChallenge({
+        invoice: payload.context.invoice,
+        macaroon: payload.context.macaroon,
+        amountSatoshis: payload.context.amountSatoshis,
+        paymentHash: payload.paymentHash,
+        offerId: selectedOffer.id,
+      });
+      setAccessState('challenge');
+    } catch (purchaseError) {
+      setError((purchaseError as Error).message);
+      setAccessState('idle');
+    }
+  }
+
+  async function confirmPurchase() {
+    if (!invoiceChallenge || !selectedCapability) return;
+
+    setAccessState('confirming');
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${API_URL}/offers/${invoiceChallenge.offerId}/purchase/confirm`,
+        {
           method: 'POST',
           headers: {
-            'x-api-key': API_KEY
-          }
-        });
+            'x-api-key': API_KEY,
+            'x-payment-hash': invoiceChallenge.paymentHash,
+            Authorization: `L402 ${invoiceChallenge.macaroon}:${MOCK_PREIMAGE}`,
+          },
+        },
+      );
+      const payload = (await response.json()) as ApiEnvelope<Entitlement>;
 
-        if (purchaseRes.status === 402) {
-          const purchaseData = await purchaseRes.json();
-          const details = purchaseData.error?.details || {};
-          setInvoiceStatus('required');
-          setInvoiceData({
-            invoice: details.invoice,
-            macaroon: details.macaroon,
-            amount: details.amountSatoshis,
-            offerId: offer.id,
-            paymentHash: purchaseData.paymentHash
-          });
-          return;
-        }
+      if (!response.ok) {
+        throw new Error(
+          getErrorMessage(payload, 'Failed to confirm Lightning settlement.'),
+        );
       }
 
-      // If no offers (free), we just read the item directly
-      const res = await fetch(`${API_URL}/content-items/${skillId}`, {
-        method: 'GET',
-        headers: {
-          'x-api-key': API_KEY,
-        }
-      });
-      const data = await res.json();
-      if (data.data) {
-        const parsedData = { ...data.data, data: typeof data.data.data === 'string' ? JSON.parse(data.data.data) : data.data.data };
-        setPurchasedSkillData(parsedData);
-      }
-    } catch (err) {
-      console.error("Failed to fetch skill data", err);
+      setSelectedEntitlement(payload.data);
+      setInvoiceChallenge(null);
+      await openCapability(payload.data);
+    } catch (confirmError) {
+      setError((confirmError as Error).message);
+      setAccessState('challenge');
     }
-  };
+  }
 
-  const payInvoice = async () => {
-    setInvoiceStatus('paying');
+  function simulateExecution() {
+    if (!unlockedCapability) return;
 
-    // Simulate real-world Lightning delay
-    setTimeout(async () => {
-      setInvoiceStatus('paid');
-      const MOCK_PREIMAGE = "mock_preimage_12345";
-
-      if (selectedSkill && invoiceData) {
-        try {
-          // 3. Confirm purchase to transition entitlement to paid
-          await fetch(`${API_URL}/offers/${invoiceData.offerId}/purchase/confirm`, {
-            method: 'POST',
-            headers: {
-              'x-api-key': API_KEY,
-              'x-payment-hash': invoiceData.paymentHash,
-              'Authorization': `L402 ${invoiceData.macaroon}:${MOCK_PREIMAGE}`
-            }
-          });
-
-          // 4. Fetch the premium skill payload with the active L402 token
-          const res = await fetch(`${API_URL}/content-items/${selectedSkill.id}`, {
-            headers: {
-              'x-api-key': API_KEY,
-              'Authorization': `L402 ${invoiceData.macaroon}:${MOCK_PREIMAGE}`
-            }
-          });
-
-          const data = await res.json();
-          if (data.data) {
-            const parsedData = { ...data.data, data: typeof data.data.data === 'string' ? JSON.parse(data.data.data) : data.data.data };
-            setPurchasedSkillData(parsedData);
-          }
-        } catch (err) {
-          console.error("Failed to confirm purchase or fetch secure payload", err);
-        }
-      }
-    }, 1500);
-  };
-
-  const handleSelectSkill = (skill: Skill) => {
-    setSelectedSkill(skill);
-    setInvoiceStatus('idle');
-    setInvoiceData(null);
-    setPurchasedSkillData(null);
-    setSandboxMode(false);
-    setSandboxVariables({});
-    setSandboxResult(null);
-  };
-
-  const getPromptVariables = (prompt: string) => {
-    const matches = prompt.match(/{{([^}]+)}}/g) || [];
-    return [...new Set(matches.map(m => m.replace(/{{|}}/g, '').trim()))];
-  };
-
-  const simulateExecution = () => {
     setSimulating(true);
     setSandboxResult(null);
 
-    setTimeout(() => {
-      let finalPrompt = purchasedSkillData?.data.promptTemplate || '';
-      Object.entries(sandboxVariables).forEach(([key, val]) => {
-        finalPrompt = finalPrompt.replace(new RegExp(`{{${key}}}`, 'g'), val || `[${key}]`);
-      });
+    window.setTimeout(() => {
+      let renderedPrompt = unlockedCapability.data.promptTemplate;
 
-      setSandboxResult(`[SIMULATED LLM RESPONSE FOR PROMPT]\n\nEvaluating: "${finalPrompt.substring(0, 50)}..."\n\nResult:\nSuccessfully applied agent skill. In a real environment, this bounded prompt structure would be securely routed to an LLM provider and the response mapped back to the agent's memory or action loop.`);
+      for (const [key, value] of Object.entries(sandboxVariables)) {
+        renderedPrompt = renderedPrompt.replace(
+          new RegExp(`{{${key}}}`, 'g'),
+          value || `[${key}]`,
+        );
+      }
+
+      setSandboxResult(
+        [
+          '[SIMULATED EXECUTION]',
+          '',
+          `Capability: ${unlockedCapability.data.title}`,
+          `Rendered prompt preview:`,
+          renderedPrompt.slice(0, 320),
+          '',
+          'Result:',
+          'WordClaw delivered the paid capability payload after entitlement activation. In a real agent runtime, the caller would now hand this prompt or JSON payload to its local execution loop.',
+        ].join('\n'),
+      );
       setSimulating(false);
-    }, 1500);
-  };
+    }, 900);
+  }
 
-  const downloadSkill = () => {
-    if (!purchasedSkillData) return;
+  function downloadPayload() {
+    if (!unlockedCapability) return;
 
-    const payloadString = JSON.stringify(purchasedSkillData.data, null, 2);
-    const blob = new Blob([payloadString], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(unlockedCapability.data, null, 2)], {
+      type: 'application/json',
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${purchasedSkillData.data.slug}.json`;
-    a.click();
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${unlockedCapability.data.slug}.json`;
+    anchor.click();
     URL.revokeObjectURL(url);
-  };
+  }
+
+  const templateVariables = unlockedCapability
+    ? extractTemplateVariables(unlockedCapability.data.promptTemplate)
+    : [];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 font-sans selection:bg-blue-500/30">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <Bot className="w-6 h-6 text-white" />
+    <div className="min-h-screen bg-stone-950 text-stone-100">
+      <header className="sticky top-0 z-10 border-b border-white/10 bg-stone-950/90 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-5">
+          <div className="flex items-center gap-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500 text-stone-950">
+              <BookOpenText className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">Agent<span className="text-blue-500">Skills</span></h1>
-              <p className="text-xs text-slate-400 font-medium tracking-wide uppercase">L402 Native Marketplace</p>
+              <div className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-500">
+                WordClaw Demo
+              </div>
+              <h1 className="text-xl font-semibold tracking-tight">
+                Paid Capability Library
+              </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
-            <nav className="flex items-center gap-4 text-sm font-medium text-slate-400">
-              <button
-                onClick={() => setActiveTab('marketplace')}
-                className={`hover:text-white transition-colors ${activeTab === 'marketplace' ? 'text-white border-b-2 border-blue-500 py-7' : 'py-7'}`}
-              >
-                Marketplace
-              </button>
-              <button
-                onClick={() => setActiveTab('guide')}
-                className={`hover:text-white transition-colors ${activeTab === 'guide' ? 'text-white border-b-2 border-blue-500 py-7' : 'py-7'}`}
-              >
-                How It Works
-              </button>
-            </nav>
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-800 border border-slate-700 text-sm font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Agent Node: Connected
-            </div>
-          </div>
+          <nav className="flex items-center gap-6 text-sm text-stone-400">
+            <button
+              type="button"
+              onClick={() => setActiveView('library')}
+              className={`border-b pb-1 transition ${
+                activeView === 'library'
+                  ? 'border-stone-100 text-stone-100'
+                  : 'border-transparent hover:text-stone-100'
+              }`}
+            >
+              Library
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('flow')}
+              className={`border-b pb-1 transition ${
+                activeView === 'flow'
+                  ? 'border-stone-100 text-stone-100'
+                  : 'border-transparent hover:text-stone-100'
+              }`}
+            >
+              Current Flow
+            </button>
+          </nav>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-6 py-12">
-
-        <div className="mb-12 text-center max-w-2xl mx-auto">
-          <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6 bg-gradient-to-br from-white to-slate-400 bg-clip-text text-transparent">
-            Expand Your Agent's Capabilities
-          </h2>
-          <p className="text-lg text-slate-400">
-            Discover, purchase, and integrate programmatic skills built by other agents. All payments settle instantly via the Lightning Network.
-          </p>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-8 h-8 rounded-full border-t-2 border-l-2 border-blue-500 animate-spin"></div>
+      <main className="mx-auto max-w-7xl px-6 py-10">
+        <section className="mb-10 grid gap-6 lg:grid-cols-[1.7fr_0.95fr]">
+          <div className="rounded-[28px] border border-white/10 bg-white/5 p-8">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Refactored for current core functionality
+            </div>
+            <h2 className="max-w-3xl text-4xl font-semibold tracking-tight text-stone-50 md:text-5xl">
+              Browse structured capabilities, unlock them with L402, and run them locally.
+            </h2>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-stone-400">
+              This demo now follows the supported WordClaw path: published content
+              items, attached offers, entitlement activation, and paid reads. It
+              deliberately removes the old AP2 and marketplace-settlement story.
+            </p>
           </div>
-        ) : activeTab === 'guide' ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="max-w-4xl mx-auto"
-          >
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 md:p-12 shadow-2xl">
-              <h3 className="text-3xl font-bold mb-8 flex items-center gap-3">
-                <TerminalSquare className="w-8 h-8 text-blue-500" />
-                How It Works
-              </h3>
 
-              <div className="space-y-12 text-slate-400 leading-relaxed mt-12">
-                {/* 1. Publishing */}
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                    <Code2 className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-xl font-bold text-white mb-3">1. Agent Publishing & Revenue Routing</h4>
-                    <p className="mb-4">
-                      Autonomous creators (or human engineers) use the standard WordClaw Content Management API to upload their programmatic skills into the registry. During creation, the agent defines the <strong>payload</strong> (e.g., highly optimized system prompts or JSON definitions) and sets a <strong>base price</strong> in Satoshis.
-                    </p>
-                    <p className="mb-4">
-                      Leveraging WordClaw's <strong>AP2 (Agentic Podcasting 2.0)</strong> standard, creators attach nested revenue routing splits natively to the content model—ensuring the primary creator, hosting instance, and any downstream dependencies receive their exact micro-payouts instantly upon consumption.
-                    </p>
-                    <div className="bg-black/50 rounded-xl p-4 font-mono text-[11px] md:text-xs text-purple-300 border border-slate-800 whitespace-pre-wrap overflow-x-auto shadow-inner">
-                      {`POST /api/content-items
-{
-  "contentTypeId": "<agent-skill-id>",
-  "status": "published",
-  "data": { 
-     "title": "Advanced React Generator",
-     "basePrice": 250,
-     "ap2_routing": [
-        { "name": "Agent Creator", "pubkey": "03abcd...", "split": 90 },
-        { "name": "Marketplace Node", "pubkey": "02bcde...", "split": 10 }
-     ],
-     "promptTemplate": "..."
-  }
-}`}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Purchasing */}
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
-                    <Bot className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-xl font-bold text-white mb-3">2. L402 Discovery & Challenge</h4>
-                    <p className="mb-4">
-                      When an executing agent discovers a skill it wants to acquire, it makes a standard HTTP request to fetch the payload. Because the content has a defined `basePrice`, WordClaw dynamically intercepts the request via its <strong>L402 middleware</strong>.
-                    </p>
-                    <div className="bg-black/50 rounded-xl p-4 font-mono text-[11px] md:text-xs text-blue-300 border border-slate-800 mb-4 whitespace-pre-wrap overflow-x-auto shadow-inner">
-                      {`1. GET /api/content-items/:id
-// HTTP 402 Payment Required
-// WWW-Authenticate: L402 macaroon="..." invoice="..."
-
-2. <Consuming Agent pays LN invoice off-band>
-
-3. GET /api/content-items/:id
-// Authorization: L402 <macaroon>:<preimage>
-// HTTP 200 OK`}
-                    </div>
-                    <p className="text-sm">
-                      The consumer pays the attached Lightning Network invoice using its own integrated node or wallet, fulfilling the cryptographic L402 challenge.
-                    </p>
-                  </div>
-                </div>
-
-                {/* 3. Delivery and Settlement */}
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                  <div className="w-12 h-12 rounded-2xl bg-orange-500/20 text-orange-400 flex items-center justify-center shrink-0">
-                    <Zap className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-xl font-bold text-white mb-3">3. Secure Delivery & Global Settlement</h4>
-                    <p className="mb-4">
-                      Upon validating the payment preimage attached to the macaroon, WordClaw unlocks the gate. The purchasing agent instantly receives the unredacted skill payload to execute locally in its sandbox environment.
-                    </p>
-                    <p className="mb-4">
-                      Simultaneously, the Lightning Network inherently routes the Satoshis directly to the specific node addresses identified in the <strong>AP2 routing splits</strong>.
-                    </p>
-                    <div className="flex items-center gap-2 px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-sm font-medium">
-                      <CheckCircle2 className="w-5 h-5 shrink-0" />
-                      No middlemen, no withdrawal limits—just instant, programmatic revenue sharing between autonomous actors.
-                    </div>
-                  </div>
-                </div>
-
+          <div className="grid gap-4 rounded-[28px] border border-white/10 bg-stone-900/80 p-6">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                Demo Uses
+              </div>
+              <div className="mt-3 flex items-center gap-3 text-sm text-stone-200">
+                <FileCode2 className="h-4 w-4 text-amber-300" />
+                Published content items as capability payloads
+              </div>
+              <div className="mt-2 flex items-center gap-3 text-sm text-stone-200">
+                <Wallet className="h-4 w-4 text-amber-300" />
+                Offers, purchases, and entitlements
+              </div>
+              <div className="mt-2 flex items-center gap-3 text-sm text-stone-200">
+                <KeyRound className="h-4 w-4 text-amber-300" />
+                API-key scoped ownership
               </div>
             </div>
-          </motion.div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-
-            {/* Skills Grid */}
-            <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {skills.map((skill) => (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  key={skill.id}
-                  onClick={() => handleSelectSkill(skill)}
-                  className={`group bg-slate-900 rounded-2xl border transition-all duration-300 cursor-pointer ${selectedSkill?.id === skill.id ? 'border-blue-500 shadow-xl shadow-blue-500/10' : 'border-slate-800 hover:border-slate-700 hover:shadow-2xl hover:shadow-black'}`}
-                >
-                  <div className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                        {skill.data.category}
-                      </span>
-                      <div className="flex items-center gap-1.5 text-orange-400 font-mono text-sm bg-orange-400/10 px-3 py-1 rounded-full border border-orange-400/20">
-                        <Zap className="w-4 h-4" />
-                        {skill.data.basePrice} sats
-                      </div>
-                    </div>
-
-                    <h3 className="text-xl font-bold mb-3 group-hover:text-blue-400 transition-colors">{skill.data.title}</h3>
-                    <p className="text-sm text-slate-400 mb-6 line-clamp-2 leading-relaxed">{skill.data.description}</p>
-
-                    <div className="flex items-center justify-between mt-auto">
-                      <div className="flex items-center gap-2">
-                        <img src={skill.data.authorAvatar} alt={skill.data.authorName} className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700" />
-                        <span className="text-xs font-medium text-slate-400">{skill.data.authorName}</span>
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          attemptToReadSkill(skill.id);
-                        }}
-                        className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white transition-colors"
-                      >
-                        <ShoppingCart className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-6 text-stone-400">
+              Seed the demo with:
+              <div className="mt-2 rounded-xl bg-black/30 px-3 py-2 font-mono text-xs text-stone-200">
+                npx tsx scripts/setup-skills-marketplace.ts
+              </div>
             </div>
+          </div>
+        </section>
 
-            {/* Detail / Payment Sidebar */}
-            <div className="lg:col-span-1">
-              <AnimatePresence mode="popLayout">
-                {!selectedSkill && (
-                  <motion.div
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className="bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed p-10 flex flex-col items-center justify-center text-center h-[500px]"
-                  >
-                    <TerminalSquare className="w-12 h-12 text-slate-600 mb-4" />
-                    <p className="text-slate-400 font-medium">Select a skill to view properties and initiate purchase.</p>
-                  </motion.div>
+        {error && (
+          <div className="mb-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex min-h-[420px] items-center justify-center rounded-[28px] border border-white/10 bg-white/5">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-amber-400" />
+          </div>
+        ) : activeView === 'flow' ? (
+          <motion.section
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="grid gap-5 rounded-[32px] border border-white/10 bg-white/[0.04] p-6 md:p-8"
+          >
+            {[
+              {
+                title: '1. Model capabilities as content',
+                body:
+                  'Capability payloads are plain WordClaw content items. The demo setup script creates the agent-skill content type and publishes several paid capability entries.',
+              },
+              {
+                title: '2. Attach offers and policies',
+                body:
+                  'Each capability gets a normal offer plus a license policy. The runtime decides which offer applies when the agent tries to read the content.',
+              },
+              {
+                title: '3. Trigger an L402 purchase challenge',
+                body:
+                  'The client starts POST /api/offers/:id/purchase and receives a 402 response with invoice, macaroon, and payment hash. That is the supported purchase handshake today.',
+              },
+              {
+                title: '4. Activate entitlement and read',
+                body:
+                  'After payment confirmation, WordClaw activates the entitlement. The caller can then read the item with its owned entitlement instead of relying on marketplace or payout semantics.',
+              },
+            ].map((step, index) => (
+              <div
+                key={step.title}
+                className="grid gap-4 rounded-3xl border border-white/10 bg-stone-900/70 p-6 md:grid-cols-[72px_1fr]"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500 text-stone-950">
+                  <span className="text-lg font-semibold">{index + 1}</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-stone-50">{step.title}</h3>
+                  <p className="mt-2 max-w-3xl text-sm leading-7 text-stone-400">
+                    {step.body}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </motion.section>
+        ) : (
+          <div className="grid gap-6 lg:grid-cols-[1.08fr_0.92fr]">
+            <section className="rounded-[32px] border border-white/10 bg-white/[0.04] p-6">
+              <div className="mb-5 flex flex-col gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                    Library
+                  </div>
+                  <h3 className="mt-2 text-2xl font-semibold tracking-tight text-stone-50">
+                    Paid capabilities
+                  </h3>
+                  <p className="mt-1 text-sm text-stone-400">
+                    Published capability items available in the seeded demo domain.
+                  </p>
+                </div>
+
+                <label className="flex min-w-[240px] items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-stone-300">
+                  <Search className="h-4 w-4 text-stone-500" />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Find by title, slug, author, or category"
+                    className="w-full bg-transparent outline-none placeholder:text-stone-500"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4">
+                {filteredCapabilities.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-white/10 px-6 py-12 text-center text-sm text-stone-500">
+                    No capabilities matched this search.
+                  </div>
+                ) : (
+                  filteredCapabilities.map((capability) => {
+                    const isSelected = capability.id === selectedCapability?.id;
+                    return (
+                      <button
+                        key={capability.id}
+                        type="button"
+                        onClick={() => setSelectedCapabilityId(capability.id)}
+                        className={`rounded-3xl border px-5 py-5 text-left transition ${
+                          isSelected
+                            ? 'border-amber-400/50 bg-amber-500/10'
+                            : 'border-white/8 bg-stone-900/70 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                              {capability.data.category}
+                            </div>
+                            <h4 className="mt-2 text-lg font-semibold text-stone-100">
+                              {capability.data.title}
+                            </h4>
+                          </div>
+                          <div className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-300">
+                            {capability.data.basePrice} sats
+                          </div>
+                        </div>
+
+                        <p className="mt-3 line-clamp-2 text-sm leading-6 text-stone-400">
+                          {capability.data.description}
+                        </p>
+
+                        <div className="mt-5 flex items-center justify-between text-xs text-stone-500">
+                          <span>{capability.data.authorName}</span>
+                          <span>Updated {formatRelativeDate(capability.updatedAt)}</span>
+                        </div>
+                      </button>
+                    );
+                  })
                 )}
+              </div>
+            </section>
 
-                {selectedSkill && invoiceStatus === 'idle' && (
+            <section className="rounded-[32px] border border-white/10 bg-stone-900/70">
+              <AnimatePresence mode="wait">
+                {selectedCapability ? (
                   <motion.div
-                    initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-slate-900 rounded-2xl border border-blue-500/30 overflow-hidden shadow-2xl shadow-blue-500/10 sticky top-28 flex flex-col h-[500px]"
+                    key={selectedCapability.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    className="flex h-full flex-col"
                   >
-                    <div className="bg-slate-800/50 border-b border-slate-800 p-6">
-                      <div className="flex items-center gap-3 mb-4">
-                        <img src={selectedSkill.data.authorAvatar} alt={selectedSkill.data.authorName} className="w-12 h-12 rounded-xl bg-slate-800 border-2 border-slate-700" />
+                    <div className="border-b border-white/10 px-6 py-6">
+                      <div className="flex items-start justify-between gap-4">
                         <div>
-                          <h3 className="text-lg font-bold text-white line-clamp-1">{selectedSkill.data.title}</h3>
-                          <span className="text-sm text-slate-400">by {selectedSkill.data.authorName}</span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 mb-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                          {selectedSkill.data.category}
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
-                          <Zap className="w-3 h-3" />
-                          {selectedSkill.data.basePrice} sats
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-300 leading-relaxed mb-6">
-                        {selectedSkill.data.description}
-                      </p>
-                    </div>
-                    <div className="p-6 mt-auto">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); attemptToReadSkill(selectedSkill.id); }}
-                        className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
-                      >
-                        <ShoppingCart className="w-5 h-5" /> Initiate Purchase
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-
-                {selectedSkill && invoiceStatus === 'required' && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-slate-900 rounded-2xl border border-orange-500/30 overflow-hidden shadow-2xl shadow-orange-500/10 sticky top-28"
-                  >
-                    <div className="bg-orange-500/10 border-b border-orange-500/20 p-6 flex flex-col items-center justify-center text-center">
-                      <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-yellow-500 rounded-full flex items-center justify-center mb-4 shadow-lg shadow-orange-500/30">
-                        <Zap className="w-8 h-8 text-white" />
-                      </div>
-                      <h3 className="text-xl font-bold text-white mb-1">402 Payment Required</h3>
-                      <p className="text-sm text-orange-200/80">You must pay the following Lightning invoice to access this skill.</p>
-                    </div>
-
-                    <div className="p-6">
-                      <div className="mb-6">
-                        <div className="flex justify-between text-sm mb-2">
-                          <span className="text-slate-400">Target Skill</span>
-                          <span className="font-medium truncate max-w-[150px]">{selectedSkill.data.title}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-400">Amount</span>
-                          <span className="font-mono text-orange-400 font-bold">{invoiceData?.amount} sats</span>
-                        </div>
-                      </div>
-
-                      <div className="bg-black/50 rounded-xl p-4 font-mono text-[10px] text-slate-500 break-all mb-6 border border-slate-800 leading-tight">
-                        {invoiceData?.invoice}
-                      </div>
-
-                      <button
-                        onClick={payInvoice}
-                        className="w-full py-3.5 rounded-xl bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-400 hover:to-yellow-400 text-white font-bold shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
-                      >
-                        <Zap className="w-4 h-4" /> Simulate Agent Payment
-                      </button>
-                      <p className="text-xs text-center text-slate-500 mt-4">This action simulates a backend agent fulfilling the L402 challenge.</p>
-                    </div>
-                  </motion.div>
-                )}
-
-                {selectedSkill && invoiceStatus === 'paying' && (
-                  <motion.div
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                    className="bg-slate-900 rounded-2xl border border-blue-500/30 p-10 flex flex-col items-center justify-center text-center shadow-2xl shadow-blue-500/10 h-[500px]"
-                  >
-                    <div className="w-16 h-16 rounded-full border-4 border-slate-800 border-t-blue-500 animate-spin mb-6"></div>
-                    <h3 className="text-lg font-bold text-blue-400 mb-2">Verifying Payment Signature</h3>
-                    <p className="text-sm text-slate-400">Routing {invoiceData?.amount} sats via local Lightning node...</p>
-                  </motion.div>
-                )}
-
-                {selectedSkill && invoiceStatus === 'paid' && purchasedSkillData && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className={`bg-slate-900 rounded-2xl border border-emerald-500/30 overflow-hidden shadow-2xl shadow-emerald-500/10 sticky top-28 h-[500px] flex flex-col ${!sandboxMode ? 'items-center justify-center text-center p-8' : 'p-6'}`}
-                  >
-                    {!sandboxMode ? (
-                      <>
-                        <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-6 ring-4 ring-emerald-500/10">
-                          <CheckCircle2 className="w-8 h-8" />
-                        </div>
-
-                        <h3 className="text-2xl font-bold mb-2">Payment Successful</h3>
-                        <p className="text-emerald-400/80 mb-8 font-medium">Skill unlocked and securely delivered.</p>
-
-                        <div className="w-full text-left">
-                          <div className="bg-slate-900 rounded-xl p-4 font-mono text-xs text-emerald-400 border border-slate-800 overflow-y-auto max-h-64 mb-6 leading-relaxed flex flex-col gap-2 shadow-inner">
-                            <span className="text-slate-500 font-sans font-semibold uppercase tracking-wider text-[10px] sticky top-0 bg-slate-900/90 backdrop-blur-sm py-1 z-10 flex items-center gap-2">
-                              <TerminalSquare className="w-3 h-3" />
-                              Prompt Payload
-                            </span>
-                            {purchasedSkillData.data.promptTemplate.split('\n').map((line, i) => line.trim() ? (
-                              <span key={i} className="bg-slate-800/50 px-2 py-1 flex-wrap break-words rounded inline-block max-w-full">{line}</span>
-                            ) : null)}
+                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                            Capability Detail
                           </div>
-
-                          <div className="flex gap-4">
-                            <button
-                              onClick={() => setSandboxMode(true)}
-                              className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors border border-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 font-sans"
-                            >
-                              Execute Skill in Sandbox
-                            </button>
-                            <button
-                              onClick={downloadSkill}
-                              className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors border border-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 font-sans"
-                              title="Download Skill JSON"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="w-full flex flex-col h-full">
-                        <div className="flex items-center justify-between mb-6">
-                          <h3 className="text-xl font-bold flex items-center gap-2">
-                            <Code2 className="w-5 h-5 text-blue-400" />
-                            Agent Sandbox
+                          <h3 className="mt-2 text-2xl font-semibold tracking-tight text-stone-50">
+                            {selectedCapability.data.title}
                           </h3>
-                          <button onClick={() => setSandboxMode(false)} className="text-sm text-slate-400 hover:text-white transition-colors">
-                            &larr; Back
-                          </button>
                         </div>
+                        <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400">
+                          v{selectedCapability.version}
+                        </div>
+                      </div>
 
-                        <div className="mb-6">
-                          <p className="text-sm text-slate-400 mb-4">Complete the template variables and simulate execution.</p>
-                          {getPromptVariables(purchasedSkillData.data.promptTemplate).length > 0 ? (
-                            <div className="space-y-4">
-                              {getPromptVariables(purchasedSkillData.data.promptTemplate).map(variable => (
-                                <div key={variable}>
-                                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                                    {variable}
-                                  </label>
-                                  <input
-                                    type="text"
-                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                                    placeholder={`Enter ${variable}...`}
-                                    value={sandboxVariables[variable] || ''}
-                                    onChange={(e) => setSandboxVariables(prev => ({ ...prev, [variable]: e.target.value }))}
-                                  />
-                                </div>
-                              ))}
-                            </div>
+                      <p className="mt-4 text-sm leading-7 text-stone-400">
+                        {selectedCapability.data.description}
+                      </p>
+
+                      <div className="mt-5 flex flex-wrap gap-2 text-xs text-stone-500">
+                        <span className="rounded-full border border-white/10 px-3 py-1">
+                          slug {selectedCapability.data.slug}
+                        </span>
+                        <span className="rounded-full border border-white/10 px-3 py-1">
+                          status {selectedCapability.status}
+                        </span>
+                        <span className="rounded-full border border-white/10 px-3 py-1">
+                          author {selectedCapability.data.authorName}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5 px-6 py-6">
+                      <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-stone-200">
+                          <LockKeyhole className="h-4 w-4 text-amber-300" />
+                          Access contract
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-stone-400">
+                          {selectedOffer
+                            ? `${selectedOffer.name} is attached to this item. Purchase activates an entitlement for this API key.`
+                            : 'No paid offer is attached, so this capability can be opened directly.'}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-3 text-xs">
+                          {selectedOffer ? (
+                            <>
+                              <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-amber-300">
+                                {selectedOffer.priceSats} sats
+                              </span>
+                              <span className="rounded-full border border-white/10 px-3 py-1 text-stone-400">
+                                scope {selectedOffer.scopeType}
+                              </span>
+                            </>
                           ) : (
-                            <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-400">
-                              No variables found in this prompt template.
-                            </div>
+                            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-300">
+                              free read
+                            </span>
+                          )}
+                          {selectedEntitlement && (
+                            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-300">
+                              entitlement #{selectedEntitlement.id} active
+                            </span>
                           )}
                         </div>
+                      </div>
 
-                        <div className="mt-auto">
+                      <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-stone-200">
+                          <Wallet className="h-4 w-4 text-amber-300" />
+                          Purchase flow
+                        </div>
+
+                        {accessState === 'loading' && (
+                          <div className="mt-4 flex items-center gap-3 text-sm text-stone-400">
+                            <div className="h-4 w-4 animate-spin rounded-full border border-white/10 border-t-amber-400" />
+                            Inspecting offer and entitlement state...
+                          </div>
+                        )}
+
+                        {accessState !== 'loading' && !selectedOffer && (
+                          <div className="mt-4 space-y-4">
+                            <p className="text-sm leading-6 text-stone-400">
+                              This item is readable without a purchase. It still lives in
+                              the same structured content model as the paid entries.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void openCapability(null)}
+                              className="inline-flex items-center gap-2 rounded-2xl bg-stone-100 px-4 py-3 text-sm font-medium text-stone-950 transition hover:bg-white"
+                            >
+                              Open payload
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+
+                        {accessState !== 'loading' &&
+                          selectedOffer &&
+                          !invoiceChallenge &&
+                          !selectedEntitlement && (
+                            <div className="mt-4 space-y-4">
+                              <p className="text-sm leading-6 text-stone-400">
+                                Start the supported offer purchase flow to receive an L402
+                                challenge with invoice, macaroon, and payment hash.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => void startPurchase()}
+                                className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-medium text-stone-950 transition hover:bg-amber-400"
+                              >
+                                Start purchase
+                                <Zap className="h-4 w-4" />
+                              </button>
+                            </div>
+                          )}
+
+                        {invoiceChallenge && (
+                          <div className="mt-4 space-y-4">
+                            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+                              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">
+                                L402 challenge
+                              </div>
+                              <div className="mt-3 text-sm text-stone-200">
+                                {invoiceChallenge.amountSatoshis} sats
+                              </div>
+                              <div className="mt-3 rounded-xl bg-black/40 p-3 font-mono text-[11px] leading-5 text-stone-400">
+                                {invoiceChallenge.invoice}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => void confirmPurchase()}
+                              disabled={accessState === 'confirming'}
+                              className="inline-flex items-center gap-2 rounded-2xl bg-stone-100 px-4 py-3 text-sm font-medium text-stone-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-stone-300"
+                            >
+                              {accessState === 'confirming'
+                                ? 'Confirming payment...'
+                                : 'Simulate Lightning payment'}
+                              <Wallet className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+
+                        {selectedEntitlement && (
+                          <div className="mt-4 space-y-4">
+                            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-100">
+                              Entitlement #{selectedEntitlement.id} is active for this API key.
+                              Read access is now owned by the caller.
+                            </div>
+                            {!unlockedCapability && (
+                              <button
+                                type="button"
+                                onClick={() => void openCapability(selectedEntitlement)}
+                                className="inline-flex items-center gap-2 rounded-2xl bg-stone-100 px-4 py-3 text-sm font-medium text-stone-950 transition hover:bg-white"
+                              >
+                                Open paid payload
+                                <ChevronRight className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {unlockedCapability && (
+                        <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.08] p-5">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-emerald-100">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Unlocked payload
+                          </div>
+                          <p className="mt-2 text-sm leading-6 text-emerald-50/80">
+                            The full prompt template is now available to the caller.
+                            Download it or render it inside the local sandbox.
+                          </p>
+
+                          <div className="mt-4 rounded-2xl bg-black/35 p-4 font-mono text-xs leading-6 text-emerald-100">
+                            {unlockedCapability.data.promptTemplate.split('\n').slice(0, 10).map((line, index) => (
+                              <div key={`${line}-${index}`}>{line}</div>
+                            ))}
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setSandboxMode((current) => !current)}
+                              className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-stone-100 transition hover:border-white/20 hover:bg-white/5"
+                            >
+                              {sandboxMode ? 'Hide sandbox' : 'Run in sandbox'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={downloadPayload}
+                              className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-stone-100 transition hover:border-white/20 hover:bg-white/5"
+                            >
+                              Download JSON
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {sandboxMode && unlockedCapability && (
+                        <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-stone-200">
+                            <Sparkles className="h-4 w-4 text-amber-300" />
+                            Local execution sandbox
+                          </div>
+
+                          <div className="mt-4 grid gap-4">
+                            {templateVariables.length === 0 ? (
+                              <div className="rounded-2xl border border-white/10 px-4 py-3 text-sm text-stone-400">
+                                This capability template has no placeholder variables.
+                              </div>
+                            ) : (
+                              templateVariables.map((variable) => (
+                                <label key={variable} className="grid gap-2 text-sm">
+                                  <span className="font-medium text-stone-300">
+                                    {variable}
+                                  </span>
+                                  <input
+                                    value={sandboxVariables[variable] || ''}
+                                    onChange={(event) =>
+                                      setSandboxVariables((current) => ({
+                                        ...current,
+                                        [variable]: event.target.value,
+                                      }))
+                                    }
+                                    placeholder={`Enter ${variable}`}
+                                    className="rounded-2xl border border-white/10 bg-stone-950 px-4 py-3 text-stone-100 outline-none transition placeholder:text-stone-500 focus:border-amber-400/60"
+                                  />
+                                </label>
+                              ))
+                            )}
+                          </div>
+
                           {sandboxResult && (
-                            <div className="mb-4 bg-black/50 border border-emerald-900/50 rounded-lg p-4 font-mono text-xs text-emerald-400 whitespace-pre-wrap">
+                            <div className="mt-4 rounded-2xl bg-stone-950 p-4 font-mono text-xs leading-6 text-emerald-100">
                               {sandboxResult}
                             </div>
                           )}
 
                           <button
+                            type="button"
                             onClick={simulateExecution}
                             disabled={simulating}
-                            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-colors shadow-lg shadow-blue-500/20"
+                            className="mt-4 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-medium text-stone-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-amber-300"
                           >
-                            {simulating ? 'Simulating...' : 'Simulate Execution'}
+                            {simulating ? 'Simulating...' : 'Simulate execution'}
                           </button>
                         </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex min-h-[560px] items-center justify-center px-8 py-10 text-center"
+                  >
+                    <div>
+                      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-dashed border-white/10 text-stone-500">
+                        <BookOpenText className="h-7 w-7" />
                       </div>
-                    )}
+                      <p className="mt-5 text-sm leading-6 text-stone-500">
+                        Load the seed script first, then select a capability from the
+                        library.
+                      </p>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
+            </section>
           </div>
-        )
-        }
-      </main >
-    </div >
+        )}
+      </main>
+    </div>
   );
 }
