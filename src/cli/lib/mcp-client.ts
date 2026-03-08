@@ -377,7 +377,10 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
     };
 }
 
-async function cleanup(client: WordClawMcpClient, state: SmokeState) {
+export async function cleanupSmokeArtifacts(
+    client: Pick<WordClawMcpClient, 'callTool'>,
+    state: SmokeState,
+) {
     if (state.webhookId) {
         await client.callTool('delete_webhook', { id: state.webhookId }).catch(
             () => undefined,
@@ -417,7 +420,7 @@ async function cleanup(client: WordClawMcpClient, state: SmokeState) {
             .catch(() => undefined);
     }
 
-    if (state.workflowTypeId && !state.workflowId) {
+    if (state.workflowTypeId) {
         await client
             .callTool('delete_content_type', { id: state.workflowTypeId })
             .catch(() => undefined);
@@ -952,7 +955,7 @@ export async function runSmoke(client: WordClawMcpClient): Promise<SmokeSummary>
             });
         }
     } finally {
-        await cleanup(client, state);
+        await cleanupSmokeArtifacts(client, state);
     }
 
     return {

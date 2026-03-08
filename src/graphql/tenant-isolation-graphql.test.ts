@@ -3,6 +3,7 @@ import mercurius from 'mercurius';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 
+import { parseSupervisorDomainHeader } from '../api/domain-context.js';
 import { db } from '../db/index.js';
 import { agentRunDefinitions, agentRuns, contentItems, contentTypes, domains, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
 import { resolvers } from './resolvers.js';
@@ -101,10 +102,11 @@ describe('GraphQL Tenant Isolation', () => {
             schema,
             resolvers,
             context: async (request: FastifyRequest) => {
-                const domainHeader = request.headers['x-domain-id'];
-                const domainId = typeof domainHeader === 'string'
-                    ? Number.parseInt(domainHeader, 10)
-                    : 1;
+                const domainContext = parseSupervisorDomainHeader(request.headers);
+                if (!domainContext.ok) {
+                    throw new Error(domainContext.payload.error);
+                }
+                const domainId = domainContext.domainId;
 
                 return {
                     requestId: request.id,
@@ -150,7 +152,7 @@ describe('GraphQL Tenant Isolation', () => {
             method: 'POST',
             url: '/graphql',
             headers: {
-                'x-domain-id': '2'
+                'x-wordclaw-domain': '2'
             },
             payload: {
                 query: `
@@ -178,7 +180,7 @@ describe('GraphQL Tenant Isolation', () => {
             method: 'POST',
             url: '/graphql',
             headers: {
-                'x-domain-id': '2'
+                'x-wordclaw-domain': '2'
             },
             payload: {
                 query: `
@@ -215,7 +217,7 @@ describe('GraphQL Tenant Isolation', () => {
             method: 'POST',
             url: '/graphql',
             headers: {
-                'x-domain-id': '2'
+                'x-wordclaw-domain': '2'
             },
             payload: {
                 query: `
@@ -251,7 +253,7 @@ describe('GraphQL Tenant Isolation', () => {
             method: 'POST',
             url: '/graphql',
             headers: {
-                'x-domain-id': '2'
+                'x-wordclaw-domain': '2'
             },
             payload: {
                 query: `
@@ -275,7 +277,7 @@ describe('GraphQL Tenant Isolation', () => {
             method: 'POST',
             url: '/graphql',
             headers: {
-                'x-domain-id': '2'
+                'x-wordclaw-domain': '2'
             },
             payload: {
                 query: `
@@ -302,7 +304,7 @@ describe('GraphQL Tenant Isolation', () => {
             method: 'POST',
             url: '/graphql',
             headers: {
-                'x-domain-id': '2'
+                'x-wordclaw-domain': '2'
             },
             payload: {
                 query: `
@@ -326,7 +328,7 @@ describe('GraphQL Tenant Isolation', () => {
             method: 'POST',
             url: '/graphql',
             headers: {
-                'x-domain-id': '2'
+                'x-wordclaw-domain': '2'
             },
             payload: {
                 query: `
@@ -374,7 +376,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
@@ -459,7 +461,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
@@ -497,7 +499,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
@@ -532,7 +534,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
@@ -651,7 +653,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
@@ -688,7 +690,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
@@ -735,7 +737,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
@@ -766,7 +768,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
@@ -800,7 +802,7 @@ describe('GraphQL Tenant Isolation', () => {
                 method: 'POST',
                 url: '/graphql',
                 headers: {
-                    'x-domain-id': '1'
+                    'x-wordclaw-domain': '1'
                 },
                 payload: {
                     query: `
