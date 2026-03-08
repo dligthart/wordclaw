@@ -111,7 +111,7 @@ For a full walkthrough of the command groups, payload formats, agent usage patte
 
 ## Supervisor Web Interface
 
-WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, API keys, approvals, and audit review. Experimental pages remain available, but the default operator workflow is centered on those core control-plane surfaces.
+WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, approvals, payments, L402 readiness, API keys, and audit review. Experimental pages remain available, but they stay hidden by default so the main operator workflow stays focused on supported control-plane surfaces.
 
 To run the frontend locally:
 1. Ensure the WordClaw backend is running (`npm run dev` in the root folder).

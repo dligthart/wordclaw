@@ -52,12 +52,11 @@
     <div class="mb-6 flex justify-between items-end">
         <div>
             <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-                Payments (Optional L402 Module)
+                Payments
             </h2>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Operator-facing payment diagnostics for the optional L402
-                module. This surface is not required for the default WordClaw
-                product path.
+                Operator-facing settlement and invoice diagnostics for WordClaw
+                payment flows and entitlement purchases.
             </p>
         </div>
         <button

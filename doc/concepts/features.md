@@ -1,6 +1,6 @@
 # Features
 
-WordClaw now describes its capabilities in product tiers so the supported runtime is clearly separated from optional modules and incubating ideas.
+WordClaw now describes its capabilities in product tiers so the supported runtime is clearly separated from incubating ideas.
 
 ## Tier 1: Core Product
 
@@ -20,6 +20,13 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 - **Idempotency** — Replayed POST/PUT/DELETE requests can return cached responses instead of creating duplicate writes.
 - **Multi-Tenant Isolation** — Domains scope content, keys, and workflows to prevent cross-tenant overlap.
 - **Request Tracing and Rate Limiting** — Every request carries an `x-request-id`, and per-IP throttling protects the runtime.
+
+### Payments and Entitlements
+
+- **Offer / Entitlement Licensing** — Offer purchases create entitlements in `pending_payment`, then activate on successful payment verification.
+- **Offer-First Read Gating** — If active offers exist for an item, reads require entitlement resolution before content is returned.
+- **Lightning Network (L402)** — The core runtime supports HTTP `402 Payment Required` challenges with Macaroon and preimage verification.
+- **Supervisor Payment Operations** — The default control plane includes payment diagnostics and L402 readiness tracking for operators.
 
 ### Primary Agent Surfaces
 
@@ -44,13 +51,6 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 
 - **Automated Embeddings** — Published content can be chunked and embedded into `pgvector`.
 - **Semantic Search** — Agents can query the CMS using natural-language relevance without external vector infrastructure.
-
-### L402 Monetization
-
-- **Offer / Entitlement Licensing** — Offer purchases create entitlements in `pending_payment`, then activate on successful payment verification.
-- **Offer-First Read Gating** — If active offers exist for an item, reads require entitlement resolution.
-- **Lightning Network (L402)** — Runtime-supported payment rail using HTTP 402 challenges and Macaroon + preimage verification.
-- **Default Scope** — The supported path stops at purchase, activation, and read enforcement; delegation-style grant sharing is not part of the default module.
 
 ## Tier 3: Compatibility and Incubating
 

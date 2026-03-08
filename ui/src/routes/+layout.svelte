@@ -47,6 +47,7 @@
     let { children } = $props();
     let isSidebarOpen = $state(false);
     let currentDomain = $state("1");
+    let showExperimentalNav = $state(false);
     let domainOptions = $state<{ id: string; label: string }[]>([
         { id: "1", label: "Domain 1" },
         { id: "2", label: "Domain 2" },
@@ -54,11 +55,15 @@
 
     onMount(async () => {
         const stored = localStorage.getItem("__wc_domain_id");
+        const storedExperimentalNav = localStorage.getItem(
+            "__wc_show_experimental",
+        );
         if (stored) {
             currentDomain = stored;
         } else {
             localStorage.setItem("__wc_domain_id", currentDomain);
         }
+        showExperimentalNav = storedExperimentalNav === "true";
         await checkAuth();
         if (auth.user) {
             await loadDomains();
@@ -98,6 +103,11 @@
         window.location.assign(
             $page.url.pathname + $page.url.search + $page.url.hash,
         );
+    }
+
+    function setExperimentalVisibility(visible: boolean) {
+        showExperimentalNav = visible;
+        localStorage.setItem("__wc_show_experimental", visible ? "true" : "false");
     }
 
     $effect(() => {
@@ -161,6 +171,18 @@
             href: "/ui/approvals",
             icon: CheckCircle,
             match: (p: string) => p.includes("/approvals"),
+        },
+        {
+            name: "Payments",
+            href: "/ui/payments",
+            icon: CreditCard,
+            match: (p: string) => p.includes("/payments"),
+        },
+        {
+            name: "L402 Readiness",
+            href: "/ui/l402-readiness",
+            icon: CheckBadge,
+            match: (p: string) => p.includes("/l402-readiness"),
         }
     ];
 
@@ -173,30 +195,15 @@
             experimental: true,
             notice:
                 "Agent Sandbox is experimental. It remains useful for exploration and demos, but it is outside the default supported supervisor workflow.",
-        },
-        {
-            name: "Payments",
-            href: "/ui/payments",
-            icon: CreditCard,
-            match: (p: string) => p.includes("/payments"),
-            experimental: true,
-            notice:
-                "Payments is an optional L402 operations surface, not part of the default supported control plane.",
-        },
-        {
-            name: "L402 Readiness",
-            href: "/ui/l402-readiness",
-            icon: CheckBadge,
-            match: (p: string) => p.includes("/l402-readiness"),
-            experimental: true,
-            notice:
-                "L402 readiness is an optional operator tool for the Lightning payment module, not a required part of the default product path.",
         }
     ];
 
     let currentPath = $derived($page.url.pathname);
     let activeExperimentalItem = $derived(
         experimentalNavItems.find((item) => item.match(currentPath)) ?? null,
+    );
+    let shouldShowExperimentalNav = $derived(
+        showExperimentalNav || activeExperimentalItem !== null,
     );
 
     // Active drawer function
@@ -319,39 +326,75 @@
                         {/each}
                     </SidebarGroup>
 
-                    <SidebarGroup class="space-y-2 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                        <div
-                            class="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-600 dark:text-amber-400"
-                        >
-                            Experimental / Optional
-                        </div>
-                        <p
-                            class="px-2 text-xs leading-5 text-gray-500 dark:text-gray-400"
-                        >
-                            These pages are available for exploration and
-                            module operations, but they are outside the default
-                            supported supervisor workflow.
-                        </p>
-                        {#each experimentalNavItems as item}
-                            <SidebarItem
-                                label={item.name}
-                                href={item.href}
-                                active={item.match(currentPath)}
-                                class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group"
+                    {#if shouldShowExperimentalNav}
+                        <SidebarGroup class="space-y-2 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                            <div class="flex items-center justify-between gap-3 px-2">
+                                <div
+                                    class="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-600 dark:text-amber-400"
+                                >
+                                    Experimental
+                                </div>
+                                {#if !activeExperimentalItem}
+                                    <button
+                                        type="button"
+                                        class="text-[11px] font-medium uppercase tracking-[0.14em] text-gray-500 transition hover:text-amber-600 dark:text-gray-400 dark:hover:text-amber-300"
+                                        onclick={() =>
+                                            setExperimentalVisibility(false)}
+                                    >
+                                        Hide
+                                    </button>
+                                {/if}
+                            </div>
+                            <p
+                                class="px-2 text-xs leading-5 text-gray-500 dark:text-gray-400"
                             >
-                                {#snippet icon()}
-                                    <Icon
-                                        src={item.icon}
-                                        class="w-5 h-5 text-gray-500 transition duration-75 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white {item.match(
-                                            currentPath,
-                                        )
-                                            ? 'text-amber-600 dark:text-amber-400'
-                                            : ''}"
-                                    />
-                                {/snippet}
-                            </SidebarItem>
-                        {/each}
-                    </SidebarGroup>
+                                These pages remain available for exploration,
+                                but they sit outside the default supported
+                                supervisor workflow.
+                            </p>
+                            {#each experimentalNavItems as item}
+                                <SidebarItem
+                                    label={item.name}
+                                    href={item.href}
+                                    active={item.match(currentPath)}
+                                    class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group"
+                                >
+                                    {#snippet icon()}
+                                        <Icon
+                                            src={item.icon}
+                                            class="w-5 h-5 text-gray-500 transition duration-75 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white {item.match(
+                                                currentPath,
+                                            )
+                                                ? 'text-amber-600 dark:text-amber-400'
+                                                : ''}"
+                                        />
+                                    {/snippet}
+                                </SidebarItem>
+                            {/each}
+                        </SidebarGroup>
+                    {:else}
+                        <SidebarGroup class="space-y-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                            <div
+                                class="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500"
+                            >
+                                Experimental Hidden
+                            </div>
+                            <p
+                                class="px-2 text-xs leading-5 text-gray-500 dark:text-gray-400"
+                            >
+                                Incubator pages are hidden by default so the
+                                operator nav stays focused on supported
+                                workflows.
+                            </p>
+                            <button
+                                type="button"
+                                class="mx-2 rounded-lg border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-700 transition hover:border-amber-300 hover:text-amber-700 dark:border-gray-700 dark:text-gray-200 dark:hover:border-amber-700 dark:hover:text-amber-300"
+                                onclick={() => setExperimentalVisibility(true)}
+                            >
+                                Show experimental pages
+                            </button>
+                        </SidebarGroup>
+                    {/if}
                 </SidebarWrapper>
             </Sidebar>
 

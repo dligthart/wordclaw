@@ -39,11 +39,12 @@
             revenue: boolean;
             agentRuns: boolean;
         };
-        earningsSummary: {
-            total: number;
-            pending: number;
+        paymentSummary: {
+            settledTotal: number;
+            settledCount: number;
+            pendingTotal: number;
             pendingCount: number;
-        } | null;
+        };
         agentRunSummary: {
             queue: {
                 backlog: number;
@@ -218,15 +219,13 @@
             </Card>
         </div>
 
-        {#if data.experimentalModules.revenue && data.earningsSummary}
-            <!-- Experimental Revenue Summary -->
+        {#if data.paymentSummary}
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                Experimental Revenue Summary
+                Payments Overview
             </h3>
             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                These payout-oriented metrics remain available for operator
-                review, but they are not part of the default supported
-                WordClaw product path.
+                Core L402 settlement activity for this domain, including paid
+                invoices and pending payment challenges.
             </p>
             <div class="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Card
@@ -237,12 +236,13 @@
                         <h3
                             class="text-sm font-medium text-gray-500 dark:text-gray-400"
                         >
-                            Recorded Revenue
+                            Settled L402 Payments ({data.paymentSummary
+                                .settledCount})
                         </h3>
                         <p
                             class="mt-1 text-3xl font-bold text-green-600 dark:text-green-400"
                         >
-                            {data.earningsSummary.total.toLocaleString()}
+                            {data.paymentSummary.settledTotal.toLocaleString()}
                             <span
                                 class="text-lg font-medium text-gray-500 dark:text-gray-400"
                                 >Sats</span
@@ -276,13 +276,13 @@
                         <h3
                             class="text-sm font-medium text-gray-500 dark:text-gray-400"
                         >
-                            Pending L402 Payments ({data.earningsSummary.pendingCount}
+                            Pending L402 Payments ({data.paymentSummary.pendingCount}
                             )
                         </h3>
                         <p
                             class="mt-1 text-3xl font-bold text-yellow-600 dark:text-yellow-400"
                         >
-                            {data.earningsSummary.pending.toLocaleString()}
+                            {data.paymentSummary.pendingTotal.toLocaleString()}
                             <span
                                 class="text-lg font-medium text-gray-500 dark:text-gray-400"
                                 >Sats</span

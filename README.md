@@ -19,12 +19,12 @@
 -   **Agent-Friendly API**: REST responses include `recommendedNextAction`, `availableActions`, and `actionPriority` to guide automated clients.
 -   **REST + MCP Surfaces**: Primary agent access paths with strong content and governance semantics.
 -   **Governance by Default**: Dry-run support, approval workflows, audit logs, idempotency, and multi-tenant isolation.
+-   **Native Payments**: Built-in L402 offer, purchase, entitlement, and Lightning-gated read flows for machine-native paid access.
 -   **Supervisor Control Plane**: Human oversight for content, schemas, approvals, audit, and API key management.
 
 ### Optional Modules
 
 -   **Native Vector & RAG**: Built-in pgvector embeddings generation and semantic search for AI agents.
--   **L402 Monetization**: Lightning-gated offer and entitlement flows for machine-native paid access.
 
 ### Compatibility / Experimental
 
@@ -144,7 +144,7 @@ WordClaw includes core demos plus a clearly separated experimental sandbox in `d
    - Start the UI: `cd demos/multi-tenant && python3 -m http.server 5175`
 
 3. **L402 Agent Payment Demo (`demos/agent-l402-demo.ts`)**  
-   Optional module demo.
+   Core payments demo.
    An autonomous TypeScript agent that encounters a `402 Payment Required` L402 invoice when trying to publish a Guest Post. It programmatically parses the Macaroon, dummy-pays the Lightning invoice, and retries the request successfully.
    - Run the demo: `npx tsx demos/agent-l402-demo.ts`
 

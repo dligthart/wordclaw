@@ -56,11 +56,26 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
             activeActors: new Set(recentLogs.filter(l => l.userId).map(l => l.userId)).size
         };
 
-        let earningsSummary: {
-            total: number;
-            pending: number;
+        const paidPayments = await db
+            .select()
+            .from(payments)
+            .where(and(eq(payments.domainId, domainId), eq(payments.status, 'paid')));
+        const pendingPayments = await db
+            .select()
+            .from(payments)
+            .where(and(eq(payments.domainId, domainId), eq(payments.status, 'pending')));
+
+        const paymentSummary: {
+            settledTotal: number;
+            settledCount: number;
+            pendingTotal: number;
             pendingCount: number;
-        } | null = null;
+        } = {
+            settledTotal: paidPayments.reduce((acc, curr) => acc + curr.amountSatoshis, 0),
+            settledCount: paidPayments.length,
+            pendingTotal: pendingPayments.reduce((acc, curr) => acc + curr.amountSatoshis, 0),
+            pendingCount: pendingPayments.length
+        };
         let agentRunSummary: {
             queue: {
                 backlog: number;
@@ -89,26 +104,6 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
                 } | null;
             };
         } | null = null;
-
-        if (isExperimentalRevenueEnabled()) {
-            const allPaid = await db
-                .select()
-                .from(payments)
-                .where(and(eq(payments.domainId, domainId), eq(payments.status, 'paid')));
-            const totalEarnings = allPaid.reduce((acc, curr) => acc + curr.amountSatoshis, 0);
-
-            const pendingPayments = await db
-                .select()
-                .from(payments)
-                .where(and(eq(payments.domainId, domainId), eq(payments.status, 'pending')));
-            const pendingEarnings = pendingPayments.reduce((acc, curr) => acc + curr.amountSatoshis, 0);
-
-            earningsSummary = {
-                total: totalEarnings,
-                pending: pendingEarnings,
-                pendingCount: pendingPayments.length
-            };
-        }
 
         if (isExperimentalAgentRunsEnabled()) {
             const metrics = await AgentRunMetricsService.getMetrics(domainId, {
@@ -197,7 +192,7 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
                 revenue: isExperimentalRevenueEnabled(),
                 agentRuns: isExperimentalAgentRunsEnabled()
             },
-            earningsSummary,
+            paymentSummary,
             agentRunSummary,
             recentEvents,
             alerts

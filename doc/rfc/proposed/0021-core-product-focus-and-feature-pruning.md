@@ -5,7 +5,7 @@
 **Date:** 2026-03-06  
 
 ## 1. Summary
-This RFC proposes a product focus reset for WordClaw. The project should narrow around its strongest concept: a headless content runtime for AI agents and human supervisors, with strict safety, structured content contracts, and optional machine-native monetization.
+This RFC proposes a product focus reset for WordClaw. The project should narrow around its strongest concept: a headless content runtime for AI agents and human supervisors, with strict safety, structured content contracts, and built-in machine-native monetization.
 
 The recommendation is to strengthen the core and actively prune adjacent bets that dilute the concept: mandatory tri-protocol parity, AP2-forward marketing, revenue-routing and payout mechanics, broad autonomous-run ambitions, and speculative roadmap branches such as distribution, recommender, and blog-valuation systems.
 
@@ -18,7 +18,7 @@ WordClaw already has a compelling core idea:
 - tenant isolation and policy enforcement,
 - approval workflow,
 - MCP support,
-- optional L402 monetization.
+- core L402 payments and entitlements.
 
 That core is coherent and differentiated. The rest of the repo increasingly pulls it in several different directions at once:
 
@@ -50,7 +50,7 @@ Re-center WordClaw around one product statement:
 
 **WordClaw is the safe content runtime for AI agents.**
 
-That means agents can discover, validate, simulate, read, write, and route content changes inside a strongly governed system. Human supervisors retain visibility and approval control. Optional monetization may exist, but it must remain subordinate to the content-runtime concept.
+That means agents can discover, validate, simulate, read, write, and route content changes inside a strongly governed system. Human supervisors retain visibility and approval control. Payments may exist, but they must remain subordinate to the content-runtime concept rather than turning WordClaw into a payout or marketplace suite.
 
 ### 3.1 Keep and Strengthen
 These areas are aligned and should become the default product:
@@ -64,7 +64,7 @@ These areas are aligned and should become the default product:
 - Review workflow and approval gates
 - Semantic search and embeddings as an optional but aligned agent capability
 - A minimal supervisor UI for oversight, not for primary authoring
-- L402 as the only supported payment rail unless and until another rail is production-ready
+- L402 payments and entitlements as a core runtime lane, with Lightning as the only supported rail unless and until another rail is production-ready
 
 ### 3.2 Demote or Remove From the Core Product
 The following should be removed from the default product scope or explicitly downgraded to experimental status.
@@ -104,22 +104,24 @@ The following should be removed from the default product scope or explicitly dow
   - schemas,
   - approvals,
   - audit,
+  - payments,
+  - L402 readiness,
   - agent keys.
-- Payment operations consoles, readiness dashboards, and sandbox/demo experiences should move to docs or experimental surfaces unless they are essential to daily operator control.
+- Sandbox/demo experiences and payout-oriented operations should move to docs or experimental surfaces unless they are essential to daily operator control.
 
 ### 3.3 Product Tiers
 WordClaw should explicitly label features in three tiers.
 
 | Tier | Meaning | Included Areas |
 | --- | --- | --- |
-| **Tier 1: Core** | Default product, actively maintained, documented first | content modeling, validation, versioning, workflow, audit, policy, tenant isolation, REST, MCP, dry-run, minimal supervisor, optional L402 |
-| **Tier 2: Optional Modules** | Supported extensions with clear boundaries | semantic search, selected monetization add-ons |
+| **Tier 1: Core** | Default product, actively maintained, documented first | content modeling, validation, versioning, workflow, audit, policy, tenant isolation, REST, MCP, dry-run, minimal supervisor, L402 payments |
+| **Tier 2: Optional Modules** | Supported extensions with clear boundaries | semantic search |
 | **Tier 3: Incubator** | Not promised, not marketed as core, may be removed | GraphQL parity expansion, AP2, payouts, distribution, recommender, autonomous-run platformization |
 
 ### 3.4 Documentation Rule
 Top-level docs must distinguish:
 - **supported today**
-- **optional module**
+- **optional extension**
 - **experimental / RFC only**
 
 README, landing pages, and demo descriptions must stop presenting RFC-stage or disabled capabilities as if they are part of the current product.
@@ -148,7 +150,7 @@ Reorganize the backend into explicit capability domains:
 - `optional-search`
   - embeddings
   - semantic search
-- `optional-monetization-l402`
+- `core-payments-l402`
   - L402 challenge and settlement
   - offers and entitlements
 - `incubator`

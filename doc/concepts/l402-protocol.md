@@ -1,10 +1,10 @@
-# Optional L402 Module
+# L402 Payments And Entitlements
 
-This document describes the optional L402 module within WordClaw. L402 is an HTTP `402 Payment Required` pattern that combines Macaroons for authorization and Lightning Network invoices for payment-gated access.
+This document describes the core L402 payment lane within WordClaw. L402 is an HTTP `402 Payment Required` pattern that combines Macaroons for authorization and Lightning Network invoices for payment-gated access.
 
 ## Architecture Overview
 
-The L402 integration in WordClaw acts as an optional Lightning-gated access layer for selected routes and offer flows. It is not part of the default supported control plane. When enabled, it challenges qualifying requests with a `402 Payment Required` response, providing a Lightning invoice and a Macaroon (or equivalent token). Once the client pays the invoice, they present the Macaroon and the payment preimage in the `Authorization: L402` header to access the resource.
+The L402 integration in WordClaw acts as the built-in Lightning-gated access layer for paid routes and offer flows. When enabled on qualifying resources, it challenges requests with a `402 Payment Required` response, providing a Lightning invoice and a Macaroon (or equivalent token). Once the client pays the invoice, they present the Macaroon and the payment preimage in the `Authorization: L402` header to access the resource.
 
 ### Components
 
@@ -58,9 +58,9 @@ For paid content purchases, L402 is the currently enabled settlement rail in the
 
 3. `GET /api/content-items/:id` enforces offer-first entitlement reads when active offers exist; entitlement metering and denial reasons are handled in the content route logic (`ENTITLEMENT_EXPIRED`, `ENTITLEMENT_EXHAUSTED`, etc.).
 
-Legacy pay-per-request behavior remains available for routes or items where no active offers are present, but it stays part of the optional module rather than the default product story.
+Legacy pay-per-request behavior remains available for routes or items where no active offers are present, but it now sits inside the same supported payment lane rather than outside the default product story.
 
-## Future Enhancements (Optional Module Roadmap)
+## Future Enhancements
 
 *   **LND gRPC Native Support**: Add an additional production payment provider communicating natively over gRPC with LND implementations instead of standard REST.
 *   **Agent SDK Integration**: Update the WordClaw Agent SDK to automatically handle L402 challenges, pay invoices, and append the required `Authorization` header to subsequent requests natively.

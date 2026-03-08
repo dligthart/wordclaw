@@ -159,11 +159,12 @@ describe('Supervisor Dashboard Domain Isolation', () => {
                 revenue: boolean;
                 agentRuns: boolean;
             };
-            earningsSummary: {
-                total: number;
-                pending: number;
+            paymentSummary: {
+                settledTotal: number;
+                settledCount: number;
+                pendingTotal: number;
                 pendingCount: number;
-            } | null;
+            };
             agentRunSummary: null;
             recentEvents: Array<{ domainId: number; details: string | null }>;
             alerts: Array<{ type: string; message: string }>;
@@ -177,11 +178,12 @@ describe('Supervisor Dashboard Domain Isolation', () => {
 
         expect(payload.experimentalModules.revenue).toBe(true);
         expect(payload.experimentalModules.agentRuns).toBe(false);
-        expect(payload.earningsSummary).not.toBeNull();
-        const earningsSummary = payload.earningsSummary!;
-        expect(earningsSummary.total).toBe(150);
-        expect(earningsSummary.pending).toBe(70);
-        expect(earningsSummary.pendingCount).toBe(1);
+        expect(payload.paymentSummary).toEqual({
+            settledTotal: 150,
+            settledCount: 1,
+            pendingTotal: 70,
+            pendingCount: 1
+        });
         expect(payload.agentRunSummary).toBeNull();
 
         expect(payload.recentEvents.every((event) => event.domainId === domainAId)).toBe(true);
@@ -192,7 +194,7 @@ describe('Supervisor Dashboard Domain Isolation', () => {
         expect(alertMessages.some((message) => message.includes('domain-b-error'))).toBe(false);
     });
 
-    it('omits experimental revenue summary when the module is disabled', async () => {
+    it('returns core payment summary when experimental revenue is disabled', async () => {
         delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
 
@@ -211,13 +213,23 @@ describe('Supervisor Dashboard Domain Isolation', () => {
                 revenue: boolean;
                 agentRuns: boolean;
             };
-            earningsSummary: null;
+            paymentSummary: {
+                settledTotal: number;
+                settledCount: number;
+                pendingTotal: number;
+                pendingCount: number;
+            };
             agentRunSummary: null;
         };
 
         expect(payload.experimentalModules.revenue).toBe(false);
         expect(payload.experimentalModules.agentRuns).toBe(false);
-        expect(payload.earningsSummary).toBeNull();
+        expect(payload.paymentSummary).toEqual({
+            settledTotal: 150,
+            settledCount: 1,
+            pendingTotal: 70,
+            pendingCount: 1
+        });
         expect(payload.agentRunSummary).toBeNull();
     });
 

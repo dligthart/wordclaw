@@ -108,12 +108,11 @@
 <div class="space-y-6 max-w-5xl">
     <div>
         <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
-            L402 Operator Readiness (Optional Module)
+            L402 Payment Readiness
         </h1>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Configure lightning node architecture and track production
-            readiness for the optional L402 payment module. This operator tool
-            is not required for the default supported WordClaw path.
+            readiness for WordClaw payment and entitlement flows.
         </p>
     </div>
 

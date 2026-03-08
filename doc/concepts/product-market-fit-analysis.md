@@ -8,7 +8,7 @@ WordClaw is positioned in an underserved, high-growth niche: **safe content infr
 Its PMF is extremely strong for development teams building agentic workflows because it natively solves the three biggest hurdles AI agents face when interacting with external systems:
 1. **Discoverability & Formatting:** Strict JSON schema enforcement, native MCP (Model Context Protocol) integration, and `remediation` metadata embedded in errors.
 2. **Safety & Oversight:** Dry-run support, strict policy isolation (Multi-tenant constraints), and a human-in-the-loop Supervisor UI.
-3. **Optional Monetization:** Native L402 Lightning integration can gate paid access without making the core product depend on marketplace, payout, or AP2 complexity.
+3. **Monetization Without Marketplace Drift:** Native L402 Lightning integration can gate paid access without making the product depend on marketplace, payout, or AP2 complexity.
 
 ## 2. Market Differentiation & Core Features
 
@@ -16,12 +16,12 @@ WordClaw's core feature set aligns tightly with its "AI-first" value proposition
 
 *   **REST + MCP Agent Surfaces:** WordClaw's strongest agent story comes from pairing a clear REST contract with a native MCP surface. GraphQL can remain available, but it should not define the default product promise.
 *   **AI-Targeted UX (Developer Ergonomics):** Returning `remediation`, `availableActions`, and `actionPriority` metadata directly in the JSON response gives LLMs deterministic pathways to self-correct (e.g., if a schema validation fails, the API tells the agent exactly how to fix the JSON payload).
-*   **Optional L402 Module:** Lightning-gated reads and purchases can be enabled when operators need machine-native paid access, without turning the core product into a payments suite.
+*   **Core L402 Payments:** Lightning-gated reads and purchases are part of the supported runtime when operators need machine-native paid access, without turning the product into a payout or marketplace suite.
 *   **Multi-Domain (Tenant) Isolation:** Critical for enterprise adoption where an agency might host multiple bespoke environments for different fine-tuned agent deployments.
 
 ## 3. Feature Creep Analysis & Technical Debt Risks
 
-Because WordClaw straddles several complex domains—Content Management, Authorization (Policy Engine), Distributed Systems (Webhooks/Events), and an optional Lightning payment module—it is highly susceptible to **feature creep**.
+Because WordClaw straddles several complex domains—Content Management, Authorization (Policy Engine), Distributed Systems (Webhooks/Events), and a Lightning payment lane—it is highly susceptible to **feature creep**.
 
 Here are the primary areas where feature creep threatens the project's core focus:
 
@@ -30,8 +30,8 @@ Here are the primary areas where feature creep threatens the project's core focu
 *   **Creep Risk:** Attempting to build a fully-featured WYSIWYG rich-text content editor. 
 *   **Mitigation:** WordClaw's competitive advantage is being a *Headless CMS for Agents*, not humans. The UI should remain strictly as an administrative control plane. Human users should only interact with content for approval, rollback, or debugging—not necessarily primary authoring.
 
-### Risk B: Overexpanding the Optional L402 Module
-*   **Current State:** L402 is used as an optional gate for specific paid routes and offer flows.
+### Risk B: Overexpanding The Payment Lane
+*   **Current State:** L402 is used as the built-in gate for paid routes and offer flows.
 *   **Creep Risk:** Trying to extend the payment module into fiat conversions, subscription billing, or multi-party revenue accounting.
 *   **Mitigation:** Keep the L402 middleware focused on deterministic request gating and settlement verification. Offload wallet management, fiat-on-ramps, and routing complexity to external Lightning providers.
 

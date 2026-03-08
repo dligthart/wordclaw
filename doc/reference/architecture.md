@@ -29,12 +29,12 @@ flowchart TB
       Content["Content Types + Content Items"]
       Events["Event Bus + Webhooks"]
       Embeddings["Embedding Service"]
-      Payments["Optional L402 / Entitlements"]
+      Payments["Core Payments / Entitlements"]
       Revenue["Optional Revenue / Payout Workers (Experimental)"]
     end
 
     subgraph Data["Data Layer (Drizzle ORM)"]
-      Tables["Core: content_types, content_items, content_item_versions<br/>content_item_embeddings, api_keys, users, webhooks<br/>policy_decision_logs, audit_logs<br/>Optional L402: payments, entitlements<br/>Experimental: agent_profiles, revenue_events, revenue_allocations, payout_batches"]
+      Tables["Core: content_types, content_items, content_item_versions<br/>content_item_embeddings, api_keys, users, webhooks<br/>policy_decision_logs, audit_logs, payments, entitlements<br/>Experimental: agent_profiles, revenue_events, revenue_allocations, payout_batches"]
     end
 
     L402 --> REST
@@ -123,7 +123,7 @@ Key relationships:
 - Every update to a content item creates an immutable **version** snapshot.
 - All mutations emit **audit logs**; matching **webhooks** receive HMAC-signed delivery.
 - **API keys** carry scopes (`content:read`, `content:write`, `audit:read`, `admin`).
-- **Payments** and **entitlements** participate only when the optional L402 module is enabled.
+- **Payments** and **entitlements** are part of the core runtime for paid reads and offer purchases.
 - An **API key** can map to an **agent profile** for entitlement ownership; revenue allocation and payout tables remain optional experimental runtime areas.
 
 ## Request Lifecycle
