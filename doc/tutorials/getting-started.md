@@ -100,10 +100,11 @@ Recommended environment variables:
 ```bash
 export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
-export WORDCLAW_DOMAIN_ID=1
 ```
 
 Use `node dist/cli/index.js --help` (or `npx tsx src/cli/index.ts --help`) to see the available command groups for MCP, REST, workflows, and L402.
+
+For a full walkthrough of the command groups, payload formats, agent usage patterns, and current limitations, see the [CLI Guide](../guides/cli-guide.md).
 
 ## Supervisor Web Interface
 

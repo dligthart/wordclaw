@@ -1937,7 +1937,7 @@ server.tool(
     withMCPPolicy('policy.read', () => ({ type: 'system' }), async ({ operation, resourceType, resourceId, contentTypeId }, extra, domainId) => {
         const operationContext = buildOperationContext(
             'mcp',
-            { keyId: 'mcp-local', scopes: new Set(['admin']), source: 'local' },
+            { keyId: 'mcp-local', domainId, scopes: new Set(['admin']), source: 'local' },
             operation,
             { type: resourceType, id: resourceId, contentTypeId }
         );

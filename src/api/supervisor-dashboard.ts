@@ -3,6 +3,7 @@ import { sql, and, desc, eq, gt } from 'drizzle-orm';
 import { isExperimentalRevenueEnabled } from '../config/runtime-features.js';
 import { db } from '../db/index.js';
 import { auditLogs, contentItems, contentTypes, payments } from '../db/schema.js';
+import { parseSupervisorDomainHeader } from './domain-context.js';
 
 export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: FastifyInstance) => {
     // Shared authenticaton hook for these routes
@@ -15,17 +16,11 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
     });
 
     server.get('/dashboard', async (request, reply) => {
-        const rawDomainHeader = request.headers['x-wordclaw-domain'];
-        const domainHeader = Array.isArray(rawDomainHeader) ? rawDomainHeader[0] : rawDomainHeader;
-        const domainId = Number.parseInt(domainHeader ?? '', 10);
-
-        if (!Number.isInteger(domainId) || domainId <= 0) {
-            return reply.status(400).send({
-                error: 'Invalid domain context',
-                code: 'INVALID_DOMAIN_CONTEXT',
-                remediation: 'Provide x-wordclaw-domain header with a positive integer domain ID.'
-            });
+        const domainContext = parseSupervisorDomainHeader(request.headers);
+        if (!domainContext.ok) {
+            return reply.status(domainContext.statusCode).send(domainContext.payload);
         }
+        const domainId = domainContext.domainId;
 
         // 1. System Health
         let dbOk = false;

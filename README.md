@@ -122,7 +122,6 @@ Use environment variables for REST auth:
 ```bash
 export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
-export WORDCLAW_DOMAIN_ID=1
 ```
 
 ## 🎮 Demos

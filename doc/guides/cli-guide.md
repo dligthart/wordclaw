@@ -1,0 +1,252 @@
+# WordClaw CLI
+
+The WordClaw CLI is a JSON-first command-line interface for agents and operators. It wraps both of the product's primary agent surfaces:
+
+- `MCP` for local tool discovery and stdio-based agent workflows
+- `REST` for content operations, workflows, and L402 purchase/entitlement flows
+
+Use the CLI when you want a scriptable interface without writing a custom MCP client or hand-rolling HTTP requests.
+
+## Entry Points
+
+Run from source:
+
+```bash
+npx tsx src/cli/index.ts --help
+```
+
+Run the compiled CLI:
+
+```bash
+npm run build
+node dist/cli/index.js --help
+```
+
+## Environment
+
+REST commands use these environment variables by default:
+
+```bash
+export WORDCLAW_BASE_URL=http://localhost:4000
+export WORDCLAW_API_KEY=<your-api-key>
+```
+
+Use a domain-scoped API key for the tenant you want to operate against.
+
+```bash
+node dist/cli/index.js content-types list \
+  --base-url http://localhost:4000 \
+  --api-key <your-api-key>
+```
+
+## Output Model
+
+The CLI prints JSON by default so agents can consume it reliably.
+
+- Successful REST commands return transport metadata plus the API response body.
+- Successful MCP commands return the discovered data or parsed tool output.
+- Failures return a JSON error object and exit with code `1`.
+
+Example:
+
+```bash
+node dist/cli/index.js content-types list --limit 2
+```
+
+```json
+{
+  "transport": "rest",
+  "method": "GET",
+  "url": "http://localhost:4000/api/content-types?limit=2",
+  "status": 200,
+  "ok": true,
+  "body": {
+    "data": [],
+    "meta": {}
+  }
+}
+```
+
+## Supported Command Groups
+
+### MCP
+
+Use MCP commands for local discovery and tool execution:
+
+```bash
+node dist/cli/index.js mcp inspect
+node dist/cli/index.js mcp call list_content_types --json '{"limit":5}'
+node dist/cli/index.js mcp prompt workflow-guidance
+node dist/cli/index.js mcp resource content://types
+node dist/cli/index.js mcp smoke
+```
+
+Supported MCP features:
+
+- tool discovery
+- direct tool calls
+- prompt retrieval
+- resource reads
+- end-to-end smoke validation across content, workflow, audit, API key, webhook, and payment-read surfaces
+
+Important transport note:
+
+- WordClaw MCP currently uses `stdio`
+- the CLI starts its own local MCP child process
+- it does **not** attach to a separately running MCP process
+
+If WordClaw later adds a networked MCP transport, the CLI can be extended to connect to a long-running MCP endpoint instead.
+
+### Generic REST
+
+Use the generic request command when a dedicated subcommand does not exist yet:
+
+```bash
+node dist/cli/index.js rest request GET /content-types
+node dist/cli/index.js rest request POST /auth/keys \
+  --body-json '{"name":"Example","scopes":["content:read","content:write"]}'
+```
+
+Supported flags:
+
+- `--query-json` or `--query-file`
+- `--body-json` or `--body-file`
+
+### Content Types
+
+```bash
+node dist/cli/index.js content-types list --limit 10 --include-stats
+node dist/cli/index.js content-types get --id 12
+node dist/cli/index.js content-types create \
+  --name "Article" \
+  --slug article \
+  --schema-file schema.json
+node dist/cli/index.js content-types update --id 12 --description "Updated description"
+node dist/cli/index.js content-types delete --id 12 --dry-run
+```
+
+Supported features:
+
+- list content types
+- get one content type
+- create content types
+- update content types
+- delete content types
+- create paid content types with `--base-price`
+- dry-run mode for create, update, and delete
+
+### Content Items
+
+```bash
+node dist/cli/index.js content list --content-type-id 12 --status draft --limit 20
+node dist/cli/index.js content get --id 345
+node dist/cli/index.js content create --content-type-id 12 --data-file item.json
+node dist/cli/index.js content update --id 345 --data-json '{"title":"Updated"}'
+node dist/cli/index.js content versions --id 345
+node dist/cli/index.js content rollback --id 345 --version 2 --dry-run
+node dist/cli/index.js content delete --id 345
+```
+
+Supported features:
+
+- filtered list views
+- item reads
+- create and update mutations
+- version history
+- rollback
+- delete
+- dry-run mode where the REST API supports it
+
+### Workflow and Review
+
+```bash
+node dist/cli/index.js workflow active --content-type-id 12
+node dist/cli/index.js workflow submit --id 345 --transition 9 --assignee editor-1
+node dist/cli/index.js workflow tasks
+node dist/cli/index.js workflow decide --id 88 --decision approved
+```
+
+Supported features:
+
+- inspect the active workflow for a content type
+- submit a content item for review
+- list pending review tasks
+- approve or reject review tasks
+
+### L402 and Paid Content
+
+Use REST-based commands for L402 and entitlement flows:
+
+```bash
+node dist/cli/index.js l402 offers --item 345
+node dist/cli/index.js l402 purchase --offer 7
+node dist/cli/index.js l402 confirm --offer 7 --macaroon <macaroon> --preimage <preimage>
+node dist/cli/index.js l402 entitlements
+node dist/cli/index.js l402 entitlement --id 21
+node dist/cli/index.js l402 read --item 345 --entitlement-id 21
+```
+
+Supported features:
+
+- list item offers
+- start a purchase flow
+- confirm settlement with `Authorization: L402 <macaroon>:<preimage>`
+- list entitlements owned by the current API key
+- inspect a specific entitlement
+- perform paid reads with an entitlement header
+
+## Input Patterns
+
+For structured payloads, use either inline JSON or a file.
+
+Inline:
+
+```bash
+node dist/cli/index.js content create \
+  --content-type-id 12 \
+  --data-json '{"title":"CLI Draft","body":"Created from JSON"}'
+```
+
+From file:
+
+```bash
+node dist/cli/index.js content create \
+  --content-type-id 12 \
+  --data-file ./payloads/article.json
+```
+
+The same pattern applies to:
+
+- `--schema-json` / `--schema-file`
+- `--body-json` / `--body-file`
+- `--query-json` / `--query-file`
+- MCP `--json` / `--file`
+
+## Agent Usage Guidance
+
+The CLI is suitable for agents when you want:
+
+- deterministic JSON output
+- narrow command contracts instead of raw HTTP
+- easy shell execution from automation systems
+- one surface for both MCP and REST-backed workflows
+
+Recommended agent pattern:
+
+1. Use `mcp inspect` or `mcp smoke` to discover and validate the local MCP surface.
+2. Use dedicated REST commands for content and workflow operations.
+3. Use `l402` commands for paid access and entitlement-aware reads.
+4. Fall back to `rest request` for endpoints that do not yet have a dedicated command.
+
+## Current Limitations
+
+- The MCP transport is still `stdio`, so the CLI spawns a new local MCP server process for each MCP session.
+- L402 purchase confirmation depends on a live offer, a valid invoice challenge, and payment-provider state in the target environment.
+- The current MCP `evaluate_policy` path still has a server-side domain-context issue, so `mcp smoke` reports it as a warning rather than a pass.
+
+## Related Docs
+
+- [Getting Started](../tutorials/getting-started.md)
+- [MCP Integration](./mcp-integration.md)
+- [API Reference](../reference/api-reference.md)
+- [L402 Protocol](../concepts/l402-protocol.md)

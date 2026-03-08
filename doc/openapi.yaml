@@ -5430,14 +5430,11 @@ paths:
                 required:
                   - hasLnbitsUrl
                   - hasLnbitsKey
-                  - hasLndMacaroon
                   - webhookConfigured
                 properties:
                   hasLnbitsUrl:
                     type: boolean
                   hasLnbitsKey:
-                    type: boolean
-                  hasLndMacaroon:
                     type: boolean
                   webhookConfigured:
                     type: boolean
@@ -5447,8 +5444,14 @@ paths:
             type: object
             required:
               - error
+              - code
+              - remediation
             properties:
               error:
+                type: string
+              code:
+                type: string
+              remediation:
                 type: string
         "401":
           description: Default Response
@@ -5468,6 +5471,9 @@ paths:
             properties:
               architecture:
                 type: string
+                enum:
+                  - mock
+                  - lnbits
               webhookEndpoint:
                 type: string
               secretManagerPath:
@@ -5494,8 +5500,14 @@ paths:
             type: object
             required:
               - error
+              - code
+              - remediation
             properties:
               error:
+                type: string
+              code:
+                type: string
+              remediation:
                 type: string
         "401":
           description: Default Response

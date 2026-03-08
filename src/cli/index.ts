@@ -65,7 +65,6 @@ Commands:
 Environment:
   WORDCLAW_BASE_URL   Default: http://localhost:4000
   WORDCLAW_API_KEY    API key used for REST requests
-  WORDCLAW_DOMAIN_ID  Optional explicit domain header for REST requests
 `;
 }
 

@@ -23,7 +23,6 @@
         diagnostics: {
             hasLnbitsUrl: false,
             hasLnbitsKey: false,
-            hasLndMacaroon: false,
             webhookConfigured: false,
         },
     });
@@ -32,7 +31,7 @@
         loading = true;
         error = null;
         try {
-            const data = await fetchApi("/api/supervisors/l402-readiness");
+            const data = await fetchApi("/supervisors/l402-readiness");
             config.architecture = data.architecture;
             config.webhookEndpoint = data.webhookEndpoint || "";
             config.secretManagerPath = data.secretManagerPath || "";
@@ -52,7 +51,7 @@
         saving = true;
         error = null;
         try {
-            await fetchApi("/api/supervisors/l402-readiness", {
+            await fetchApi("/supervisors/l402-readiness", {
                 method: "PUT",
                 body: JSON.stringify({
                     architecture: config.architecture,
@@ -82,7 +81,6 @@
     let architectureOptions = [
         { value: "mock", label: "Mock (Development Only)" },
         { value: "lnbits", label: "LNbits Gateway" },
-        { value: "lnd", label: "Direct LND Node" },
     ];
 
     let allChecked = $derived(
@@ -96,9 +94,7 @@
         config.architecture === "mock" ||
             (config.architecture === "lnbits" &&
                 config.diagnostics.hasLnbitsUrl &&
-                config.diagnostics.hasLnbitsKey) ||
-            (config.architecture === "lnd" &&
-                config.diagnostics.hasLndMacaroon),
+                config.diagnostics.hasLnbitsKey),
     );
 
     let isProductionReady = $derived(
@@ -366,7 +362,7 @@
                             <li class="flex items-center justify-between">
                                 <span
                                     class="text-sm text-gray-600 dark:text-gray-300"
-                                    >LNbits URL ENV</span
+                                    >LNBITS_BASE_URL set</span
                                 >
                                 {#if config.diagnostics.hasLnbitsUrl}
                                     <span class="text-green-500">✅</span>
@@ -377,22 +373,9 @@
                             <li class="flex items-center justify-between">
                                 <span
                                     class="text-sm text-gray-600 dark:text-gray-300"
-                                    >LNbits Key ENV</span
+                                    >LNBITS_ADMIN_KEY set</span
                                 >
                                 {#if config.diagnostics.hasLnbitsKey}
-                                    <span class="text-green-500">✅</span>
-                                {:else}
-                                    <span class="text-red-500">❌</span>
-                                {/if}
-                            </li>
-                        {/if}
-                        {#if config.architecture === "lnd"}
-                            <li class="flex items-center justify-between">
-                                <span
-                                    class="text-sm text-gray-600 dark:text-gray-300"
-                                    >LND Macaroon ENV</span
-                                >
-                                {#if config.diagnostics.hasLndMacaroon}
                                     <span class="text-green-500">✅</span>
                                 {:else}
                                     <span class="text-red-500">❌</span>

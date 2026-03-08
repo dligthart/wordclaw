@@ -81,19 +81,21 @@ export function resolveApiUrl(
 export class RestCliClient {
     private readonly baseUrl: string;
     private readonly apiKey?: string;
-    private readonly domainId?: number;
 
     constructor(config: RestCliConfig = {}) {
         this.baseUrl = config.baseUrl ?? process.env.WORDCLAW_BASE_URL ?? 'http://localhost:4000';
         this.apiKey = config.apiKey ?? process.env.WORDCLAW_API_KEY;
-        this.domainId = config.domainId ?? (
+        const requestedDomainId = config.domainId ?? (
             process.env.WORDCLAW_DOMAIN_ID
                 ? Number(process.env.WORDCLAW_DOMAIN_ID)
                 : undefined
         );
 
-        if (this.domainId !== undefined && !Number.isFinite(this.domainId)) {
+        if (requestedDomainId !== undefined && !Number.isFinite(requestedDomainId)) {
             throw new Error('WORDCLAW_DOMAIN_ID must be a number when set.');
+        }
+        if (requestedDomainId !== undefined) {
+            throw new Error('WORDCLAW_DOMAIN_ID and --domain-id are not supported for API-key CLI calls. Use a domain-scoped API key instead.');
         }
     }
 
@@ -114,9 +116,6 @@ export class RestCliClient {
 
         if (this.apiKey) {
             requestHeaders['x-api-key'] = this.apiKey;
-        }
-        if (this.domainId !== undefined) {
-            requestHeaders['x-domain-id'] = String(this.domainId);
         }
 
         let body: string | undefined;

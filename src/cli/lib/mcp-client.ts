@@ -878,7 +878,7 @@ export async function runSmoke(client: WordClawMcpClient): Promise<SmokeSummary>
                     resourceType: 'system',
                 });
                 const decision = asObject(result.parsed, 'evaluate_policy');
-                if (!('allowed' in decision)) {
+                if (!('outcome' in decision)) {
                     throw new Error('evaluate_policy did not return an authorization decision.');
                 }
 

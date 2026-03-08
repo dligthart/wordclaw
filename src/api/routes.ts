@@ -26,6 +26,7 @@ import { transitionPaymentStatus } from '../services/payment-ledger.js';
 import { paymentFlowMetrics } from '../services/payment-metrics.js';
 import { parsePaymentWebhookEvent, verifyPaymentWebhookSignature } from '../services/payment-webhook.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
+import { parseSupervisorDomainHeader } from './domain-context.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -475,12 +476,15 @@ export default async function apiRoutes(server: FastifyInstance) {
             await request.jwtVerify({ onlyCookie: true });
             const user = request.user as { sub: number, role: string };
             if (user && user.role === 'supervisor') {
-                const headerDomain = request.headers['x-wordclaw-domain'];
+                const domainContext = parseSupervisorDomainHeader(request.headers);
+                if (!domainContext.ok) {
+                    return reply.status(domainContext.statusCode).send(domainContext.payload);
+                }
                 principal = {
                     keyId: `supervisor:${user.sub}`,
                     scopes: new Set(['admin']),
                     source: 'cookie',
-                    ...(headerDomain ? { domainId: parseInt(headerDomain as string, 10) } : {})
+                    domainId: domainContext.domainId
                 };
             }
         } catch {

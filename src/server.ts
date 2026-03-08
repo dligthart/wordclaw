@@ -22,6 +22,7 @@ import { db } from './db/index.js';
 import { auditEventBus, type AuditEventPayload } from './services/event-bus.js';
 import { PolicyEngine } from './services/policy.js';
 import { buildOperationContext } from './services/policy-adapters.js';
+import { parseSupervisorDomainHeader } from './api/domain-context.js';
 
 function readRequestIdHeader(raw: string | string[] | undefined): string | null {
     if (typeof raw === 'string' && raw.trim().length > 0) {
@@ -139,15 +140,26 @@ export async function buildServer(): Promise<FastifyInstance> {
                 await request.jwtVerify({ onlyCookie: true });
                 const user = request.user as { sub: number, role: string };
                 if (user && user.role === 'supervisor') {
-                    const headerDomain = request.headers['x-wordclaw-domain'];
+                    const domainContext = parseSupervisorDomainHeader(request.headers);
+                    if (!domainContext.ok) {
+                        const err = new Error(domainContext.payload.error) as any;
+                        err.statusCode = domainContext.statusCode;
+                        err.code = domainContext.payload.code;
+                        err.remediation = domainContext.payload.remediation;
+                        throw err;
+                    }
                     principal = {
                         keyId: `supervisor:${user.sub}`,
                         scopes: new Set(['admin']),
                         source: 'cookie',
-                        ...(headerDomain ? { domainId: parseInt(headerDomain as string, 10) } : {})
+                        domainId: domainContext.domainId
                     };
                 }
-            } catch { }
+            } catch (error) {
+                if ((error as { statusCode?: number }).statusCode) {
+                    throw error;
+                }
+            }
 
             if (!principal) {
                 const auth = await authenticateApiRequest(request.headers);

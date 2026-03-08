@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveApiUrl } from './rest-client.js';
+import { RestCliClient, resolveApiUrl } from './rest-client.js';
 
 describe('resolveApiUrl', () => {
     it('appends /api when base url is root', () => {
@@ -22,5 +22,11 @@ describe('resolveApiUrl', () => {
                 limit: 5,
             }),
         ).toBe('http://localhost:4000/api/content-items?status=draft&limit=5');
+    });
+
+    it('rejects explicit domain overrides for API-key flows', () => {
+        expect(() => new RestCliClient({
+            domainId: 7
+        })).toThrow('WORDCLAW_DOMAIN_ID and --domain-id are not supported');
     });
 });

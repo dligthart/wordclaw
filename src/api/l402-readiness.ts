@@ -4,6 +4,13 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { l402OperatorConfigs } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
+import { parseSupervisorDomainHeader } from './domain-context.js';
+
+const supportedArchitectures = ['mock', 'lnbits'] as const;
+
+function normalizeArchitecture(raw: unknown): typeof supportedArchitectures[number] {
+    return raw === 'lnbits' ? 'lnbits' : 'mock';
+}
 
 export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyInstance) => {
     // These routes will be registered under '/api/supervisors/l402-readiness'
@@ -22,12 +29,13 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
                     diagnostics: Type.Object({
                         hasLnbitsUrl: Type.Boolean(),
                         hasLnbitsKey: Type.Boolean(),
-                        hasLndMacaroon: Type.Boolean(),
                         webhookConfigured: Type.Boolean()
                     })
                 }),
                 400: Type.Object({
-                    error: Type.String()
+                    error: Type.String(),
+                    code: Type.String(),
+                    remediation: Type.String()
                 }),
                 401: Type.Object({
                     error: Type.String()
@@ -43,12 +51,11 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
                 return reply.status(401).send({ error: 'Unauthorized' });
             }
 
-            // Assume single-domain for now or extract from header:
-            const headerDomain = request.headers['x-wordclaw-domain'];
-            if (!headerDomain) {
-                return reply.status(400).send({ error: 'Missing x-wordclaw-domain header' });
+            const domainContext = parseSupervisorDomainHeader(request.headers);
+            if (!domainContext.ok) {
+                return reply.status(domainContext.statusCode).send(domainContext.payload);
             }
-            domainId = parseInt(headerDomain as string, 10);
+            domainId = domainContext.domainId;
         } catch (err) {
             return reply.status(401).send({ error: 'Unauthorized' });
         }
@@ -60,9 +67,8 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
             .limit(1);
 
         const diagnostics = {
-            hasLnbitsUrl: !!process.env.LNBITS_URL,
-            hasLnbitsKey: !!process.env.LNBITS_API_KEY,
-            hasLndMacaroon: !!process.env.LND_MACAROON,
+            hasLnbitsUrl: !!process.env.LNBITS_BASE_URL,
+            hasLnbitsKey: !!process.env.LNBITS_ADMIN_KEY,
             webhookConfigured: config?.webhookEndpoint ? true : false
         };
 
@@ -80,7 +86,7 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
         return {
             id: config.id,
             domainId: config.domainId,
-            architecture: config.architecture,
+            architecture: normalizeArchitecture(config.architecture),
             webhookEndpoint: config.webhookEndpoint,
             secretManagerPath: config.secretManagerPath,
             checklistApprovals: config.checklistApprovals as Record<string, boolean>,
@@ -91,7 +97,10 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
     server.put('/', {
         schema: {
             body: Type.Object({
-                architecture: Type.Optional(Type.String()),
+                architecture: Type.Optional(Type.Union([
+                    Type.Literal(supportedArchitectures[0]),
+                    Type.Literal(supportedArchitectures[1])
+                ])),
                 webhookEndpoint: Type.Optional(Type.String()),
                 secretManagerPath: Type.Optional(Type.String()),
                 checklistApprovals: Type.Optional(Type.Record(Type.String(), Type.Boolean()))
@@ -101,7 +110,9 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
                     ok: Type.Literal(true)
                 }),
                 400: Type.Object({
-                    error: Type.String()
+                    error: Type.String(),
+                    code: Type.String(),
+                    remediation: Type.String()
                 }),
                 401: Type.Object({
                     error: Type.String()
@@ -119,11 +130,11 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
             }
             userId = user.sub;
 
-            const headerDomain = request.headers['x-wordclaw-domain'];
-            if (!headerDomain) {
-                return reply.status(400).send({ error: 'Missing x-wordclaw-domain header' });
+            const domainContext = parseSupervisorDomainHeader(request.headers);
+            if (!domainContext.ok) {
+                return reply.status(domainContext.statusCode).send(domainContext.payload);
             }
-            domainId = parseInt(headerDomain as string, 10);
+            domainId = domainContext.domainId;
         } catch (err) {
             return reply.status(401).send({ error: 'Unauthorized' });
         }
@@ -139,7 +150,7 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
         if (existing) {
             await db.update(l402OperatorConfigs)
                 .set({
-                    architecture: body.architecture ?? existing.architecture,
+                    architecture: normalizeArchitecture(body.architecture ?? existing.architecture),
                     webhookEndpoint: body.webhookEndpoint !== undefined ? body.webhookEndpoint : existing.webhookEndpoint,
                     secretManagerPath: body.secretManagerPath !== undefined ? body.secretManagerPath : existing.secretManagerPath,
                     checklistApprovals: body.checklistApprovals !== undefined ? body.checklistApprovals : existing.checklistApprovals,
@@ -149,7 +160,7 @@ export const l402ReadinessRoutes: FastifyPluginAsync = async (server: FastifyIns
         } else {
             await db.insert(l402OperatorConfigs).values({
                 domainId,
-                architecture: body.architecture ?? 'mock',
+                architecture: normalizeArchitecture(body.architecture),
                 webhookEndpoint: body.webhookEndpoint,
                 secretManagerPath: body.secretManagerPath,
                 checklistApprovals: body.checklistApprovals ?? {}

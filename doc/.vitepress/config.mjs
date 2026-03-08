@@ -25,6 +25,7 @@ export default withMermaid(defineConfig({
                     { text: 'Documentation Standards', link: '/guides/documentation-standards' },
                     { text: 'CI Migrations and Tests Troubleshooting', link: '/guides/ci-migrations-troubleshooting' },
                     { text: 'Blog Integration', link: '/guides/blog-integration-guide' },
+                    { text: 'CLI Guide', link: '/guides/cli-guide' },
                     { text: 'MCP Integration', link: '/guides/mcp-integration' }
                 ]
             },

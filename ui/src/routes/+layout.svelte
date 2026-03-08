@@ -54,7 +54,11 @@
 
     onMount(async () => {
         const stored = localStorage.getItem("__wc_domain_id");
-        if (stored) currentDomain = stored;
+        if (stored) {
+            currentDomain = stored;
+        } else {
+            localStorage.setItem("__wc_domain_id", currentDomain);
+        }
         await checkAuth();
         if (auth.user) {
             await loadDomains();
@@ -78,8 +82,8 @@
                 domainOptions = fetched;
                 if (!fetched.some((domain) => domain.id === currentDomain)) {
                     currentDomain = fetched[0].id;
-                    localStorage.setItem("__wc_domain_id", currentDomain);
                 }
+                localStorage.setItem("__wc_domain_id", currentDomain);
             }
         } catch {
             // Keep fallback options when domain discovery is unavailable.
