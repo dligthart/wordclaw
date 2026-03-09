@@ -1876,11 +1876,22 @@
 
             if (requestedScenario) {
                 engine.startScenario(requestedScenario);
-                const requestedStep = parseStepParam(
-                    urlParams.get("step"),
-                    requestedScenario.steps.length,
-                );
-                engine.setStepIndex(requestedStep);
+                if (
+                    persistedSnapshot &&
+                    persistedScenario?.id === requestedScenario.id
+                ) {
+                    engine.restoreFromSnapshot(persistedSnapshot);
+                } else {
+                    const requestedStep = parseStepParam(
+                        urlParams.get("step"),
+                        requestedScenario.steps.length,
+                    );
+
+                    // Deep links without a matching saved scenario state should
+                    // start at the beginning instead of jumping into a step
+                    // whose captured IDs have not been created yet.
+                    engine.setStepIndex(requestedStep > 0 ? 0 : requestedStep);
+                }
             } else if (persistedSnapshot && persistedScenario) {
                 engine.startScenario(persistedScenario);
                 engine.restoreFromSnapshot(persistedSnapshot);
