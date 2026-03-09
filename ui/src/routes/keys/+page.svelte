@@ -4,6 +4,10 @@
     import DataTable from "$lib/components/DataTable.svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Input from "$lib/components/ui/Input.svelte";
+    import Surface from "$lib/components/ui/Surface.svelte";
     import { Icon, Plus, XMark, Key, ArrowPath, Trash } from "svelte-hero-icons";
 
     type ApiKey = {
@@ -28,6 +32,8 @@
     let creating = $state(false);
 
     let generatedKey = $state<{ name: string; apiKey: string } | null>(null);
+    let activeKeyCount = $derived(keys.filter((key) => !key.revokedAt).length);
+    let revokedKeyCount = $derived(keys.filter((key) => !!key.revokedAt).length);
 
     const columns = [
         { key: "name", label: "Name", sortable: true },
@@ -175,80 +181,91 @@
 <!-- Generate Key Result Modal -->
 {#if generatedKey}
     <div
-        class="fixed inset-0 bg-gray-900/75 flex items-center justify-center z-50"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75"
     >
         <div
-            class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full mx-4 shadow-2xl border border-gray-200 dark:border-gray-700"
+            class="mx-4 w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-950"
         >
-            <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        New secret
+                    </p>
+                    <h3 class="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
                 Save this API Key
-            </h3>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                This is the only time the API key for <strong
-                    class="text-gray-700 dark:text-gray-300"
-                    >"{generatedKey.name}"</strong
-                > will be shown. Keep it secure and treat it like a password.
+                    </h3>
+                </div>
+                <Badge variant="warning">Shown once</Badge>
+            </div>
+            <p class="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                This is the only time the API key for
+                <strong class="text-slate-700 dark:text-slate-200">{generatedKey.name}</strong>
+                will be shown. Treat it like a password.
             </p>
             <div
-                class="bg-gray-100 dark:bg-gray-900 p-4 rounded text-center relative mb-6"
+                class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60"
             >
                 <code
-                    class="text-sm font-mono text-gray-800 dark:text-gray-200 break-all select-all flex-1"
+                    class="block break-all font-mono text-sm text-slate-800 select-all dark:text-slate-200"
                     >{generatedKey.apiKey}</code
                 >
             </div>
-            <div class="flex justify-end gap-3">
-                <button
-                    class="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition"
+            <div class="mt-6 flex justify-end gap-3">
+                <Button
                     onclick={() => {
                         navigator.clipboard.writeText(generatedKey!.apiKey);
                     }}
                 >
                     Copy to Clipboard
-                </button>
-                <button
-                    class="px-5 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white font-medium rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition"
+                </Button>
+                <Button
+                    variant="secondary"
                     onclick={() => (generatedKey = null)}
                 >
                     Close
-                </button>
+                </Button>
             </div>
         </div>
     </div>
 {/if}
 
 <div class="h-full flex flex-col">
-    <div class="flex justify-between items-center mb-6">
+    <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+            <h2 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
                 API Keys
             </h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Manage API credentials for AI agents and operator integrations
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Manage credentials for agents and operator integrations.
             </p>
+            <div class="mt-3 flex flex-wrap gap-2">
+                <Badge variant="outline">{activeKeyCount} active</Badge>
+                {#if revokedKeyCount > 0}
+                    <Badge variant="muted">{revokedKeyCount} revoked</Badge>
+                {/if}
+            </div>
         </div>
-        <button
+        <Button
             onclick={() => (showNewKeyModal = true)}
-            class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition shadow-sm flex items-center gap-2"
         >
             <Icon src={Plus} class="w-5 h-5" />
             Create Key
-        </button>
+        </Button>
     </div>
 
     <!-- Create Key Modal -->
     {#if showNewKeyModal}
         <div
-            class="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-40"
+            class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50"
         >
             <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden border border-gray-200 dark:border-gray-700"
+                class="mx-4 w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-950"
             >
                 <div
-                    class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center"
+                    class="flex items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-700"
                 >
                     <h3
-                        class="text-lg font-medium text-gray-900 dark:text-white"
+                        class="text-lg font-semibold text-slate-900 dark:text-white"
                     >
                         Create API Key
                     </h3>
@@ -264,54 +281,51 @@
                     <div>
                         <label
                             for="keyName"
-                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                            class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                             >Key Name</label
                         >
-                        <input
+                        <Input
                             id="keyName"
                             bind:value={newKeyName}
                             type="text"
                             placeholder="e.g. Content Writer Agent"
-                            class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
                         />
                     </div>
                     <div>
                         <span
-                            class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            class="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                             >Permissions</span
                         >
-                        <div class="space-y-2 max-h-48 overflow-y-auto">
+                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                             {#each availableScopes as scope}
-                                <label class="flex items-center">
-                                    <input
-                                        type="checkbox"
-                                        checked={newKeyScopes.includes(scope)}
-                                        onchange={() => toggleScope(scope)}
-                                        class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 h-4 w-4 bg-white dark:bg-gray-700"
-                                    />
-                                    <span
-                                        class="ml-2 text-sm text-gray-700 dark:text-gray-300 font-mono bg-gray-100 dark:bg-gray-700 px-1.5 rounded"
-                                        >{scope}</span
-                                    >
-                                </label>
+                                <button
+                                    type="button"
+                                    onclick={() => toggleScope(scope)}
+                                    class={`rounded-2xl border px-3 py-2 text-left font-mono text-xs transition-colors ${
+                                        newKeyScopes.includes(scope)
+                                            ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-950"
+                                            : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300 dark:hover:bg-slate-800"
+                                    }`}
+                                    aria-pressed={newKeyScopes.includes(scope)}
+                                >
+                                    {scope}
+                                </button>
                             {/each}
                         </div>
                     </div>
                 </div>
                 <div
-                    class="px-6 py-4 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3"
+                    class="flex justify-end gap-3 border-t border-slate-200 bg-slate-50/80 px-6 py-4 dark:border-slate-700 dark:bg-slate-900/40"
                 >
-                    <button
+                    <Button
                         onclick={() => (showNewKeyModal = false)}
-                        class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-                        >Cancel</button
-                    >
-                    <button
+                        variant="outline"
+                    >Cancel</Button>
+                    <Button
                         onclick={createKey}
                         disabled={!newKeyName.trim() ||
                             newKeyScopes.length === 0 ||
                             creating}
-                        class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
                     >
                         {#if creating}
                             <LoadingSpinner size="sm" color="white" />
@@ -319,7 +333,7 @@
                         {:else}
                             Create Key
                         {/if}
-                    </button>
+                    </Button>
                 </div>
             </div>
         </div>
@@ -334,8 +348,8 @@
     {/if}
 
     <!-- Keys List -->
-    <div
-        class="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex-1 flex flex-col overflow-hidden"
+    <Surface
+        class="flex-1 flex flex-col overflow-hidden p-0"
     >
         {#if loading}
             <div class="flex-1 flex justify-center items-center p-12">
@@ -375,28 +389,24 @@
                                 >
                                     {row.name}
                                     {#if row.revokedAt}
-                                        <span
-                                            class="text-[0.6rem] uppercase tracking-wider font-bold bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-400 px-1.5 py-0.5 rounded"
-                                            >Revoked</span
-                                        >
+                                        <Badge variant="danger">Revoked</Badge>
                                     {/if}
                                 </div>
-                                <div class="text-xs text-gray-500">
+                                <div class="text-xs text-slate-500 dark:text-slate-400">
                                     Created: {formatDate(row.createdAt)}
                                 </div>
                             </div>
                         </div>
                     {:else if column.key === "keyPrefix"}
-                        <span class="font-mono bg-gray-50 dark:bg-gray-800/50"
+                        <span class="font-mono"
                             >{row.keyPrefix}••••••••</span
                         >
                     {:else if column.key === "scopes"}
                         <div class="flex flex-wrap gap-1 max-w-[200px]">
                             {#each row.scopes as scope}
-                                <span
-                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 font-mono"
-                                    >{scope}</span
-                                >
+                                <Badge variant="muted" class="font-mono normal-case">
+                                    {scope}
+                                </Badge>
                             {/each}
                         </div>
                     {:else if column.key === "lastUsedAt"}
@@ -413,27 +423,27 @@
                     {:else if column.key === "actions"}
                         {#if !row.revokedAt}
                             <div
-                                class="flex items-center justify-end gap-3 pr-4"
+                                class="flex items-center justify-end gap-2 pr-2"
                             >
-                                <!-- Rotate -->
-                                <button
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
                                     onclick={() => rotateKey(row.id)}
-                                    class="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300"
                                     title="Rotate Key"
                                 >
                                     <Icon src={ArrowPath} class="w-5 h-5" />
-                                </button>
-                                <!-- Revoke -->
-                                <button
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
                                     onclick={() => revokeKey(row.id)}
-                                    class="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                                     title="Revoke Key"
                                 >
                                     <Icon src={Trash} class="w-5 h-5" />
-                                </button>
+                                </Button>
                             </div>
                         {:else}
-                            <span class="text-xs text-gray-500 block text-right"
+                            <span class="block text-right text-xs text-slate-500 dark:text-slate-400"
                                 >Revoked on {formatDate(row.revokedAt)}</span
                             >
                         {/if}
@@ -441,5 +451,5 @@
                 {/snippet}
             </DataTable>
         {/if}
-    </div>
+    </Surface>
 </div>

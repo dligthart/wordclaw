@@ -76,15 +76,15 @@
 </script>
 
 <div
-    class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm"
+    class="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white dark:border-slate-700 dark:bg-slate-900/40 shadow-sm"
 >
-    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-        <thead class="bg-gray-50 dark:bg-gray-900/50">
+    <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+        <thead class="bg-slate-50/80 dark:bg-slate-900/60">
             <tr>
                 {#each columns as column (column.key)}
                     <th
                         scope="col"
-                        class={`px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${column.sortable ? "group cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800" : ""}`}
+                        class={`px-3 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 sm:px-6 ${column.sortable ? "group cursor-pointer select-none hover:bg-slate-100/80 dark:hover:bg-slate-800" : ""}`}
                         style={column.width ? `width: ${column.width};` : ""}
                         onclick={() => handleSort(column)}
                     >
@@ -92,7 +92,7 @@
                             <span>{column.label}</span>
                             {#if column.sortable}
                                 <span
-                                    class="text-gray-400 dark:text-gray-500 flex-shrink-0"
+                                    class="text-slate-400 dark:text-slate-500 flex-shrink-0"
                                 >
                                     {#if sortKey === column.key}
                                         {#if sortDirection === "asc"}
@@ -143,14 +143,12 @@
                 {/each}
             </tr>
         </thead>
-        <tbody
-            class="bg-white divide-y divide-gray-200 dark:bg-gray-800 dark:divide-gray-700"
-        >
+        <tbody class="divide-y divide-slate-200 bg-white dark:divide-slate-700 dark:bg-slate-900/20">
             {#if data.length === 0}
                 <tr>
                     <td
                         colspan={columns.length}
-                        class="px-3 sm:px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400"
+                        class="px-3 py-12 text-center text-sm text-slate-500 dark:text-slate-400 sm:px-6"
                     >
                         {#if empty}
                             {@render empty()}
@@ -164,7 +162,7 @@
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
                     <tr
-                        class={`group ${onRowClick || expandable ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors" : ""}`}
+                        class={`group ${onRowClick || expandable ? "cursor-pointer transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/60" : ""}`}
                         onclick={() => {
                             if (expandable) toggleExpanded(row[keyField]);
                             if (onRowClick) onRowClick(row);
@@ -172,14 +170,14 @@
                     >
                         {#each columns as column (column.key)}
                             <td
-                                class="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100"
+                                class="px-3 py-4 whitespace-nowrap text-sm text-slate-900 dark:text-slate-100 sm:px-6"
                             >
                                 {#if column.key === "_expand" && expandable}
                                     <svg
-                                        class="w-5 h-5 text-gray-400 transform transition-transform {expandedRows.has(
+                                        class="w-5 h-5 text-slate-400 transform transition-transform {expandedRows.has(
                                             row[keyField],
                                         )
-                                            ? 'rotate-90 text-blue-500'
+                                            ? 'rotate-90 text-slate-700 dark:text-slate-200'
                                             : ''}"
                                         fill="none"
                                         stroke="currentColor"
@@ -204,10 +202,10 @@
                         {/each}
                     </tr>
                     {#if expandable && expandedRows.has(row[keyField])}
-                        <tr class="bg-gray-50 dark:bg-gray-800/50">
+                        <tr class="bg-slate-50/60 dark:bg-slate-900/30">
                             <td
                                 colspan={columns.length}
-                                class="p-0 border-b border-gray-100 dark:border-gray-700"
+                                class="border-b border-slate-200 p-0 dark:border-slate-700"
                             >
                                 {#if expanded}
                                     {@render expanded({ row })}

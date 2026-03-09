@@ -1,8 +1,4 @@
 <script lang="ts">
-    import { Button, Dropdown, DropdownItem } from "flowbite-svelte";
-    import { Icon } from "svelte-hero-icons";
-    import { ChevronDown, Check } from "svelte-hero-icons";
-
     type DomainOption = {
         id: string;
         label: string;
@@ -21,47 +17,49 @@
         options?: DomainOption[];
     } = $props();
 
-    const triggerId = "domain-menu";
+    let pending = $state(false);
 
-    const selectedLabel = $derived(
-        options.find((option) => option.id === currentDomain)?.label ?? "Select",
-    );
+    async function handleChange(event: Event) {
+        const nextDomain = (event.currentTarget as HTMLSelectElement).value;
+        if (!nextDomain || nextDomain === currentDomain) return;
+
+        pending = true;
+        try {
+            await onSelect(nextDomain);
+        } finally {
+            pending = false;
+        }
+    }
 </script>
 
-<div
-    class="hidden sm:flex items-center gap-2 pr-4 lg:pr-6 border-r border-gray-200 dark:border-gray-700"
->
-    <span class="text-sm font-medium text-gray-500 dark:text-gray-400"
-        >Domain:</span
-    >
-    <Button
-        id={triggerId}
-        color="alternative"
-        size="sm"
-        class="w-36 justify-between shrink-0 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-100"
-    >
-        {selectedLabel}
-        <Icon
-            src={ChevronDown}
-            class="w-4 h-4 ml-2 text-gray-500 dark:text-gray-300"
-        />
-    </Button>
-    <Dropdown triggeredBy={"#" + triggerId} class="w-36 shadow-lg z-50">
-        {#each options as option (option.id)}
-            <DropdownItem
-                onclick={() => onSelect(option.id)}
-                class="list-none marker:hidden"
+<div class="flex items-center gap-2">
+    <span class="hidden text-[0.7rem] font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 lg:block">
+        Domain
+    </span>
+    <div class="relative min-w-[11rem]">
+        <select
+            value={currentDomain}
+            onchange={handleChange}
+            disabled={pending}
+            aria-label="Select domain"
+            class="h-9 w-full appearance-none rounded-md border border-slate-200 bg-white px-3 pr-9 text-sm font-medium text-slate-700 shadow-sm transition-colors focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-wait disabled:opacity-70 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-100 dark:focus:border-slate-500 dark:focus:ring-slate-800 [appearance:none] [-webkit-appearance:none] [-moz-appearance:none] [background-image:none]"
+        >
+            {#each options as option (option.id)}
+                <option value={option.id}>{option.label}</option>
+            {/each}
+        </select>
+        <div class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
+            <svg
+                class="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
             >
-                <div class="flex items-center justify-between w-full">
-                    {option.label}
-                    {#if currentDomain === option.id}
-                        <Icon
-                            src={Check}
-                            class="w-4 h-4 text-blue-600 dark:text-blue-400"
-                        />
-                    {/if}
-                </div>
-            </DropdownItem>
-        {/each}
-    </Dropdown>
+                <path d="m5 7 5 5 5-5"></path>
+            </svg>
+        </div>
+    </div>
 </div>

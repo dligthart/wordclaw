@@ -2,14 +2,17 @@
     import "./layout.css";
     import favicon from "$lib/assets/favicon.svg";
     import { page } from "$app/stores";
+    import { goto } from "$app/navigation";
+    import { onMount } from "svelte";
     import { auth, checkAuth, logout } from "$lib/auth.svelte";
     import { fetchApi } from "$lib/api";
-    import DomainDropdown from "$lib/components/DomainDropdown.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
-    import { onMount } from "svelte";
-    import { goto } from "$app/navigation";
+    import DomainDropdown from "$lib/components/DomainDropdown.svelte";
     import Toast from "$lib/components/Toast.svelte";
     import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import { initializeTheme, toggleTheme, type ThemeMode } from "$lib/theme";
     import { Icon } from "svelte-hero-icons";
     import {
         Home,
@@ -20,121 +23,33 @@
         CheckCircle,
         CodeBracketSquare,
         CreditCard,
-        XMark,
-        Bars3,
-        MagnifyingGlass,
-        Bell,
         CheckBadge,
+        Bars3,
+        XMark,
     } from "svelte-hero-icons";
-    import {
-        Navbar,
-        NavBrand,
-        NavHamburger,
-        Sidebar,
-        SidebarGroup,
-        SidebarItem,
-        SidebarWrapper,
-        Select,
-        Button,
-        Dropdown,
-        DropdownItem,
-        DropdownHeader,
-        DropdownDivider,
-        Avatar,
-        DarkMode,
-    } from "flowbite-svelte";
 
     let { children } = $props();
+
     let isSidebarOpen = $state(false);
+    let isSidebarCollapsed = $state(false);
     let currentDomain = $state("1");
     let showExperimentalNav = $state(false);
+    let showUserMenu = $state(false);
+    let theme = $state<ThemeMode>("dark");
+    let userMenuRef = $state<HTMLDivElement | null>(null);
     let domainOptions = $state<{ id: string; label: string }[]>([
         { id: "1", label: "Domain 1" },
         { id: "2", label: "Domain 2" },
     ]);
-
-    onMount(async () => {
-        const stored = localStorage.getItem("__wc_domain_id");
-        const storedExperimentalNav = localStorage.getItem(
-            "__wc_show_experimental",
-        );
-        if (stored) {
-            currentDomain = stored;
-        } else {
-            localStorage.setItem("__wc_domain_id", currentDomain);
-        }
-        showExperimentalNav = storedExperimentalNav === "true";
-        await checkAuth();
-        if (auth.user) {
-            await loadDomains();
-        }
-    });
-
-    async function loadDomains() {
-        try {
-            const res = await fetchApi("/domains");
-            const fetched = (
-                res.data as Array<{
-                    id: number;
-                    name: string;
-                    hostname: string;
-                }>
-            ).map((domain) => ({
-                id: String(domain.id),
-                label: domain.name || domain.hostname || `Domain ${domain.id}`,
-            }));
-            if (fetched.length > 0) {
-                domainOptions = fetched;
-                if (!fetched.some((domain) => domain.id === currentDomain)) {
-                    currentDomain = fetched[0].id;
-                }
-                localStorage.setItem("__wc_domain_id", currentDomain);
-            }
-        } catch {
-            // Keep fallback options when domain discovery is unavailable.
-        }
-    }
-
-    async function selectDomain(domainId: string) {
-        if (domainId === currentDomain) return;
-        localStorage.setItem("__wc_domain_id", domainId);
-        currentDomain = domainId;
-        // Force a full page reload so all pages that fetch onMount rehydrate against the new domain.
-        window.location.assign(
-            $page.url.pathname + $page.url.search + $page.url.hash,
-        );
-    }
-
-    function setExperimentalVisibility(visible: boolean) {
-        showExperimentalNav = visible;
-        localStorage.setItem("__wc_show_experimental", visible ? "true" : "false");
-    }
-
-    $effect(() => {
-        if (
-            !auth.loading &&
-            !auth.user &&
-            !$page.url.pathname.endsWith("/login")
-        ) {
-            goto("/ui/login");
-        }
-    });
-
-    async function handleLogout() {
-        await logout();
-        goto("/ui/login");
-    }
 
     type NavItem = {
         name: string;
         href: string;
         icon: typeof Home;
         match: (path: string) => boolean;
-        experimental?: boolean;
         notice?: string;
     };
 
-    // Nav Definitions mapping route substrings to Heroicons & names
     const coreNavItems: NavItem[] = [
         {
             name: "Dashboard",
@@ -183,7 +98,7 @@
             href: "/ui/l402-readiness",
             icon: CheckBadge,
             match: (p: string) => p.includes("/l402-readiness"),
-        }
+        },
     ];
 
     const experimentalNavItems: NavItem[] = [
@@ -192,11 +107,142 @@
             href: "/ui/agent-sandbox",
             icon: CodeBracketSquare,
             match: (p: string) => p.includes("/agent-sandbox"),
-            experimental: true,
             notice:
                 "Agent Sandbox is experimental. It remains useful for exploration and demos, but it is outside the default supported supervisor workflow.",
-        }
+        },
     ];
+
+    onMount(() => {
+        theme = initializeTheme();
+
+        const storedDomain = localStorage.getItem("__wc_domain_id");
+        const storedSidebarCollapsed = localStorage.getItem(
+            "__wc_sidebar_collapsed",
+        );
+        const storedExperimentalNav = localStorage.getItem(
+            "__wc_show_experimental",
+        );
+
+        if (storedDomain) {
+            currentDomain = storedDomain;
+        } else {
+            localStorage.setItem("__wc_domain_id", currentDomain);
+        }
+
+        isSidebarCollapsed = storedSidebarCollapsed === "true";
+        showExperimentalNav = storedExperimentalNav === "true";
+
+        void (async () => {
+            await checkAuth();
+            if (auth.user) {
+                await loadDomains();
+            }
+        })();
+
+        const handleDocumentClick = (event: MouseEvent) => {
+            if (!showUserMenu || !userMenuRef) return;
+            if (!userMenuRef.contains(event.target as Node)) {
+                showUserMenu = false;
+            }
+        };
+
+        document.addEventListener("click", handleDocumentClick);
+        return () => {
+            document.removeEventListener("click", handleDocumentClick);
+        };
+    });
+
+    async function loadDomains() {
+        try {
+            const res = await fetchApi("/domains");
+            const fetched = (
+                res.data as Array<{
+                    id: number;
+                    name: string;
+                    hostname: string;
+                }>
+            ).map((domain) => ({
+                id: String(domain.id),
+                label: domain.name || domain.hostname || `Domain ${domain.id}`,
+            }));
+
+            if (fetched.length > 0) {
+                domainOptions = fetched;
+                if (!fetched.some((domain) => domain.id === currentDomain)) {
+                    currentDomain = fetched[0].id;
+                }
+                localStorage.setItem("__wc_domain_id", currentDomain);
+            }
+        } catch {
+            // Keep fallback options when domain discovery is unavailable.
+        }
+    }
+
+    async function selectDomain(domainId: string) {
+        if (domainId === currentDomain) return;
+        localStorage.setItem("__wc_domain_id", domainId);
+        currentDomain = domainId;
+        window.location.assign(
+            $page.url.pathname + $page.url.search + $page.url.hash,
+        );
+    }
+
+    function setExperimentalVisibility(visible: boolean) {
+        showExperimentalNav = visible;
+        localStorage.setItem("__wc_show_experimental", visible ? "true" : "false");
+    }
+
+    function handleThemeToggle() {
+        theme = toggleTheme(theme);
+    }
+
+    function handleNavClick() {
+        isSidebarOpen = false;
+        showUserMenu = false;
+    }
+
+    function toggleSidebarCollapsed() {
+        isSidebarCollapsed = !isSidebarCollapsed;
+        localStorage.setItem(
+            "__wc_sidebar_collapsed",
+            isSidebarCollapsed ? "true" : "false",
+        );
+    }
+
+    async function handleLogout() {
+        showUserMenu = false;
+        await logout();
+        goto("/ui/login");
+    }
+
+    function toggleSidebar() {
+        isSidebarOpen = !isSidebarOpen;
+    }
+
+    function initialsFromEmail(email?: string | null) {
+        if (!email) return "WC";
+        const parts = email.split("@")[0].split(/[.\-_]/).filter(Boolean);
+        const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+        return initials || email.slice(0, 2).toUpperCase();
+    }
+
+    function navLinkClass(active: boolean) {
+        return active
+            ? "bg-slate-900 text-white shadow-sm dark:bg-slate-100 dark:text-slate-950"
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/70 dark:hover:text-white";
+    }
+
+    function navIconClass(active: boolean, experimental = false) {
+        if (active) {
+            return experimental
+                ? "text-amber-500 dark:text-amber-400"
+                : "text-white dark:text-slate-950";
+        }
+
+        return experimental
+            ? "text-amber-500/70 dark:text-amber-400/80"
+            : "text-slate-400 group-hover:text-slate-700 dark:text-slate-500 dark:group-hover:text-slate-200";
+    }
 
     let currentPath = $derived($page.url.pathname);
     let activeExperimentalItem = $derived(
@@ -205,212 +251,376 @@
     let shouldShowExperimentalNav = $derived(
         showExperimentalNav || activeExperimentalItem !== null,
     );
+    let selectedDomainLabel = $derived(
+        domainOptions.find((domain) => domain.id === currentDomain)?.label ??
+            "Select domain",
+    );
+    let activeCoreItem = $derived(
+        coreNavItems.find((item) => item.match(currentPath)) ?? null,
+    );
+    let activeNavItem = $derived(activeExperimentalItem ?? activeCoreItem);
+    let currentViewLabel = $derived(activeNavItem?.name ?? "Dashboard");
+    let currentViewGroupLabel = $derived(
+        activeExperimentalItem ? "Experimental surface" : "Core control plane",
+    );
+    let sidebarDesktopWidthClass = $derived(
+        isSidebarCollapsed ? "md:w-[4.75rem]" : "md:w-[16rem]",
+    );
+    let mainDesktopOffsetClass = $derived(
+        isSidebarCollapsed ? "md:pl-[4.75rem]" : "md:pl-[16rem]",
+    );
 
-    // Active drawer function
-    const toggleSidebar = () => {
-        isSidebarOpen = !isSidebarOpen;
-    };
+    $effect(() => {
+        if (
+            !auth.loading &&
+            !auth.user &&
+            !$page.url.pathname.endsWith("/login")
+        ) {
+            goto("/ui/login");
+        }
+    });
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head>
+    <link rel="icon" href={favicon} />
+</svelte:head>
 
 {#if $page.url.pathname.endsWith("/login")}
     {@render children()}
 {:else if auth.loading}
-    <div
-        class="h-screen w-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900"
-    >
+    <div class="flex h-screen w-screen items-center justify-center bg-slate-100 dark:bg-slate-950">
         <LoadingSpinner size="xl" />
     </div>
 {:else if auth.user}
-    <div
-        class="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans text-gray-900 dark:text-white"
-    >
-        <!-- Navbar Header -->
-        <Navbar
-            fluid={true}
-            class="fixed w-full z-50 top-0 left-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5"
+    <div class="min-h-screen bg-transparent text-slate-900 dark:text-slate-100">
+        {#if isSidebarOpen}
+            <button
+                type="button"
+                class="fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-sm md:hidden"
+                onclick={toggleSidebar}
+                aria-label="Close navigation overlay"
+            ></button>
+        {/if}
+
+        <aside
+            class={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200/80 bg-white/96 shadow-2xl transition-[width,transform] duration-200 ease-out dark:border-slate-800 dark:bg-slate-950/96 md:translate-x-0 ${sidebarDesktopWidthClass} ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
-            <NavBrand href="/ui" class="gap-3">
-                <span
-                    class="rounded bg-blue-600 px-2 py-1 text-xs font-bold text-white tracking-widest"
-                    title="WordClaw Supervisor">WC</span
-                >
-                <span
-                    class="self-center whitespace-nowrap text-xl font-semibold dark:text-white hidden sm:block"
-                    >WordClaw SUPV</span
-                >
-            </NavBrand>
-            <div class="flex items-center gap-4 md:order-2">
-                <DomainDropdown
-                    {currentDomain}
-                    onSelect={selectDomain}
-                    options={domainOptions}
-                />
-
-                <!-- Dark Mode Toggle -->
-                <DarkMode
-                    class="text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded-lg text-sm p-2"
-                />
-
-                <!-- Profile dropdown -->
-                <Avatar id="user-menu" class="cursor-pointer" />
-                <Dropdown triggeredBy="#user-menu">
-                    <DropdownHeader class="px-4 py-3">
-                        <span
-                            class="block text-sm font-semibold text-gray-900 dark:text-white"
-                            >{auth.user?.email}</span
-                        >
-                        <span
-                            class="block truncate text-sm font-medium text-gray-500 dark:text-gray-400"
-                            >WordClaw Supervisor</span
-                        >
-                    </DropdownHeader>
-                    <DropdownDivider />
-                    <DropdownItem
-                        onclick={handleLogout}
-                        class="text-red-600 dark:text-red-500 font-medium"
-                        >Sign out</DropdownItem
-                    >
-                </Dropdown>
-
-                <NavHamburger onclick={toggleSidebar} class="ml-2 md:hidden" />
-            </div>
-        </Navbar>
-
-        <div class="flex overflow-hidden pt-16">
-            <!-- Mobile Backdrop -->
-            {#if isSidebarOpen}
+            <div class="flex h-16 items-center border-b border-slate-200/80 px-3 dark:border-slate-800">
                 <div
-                    class="fixed inset-0 z-30 bg-gray-900/50 dark:bg-gray-900/80 md:hidden"
-                    onclick={toggleSidebar}
-                    aria-hidden="true"
-                ></div>
-            {/if}
-
-            <!-- Sidebar Component -->
-            <Sidebar
-                isOpen={isSidebarOpen}
-                disableBreakpoints={true}
-                class="fixed left-0 top-0 z-40 w-64 h-screen pt-16 bg-white border-r border-gray-200 transition-transform {isSidebarOpen
-                    ? 'translate-x-0'
-                    : '-translate-x-full'} md:translate-x-0 dark:bg-gray-800 dark:border-gray-700"
-            >
-                <SidebarWrapper
-                    class="bg-transparent dark:bg-transparent px-3 py-4 overflow-y-auto"
+                    class={`flex items-center gap-3 ${isSidebarCollapsed ? "justify-center" : ""}`}
                 >
-                    <SidebarGroup class="space-y-2">
-                        <div
-                            class="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500"
-                        >
-                            Core Control Plane
-                        </div>
-                        {#each coreNavItems as item}
-                            <SidebarItem
-                                label={item.name}
-                                href={item.href}
-                                active={item.match(currentPath)}
-                                class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group"
-                            >
-                                {#snippet icon()}
+                    <a
+                        href="/ui"
+                        class={`flex min-w-0 items-center gap-3 ${isSidebarCollapsed ? "justify-center" : ""}`}
+                    >
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold uppercase tracking-[0.18em] text-white shadow-sm">
+                            WC
+                        </span>
+                        {#if !isSidebarCollapsed}
+                            <div class="min-w-0">
+                                <div class="truncate text-[1.15rem] font-semibold tracking-tight text-slate-900 dark:text-white">
+                                    WordClaw SUPV
+                                </div>
+                                <div class="mt-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                                    Supervisor Control Plane
+                                </div>
+                            </div>
+                        {/if}
+                    </a>
+                </div>
+            </div>
+
+            <div class="wc-shell-scroll flex flex-1 flex-col overflow-y-auto px-3 py-4">
+                <div class="flex-1 space-y-5">
+                    <section>
+                        {#if !isSidebarCollapsed}
+                            <p class="px-2 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                                Core Control Plane
+                            </p>
+                        {/if}
+                        <nav class={`space-y-1 ${isSidebarCollapsed ? "" : "mt-2.5"}`}>
+                            {#each coreNavItems as item}
+                                {@const isActive = item.match(currentPath)}
+                                <a
+                                    href={item.href}
+                                    class={`group flex items-center rounded-xl text-sm font-medium transition-colors ${isSidebarCollapsed ? "mx-auto h-11 w-11 justify-center" : "gap-3 px-3 py-2.5"} ${navLinkClass(isActive)}`}
+                                    onclick={handleNavClick}
+                                    title={item.name}
+                                    aria-label={item.name}
+                                >
                                     <Icon
                                         src={item.icon}
-                                        class="w-5 h-5 text-gray-500 transition duration-75 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white {item.match(
-                                            currentPath,
-                                        )
-                                            ? 'text-blue-600 dark:text-blue-500'
-                                            : ''}"
+                                        class={`shrink-0 ${isSidebarCollapsed ? "h-5 w-5" : "h-[1.05rem] w-[1.05rem]"} ${navIconClass(isActive)}`}
                                     />
-                                {/snippet}
-                            </SidebarItem>
-                        {/each}
-                    </SidebarGroup>
-
-                    {#if shouldShowExperimentalNav}
-                        <SidebarGroup class="space-y-2 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                            <div class="flex items-center justify-between gap-3 px-2">
-                                <div
-                                    class="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-600 dark:text-amber-400"
-                                >
-                                    Experimental
-                                </div>
-                                {#if !activeExperimentalItem}
-                                    <button
-                                        type="button"
-                                        class="text-[11px] font-medium uppercase tracking-[0.14em] text-gray-500 transition hover:text-amber-600 dark:text-gray-400 dark:hover:text-amber-300"
-                                        onclick={() =>
-                                            setExperimentalVisibility(false)}
-                                    >
-                                        Hide
-                                    </button>
-                                {/if}
-                            </div>
-                            <p
-                                class="px-2 text-xs leading-5 text-gray-500 dark:text-gray-400"
-                            >
-                                These pages remain available for exploration,
-                                but they sit outside the default supported
-                                supervisor workflow.
-                            </p>
-                            {#each experimentalNavItems as item}
-                                <SidebarItem
-                                    label={item.name}
-                                    href={item.href}
-                                    active={item.match(currentPath)}
-                                    class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group"
-                                >
-                                    {#snippet icon()}
-                                        <Icon
-                                            src={item.icon}
-                                            class="w-5 h-5 text-gray-500 transition duration-75 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white {item.match(
-                                                currentPath,
-                                            )
-                                                ? 'text-amber-600 dark:text-amber-400'
-                                                : ''}"
-                                        />
-                                    {/snippet}
-                                </SidebarItem>
+                                    {#if !isSidebarCollapsed}
+                                        <span class="truncate">{item.name}</span>
+                                    {/if}
+                                </a>
                             {/each}
-                        </SidebarGroup>
-                    {:else}
-                        <SidebarGroup class="space-y-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                            <div
-                                class="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500"
+                        </nav>
+                    </section>
+
+                    <div class="mt-auto">
+                        {#if shouldShowExperimentalNav}
+                            <section
+                                class={`${isSidebarCollapsed ? "border-t border-slate-200 pt-4 dark:border-slate-800" : "rounded-2xl border border-amber-200/70 bg-amber-50/60 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20"}`}
                             >
-                                Experimental Hidden
-                            </div>
-                            <p
-                                class="px-2 text-xs leading-5 text-gray-500 dark:text-gray-400"
-                            >
-                                Incubator pages are hidden by default so the
-                                operator nav stays focused on supported
-                                workflows.
-                            </p>
+                                {#if !isSidebarCollapsed}
+                                    <div class="flex items-center justify-between gap-3">
+                                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-amber-700 dark:text-amber-300">
+                                            Experimental
+                                        </p>
+                                        {#if !activeExperimentalItem}
+                                            <button
+                                                type="button"
+                                                class="text-xs font-medium text-slate-500 transition-colors hover:text-amber-700 dark:text-slate-400 dark:hover:text-amber-300"
+                                                onclick={() => setExperimentalVisibility(false)}
+                                            >
+                                                Hide
+                                            </button>
+                                        {/if}
+                                    </div>
+                                    <p class="mt-2.5 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                                        These pages remain available for exploration, but they sit outside the default supported workflow.
+                                    </p>
+                                {/if}
+                                <nav class={`${isSidebarCollapsed ? "space-y-1" : "mt-3 space-y-1"}`}>
+                                    {#each experimentalNavItems as item}
+                                        {@const isActive = item.match(currentPath)}
+                                        <a
+                                            href={item.href}
+                                            class={`group flex items-center rounded-xl text-sm font-medium transition-colors ${isSidebarCollapsed ? "mx-auto h-11 w-11 justify-center" : "gap-3 px-3 py-2.5"} ${navLinkClass(isActive)}`}
+                                            onclick={handleNavClick}
+                                            title={item.name}
+                                            aria-label={item.name}
+                                        >
+                                            <Icon
+                                                src={item.icon}
+                                                class={`shrink-0 ${isSidebarCollapsed ? "h-5 w-5" : "h-[1.05rem] w-[1.05rem]"} ${navIconClass(isActive, true)}`}
+                                            />
+                                            {#if !isSidebarCollapsed}
+                                                <span class="truncate">{item.name}</span>
+                                            {/if}
+                                        </a>
+                                    {/each}
+                                </nav>
+                            </section>
+                        {:else if !isSidebarCollapsed}
+                            <section class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900/45">
+                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                                    Experimental Hidden
+                                </p>
+                                <p class="mt-2.5 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                                    Incubator pages are hidden by default so navigation stays focused on supported workflows.
+                                </p>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    class="mt-4 w-full justify-center"
+                                    onclick={() => setExperimentalVisibility(true)}
+                                >
+                                    Show experimental pages
+                                </Button>
+                            </section>
+                        {:else}
+                            <section class="border-t border-slate-200 pt-4 dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    class="mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900/70 dark:hover:text-white"
+                                    onclick={() => setExperimentalVisibility(true)}
+                                    title="Show experimental pages"
+                                    aria-label="Show experimental pages"
+                                >
+                                    <svg
+                                        class="h-5 w-5"
+                                        viewBox="0 0 20 20"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    >
+                                        <path d="M10 4v12"></path>
+                                        <path d="M4 10h12"></path>
+                                    </svg>
+                                </button>
+                            </section>
+                        {/if}
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <div class={`min-h-screen transition-[padding-left] duration-200 ease-out ${mainDesktopOffsetClass}`}>
+            <header class="sticky top-0 z-30 border-b border-slate-200/80 bg-white/88 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/72">
+                <div class="flex h-16 items-center gap-3 px-5 sm:px-7 lg:px-10">
+                    <button
+                        type="button"
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white md:hidden"
+                        onclick={toggleSidebar}
+                        aria-label={isSidebarOpen ? "Close navigation" : "Open navigation"}
+                    >
+                        <Icon src={isSidebarOpen ? XMark : Bars3} class="h-5 w-5" />
+                    </button>
+
+                    <button
+                        type="button"
+                        class="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white md:inline-flex"
+                        onclick={toggleSidebarCollapsed}
+                        aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                        title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    >
+                        <svg
+                            class="h-4 w-4"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            {#if isSidebarCollapsed}
+                                <path d="m7 5 5 5-5 5"></path>
+                            {:else}
+                                <path d="m13 5-5 5 5 5"></path>
+                            {/if}
+                        </svg>
+                    </button>
+
+                    <div class="hidden h-4 w-px bg-slate-200 dark:bg-slate-800 md:block"></div>
+
+                    <div class="min-w-0 flex-1">
+                        <div class="flex min-w-0 items-center gap-2 text-sm">
+                            <span class="hidden truncate text-slate-500 dark:text-slate-400 md:block">
+                                {currentViewGroupLabel}
+                            </span>
+                            <span class="hidden text-slate-300 dark:text-slate-700 md:block">
+                                /
+                            </span>
+                            <span class="truncate font-medium text-slate-900 dark:text-white">
+                                {currentViewLabel}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="ml-auto flex items-center gap-2.5">
+                        <DomainDropdown
+                            {currentDomain}
+                            onSelect={selectDomain}
+                            options={domainOptions}
+                        />
+
+                        <button
+                            type="button"
+                            class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+                            onclick={handleThemeToggle}
+                            aria-label="Toggle theme"
+                            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                        >
+                            {#if theme === "dark"}
+                                <svg
+                                    class="h-5 w-5"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <circle cx="12" cy="12" r="4"></circle>
+                                    <path d="M12 2v2"></path>
+                                    <path d="M12 20v2"></path>
+                                    <path d="m4.93 4.93 1.41 1.41"></path>
+                                    <path d="m17.66 17.66 1.41 1.41"></path>
+                                    <path d="M2 12h2"></path>
+                                    <path d="M20 12h2"></path>
+                                    <path d="m6.34 17.66-1.41 1.41"></path>
+                                    <path d="m19.07 4.93-1.41 1.41"></path>
+                                </svg>
+                            {:else}
+                                <svg
+                                    class="h-5 w-5"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"></path>
+                                </svg>
+                            {/if}
+                        </button>
+
+                        <div bind:this={userMenuRef} class="relative">
                             <button
                                 type="button"
-                                class="mx-2 rounded-lg border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-700 transition hover:border-amber-300 hover:text-amber-700 dark:border-gray-700 dark:text-gray-200 dark:hover:border-amber-700 dark:hover:text-amber-300"
-                                onclick={() => setExperimentalVisibility(true)}
+                                class="flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 shadow-sm transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/70 dark:hover:bg-slate-900"
+                                onclick={(event) => {
+                                    event.stopPropagation();
+                                    showUserMenu = !showUserMenu;
+                                }}
+                                aria-label="Open user menu"
+                                aria-expanded={showUserMenu}
                             >
-                                Show experimental pages
+                                <div class="hidden min-w-0 text-right sm:block">
+                                    <div class="truncate text-[0.82rem] font-medium leading-4 text-slate-800 dark:text-slate-100">
+                                        {auth.user?.email}
+                                    </div>
+                                    <div class="truncate pt-0.5 text-[0.65rem] leading-3 text-slate-500 dark:text-slate-400">
+                                        {selectedDomainLabel}
+                                    </div>
+                                </div>
+                                <span class="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                    {initialsFromEmail(auth.user?.email)}
+                                </span>
                             </button>
-                        </SidebarGroup>
-                    {/if}
-                </SidebarWrapper>
-            </Sidebar>
 
-            <!-- Main Content Area -->
-            <main
-                class="relative w-full h-[calc(100vh-4rem)] overflow-y-auto bg-gray-50 dark:bg-gray-900 md:ml-64 p-4 pt-8 lg:p-8 lg:pt-10 transition-all"
-            >
-                <div class="max-w-7xl mx-auto h-full">
+                            {#if showUserMenu}
+                                <div class="absolute right-0 top-full z-50 mt-2 w-72 rounded-md border border-slate-200 bg-white p-1 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+                                    <div class="rounded-sm bg-slate-50/80 px-3 py-3 dark:bg-slate-900/60">
+                                        <div class="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                            {auth.user?.email}
+                                        </div>
+                                        <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                            WordClaw Supervisor
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        class="mt-1 flex w-full items-center justify-between rounded-sm px-3 py-2.5 text-left text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                                        onclick={handleLogout}
+                                    >
+                                        Sign out
+                                        <svg
+                                            class="h-4 w-4"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="1.8"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                            <path d="m16 17 5-5-5-5"></path>
+                                            <path d="M21 12H9"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            {/if}
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <main class="min-h-[calc(100vh-4rem)]">
+                <div class="wc-page-scroll mx-auto max-w-[76rem] px-5 py-7 sm:px-7 lg:px-10">
                     {#if activeExperimentalItem}
-                        <div
-                            class="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100"
-                        >
-                            <span class="font-semibold uppercase tracking-wide text-[11px]"
-                                >Experimental Surface</span
-                            >
-                            <p class="mt-1 leading-6">
+                        <div class="mb-6 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <Badge variant="warning">Experimental surface</Badge>
+                            </div>
+                            <p class="mt-2 leading-6">
                                 {activeExperimentalItem.notice}
                             </p>
                         </div>

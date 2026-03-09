@@ -6,6 +6,9 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Surface from "$lib/components/ui/Surface.svelte";
     import {
         Icon,
         ArrowPath,
@@ -125,6 +128,15 @@
             .split("_")
             .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
             .join(" ");
+    }
+
+    function resolveStatusBadgeVariant(
+        status: string,
+    ): "muted" | "success" | "warning" | "danger" {
+        if (status === "published") return "success";
+        if (status === "in_review") return "warning";
+        if (status === "rejected" || status === "archived") return "danger";
+        return "muted";
     }
 
     function formatRelativeDate(value: string): string {
@@ -302,24 +314,21 @@
                 <div
                     class="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400"
                 >
-                    <span>{pendingTasks.length} pending</span>
+                    <Badge variant="muted">{pendingTasks.length} pending</Badge>
                     {#if oldestTask}
-                        <span
-                            class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"
-                        ></span>
-                        <span>Oldest {formatRelativeDate(oldestTask.task.createdAt)}</span>
+                        <Badge variant="outline">Oldest {formatRelativeDate(oldestTask.task.createdAt)}</Badge>
                     {/if}
                 </div>
             {/if}
         </div>
-        <button
+        <Button
+            variant="outline"
             onclick={loadData}
-            class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700/60 dark:hover:text-white"
             title="Refresh queue"
         >
             <Icon src={ArrowPath} class="w-4 h-4 flex-shrink-0" />
             Refresh
-        </button>
+        </Button>
     </div>
 
     {#if error}
@@ -328,29 +337,26 @@
 
     <div class="flex-1 grid grid-cols-1 xl:grid-cols-[21rem_minmax(0,1fr)] gap-5 overflow-hidden">
         <section
-            class="w-full rounded-2xl border border-gray-200/80 bg-white/90 dark:border-gray-700 dark:bg-gray-800/90 flex flex-col overflow-hidden {selectedTask
+            class="w-full flex flex-col overflow-hidden {selectedTask
                 ? 'hidden md:flex'
                 : 'flex'}"
         >
+            <Surface class="flex h-full flex-col overflow-hidden p-0">
             <div
-                class="px-4 py-3 border-b border-gray-200/80 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/70"
+                class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30"
             >
                 <div class="flex items-center justify-between gap-3">
                     <div>
                         <h3
-                            class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400"
+                            class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
                         >
                             Pending Review
                         </h3>
-                        <p class="mt-1 text-[0.72rem] text-gray-500 dark:text-gray-400">
+                        <p class="mt-1 text-[0.72rem] text-slate-500 dark:text-slate-400">
                             Ordered by newest submission
                         </p>
                     </div>
-                    <span
-                        class="text-xs font-medium text-gray-500 dark:text-gray-400"
-                    >
-                        {pendingTasks.length}
-                    </span>
+                    <Badge variant="muted">{pendingTasks.length}</Badge>
                 </div>
             </div>
 
@@ -380,8 +386,8 @@
                                     onclick={() => viewTask(payload)}
                                     class="w-full border-l-2 px-4 py-4 text-left transition-colors {selectedTask
                                         ?.task.id === payload.task.id
-                                        ? 'border-blue-500 bg-blue-50/40 dark:border-blue-500 dark:bg-blue-900/10'
-                                        : 'border-transparent hover:bg-gray-50/80 dark:hover:bg-gray-700/25'}"
+                                        ? 'border-slate-400 bg-slate-50/80 dark:border-slate-500 dark:bg-slate-800/80'
+                                        : 'border-transparent hover:bg-slate-50/80 dark:hover:bg-slate-800/50'}"
                                 >
                                     <div class="flex items-start justify-between gap-2">
                                         <div class="min-w-0">
@@ -418,17 +424,19 @@
                                     <div
                                         class="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
                                     >
-                                        <span>
+                                        <Badge variant="outline" class="uppercase">
                                             {formatStatusLabel(
                                                 payload.transition.fromState,
                                             )} → {formatStatusLabel(
                                                 payload.transition.toState,
                                             )}
-                                        </span>
-                                        <span
-                                            class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"
-                                        ></span>
-                                        <span>{formatStatusLabel(payload.contentItem.status)}</span>
+                                        </Badge>
+                                        <Badge
+                                            variant={resolveStatusBadgeVariant(payload.contentItem.status)}
+                                            class="uppercase"
+                                        >
+                                            {formatStatusLabel(payload.contentItem.status)}
+                                        </Badge>
                                     </div>
 
                                     {#if resolveTaskExcerpt(payload)}
@@ -461,13 +469,15 @@
                     </ul>
                 {/if}
             </div>
+            </Surface>
         </section>
 
         <section
-            class="min-w-0 rounded-2xl border border-gray-200/80 bg-white/95 dark:border-gray-700 dark:bg-gray-800/90 flex flex-col overflow-hidden {!selectedTask
+            class="min-w-0 flex flex-col overflow-hidden {!selectedTask
                 ? 'hidden md:flex'
                 : 'flex'}"
         >
+            <Surface class="flex h-full flex-col overflow-hidden p-0">
             {#if !selectedTask}
                 <div
                     class="flex-1 flex items-center justify-center text-gray-400 italic text-sm p-12 text-center"
@@ -476,7 +486,7 @@
                 </div>
             {:else}
                 <div
-                    class="px-6 py-5 border-b border-gray-200/80 dark:border-gray-700 bg-gray-50/85 dark:bg-gray-800/70"
+                    class="border-b border-slate-200/80 bg-slate-50/85 px-6 py-5 dark:border-slate-700 dark:bg-slate-900/30"
                 >
                     <div class="flex items-start justify-between gap-4 flex-wrap">
                         <div class="min-w-0">
@@ -502,38 +512,32 @@
                             <div
                                 class="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400"
                             >
-                                <span>{selectedTask.contentType.name}</span>
-                                <span
-                                    class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"
-                                ></span>
-                                <span>
+                                <Badge variant="outline">{selectedTask.contentType.name}</Badge>
+                                <Badge variant="outline">
                                     {formatStatusLabel(
                                         selectedTask.transition.fromState,
                                     )} → {formatStatusLabel(
                                         selectedTask.transition.toState,
                                     )}
-                                </span>
-                                <span
-                                    class="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"
-                                ></span>
-                                <span>Submitted {formatRelativeDate(selectedTask.task.createdAt)}</span>
+                                </Badge>
+                                <Badge variant="muted">Submitted {formatRelativeDate(selectedTask.task.createdAt)}</Badge>
                             </div>
                         </div>
 
                         <div class="flex gap-2 shrink-0">
-                            <button
+                            <Button
                                 onclick={() =>
                                     processTask(selectedTask!, "rejected")}
                                 disabled={processingItem === selectedTask.task.id}
-                                class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700/60 disabled:opacity-50"
+                                variant="outline"
                             >
                                 Reject
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                                 onclick={() =>
                                     processTask(selectedTask!, "approved")}
                                 disabled={processingItem === selectedTask.task.id}
-                                class="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                                variant="success"
                             >
                                 {#if processingItem === selectedTask.task.id}
                                     <LoadingSpinner size="sm" color="white" />
@@ -541,185 +545,181 @@
                                     <Icon src={Check} class="w-4 h-4" />
                                 {/if}
                                 Approve
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
 
                 <div
-                    class="flex-1 overflow-y-auto p-5 bg-gray-50/70 dark:bg-gray-900/80"
+                    class="flex-1 overflow-y-auto bg-slate-50/50 p-5 dark:bg-slate-950/40"
                 >
                     <div class="space-y-4">
-                        <section
-                            class="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
-                        >
-                            <div
-                                class="grid gap-6 p-5 xl:grid-cols-[minmax(0,1.4fr)_18rem]"
-                            >
-                                <div>
-                                    <p
-                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400"
-                                    >
-                                        Submission Overview
-                                    </p>
-                                    <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                                        {resolveTaskSummary(selectedTask)}
-                                    </p>
+                        <div class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_18rem]">
+                            <Surface tone="subtle" class="rounded-2xl p-5">
+                                <p
+                                    class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                >
+                                    Submission Overview
+                                </p>
+                                <p class="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                                    {resolveTaskSummary(selectedTask)}
+                                </p>
 
-                                    <dl class="mt-5 grid gap-4 text-sm sm:grid-cols-2">
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
+                                <dl class="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Current Status
+                                        </dt>
+                                        <dd class="mt-1">
+                                            <Badge
+                                                variant={resolveStatusBadgeVariant(
+                                                    selectedTask.contentItem.status,
+                                                )}
+                                                class="uppercase"
                                             >
-                                                Current Status
-                                            </dt>
-                                            <dd class="mt-1 text-gray-900 dark:text-white">
                                                 {formatStatusLabel(
                                                     selectedTask.contentItem.status,
                                                 )}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Content Version
-                                            </dt>
-                                            <dd class="mt-1 text-gray-900 dark:text-white">
-                                                v{selectedTask.contentItem.version}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Slug
-                                            </dt>
-                                            <dd class="mt-1 text-gray-700 dark:text-gray-300">
-                                                {resolveTaskSlug(selectedTask) || "—"}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Attribution
-                                            </dt>
-                                            <dd class="mt-1 text-gray-700 dark:text-gray-300">
-                                                {resolveTaskAttribution(selectedTask) || "—"}
-                                            </dd>
-                                        </div>
-                                    </dl>
-                                </div>
+                                            </Badge>
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Content Version
+                                        </dt>
+                                        <dd class="mt-1 text-slate-900 dark:text-white">
+                                            v{selectedTask.contentItem.version}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Slug
+                                        </dt>
+                                        <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                            {resolveTaskSlug(selectedTask) || "—"}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Attribution
+                                        </dt>
+                                        <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                            {resolveTaskAttribution(selectedTask) || "—"}
+                                        </dd>
+                                    </div>
+                                </dl>
+                            </Surface>
 
-                                <aside
-                                    class="border-t border-gray-200 pt-5 dark:border-gray-700 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0"
+                            <Surface tone="subtle" class="rounded-2xl p-5">
+                                <p
+                                    class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
                                 >
-                                    <p
-                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400"
-                                    >
-                                        Workflow Context
-                                    </p>
-                                    <dl class="mt-4 space-y-3 text-sm">
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Workflow
-                                            </dt>
-                                            <dd class="mt-1 text-gray-700 dark:text-gray-300">
-                                                {selectedTask.workflow.name}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Transition
-                                            </dt>
-                                            <dd class="mt-1 text-gray-700 dark:text-gray-300">
-                                                {formatStatusLabel(
-                                                    selectedTask.transition.fromState,
-                                                )} → {formatStatusLabel(
-                                                    selectedTask.transition.toState,
-                                                )}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Queue Position
-                                            </dt>
-                                            <dd class="mt-1 text-gray-700 dark:text-gray-300">
-                                                {selectedTaskQueueIndex >= 0
-                                                    ? selectedTaskQueueIndex + 1
-                                                    : 1} of {pendingTasks.length}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Required Roles
-                                            </dt>
-                                            <dd class="mt-1 text-gray-700 dark:text-gray-300">
-                                                {selectedTask.transition.requiredRoles
-                                                    .length > 0
-                                                    ? selectedTask.transition.requiredRoles.join(
-                                                          ", ",
-                                                      )
-                                                    : "No explicit role gate"}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Submitted
-                                            </dt>
-                                            <dd class="mt-1 text-gray-700 dark:text-gray-300">
-                                                {formatAbsoluteDate(
-                                                    selectedTask.task.createdAt,
-                                                )}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
-                                            >
-                                                Last Update
-                                            </dt>
-                                            <dd class="mt-1 text-gray-700 dark:text-gray-300">
-                                                {formatAbsoluteDate(
-                                                    selectedTask.task.updatedAt,
-                                                )}
-                                            </dd>
-                                        </div>
-                                    </dl>
-
-                                    <p class="mt-5 text-sm leading-6 text-gray-500 dark:text-gray-400">
-                                        Approve to move this item from
-                                        <span class="text-gray-700 dark:text-gray-200">
+                                    Workflow Context
+                                </p>
+                                <dl class="mt-4 space-y-3 text-sm">
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Workflow
+                                        </dt>
+                                        <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                            {selectedTask.workflow.name}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Transition
+                                        </dt>
+                                        <dd class="mt-1 text-slate-700 dark:text-slate-300">
                                             {formatStatusLabel(
                                                 selectedTask.transition.fromState,
-                                            )}
-                                        </span>
-                                        to
-                                        <span class="text-gray-700 dark:text-gray-200">
-                                            {formatStatusLabel(
+                                            )} → {formatStatusLabel(
                                                 selectedTask.transition.toState,
                                             )}
-                                        </span>.
-                                    </p>
-                                </aside>
-                            </div>
-                        </section>
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Queue Position
+                                        </dt>
+                                        <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                            {selectedTaskQueueIndex >= 0
+                                                ? selectedTaskQueueIndex + 1
+                                                : 1} of {pendingTasks.length}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Required Roles
+                                        </dt>
+                                        <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                            {selectedTask.transition.requiredRoles.length > 0
+                                                ? selectedTask.transition.requiredRoles.join(
+                                                      ", ",
+                                                  )
+                                                : "No explicit role gate"}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Submitted
+                                        </dt>
+                                        <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                            {formatAbsoluteDate(
+                                                selectedTask.task.createdAt,
+                                            )}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt
+                                            class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Last Update
+                                        </dt>
+                                        <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                            {formatAbsoluteDate(
+                                                selectedTask.task.updatedAt,
+                                            )}
+                                        </dd>
+                                    </div>
+                                </dl>
 
-                        <section
-                            class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
-                        >
-                            <div class="border-b border-gray-200 px-5 py-3 dark:border-gray-700">
+                                <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300">
+                                    Approve to move this item from
+                                    <span class="font-medium text-slate-900 dark:text-white">
+                                        {formatStatusLabel(
+                                            selectedTask.transition.fromState,
+                                        )}
+                                    </span>
+                                    to
+                                    <span class="font-medium text-slate-900 dark:text-white">
+                                        {formatStatusLabel(
+                                            selectedTask.transition.toState,
+                                        )}
+                                    </span>.
+                                </div>
+                            </Surface>
+                        </div>
+
+                        <Surface class="overflow-hidden rounded-2xl p-0">
+                            <div class="border-b border-slate-200 px-5 py-3 dark:border-slate-700">
                                 <h4
                                     class="text-sm font-semibold text-gray-900 dark:text-white"
                                 >
@@ -735,10 +735,11 @@
                                 label="Payload JSON"
                                 copyable={true}
                             />
-                        </section>
+                        </Surface>
                     </div>
                 </div>
             {/if}
+            </Surface>
         </section>
     </div>
 </div>

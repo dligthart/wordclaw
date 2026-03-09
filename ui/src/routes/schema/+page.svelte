@@ -3,6 +3,10 @@
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Input from "$lib/components/ui/Input.svelte";
+    import Surface from "$lib/components/ui/Surface.svelte";
+    import Textarea from "$lib/components/ui/Textarea.svelte";
     import {
         Icon,
         Plus,
@@ -229,33 +233,30 @@
 <div class="h-full flex flex-col">
     <div class="mb-6 flex justify-between items-end">
         <div>
-            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+            <h2 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
                 Schema Manager
             </h2>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Govern the data shapes that content agents produce.
             </p>
         </div>
-        <button
+        <Button
             onclick={startCreate}
             disabled={isCreating}
-            class="px-4 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
             <Icon src={Plus} class="w-5 h-5" />
             New Content Model
-        </button>
+        </Button>
     </div>
 
     <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
         <!-- Types List Sidebar -->
-        <div
-            class="w-full md:w-1/4 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
-        >
+        <Surface class="w-full md:w-1/4 flex flex-col overflow-hidden p-0">
             <div
-                class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"
+                class="border-b border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30"
             >
                 <h3
-                    class="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider"
+                    class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
                 >
                     Content Models
                 </h3>
@@ -274,7 +275,7 @@
                         {#if isCreating}
                             <li>
                                 <div
-                                    class="w-full text-left px-3 py-2 rounded-md text-sm font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                                    class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-left text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                                 >
                                     <div class="font-medium italic">
                                         New Model...
@@ -286,10 +287,10 @@
                             <li>
                                 <button
                                     onclick={() => selectType(t)}
-                                    class="w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors {selectedType?.id ===
+                                    class="w-full rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors {selectedType?.id ===
                                         t.id && !isCreating
-                                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+                                        ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
+                                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}"
                                 >
                                     <div class="font-medium">{t.name}</div>
                                     <div
@@ -303,29 +304,25 @@
                     </ul>
                 {/if}
             </div>
-        </div>
+        </Surface>
 
         <!-- Schema Editor area -->
         <div class="flex-1 flex flex-col gap-6 overflow-hidden">
             {#if !selectedType && !isCreating}
-                <div
-                    class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center text-gray-400 italic text-sm p-12 text-center"
-                >
+                <Surface class="flex-1 flex flex-col items-center justify-center p-12 text-center text-sm italic text-slate-400 dark:text-slate-500">
                     <Icon
                         src={ArchiveBox}
                         class="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4"
                     />
                     Select a content model to view its schema or create a new one.
-                </div>
+                </Surface>
             {:else}
-                <div
-                    class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
-                >
+                <Surface class="flex-1 flex flex-col overflow-hidden p-0">
                     <div
-                        class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center"
+                        class="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-6 py-4 dark:border-slate-700 dark:bg-slate-900/30"
                     >
                         <h3
-                            class="text-lg font-bold text-gray-900 dark:text-white"
+                            class="text-lg font-semibold text-gray-900 dark:text-white"
                         >
                             {isCreating
                                 ? "Create New Model"
@@ -333,22 +330,21 @@
                         </h3>
                         <div class="flex gap-2">
                             {#if isEditing}
-                                <button
+                                <Button
                                     onclick={cancelEdit}
-                                    class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors"
-                                    >Cancel</button
-                                >
-                                <button
+                                    variant="outline"
+                                    size="sm"
+                                >Cancel</Button>
+                                <Button
                                     onclick={saveType}
-                                    class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm"
-                                    >Save Schema</button
-                                >
+                                    size="sm"
+                                >Save Schema</Button>
                             {:else}
-                                <button
+                                <Button
                                     onclick={startEdit}
-                                    class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md shadow-sm transition-colors"
-                                    >Edit Model</button
-                                >
+                                    variant="outline"
+                                    size="sm"
+                                >Edit Model</Button>
                             {/if}
                         </div>
                     </div>
@@ -361,30 +357,29 @@
                             <div>
                                 <label
                                     for="name"
-                                    class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                    class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                                     >Name</label
                                 >
-                                <input
+                                <Input
                                     id="name"
                                     type="text"
                                     bind:value={editingName}
                                     disabled={!isEditing}
-                                    class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 disabled:opacity-50"
                                     placeholder="e.g. Blog Post"
                                 />
                             </div>
                             <div>
                                 <label
                                     for="slug"
-                                    class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                    class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                                     >Slug</label
                                 >
-                                <input
+                                <Input
                                     id="slug"
                                     type="text"
                                     bind:value={editingSlug}
                                     disabled={!isCreating}
-                                    class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 disabled:bg-gray-100 disabled:dark:bg-gray-800"
+                                    class="disabled:bg-slate-100 dark:disabled:bg-slate-900/50"
                                     placeholder="e.g. blog-post"
                                 />
                             </div>
@@ -392,31 +387,29 @@
                                 <div class="flex-1">
                                     <label
                                         for="desc"
-                                        class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                                         >Description</label
                                     >
-                                    <textarea
+                                    <Textarea
                                         id="desc"
                                         bind:value={editingDesc}
                                         disabled={!isEditing}
-                                        rows="2"
-                                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 disabled:opacity-50"
+                                        rows={2}
                                         placeholder="Agent guidance for this model"
-                                    ></textarea>
+                                    ></Textarea>
                                 </div>
                                 <div class="w-1/3">
                                     <label
                                         for="basePrice"
-                                        class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                                         >Base Price (Sats)</label
                                     >
-                                    <input
+                                    <Input
                                         id="basePrice"
                                         type="number"
                                         min="0"
                                         bind:value={editingBasePrice}
                                         disabled={!isEditing}
-                                        class="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 disabled:opacity-50"
                                         placeholder="Optional..."
                                         title="Minimum Lightning payment required to create items of this type"
                                     />
@@ -431,17 +424,17 @@
                             <div class="flex-1 flex flex-col relative">
                                 <label
                                     for="schema"
-                                    class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex justify-between"
+                                    class="mb-1 flex justify-between text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                                 >
                                     <span>JSON Schema Definition</span>
                                 </label>
-                                <textarea
+                                <Textarea
                                     id="schema"
                                     bind:value={editingSchemaStr}
                                     disabled={!isEditing}
-                                    class="flex-1 block w-full rounded-md border-gray-700 bg-gray-900 text-green-400 dark:text-green-300 font-mono text-xs shadow-inner focus:border-blue-500 focus:ring-blue-500 p-4 disabled:opacity-80 resize-none h-64"
+                                    class="h-64 flex-1 resize-none border-slate-700 bg-slate-950 p-4 font-mono text-xs text-green-400 shadow-inner dark:text-green-300"
                                     spellcheck="false"
-                                ></textarea>
+                                ></Textarea>
                                 {#if schemaError}
                                     <p
                                         class="mt-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/40 p-2 rounded"
@@ -453,8 +446,9 @@
                         </div>
 
                         <!-- Live Validation Preview Sandbox -->
-                        <div
-                            class="w-full md:w-1/2 flex flex-col gap-4 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700"
+                        <Surface
+                            tone="muted"
+                            class="w-full md:w-1/2 flex flex-col gap-4"
                         >
                             <h4
                                 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2"
@@ -471,22 +465,23 @@
                                 schema.
                             </p>
 
-                            <textarea
+                            <Textarea
                                 bind:value={previewDataStr}
-                                class="flex-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-300 font-mono text-xs shadow-inner focus:border-blue-500 focus:ring-blue-500 p-4 resize-none h-48"
+                                class="h-48 flex-1 resize-none bg-white p-4 font-mono text-xs text-gray-800 shadow-inner dark:bg-slate-950 dark:text-gray-300"
                                 spellcheck="false"
                                 placeholder="&lbrace;&rbrace;"
-                            ></textarea>
+                            ></Textarea>
 
-                            <button
+                            <Button
                                 onclick={validatePreview}
                                 disabled={validatingPreview}
-                                class="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                                variant="outline"
+                                class="w-full"
                             >
                                 {validatingPreview
                                     ? "Validating against API..."
                                     : "Run Dry-Run Validation"}
-                            </button>
+                            </Button>
 
                             {#if previewValidationResult}
                                 <div
@@ -522,9 +517,9 @@
                                     {/if}
                                 </div>
                             {/if}
-                        </div>
+                        </Surface>
                     </div>
-                </div>
+                </Surface>
             {/if}
         </div>
     </div>

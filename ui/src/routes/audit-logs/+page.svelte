@@ -6,6 +6,10 @@
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Select from "$lib/components/ui/Select.svelte";
+    import Surface from "$lib/components/ui/Surface.svelte";
     import { Icon, ArrowPath, Key } from "svelte-hero-icons";
 
     type AuditEvent = {
@@ -99,84 +103,85 @@
 </svelte:head>
 
 <div class="h-full flex flex-col">
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-            Audit Logs
-        </h2>
-        <button
+    <div class="mb-6 flex items-start justify-between gap-4">
+        <div>
+            <h2 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+                Audit Logs
+            </h2>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Review operator and runtime actions across the control plane.
+            </p>
+        </div>
+        <Button
+            variant="outline"
             onclick={() => loadEvents(true)}
-            class="text-gray-500 hover:text-blue-600 dark:text-gray-400 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition"
             title="Refresh"
         >
-            <Icon src={ArrowPath} class="w-5 h-5" />
-        </button>
+            <Icon src={ArrowPath} class="h-4 w-4" />
+            Refresh
+        </Button>
     </div>
 
     <!-- Filters -->
-    <div
-        class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-6 flex flex-wrap gap-4 items-end"
-    >
+    <Surface class="mb-6 flex flex-wrap items-end gap-4">
         <div class="w-full md:w-auto">
             <label
                 for="action-filter"
-                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                 >Action</label
             >
-            <select
+            <Select
                 id="action-filter"
                 bind:value={filterAction}
-                class="w-full md:w-40 block rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3"
+                class="w-full md:w-44"
             >
                 <option value="">All Actions</option>
                 {#each ACTIONS as action}
                     <option value={action}>{action}</option>
                 {/each}
-            </select>
+            </Select>
         </div>
         <div class="w-full md:w-auto">
             <label
                 for="entity-filter"
-                class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                 >Entity Type</label
             >
-            <select
+            <Select
                 id="entity-filter"
                 bind:value={filterEntityType}
-                class="w-full md:w-48 block rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm py-2 px-3"
+                class="w-full md:w-52"
             >
                 <option value="">All Entities</option>
                 {#each ENTITIES as entity}
                     <option value={entity}>{entity}</option>
                 {/each}
-            </select>
+            </Select>
         </div>
-        <button
-            onclick={applyFilters}
-            class="w-full md:w-auto px-4 py-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md font-medium text-sm transition-colors border border-gray-300 dark:border-gray-600"
-        >
+        <Button onclick={applyFilters} variant="secondary" class="w-full md:w-auto">
             Apply Filters
-        </button>
+        </Button>
         {#if filterAction || filterEntityType}
-            <button
+            <Button
                 onclick={() => {
                     filterAction = "";
                     filterEntityType = "";
                     applyFilters();
                 }}
-                class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
-                >Clear</button
+                variant="ghost"
+                class="w-full md:w-auto"
             >
+                Clear
+            </Button>
         {/if}
-    </div>
+    </Surface>
 
     {#if error}
         <ErrorBanner class="mb-6" message={error} />
     {/if}
 
     <!-- Table -->
-    <div
-        class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col"
-    >
+    <Surface class="flex flex-1 flex-col overflow-hidden p-0">
         <div class="overflow-x-auto flex-1 relative">
             <DataTable {columns} data={events} keyField="id" expandable={true}>
                 {#snippet cell(ctx: any)}
@@ -184,7 +189,7 @@
                     {@const column = ctx.column}
                     {#if column.key === "createdAt"}
                         <span
-                            class="text-sm text-gray-500 dark:text-gray-400 font-mono"
+                            class="font-mono text-sm text-slate-500 dark:text-slate-400"
                         >
                             {new Date(row.createdAt)
                                 .toISOString()
@@ -194,21 +199,19 @@
                     {:else if column.key === "action"}
                         <ActionBadge action={row.action} />
                     {:else if column.key === "entity"}
-                        <span
-                            class="font-medium font-mono text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
-                        >
+                        <Badge variant="muted" class="font-mono normal-case">
                             {row.entityType}:{row.entityId}
-                        </span>
+                        </Badge>
                     {:else if column.key === "userId"}
                         {#if row.userId}
                             <span
-                                class="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400"
+                                class="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400"
                             >
                                 <Icon src={Key} class="w-4 h-4" />
                                 {row.userId}
                             </span>
                         {:else}
-                            <span class="text-gray-400 italic text-sm"
+                            <span class="text-sm italic text-slate-400"
                                 >System / Unauthenticated</span
                             >
                         {/if}
@@ -242,7 +245,7 @@
 
             {#if loading && events.length > 0}
                 <div
-                    class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex items-center justify-center z-20"
+                    class="absolute inset-0 z-20 flex items-center justify-center bg-white/50 dark:bg-slate-950/50"
                 >
                     <LoadingSpinner size="lg" />
                 </div>
@@ -251,29 +254,29 @@
 
         <!-- Pagination -->
         <div
-            class="bg-white dark:bg-gray-800 px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between sm:px-6 z-10"
+            class="z-10 flex items-center justify-between border-t border-slate-200 px-4 py-3 sm:px-6 dark:border-slate-700"
         >
             <div class="hidden sm:block">
-                <p class="text-sm text-gray-700 dark:text-gray-300">
+                <p class="text-sm text-slate-700 dark:text-slate-300">
                     Showing {events.length} results
                 </p>
             </div>
             <div class="flex-1 flex justify-between sm:justify-end gap-2">
-                <button
+                <Button
                     onclick={goToPrevPage}
                     disabled={historyStack.length === 0 || loading}
-                    class="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    variant="outline"
                 >
                     Previous
-                </button>
-                <button
+                </Button>
+                <Button
                     onclick={goToNextPage}
                     disabled={!hasMore || loading}
-                    class="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    variant="outline"
                 >
                     Next
-                </button>
+                </Button>
             </div>
         </div>
-    </div>
+    </Surface>
 </div>

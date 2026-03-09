@@ -6,6 +6,11 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Input from "$lib/components/ui/Input.svelte";
+    import Select from "$lib/components/ui/Select.svelte";
+    import Surface from "$lib/components/ui/Surface.svelte";
     import { Icon, ArrowPath, ChevronLeft, XMark } from "svelte-hero-icons";
 
     type ContentTypeStats = {
@@ -290,6 +295,15 @@
             .split("_")
             .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
             .join(" ");
+    }
+
+    function resolveStatusBadgeVariant(
+        status: string,
+    ): "muted" | "success" | "warning" | "danger" {
+        if (status === "published") return "success";
+        if (status === "in_review") return "warning";
+        if (status === "archived") return "danger";
+        return "muted";
     }
 
     function formatRelativeDate(value: string): string {
@@ -934,16 +948,16 @@
 <div class="h-full flex flex-col">
     <div class="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
-            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+            <h2 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
                 Content Browser
             </h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
                 Find content by title, slug, status, or date, then inspect
                 version history before taking workflow or rollback actions.
             </p>
         </div>
-        <button
-            type="button"
+        <Button
+            variant="outline"
             onclick={() => {
                 const selectedTypeId = selectedType?.id;
                 if (selectedTypeId) {
@@ -956,11 +970,10 @@
                     void loadContentTypes();
                 }
             }}
-            class="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
         >
             <Icon src={ArrowPath} class="w-4 h-4" />
             Refresh
-        </button>
+        </Button>
     </div>
 
     {#if error}
@@ -969,32 +982,29 @@
 
     <div class="flex-1 flex flex-col lg:flex-row gap-6 overflow-hidden">
         <aside
-            class="w-full lg:w-72 xl:w-64 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden {selectedType
+            class="w-full lg:w-72 xl:w-[17.5rem] flex flex-col overflow-hidden {selectedType
                 ? 'hidden lg:flex'
                 : 'flex'}"
         >
-            <div
-                class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"
-            >
-                <div class="flex items-center justify-between gap-2">
-                    <div>
-                        <h3
-                            class="text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider"
-                        >
-                            Models
-                        </h3>
-                        <p class="mt-1 text-[0.7rem] text-gray-500 dark:text-gray-400">
-                            Compact schema map
-                        </p>
+            <Surface class="flex h-full flex-col overflow-hidden p-0">
+                <div
+                    class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30"
+                >
+                    <div class="flex items-center justify-between gap-2">
+                        <div>
+                            <h3
+                                class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                            >
+                                Models
+                            </h3>
+                            <p class="mt-1 text-[0.72rem] text-slate-500 dark:text-slate-400">
+                                Compact schema map
+                            </p>
+                        </div>
+                        <Badge variant="muted">{contentTypes.length}</Badge>
                     </div>
-                    <span
-                        class="inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-[0.65rem] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
-                    >
-                        {contentTypes.length}
-                    </span>
                 </div>
-            </div>
-            <div class="flex-1 overflow-y-auto p-2.5">
+                <div class="flex-1 overflow-y-auto p-2.5">
                 {#if loading}
                     <div class="flex justify-center p-8">
                         <LoadingSpinner size="md" />
@@ -1014,56 +1024,52 @@
                                 <button
                                     type="button"
                                     onclick={() => selectType(type)}
-                                    class="w-full text-left rounded-xl border px-3 py-2.5 transition-colors {selectedType?.id ===
+                                    class="w-full rounded-2xl border px-3 py-3 text-left transition-colors {selectedType?.id ===
                                     type.id
-                                        ? 'border-blue-300 bg-blue-50/80 text-blue-900 shadow-sm dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-100'
-                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:border-gray-600 dark:hover:bg-gray-700/60'}"
+                                        ? 'border-slate-300 bg-slate-50 text-slate-950 shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50'
+                                        : 'border-transparent bg-transparent hover:border-slate-200 hover:bg-slate-50/80 dark:hover:border-slate-700 dark:hover:bg-slate-800/70'}"
                                 >
                                     <div
                                         class="flex items-start justify-between gap-2"
                                     >
                                         <div class="min-w-0">
-                                            <div class="truncate text-sm font-semibold">
+                                            <div class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                                                 {type.name}
                                             </div>
                                             <div
-                                                class="mt-0.5 truncate text-[0.65rem] font-mono text-gray-500 dark:text-gray-400"
+                                                class="mt-0.5 truncate text-[0.68rem] font-mono text-slate-500 dark:text-slate-400"
                                             >
                                                 {type.slug}
                                             </div>
                                         </div>
                                         <div class="flex items-center gap-1 shrink-0">
-                                            <span
-                                                class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[0.65rem] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
-                                            >
+                                            <Badge variant="outline">
                                                 {resolveTypeItemCount(type)}
-                                            </span>
+                                            </Badge>
                                             {#if (type.basePrice ?? 0) > 0}
-                                                <span
-                                                    class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-                                                >
+                                                <Badge variant="paid">
                                                     Paid
-                                                </span>
+                                                </Badge>
                                             {/if}
                                         </div>
                                     </div>
                                     <div
-                                        class="mt-2 rounded-lg bg-gray-50/80 px-2.5 py-2 dark:bg-gray-900/40"
+                                        class="mt-2 rounded-xl bg-slate-50 px-2.5 py-2 dark:bg-slate-950/50"
                                     >
                                         <div class="flex items-center justify-between gap-2">
                                             <p
-                                                class="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400"
+                                                class="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
                                             >
                                                 Structure
                                             </p>
                                             <span
-                                                class="text-[0.62rem] text-gray-500 dark:text-gray-400"
+                                                class="text-[0.62rem] text-slate-500 dark:text-slate-400"
                                             >
                                                 {resolveSchemaSummary(type)}
                                             </span>
                                         </div>
                                         <div
-                                            class="mt-2 border-l border-gray-200 pl-2 dark:border-gray-700"
+                                            class="mt-2 border-l border-slate-200 pl-2 dark:border-slate-700"
                                         >
                                             {#each previewLines as line}
                                                 <div
@@ -1071,29 +1077,31 @@
                                                     style={`padding-left: ${line.depth * 0.75}rem`}
                                                 >
                                                     <span
-                                                        class="text-gray-400 dark:text-gray-500"
+                                                        class="text-slate-400 dark:text-slate-500"
                                                         >{line.summary ? "…" : "└"}</span
                                                     >
                                                     <span
                                                         class={line.summary
-                                                            ? "truncate text-gray-500 italic dark:text-gray-400"
-                                                            : "truncate text-gray-700 dark:text-gray-200"}
+                                                            ? "truncate italic text-slate-500 dark:text-slate-400"
+                                                            : "truncate text-slate-700 dark:text-slate-200"}
                                                     >
                                                         {line.label}
                                                     </span>
                                                     {#if line.typeLabel}
-                                                        <span
-                                                            class="rounded bg-gray-200 px-1 py-0.5 text-[0.55rem] uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                                                        <Badge
+                                                            variant="muted"
+                                                            class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide"
                                                         >
                                                             {line.typeLabel}
-                                                        </span>
+                                                        </Badge>
                                                     {/if}
                                                     {#if line.required}
-                                                        <span
-                                                            class="rounded bg-blue-100 px-1 py-0.5 text-[0.55rem] uppercase tracking-wide text-blue-700 dark:bg-blue-900/30 dark:text-blue-200"
+                                                        <Badge
+                                                            variant="info"
+                                                            class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide"
                                                         >
                                                             req
-                                                        </span>
+                                                        </Badge>
                                                     {/if}
                                                 </div>
                                             {/each}
@@ -1116,7 +1124,7 @@
                                         </div>
                                     {/if}
                                     <div
-                                        class="mt-2 flex items-center justify-between gap-2 text-[0.65rem] text-gray-500 dark:text-gray-400"
+                                        class="mt-2 flex items-center justify-between gap-2 text-[0.65rem] text-slate-500 dark:text-slate-400"
                                     >
                                         <span>{resolveTypeItemCount(type)} items</span>
                                         <span
@@ -1130,7 +1138,8 @@
                         {/each}
                     </ul>
                 {/if}
-            </div>
+                </div>
+            </Surface>
         </aside>
 
         <div
@@ -1139,17 +1148,13 @@
                 : 'flex'}"
         >
             {#if !selectedType}
-                <div
-                    class="flex-1 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-400 italic text-sm"
-                >
+                <Surface class="flex flex-1 items-center justify-center text-sm italic text-slate-400 dark:text-slate-500">
                     Select a content model to view items.
-                </div>
+                </Surface>
             {:else}
-                <section
-                    class="w-full bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
-                >
+                <Surface class="flex w-full flex-col overflow-hidden p-0">
                     <div
-                        class="px-4 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-br from-gray-50 to-white dark:from-gray-700/60 dark:to-gray-800/90"
+                        class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/30"
                     >
                         <div
                             class="flex items-start justify-between gap-3 flex-wrap"
@@ -1176,18 +1181,10 @@
                                             {selectedType.name}
                                         </h3>
                                         {#if (selectedType.basePrice ?? 0) > 0}
-                                            <span
-                                                class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-                                            >
-                                                Paid
-                                            </span>
+                                            <Badge variant="paid">Paid</Badge>
                                         {/if}
                                         {#if activeWorkflow}
-                                            <span
-                                                class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
-                                            >
-                                                Workflow active
-                                            </span>
+                                            <Badge variant="info">Workflow active</Badge>
                                         {/if}
                                     </div>
                                     <p
@@ -1204,21 +1201,13 @@
                                 </div>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
-                                <span
-                                    class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-1 text-xs font-bold text-gray-700 dark:bg-gray-600 dark:text-gray-200"
-                                >
-                                    {itemsMeta.total} items
-                                </span>
-                                <span
-                                    class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300"
-                                >
-                                    {resolveSchemaSummary(selectedType)}
-                                </span>
+                                <Badge variant="outline">{itemsMeta.total} items</Badge>
+                                <Badge variant="muted">{resolveSchemaSummary(selectedType)}</Badge>
                             </div>
                         </div>
 
                         <form
-                            class="mt-4 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/30"
+                            class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/30"
                             onsubmit={(event) => {
                                 event.preventDefault();
                                 applyFilters();
@@ -1232,12 +1221,11 @@
                                     >
                                         Find items
                                     </label>
-                                    <input
+                                    <Input
                                         id="content-search"
                                         bind:value={itemSearch}
                                         type="search"
                                         placeholder="Search title, slug, excerpt, author, or item ID"
-                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     />
                                 </div>
 
@@ -1248,10 +1236,9 @@
                                     >
                                         Sort by
                                     </label>
-                                    <select
+                                    <Select
                                         id="sort-by"
                                         bind:value={sortBy}
-                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     >
                                         <option value="updatedAt">
                                             Updated
@@ -1262,7 +1249,7 @@
                                         <option value="version">
                                             Version
                                         </option>
-                                    </select>
+                                    </Select>
                                 </div>
 
                                 <div>
@@ -1272,33 +1259,29 @@
                                     >
                                         Order
                                     </label>
-                                    <select
+                                    <Select
                                         id="sort-dir"
                                         bind:value={sortDir}
-                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     >
                                         <option value="desc">Newest first</option>
                                         <option value="asc">Oldest first</option>
-                                    </select>
+                                    </Select>
                                 </div>
 
                                 <div
                                     class="flex flex-wrap items-center gap-2 xl:justify-end"
                                 >
-                                    <button
-                                        type="submit"
-                                        class="inline-flex items-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-                                    >
+                                    <Button type="submit">
                                         Apply
-                                    </button>
+                                    </Button>
                                     {#if hasActiveFilters}
-                                        <button
+                                        <Button
                                             type="button"
+                                            variant="outline"
                                             onclick={clearFilters}
-                                            class="inline-flex items-center rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                                         >
                                             Clear
-                                        </button>
+                                        </Button>
                                     {/if}
                                 </div>
                             </div>
@@ -1316,8 +1299,8 @@
                                             onclick={() => applyStatusFilter("")}
                                             class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus ===
                                             ''
-                                                ? 'border-blue-400 bg-blue-50 text-blue-900 dark:border-blue-600 dark:bg-blue-900/30 dark:text-blue-100'
-                                                : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}"
+                                                ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+                                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
                                         >
                                             <span>All items</span>
                                             <span class="font-mono"
@@ -1335,8 +1318,8 @@
                                                     )}
                                                 class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus ===
                                                 summary.status
-                                                    ? 'border-blue-400 bg-blue-50 text-blue-900 dark:border-blue-600 dark:bg-blue-900/30 dark:text-blue-100'
-                                                    : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}"
+                                                    ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+                                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
                                             >
                                                 <span
                                                     >{formatStatusLabel(
@@ -1358,11 +1341,10 @@
                                     >
                                         Created after
                                     </label>
-                                    <input
+                                    <Input
                                         id="created-after"
                                         bind:value={createdAfter}
                                         type="date"
-                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     />
                                 </div>
 
@@ -1373,11 +1355,10 @@
                                     >
                                         Created before
                                     </label>
-                                    <input
+                                    <Input
                                         id="created-before"
                                         bind:value={createdBefore}
                                         type="date"
-                                        class="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     />
                                 </div>
                             </div>
@@ -1397,7 +1378,7 @@
                                                 type="button"
                                                 onclick={() =>
                                                     clearFilterChip("search")}
-                                                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
                                             >
                                                 <span
                                                     >Search: "{itemSearch.trim()}"</span
@@ -1410,7 +1391,7 @@
                                                 type="button"
                                                 onclick={() =>
                                                     clearFilterChip("status")}
-                                                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
                                             >
                                                 <span
                                                     >Status: {formatStatusLabel(
@@ -1427,7 +1408,7 @@
                                                     clearFilterChip(
                                                         "createdAfter",
                                                     )}
-                                                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
                                             >
                                                 <span
                                                     >After: {formatDate(
@@ -1444,7 +1425,7 @@
                                                     clearFilterChip(
                                                         "createdBefore",
                                                     )}
-                                                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-100"
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
                                             >
                                                 <span
                                                     >Before: {formatDate(
@@ -1462,7 +1443,7 @@
 
                     <div class="flex-1 overflow-y-auto p-3 relative">
                         <div
-                            class="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/20"
+                            class="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/25"
                         >
                             <div>
                                 <p
@@ -1486,7 +1467,7 @@
                             </div>
                             {#if activeWorkflow}
                                 <div
-                                    class="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-900/20 dark:text-blue-100"
+                                    class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-200"
                                 >
                                     <div class="font-semibold uppercase tracking-wide">
                                         Workflow
@@ -1502,19 +1483,20 @@
                             </div>
                         {:else if items.length === 0}
                             <div
-                                class="rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-8 text-center text-sm text-gray-500 dark:text-gray-400"
+                                class="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
                             >
                                 <p>
                                     No items found matching the current filters.
                                 </p>
                                 {#if hasActiveFilters}
-                                    <button
+                                    <Button
                                         type="button"
+                                        variant="outline"
+                                        class="mt-4"
                                         onclick={clearFilters}
-                                        class="mt-4 inline-flex items-center rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                                     >
                                         Reset filters
-                                    </button>
+                                    </Button>
                                 {/if}
                             </div>
                         {:else}
@@ -1524,10 +1506,10 @@
                                         <button
                                             type="button"
                                             onclick={() => selectItem(item)}
-                                            class="w-full text-left rounded-xl border p-4 transition-all {selectedItem?.id ===
+                                            class="w-full rounded-2xl border p-4 text-left transition-all {selectedItem?.id ===
                                             item.id
-                                                ? 'border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 bg-blue-50/70 dark:bg-blue-900/20'
-                                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:border-gray-600 dark:hover:bg-gray-700/40'}"
+                                                ? 'border-slate-300 bg-slate-50 shadow-sm dark:border-slate-600 dark:bg-slate-800/90'
+                                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/20 dark:hover:border-slate-600 dark:hover:bg-slate-800/60'}"
                                         >
                                             <div
                                                 class="flex items-start justify-between gap-3"
@@ -1567,19 +1549,13 @@
                                                 <div
                                                     class="flex items-center gap-2 shrink-0"
                                                 >
-                                                    <span
-                                                        class="inline-flex items-center rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider {item.status ===
-                                                        'published'
-                                                            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
-                                                            : item.status ===
-                                                                    'in_review'
-                                                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
-                                                                : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
+                                                    <Badge
+                                                        variant={resolveStatusBadgeVariant(item.status)}
                                                     >
                                                         {formatStatusLabel(
                                                             item.status,
                                                         )}
-                                                    </span>
+                                                    </Badge>
                                                     <span
                                                         class="text-xs font-mono text-gray-500 dark:text-gray-400"
                                                     >
@@ -1598,14 +1574,14 @@
                                                 class="mt-4 flex flex-wrap items-center gap-2 text-[0.7rem] text-gray-500 dark:text-gray-400"
                                             >
                                                 <span
-                                                    class="rounded-full bg-gray-100 px-2 py-1 dark:bg-gray-700"
+                                                    class="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-800"
                                                 >
                                                     Updated {formatDate(
                                                         item.updatedAt,
                                                     )}
                                                 </span>
                                                 <span
-                                                    class="rounded-full bg-gray-100 px-2 py-1 dark:bg-gray-700"
+                                                    class="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-800"
                                                 >
                                                     Created {formatDate(
                                                         item.createdAt,
@@ -1628,32 +1604,32 @@
                     </div>
 
                     <div
-                        class="border-t border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between gap-3 text-sm"
+                        class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-700"
                     >
                         <p class="text-gray-600 dark:text-gray-300">
                             Showing {currentRangeStart}-{currentRangeEnd} of
                             {itemsMeta.total}
                         </p>
                         <div class="flex items-center gap-2">
-                            <button
+                            <Button
                                 type="button"
+                                variant="outline"
                                 onclick={goToPrevPage}
                                 disabled={itemsMeta.offset === 0 || loadingItems}
-                                class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Previous
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                                 type="button"
+                                variant="outline"
                                 onclick={goToNextPage}
                                 disabled={!itemsMeta.hasMore || loadingItems}
-                                class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Next
-                            </button>
+                            </Button>
                         </div>
                     </div>
-                </section>
+                </Surface>
 
                 {#if selectedItem}
                     <button
@@ -1663,10 +1639,10 @@
                         onclick={() => resetSelectedItemContext()}
                     ></button>
                     <section
-                        class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-800 dark:border-gray-700 xl:absolute xl:inset-y-3 xl:right-3 xl:w-[23rem] xl:max-w-none xl:rounded-2xl xl:border xl:border-gray-200 2xl:w-[25rem]"
+                        class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900 xl:absolute xl:inset-y-3 xl:right-3 xl:w-[23rem] xl:max-w-none xl:rounded-2xl xl:border xl:border-slate-200 xl:shadow-xl dark:xl:border-slate-700 2xl:w-[25rem]"
                     >
                         <div
-                            class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex items-start justify-between gap-4"
+                            class="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-700 dark:bg-slate-950/60"
                         >
                             <div class="min-w-0">
                                 <div class="flex items-center gap-3">
@@ -1681,21 +1657,15 @@
                                         />
                                     </button>
                                     <h2
-                                        class="text-lg font-bold text-gray-900 dark:text-white truncate"
+                                        class="truncate text-lg font-semibold text-gray-900 dark:text-white"
                                     >
                                         {resolveItemLabel(selectedItem)}
                                     </h2>
-                                    <span
-                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider {selectedItem.status ===
-                                        'published'
-                                            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400'
-                                            : selectedItem.status ===
-                                                    'in_review'
-                                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
-                                                : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}"
+                                    <Badge
+                                        variant={resolveStatusBadgeVariant(selectedItem.status)}
                                     >
                                         {formatStatusLabel(selectedItem.status)}
-                                    </span>
+                                    </Badge>
                                 </div>
                                 <p
                                     class="mt-2 text-sm text-gray-600 dark:text-gray-300"
@@ -1722,7 +1692,7 @@
                                 type="button"
                                 aria-label="Close detail view"
                                 onclick={() => resetSelectedItemContext()}
-                                class="text-gray-400 hover:text-gray-500"
+                                class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                             >
                                 <Icon src={XMark} class="w-5 h-5" />
                             </button>
@@ -1730,9 +1700,7 @@
 
                         <div class="flex-1 overflow-y-auto p-6 space-y-6">
                             <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4">
-                                <div
-                                    class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900/30"
-                                >
+                                <Surface tone="muted" class="p-4">
                                     <h4
                                         class="text-sm font-semibold text-gray-900 dark:text-white"
                                     >
@@ -1792,11 +1760,9 @@
                                             </div>
                                         </div>
                                     </dl>
-                                </div>
+                                </Surface>
 
-                                <div
-                                    class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900/10"
-                                >
+                                <Surface class="p-4">
                                     <div
                                         class="flex items-start justify-between gap-3 flex-wrap"
                                     >
@@ -1815,7 +1781,7 @@
                                             </p>
                                         </div>
                                         {#if versions.length > 0}
-                                            <select
+                                            <Select
                                                 onchange={(event) => {
                                                     selectedVersionForDiff = Number(
                                                         (
@@ -1823,7 +1789,6 @@
                                                         ).value,
                                                     );
                                                 }}
-                                                class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white"
                                             >
                                                 {#each versions as version}
                                                     <option
@@ -1834,7 +1799,7 @@
                                                         Compare with v{version.version}
                                                     </option>
                                                 {/each}
-                                            </select>
+                                            </Select>
                                         {/if}
                                     </div>
 
@@ -1848,7 +1813,7 @@
                                     {:else}
                                         <div class="mt-4 space-y-3">
                                             <div
-                                                class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-900 dark:text-blue-200"
+                                                class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-200"
                                             >
                                                 Comparing current version
                                                 v{selectedItem.version} with
@@ -1872,7 +1837,7 @@
                                                 >
                                                     {#each selectedDiffEntries as entry}
                                                         <div
-                                                            class="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-3"
+                                                            class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700"
                                                         >
                                                             <div
                                                                 class="flex items-center justify-between gap-3"
@@ -1885,10 +1850,10 @@
                                                                 <span
                                                                     class="text-[0.65rem] font-semibold uppercase tracking-wide {entry.change ===
                                                                     'added'
-                                                                        ? 'text-green-600 dark:text-green-400'
+                                                                        ? 'text-emerald-600 dark:text-emerald-400'
                                                                         : entry.change ===
                                                                                 'removed'
-                                                                            ? 'text-red-600 dark:text-red-400'
+                                                                            ? 'text-rose-600 dark:text-rose-400'
                                                                             : 'text-amber-600 dark:text-amber-300'}"
                                                                 >
                                                                     {entry.change}
@@ -1898,7 +1863,7 @@
                                                                 class="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-2 text-xs"
                                                             >
                                                                 <div
-                                                                    class="rounded-md bg-gray-50 dark:bg-gray-900/50 p-2"
+                                                                    class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60"
                                                                 >
                                                                     <p
                                                                         class="font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -1912,7 +1877,7 @@
                                                                     </p>
                                                                 </div>
                                                                 <div
-                                                                    class="rounded-md bg-gray-50 dark:bg-gray-900/50 p-2"
+                                                                    class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60"
                                                                 >
                                                                     <p
                                                                         class="font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -1932,7 +1897,7 @@
                                             {/if}
                                         </div>
                                     {/if}
-                                </div>
+                                </Surface>
                             </div>
 
                             <div>
@@ -1958,20 +1923,19 @@
                                                 class="flex flex-wrap gap-2 mb-4"
                                             >
                                                 {#each availableTransitions as transition}
-                                                    <button
+                                                    <Button
                                                         type="button"
                                                         onclick={() =>
                                                             submitForReview(
                                                                 transition.id,
                                                             )}
                                                         disabled={submittingReview}
-                                                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm disabled:opacity-50"
                                                     >
                                                         {transition.toState ===
                                                         "published"
                                                             ? "Publish"
                                                             : `Submit for ${transition.toState}`}
-                                                    </button>
+                                                    </Button>
                                                 {/each}
                                             </div>
                                         {:else}
@@ -1984,9 +1948,7 @@
                                         {/if}
                                     </div>
 
-                                    <div
-                                        class="bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 p-4"
-                                    >
+                                    <Surface tone="muted" class="p-4">
                                         <h5
                                             class="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3"
                                         >
@@ -2005,7 +1967,7 @@
                                             {:else}
                                                 {#each comments as comment}
                                                     <div
-                                                        class="bg-white dark:bg-gray-800 p-3 rounded shadow-sm border border-gray-100 dark:border-gray-700"
+                                                        class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-950/30"
                                                     >
                                                         <div
                                                             class="flex justify-between items-center mb-1 gap-2"
@@ -2040,21 +2002,21 @@
                                             }}
                                             class="flex gap-2"
                                         >
-                                            <input
+                                            <Input
                                                 type="text"
                                                 bind:value={newComment}
                                                 placeholder="Add a comment..."
-                                                class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm dark:bg-gray-800 dark:text-white"
+                                                class="flex-1"
                                             />
-                                            <button
+                                            <Button
                                                 type="submit"
                                                 disabled={!newComment.trim()}
-                                                class="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white text-sm font-medium rounded-md transition-colors disabled:opacity-50"
+                                                variant="secondary"
                                             >
                                                 Post
-                                            </button>
+                                            </Button>
                                         </form>
-                                    </div>
+                                    </Surface>
                                 </div>
                             {/if}
 
@@ -2068,9 +2030,7 @@
                                 </h4>
 
                                 <div class="space-y-4">
-                                    <div
-                                        class="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4"
-                                    >
+                                    <Surface tone="muted" class="p-4">
                                         <div
                                             class="flex items-start justify-between gap-3"
                                         >
@@ -2090,18 +2050,16 @@
                                                     )}
                                                 </p>
                                             </div>
-                                            <span
-                                                class="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300"
-                                            >
+                                            <Badge variant="info">
                                                 Live
-                                            </span>
+                                            </Badge>
                                         </div>
                                         <p
                                             class="mt-3 text-sm text-blue-900 dark:text-blue-100"
                                         >
                                             {resolveItemSummary(selectedItem)}
                                         </p>
-                                    </div>
+                                    </Surface>
 
                                     {#each versions as version}
                                         {@const versionDiff = buildDiffEntries(
@@ -2111,10 +2069,10 @@
                                             version.status,
                                         )}
                                         <div
-                                            class="rounded-xl border p-4 {selectedDiffVersion?.version ===
+                                            class="rounded-2xl border p-4 {selectedDiffVersion?.version ===
                                             version.version
-                                                ? 'border-blue-300 bg-blue-50/70 dark:border-blue-700 dark:bg-blue-900/20'
-                                                : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}"
+                                                ? 'border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/80'
+                                                : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950/20'}"
                                         >
                                             <div
                                                 class="flex items-start justify-between gap-3 flex-wrap"
@@ -2137,26 +2095,28 @@
                                                 <div
                                                     class="flex items-center gap-2"
                                                 >
-                                                    <button
+                                                    <Button
                                                         type="button"
+                                                        variant="outline"
+                                                        size="sm"
                                                         onclick={() => {
                                                             selectedVersionForDiff = version.version;
                                                         }}
-                                                        class="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
                                                     >
                                                         Compare
-                                                    </button>
-                                                    <button
+                                                    </Button>
+                                                    <Button
                                                         type="button"
+                                                        variant="destructive"
+                                                        size="sm"
                                                         onclick={() =>
                                                             rollbackToVersion(
                                                                 version.version,
                                                             )}
                                                         disabled={rollingBack}
-                                                        class="px-3 py-1.5 rounded-md bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 text-xs font-medium disabled:opacity-50"
                                                     >
                                                         Rollback
-                                                    </button>
+                                                    </Button>
                                                 </div>
                                             </div>
 
@@ -2167,7 +2127,7 @@
                                             </p>
 
                                             <div
-                                                class="mt-4 rounded-lg bg-gray-50 dark:bg-gray-900/40 p-3"
+                                                class="mt-4 rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40"
                                             >
                                                 <p
                                                     class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"

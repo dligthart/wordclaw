@@ -3,6 +3,26 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<script>
+			(() => {
+				try {
+					const key = "__wc_theme";
+					const stored = localStorage.getItem(key);
+					const isDark =
+						stored === "dark" ||
+						(stored !== "light" &&
+							window.matchMedia &&
+							window.matchMedia("(prefers-color-scheme: dark)").matches);
+					if (isDark) {
+						document.documentElement.classList.add("dark");
+						document.documentElement.style.colorScheme = "dark";
+					} else {
+						document.documentElement.classList.remove("dark");
+						document.documentElement.style.colorScheme = "light";
+					}
+				} catch {}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

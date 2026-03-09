@@ -4,7 +4,11 @@
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
-    import Toast from "$lib/components/Toast.svelte";
+    import Badge from "$lib/components/ui/Badge.svelte";
+    import Button from "$lib/components/ui/Button.svelte";
+    import Input from "$lib/components/ui/Input.svelte";
+    import Select from "$lib/components/ui/Select.svelte";
+    import Surface from "$lib/components/ui/Surface.svelte";
 
     let loading = $state(true);
     let saving = $state(false);
@@ -78,7 +82,7 @@
 
     onMount(loadConfig);
 
-    let architectureOptions = [
+    const architectureOptions = [
         { value: "mock", label: "Mock (Development Only)" },
         { value: "lnbits", label: "LNbits Gateway" },
     ];
@@ -105,14 +109,18 @@
     );
 </script>
 
-<div class="space-y-6 max-w-5xl">
+<svelte:head>
+    <title>L402 Payment Readiness | WordClaw Supervisor</title>
+</svelte:head>
+
+<div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
     <div>
-        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
             L402 Payment Readiness
         </h1>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Configure lightning node architecture and track production
-            readiness for WordClaw payment and entitlement flows.
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Configure payment infrastructure and track operator readiness for
+            WordClaw&apos;s core L402 and entitlement flows.
         </p>
     </div>
 
@@ -123,266 +131,270 @@
             <ErrorBanner message={error.message || JSON.stringify(error)} />
         {/if}
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 space-y-6">
-                <!-- Architecture Config -->
-                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                    <h2
-                        class="text-lg font-medium text-gray-900 dark:text-white mb-4"
-                    >
-                        Architecture Configuration
-                    </h2>
-
-                    <div class="space-y-4">
+        <div class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.8fr)_320px]">
+            <div class="space-y-6">
+                <Surface class="space-y-5">
+                    <div class="flex items-start justify-between gap-4">
                         <div>
+                            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">
+                                Architecture Configuration
+                            </h2>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                Select the supported provider and record the
+                                public callback details operators will maintain.
+                            </p>
+                        </div>
+                        <Badge
+                            variant={config.architecture === "mock"
+                                ? "info"
+                                : "outline"}
+                        >
+                            {config.architecture === "mock" ? "Mock mode" : "LNbits"}
+                        </Badge>
+                    </div>
+
+                    <div class="grid gap-5 md:grid-cols-2">
+                        <div class="md:col-span-2">
                             <label
-                                class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                                 for="arch">Provider</label
                             >
-                            <select
-                                id="arch"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                bind:value={config.architecture}
-                            >
+                            <Select id="arch" bind:value={config.architecture}>
                                 {#each architectureOptions as opt}
-                                    <option value={opt.value}
-                                        >{opt.label}</option
-                                    >
+                                    <option value={opt.value}>{opt.label}</option>
                                 {/each}
-                            </select>
+                            </Select>
                         </div>
 
-                        <div>
+                        <div class="md:col-span-2">
                             <label
-                                class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                                 for="webhook">Webhook Endpoint (Public)</label
                             >
-                            <input
-                                type="text"
+                            <Input
                                 id="webhook"
+                                type="text"
                                 placeholder="https://api.yourdomain.com/api/payments/webhooks/lnbits"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                 bind:value={config.webhookEndpoint}
                             />
-                            <p class="mt-1 text-xs text-gray-500">
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                 Provider settlement callbacks are routed here.
                             </p>
                         </div>
 
-                        <div>
+                        <div class="md:col-span-2">
                             <label
-                                class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
                                 for="secret-path">Secret Manager Path</label
                             >
-                            <input
-                                type="text"
+                            <Input
                                 id="secret-path"
+                                type="text"
                                 placeholder="projects/123/secrets/lnbits-key"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                 bind:value={config.secretManagerPath}
                             />
-                            <p class="mt-1 text-xs text-gray-500">
-                                Path to credentials if using external vaults
-                                (informational).
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                Informational reference when provider secrets are
+                                stored in an external vault.
                             </p>
                         </div>
                     </div>
-                </div>
+                </Surface>
 
-                <!-- Readiness Checklist -->
-                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                    <h2
-                        class="text-lg font-medium text-gray-900 dark:text-white mb-4"
-                    >
-                        Operator Checklist
-                    </h2>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                        Mark operations tasks as completed for production
-                        graduation.
-                    </p>
+                <Surface class="space-y-5">
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">
+                            Operator Checklist
+                        </h2>
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            Mark the non-code operational gates that must be in place
+                            before moving beyond development mode.
+                        </p>
+                    </div>
 
                     <div class="space-y-3">
                         <label
-                            class="flex items-start space-x-3 cursor-pointer"
+                            class="flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:bg-slate-100/70 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-900/50"
                         >
                             <input
                                 type="checkbox"
-                                class="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                bind:checked={
-                                    config.checklistApprovals.fundedWallet
-                                }
+                                class="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-950"
+                                bind:checked={config.checklistApprovals.fundedWallet}
                             />
                             <div>
-                                <span
-                                    class="block text-sm font-medium text-gray-900 dark:text-gray-100"
-                                    >Funded Wallet & Liquidity</span
-                                >
-                                <span class="block text-xs text-gray-500"
-                                    >Treasury wallet funded with startup sats
-                                    and inbound liquidity channels established.</span
-                                >
+                                <span class="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                                    Funded Wallet & Liquidity
+                                </span>
+                                <span class="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                    Treasury wallet funded with startup sats and inbound
+                                    liquidity channels established.
+                                </span>
                             </div>
                         </label>
 
                         <label
-                            class="flex items-start space-x-3 cursor-pointer"
+                            class="flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:bg-slate-100/70 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-900/50"
                         >
                             <input
                                 type="checkbox"
-                                class="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                bind:checked={
-                                    config.checklistApprovals.dnsTlsActive
-                                }
+                                class="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-950"
+                                bind:checked={config.checklistApprovals.dnsTlsActive}
                             />
                             <div>
-                                <span
-                                    class="block text-sm font-medium text-gray-900 dark:text-gray-100"
-                                    >DNS & TLS Configured</span
-                                >
-                                <span class="block text-xs text-gray-500"
-                                    >Public DNS route points to webhook
-                                    endpoint, TLS certificates are valid and
-                                    auto-renewing.</span
-                                >
+                                <span class="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                                    DNS & TLS Configured
+                                </span>
+                                <span class="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                    Public DNS route points to the webhook endpoint and TLS
+                                    certificates are valid and auto-renewing.
+                                </span>
                             </div>
                         </label>
 
                         <label
-                            class="flex items-start space-x-3 cursor-pointer"
+                            class="flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:bg-slate-100/70 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-900/50"
                         >
                             <input
                                 type="checkbox"
-                                class="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                bind:checked={
-                                    config.checklistApprovals.custodyCompliance
-                                }
+                                class="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-950"
+                                bind:checked={config.checklistApprovals.custodyCompliance}
                             />
                             <div>
-                                <span
-                                    class="block text-sm font-medium text-gray-900 dark:text-gray-100"
-                                    >Custody & Compliance Appoved</span
-                                >
-                                <span class="block text-xs text-gray-500"
-                                    >Tax treatment policy and wallet custody
-                                    responsibilities are finalized.</span
-                                >
+                                <span class="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                                    Custody & Compliance Approved
+                                </span>
+                                <span class="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                    Tax treatment policy and wallet custody responsibilities
+                                    are finalized.
+                                </span>
                             </div>
                         </label>
 
                         <label
-                            class="flex items-start space-x-3 cursor-pointer"
+                            class="flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:bg-slate-100/70 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-900/50"
                         >
                             <input
                                 type="checkbox"
-                                class="h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                bind:checked={
-                                    config.checklistApprovals
-                                        .testnetMainnetGates
-                                }
+                                class="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-950"
+                                bind:checked={config.checklistApprovals.testnetMainnetGates}
                             />
                             <div>
-                                <span
-                                    class="block text-sm font-medium text-gray-900 dark:text-gray-100"
-                                    >Launch Gates approved</span
-                                >
-                                <span class="block text-xs text-gray-500"
-                                    >Passed testnet soak criteria and approved
-                                    for mainnet exposure percentage.</span
-                                >
+                                <span class="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                                    Launch Gates Approved
+                                </span>
+                                <span class="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                    Testnet soak and rollout criteria are complete for the
+                                    configured provider path.
+                                </span>
                             </div>
                         </label>
                     </div>
 
-                    <div class="mt-6">
-                        <button
-                            type="button"
-                            class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                            onclick={saveConfig}
-                            disabled={saving}
-                        >
+                    <div class="flex justify-end">
+                        <Button onclick={saveConfig} disabled={saving}>
                             {saving ? "Saving..." : "Save Configuration"}
-                        </button>
+                        </Button>
                     </div>
-                </div>
+                </Surface>
             </div>
 
-            <!-- Side Panel Diagnostics -->
             <div class="space-y-6">
-                <!-- Status Badge -->
-                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                <Surface tone="muted" class="space-y-4">
                     <h3
-                        class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
                     >
                         Status
                     </h3>
-                    <div class="mt-2 flex items-center">
+                    <div class="flex flex-wrap gap-2">
                         {#if isProductionReady}
-                            <span
-                                class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                            >
-                                Production Ready
-                            </span>
+                            <Badge variant="success">Production Ready</Badge>
                         {:else if config.architecture === "mock"}
-                            <span
-                                class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                            >
-                                Development (Mock)
-                            </span>
+                            <Badge variant="info">Development (Mock)</Badge>
                         {:else}
-                            <span
-                                class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-                            >
-                                Needs Configuration
-                            </span>
+                            <Badge variant="warning">Needs Configuration</Badge>
+                        {/if}
+                        {#if allChecked}
+                            <Badge variant="outline">Checklist complete</Badge>
                         {/if}
                     </div>
-                </div>
-
-                <!-- Backend Diagnostics -->
-                <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                    <h3
-                        class="text-lg font-medium text-gray-900 dark:text-white mb-4"
-                    >
-                        Diagnostics
-                    </h3>
-                    <ul class="space-y-3">
-                        <li class="flex items-center justify-between">
-                            <span
-                                class="text-sm text-gray-600 dark:text-gray-300"
-                                >Webhook Registered</span
-                            >
-                            {#if config.diagnostics.webhookConfigured}
-                                <span class="text-green-500">✅</span>
-                            {:else}
-                                <span class="text-red-500">❌</span>
-                            {/if}
-                        </li>
-                        {#if config.architecture === "lnbits"}
-                            <li class="flex items-center justify-between">
-                                <span
-                                    class="text-sm text-gray-600 dark:text-gray-300"
-                                    >LNBITS_BASE_URL set</span
-                                >
-                                {#if config.diagnostics.hasLnbitsUrl}
-                                    <span class="text-green-500">✅</span>
-                                {:else}
-                                    <span class="text-red-500">❌</span>
-                                {/if}
-                            </li>
-                            <li class="flex items-center justify-between">
-                                <span
-                                    class="text-sm text-gray-600 dark:text-gray-300"
-                                    >LNBITS_ADMIN_KEY set</span
-                                >
-                                {#if config.diagnostics.hasLnbitsKey}
-                                    <span class="text-green-500">✅</span>
-                                {:else}
-                                    <span class="text-red-500">❌</span>
-                                {/if}
-                            </li>
+                    <p class="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        {#if isProductionReady}
+                            The current configuration and operator checklist indicate
+                            readiness for production payment flows.
+                        {:else if config.architecture === "mock"}
+                            The system is intentionally running in development mode.
+                            Switch to LNbits and complete the checklist before launch.
+                        {:else}
+                            Provider wiring exists, but one or more operational gates
+                            are still incomplete.
                         {/if}
-                    </ul>
-                </div>
+                    </p>
+                </Surface>
+
+                <Surface tone="muted" class="space-y-4">
+                    <div>
+                        <h3 class="text-base font-semibold text-slate-900 dark:text-white">
+                            Diagnostics
+                        </h3>
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            Runtime signals from the currently selected provider path.
+                        </p>
+                    </div>
+
+                    <dl class="space-y-3 text-sm">
+                        <div class="flex items-center justify-between gap-4">
+                            <dt class="text-slate-600 dark:text-slate-300">
+                                Webhook Registered
+                            </dt>
+                            <dd>
+                                <Badge
+                                    variant={config.diagnostics.webhookConfigured
+                                        ? "success"
+                                        : "danger"}
+                                >
+                                    {config.diagnostics.webhookConfigured
+                                        ? "Configured"
+                                        : "Missing"}
+                                </Badge>
+                            </dd>
+                        </div>
+
+                        {#if config.architecture === "lnbits"}
+                            <div class="flex items-center justify-between gap-4">
+                                <dt class="text-slate-600 dark:text-slate-300">
+                                    LNBITS_BASE_URL
+                                </dt>
+                                <dd>
+                                    <Badge
+                                        variant={config.diagnostics.hasLnbitsUrl
+                                            ? "success"
+                                            : "danger"}
+                                    >
+                                        {config.diagnostics.hasLnbitsUrl
+                                            ? "Present"
+                                            : "Missing"}
+                                    </Badge>
+                                </dd>
+                            </div>
+                            <div class="flex items-center justify-between gap-4">
+                                <dt class="text-slate-600 dark:text-slate-300">
+                                    LNBITS_ADMIN_KEY
+                                </dt>
+                                <dd>
+                                    <Badge
+                                        variant={config.diagnostics.hasLnbitsKey
+                                            ? "success"
+                                            : "danger"}
+                                    >
+                                        {config.diagnostics.hasLnbitsKey
+                                            ? "Present"
+                                            : "Missing"}
+                                    </Badge>
+                                </dd>
+                            </div>
+                        {/if}
+                    </dl>
+                </Surface>
             </div>
         </div>
     {/if}
