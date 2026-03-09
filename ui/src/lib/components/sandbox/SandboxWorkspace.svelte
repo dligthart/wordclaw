@@ -2137,7 +2137,7 @@
             {/if}
 
             {#if engine.activeScenario}
-                <Surface tone="subtle" class="space-y-4">
+                <Surface tone="subtle" class="sticky top-4 z-10 space-y-4 backdrop-blur supports-[backdrop-filter]:bg-white/85 dark:supports-[backdrop-filter]:bg-slate-950/75">
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div class="space-y-1">
                             <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
