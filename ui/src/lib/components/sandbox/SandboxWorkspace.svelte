@@ -172,9 +172,23 @@
         return CONTEXT_LABELS[label] ?? label;
     }
 
-    function formatStatusExpectation(status?: number): string {
+    function formatExpectedStatusLabel(
+        status?: number | number[],
+    ): string | null {
+        if (status === undefined) {
+            return null;
+        }
+
+        const statuses = Array.isArray(status) ? status : [status];
+        return statuses.join(" / ");
+    }
+
+    function formatStatusExpectation(status?: number | number[]): string {
         if (!status) {
             return "The response may vary.";
+        }
+        if (Array.isArray(status)) {
+            return `Expect one of these responses: ${status.join(", ")}.`;
         }
         if (status >= 200 && status < 300) {
             return `Expect a successful ${status} response.`;
@@ -2191,8 +2205,8 @@
                             <div class="flex flex-wrap items-center gap-2">
                                 <Badge variant="outline">{resolveStepProtocolLabel()}</Badge>
                                 <Badge variant="muted">{engine.currentStep.method}</Badge>
-                                {#if engine.currentStep.expectedStatus}
-                                    <Badge variant="outline">Expect {engine.currentStep.expectedStatus}</Badge>
+                                {#if formatExpectedStatusLabel(engine.currentStep.expectedStatus)}
+                                    <Badge variant="outline">Expect {formatExpectedStatusLabel(engine.currentStep.expectedStatus)}</Badge>
                                 {/if}
                             </div>
                         </div>

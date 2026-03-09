@@ -10,7 +10,7 @@ export type ScenarioStep = {
     protocol?: ScenarioProtocol;
     body?: Record<string, any>;
     headers?: Record<string, string>;
-    expectedStatus?: number;
+    expectedStatus?: number | number[];
     captureFromResponse?: {
         [varName: string]: string; // JSONPath-like, e.g., "data.id"
     };

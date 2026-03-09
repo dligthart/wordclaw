@@ -5,13 +5,21 @@
         expectedStatus,
         actualStatus,
     }: {
-        expectedStatus?: number;
+        expectedStatus?: number | number[];
         actualStatus?: number;
     } = $props();
 
+    let expectedStatuses = $derived.by(() =>
+        expectedStatus === undefined
+            ? []
+            : Array.isArray(expectedStatus)
+              ? expectedStatus
+              : [expectedStatus],
+    );
+
     let isSuccess = $derived(
-        expectedStatus !== undefined && actualStatus !== undefined
-            ? expectedStatus === actualStatus
+        expectedStatuses.length > 0 && actualStatus !== undefined
+            ? expectedStatuses.includes(actualStatus)
             : actualStatus !== undefined
               ? String(actualStatus).startsWith("2")
               : false,
@@ -35,11 +43,11 @@
             </span>
         {/if}
 
-        {#if expectedStatus}
+        {#if expectedStatuses.length > 0}
             <span
                 class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
             >
-                {expectedStatus} Expected
+                {expectedStatuses.join(" / ")} Expected
             </span>
         {/if}
     </div>
