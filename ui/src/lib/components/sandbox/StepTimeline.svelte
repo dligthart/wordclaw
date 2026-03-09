@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { Scenario, StepResult } from "$lib/types/sandbox";
-    import { Check, Circle } from "lucide-svelte";
+    import { ChevronLeft, ChevronRight, Check, Circle } from "lucide-svelte";
 
     let {
         scenario,
@@ -12,7 +12,10 @@
         results: Map<number, StepResult>;
     } = $props();
 
+    let rail: HTMLDivElement | null = null;
     let stepRefs: Array<HTMLDivElement | null> = [];
+    let canScrollPrev = $state(false);
+    let canScrollNext = $state(false);
 
     function resolveProtocolLabel(step: Scenario["steps"][number]): string {
         if (step.protocol) return step.protocol;
@@ -26,6 +29,32 @@
             : currentIndex;
     }
 
+    function updateScrollState() {
+        if (!rail) {
+            canScrollPrev = false;
+            canScrollNext = false;
+            return;
+        }
+
+        const maxScrollLeft = rail.scrollWidth - rail.clientWidth;
+        canScrollPrev = rail.scrollLeft > 4;
+        canScrollNext = rail.scrollLeft < maxScrollLeft - 4;
+    }
+
+    function scrollRail(direction: -1 | 1) {
+        if (!rail) {
+            return;
+        }
+
+        const distance = Math.max(rail.clientWidth * 0.72, 280) * direction;
+        rail.scrollBy({
+            left: distance,
+            behavior: "smooth",
+        });
+
+        requestAnimationFrame(updateScrollState);
+    }
+
     $effect(() => {
         const target = stepRefs[activeStepIndex()];
         if (!target) {
@@ -37,15 +66,44 @@
             block: "nearest",
             inline: "center",
         });
+
+        requestAnimationFrame(updateScrollState);
     });
 </script>
 
 <div class="flex flex-col gap-4">
-    <h3 class="mb-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
-        Scenario Progress
-    </h3>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <h3 class="mb-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
+            Scenario Progress
+        </h3>
 
-    <div class="overflow-x-auto pb-2">
+        <div class="flex items-center gap-2">
+            <button
+                type="button"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100"
+                onclick={() => scrollRail(-1)}
+                disabled={!canScrollPrev}
+                aria-label="Show previous steps"
+            >
+                <ChevronLeft class="h-4 w-4" />
+            </button>
+            <button
+                type="button"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100"
+                onclick={() => scrollRail(1)}
+                disabled={!canScrollNext}
+                aria-label="Show next steps"
+            >
+                <ChevronRight class="h-4 w-4" />
+            </button>
+        </div>
+    </div>
+
+    <div
+        bind:this={rail}
+        class="step-rail overflow-x-auto pb-2"
+        onscroll={updateScrollState}
+    >
         <div class="flex min-w-full snap-x snap-mandatory items-stretch gap-3">
         {#each scenario.steps as step, i}
             {@const isPast = i < currentIndex}
@@ -55,6 +113,7 @@
 
             <div
                 bind:this={stepRefs[i]}
+                data-step-card
                 class={`min-w-[18rem] max-w-[18rem] snap-center rounded-2xl border p-4 transition-colors ${
                     isCurrent
                         ? "border-indigo-500 bg-indigo-50/80 dark:border-indigo-400 dark:bg-indigo-950/30"
@@ -181,3 +240,14 @@
         </div>
     </div>
 </div>
+
+<style>
+    .step-rail {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .step-rail::-webkit-scrollbar {
+        display: none;
+    }
+</style>
