@@ -71,22 +71,22 @@
 </script>
 
 <div
-    class="bg-blue-50/50 border border-blue-100 rounded-lg p-5 dark:bg-blue-950/20 dark:border-blue-900/50 mb-6 font-geist"
+    class="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 font-geist dark:border-slate-700 dark:bg-slate-950/30"
 >
     <div class="flex items-start gap-3">
         <div
-            class="bg-blue-100 text-blue-600 rounded-full p-1.5 mt-0.5 dark:bg-blue-900/50 dark:text-blue-400 shrink-0"
+            class="mt-0.5 shrink-0 rounded-full bg-slate-200 p-1.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
         >
             <Info class="w-4 h-4" />
         </div>
         <div>
             <h4
-                class="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-1"
+                class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100"
             >
                 {title}
             </h4>
             <div
-                class="text-sm text-blue-800/80 dark:text-blue-100 prose prose-sm prose-blue dark:prose-invert max-w-none"
+                class="prose prose-sm max-w-none text-sm text-slate-700 dark:prose-invert dark:text-slate-300"
             >
                 {@html htmlContent}
             </div>

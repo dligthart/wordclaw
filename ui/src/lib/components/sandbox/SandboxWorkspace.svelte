@@ -1886,31 +1886,29 @@
 </script>
 
 <div class="h-full w-full max-w-7xl space-y-6">
-    <div class="flex flex-col gap-4">
-        {#if isGuidedView}
-            <Surface tone="muted" class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div class="space-y-2">
-                    <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        Guided walkthrough
-                    </p>
-                    <p class="max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                        Pick a scenario, read the next instruction in plain language, then run one
-                        step at a time. Raw payloads and fixture IDs are still available, but they
-                        stay tucked away until you need them.
-                    </p>
-                </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onclick={refreshTemplateContext}
-                    disabled={refreshingContext}
-                    aria-busy={refreshingContext}
-                    class="shrink-0"
-                >
-                    {refreshingContext ? "Refreshing..." : "Refresh demo data"}
-                </Button>
-            </Surface>
-        {:else if isAdvancedView}
+    {#if isGuidedView}
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div class="space-y-1">
+                <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    Guided walkthrough
+                </p>
+                <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
+                    Choose a scenario, then run one step at a time.
+                </p>
+            </div>
+            <Button
+                variant="outline"
+                size="sm"
+                onclick={refreshTemplateContext}
+                disabled={refreshingContext}
+                aria-busy={refreshingContext}
+                class="shrink-0"
+            >
+                {refreshingContext ? "Refreshing..." : "Refresh demo data"}
+            </Button>
+        </div>
+    {:else if isAdvancedView}
+        <div class="flex flex-col gap-4">
             <Surface tone="muted" class="space-y-4">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div class="space-y-2">
@@ -2010,49 +2008,49 @@
                     </details>
                 {/if}
             </Surface>
-        {/if}
 
-        {#if contextSummaryItems.length > 0}
-            <details
-                class="rounded-2xl border border-slate-200 bg-white/80 dark:border-slate-700 dark:bg-slate-900/20"
-            >
-                <summary
-                    class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200"
+            {#if contextSummaryItems.length > 0}
+                <details
+                    class="rounded-2xl border border-slate-200 bg-white/80 dark:border-slate-700 dark:bg-slate-900/20"
                 >
-                    Demo data IDs currently in use
-                </summary>
-                <div class="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
-                    <dl
-                        class="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4"
-                        aria-label="Captured sandbox context"
+                    <summary
+                        class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200"
                     >
-                        {#each contextSummaryItems as item}
-                            <div
-                                class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-950/50"
-                            >
-                                <dt class="font-medium text-slate-500 dark:text-slate-400">
-                                    {formatContextLabel(item.label)}
-                                </dt>
-                                <dd
-                                    class="mt-1 font-mono text-slate-800 dark:text-slate-100"
+                        Demo data IDs currently in use
+                    </summary>
+                    <div class="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
+                        <dl
+                            class="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4"
+                            aria-label="Captured sandbox context"
+                        >
+                            {#each contextSummaryItems as item}
+                                <div
+                                    class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-950/50"
                                 >
-                                    {item.value}
-                                </dd>
-                            </div>
-                        {/each}
-                    </dl>
-                </div>
-            </details>
-        {:else}
-            <Surface tone="muted" class="border-dashed px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
-                No demo data is cached yet. Use <span class="font-medium text-slate-700 dark:text-slate-200">Refresh demo data</span>
-                before you continue.
-            </Surface>
-        {/if}
-    </div>
+                                    <dt class="font-medium text-slate-500 dark:text-slate-400">
+                                        {formatContextLabel(item.label)}
+                                    </dt>
+                                    <dd
+                                        class="mt-1 font-mono text-slate-800 dark:text-slate-100"
+                                    >
+                                        {item.value}
+                                    </dd>
+                                </div>
+                            {/each}
+                        </dl>
+                    </div>
+                </details>
+            {:else}
+                <Surface tone="muted" class="border-dashed px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
+                    No demo data is cached yet. Use <span class="font-medium text-slate-700 dark:text-slate-200">Refresh demo data</span>
+                    before you continue.
+                </Surface>
+            {/if}
+        </div>
+    {/if}
 
     {#if isGuidedView}
-        <div class="grid gap-6 xl:grid-cols-[18rem,minmax(0,1fr),20rem]">
+        <div class="grid gap-6 xl:grid-cols-[18rem,minmax(0,1fr)]">
             <ScenarioSidebar
                 scenarios={SCENARIOS}
                 activeScenarioId={engine.activeScenario?.id || null}
@@ -2083,33 +2081,12 @@
                                 </p>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm dark:border-slate-700 dark:bg-slate-950/40">
-                                    <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                        Steps
-                                    </p>
-                                    <p class="mt-2 font-semibold text-slate-900 dark:text-white">
-                                        {engine.activeScenario.steps.length}
-                                    </p>
-                                </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm dark:border-slate-700 dark:bg-slate-950/40">
-                                    <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                        Current
-                                    </p>
-                                    <p class="mt-2 font-semibold text-slate-900 dark:text-white">
-                                        {engine.isComplete
-                                            ? "Done"
-                                            : `Step ${engine.currentStepIndex + 1}`}
-                                    </p>
-                                </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm dark:border-slate-700 dark:bg-slate-950/40">
-                                    <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                        Completed
-                                    </p>
-                                    <p class="mt-2 font-semibold text-slate-900 dark:text-white">
-                                        {engine.stepResults.size}
-                                    </p>
-                                </div>
+                            <div class="flex flex-wrap gap-2">
+                                <Badge variant="outline">{engine.activeScenario.steps.length} steps</Badge>
+                                <Badge variant="muted">
+                                    {engine.isComplete ? "Completed" : `Current: step ${engine.currentStepIndex + 1}`}
+                                </Badge>
+                                <Badge variant="muted">{engine.stepResults.size} finished</Badge>
                             </div>
                         </div>
 
@@ -2124,6 +2101,32 @@
                                 </p>
                             </div>
                         {/if}
+                    </Surface>
+                {/if}
+
+                {#if engine.activeScenario}
+                    <Surface tone="subtle" class="space-y-4">
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div class="space-y-1">
+                                <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                                    Progress
+                                </p>
+                                <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
+                                    Follow the steps in order. Use “Run this step” to advance the walkthrough.
+                                </p>
+                            </div>
+                            {#if getLatestScenarioStep() && getLatestScenarioResult()}
+                                <StatusBadge
+                                    expectedStatus={getLatestScenarioStep()?.expectedStatus}
+                                    actualStatus={getLatestScenarioResult()?.status}
+                                />
+                            {/if}
+                        </div>
+                        <StepTimeline
+                            scenario={engine.activeScenario}
+                            currentIndex={engine.currentStepIndex}
+                            results={engine.stepResults}
+                        />
                     </Surface>
                 {/if}
 
@@ -2151,22 +2154,21 @@
                             </div>
                         </div>
 
-                        <div class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr),minmax(0,0.8fr)]">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/30">
-                                <p class="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                    What this step does
-                                </p>
-                                <NarrationBlock
-                                    title={engine.currentStep.title}
-                                    narration={engine.currentStep.narration}
-                                />
-                            </div>
+                        <NarrationBlock
+                            title={engine.currentStep.title}
+                            narration={engine.currentStep.narration}
+                        />
 
+                        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr),16rem]">
                             <div class="space-y-3">
                                 <div class="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/40">
                                     <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
                                         Request
                                     </p>
+                                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                                        <Badge variant="outline">{resolveStepProtocolLabel()}</Badge>
+                                        <Badge variant="muted">{engine.currentStep.method}</Badge>
+                                    </div>
                                     <p class="mt-3 rounded-xl bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
                                         {engine.interpolatedEndpoint}
                                     </p>
@@ -2189,33 +2191,67 @@
                                         </div>
                                     </details>
                                 {/if}
-                            </div>
-                        </div>
 
-                        <div class="flex flex-col gap-2 sm:flex-row">
-                            <Button
-                                onclick={executeScenarioStep}
-                                disabled={loading}
-                                class="sm:min-w-[10rem]"
-                            >
-                                {loading ? "Running step..." : "Run this step"}
-                            </Button>
-                            {#if loading}
-                                <Button
-                                    type="button"
-                                    onclick={cancelActiveRequest}
-                                    variant="outline"
-                                >
-                                    Cancel request
-                                </Button>
-                            {:else}
-                                <Button
-                                    onclick={replayCurrentScenarioStep}
-                                    variant="outline"
-                                >
-                                    Run step again
-                                </Button>
-                            {/if}
+                                {#if contextSummaryItems.length > 0}
+                                    <details
+                                        class="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950/40"
+                                    >
+                                        <summary
+                                            class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200"
+                                        >
+                                            View demo data IDs
+                                        </summary>
+                                        <div class="grid gap-2 border-t border-slate-200 p-4 text-xs sm:grid-cols-2 dark:border-slate-700">
+                                            {#each contextSummaryItems as item}
+                                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/50">
+                                                    <p class="font-medium text-slate-500 dark:text-slate-400">
+                                                        {formatContextLabel(item.label)}
+                                                    </p>
+                                                    <p class="mt-1 font-mono text-slate-800 dark:text-slate-100">
+                                                        {item.value}
+                                                    </p>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    </details>
+                                {/if}
+                            </div>
+
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/30">
+                                <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                                    Actions
+                                </p>
+                                <div class="mt-4 flex flex-col gap-2">
+                                    <Button
+                                        onclick={executeScenarioStep}
+                                        disabled={loading}
+                                        class="w-full"
+                                    >
+                                        {loading ? "Running step..." : "Run this step"}
+                                    </Button>
+                                    {#if loading}
+                                        <Button
+                                            type="button"
+                                            onclick={cancelActiveRequest}
+                                            variant="outline"
+                                            class="w-full"
+                                        >
+                                            Cancel request
+                                        </Button>
+                                    {:else}
+                                        <Button
+                                            onclick={replayCurrentScenarioStep}
+                                            variant="outline"
+                                            class="w-full"
+                                        >
+                                            Run step again
+                                        </Button>
+                                    {/if}
+                                </div>
+                                <p class="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                    Run the current request, then review the outcome below before moving on.
+                                </p>
+                            </div>
                         </div>
                     </Surface>
                 {:else if engine.isComplete && engine.activeScenario}
@@ -2372,39 +2408,6 @@
                                 </details>
                             {/if}
                         {/if}
-                    </Surface>
-                {/if}
-            </div>
-
-            <div class="space-y-4">
-                {#if engine.activeScenario}
-                    <Surface tone="subtle" class="relative overflow-hidden">
-                        <StepTimeline
-                            scenario={engine.activeScenario}
-                            currentIndex={engine.currentStepIndex}
-                            results={engine.stepResults}
-                        />
-                        {#if loading}
-                            <div
-                                class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/75 backdrop-blur-sm dark:bg-slate-950/75"
-                            >
-                                <LoadingSpinner size="xl" />
-                                <p class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                                    Running step...
-                                </p>
-                            </div>
-                        {/if}
-                    </Surface>
-
-                    <Surface tone="muted" class="space-y-3">
-                        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                            How guided mode works
-                        </p>
-                        <ul class="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                            <li>1. Choose a scenario that matches what you want to learn.</li>
-                            <li>2. Read the current step before running the request.</li>
-                            <li>3. Use the raw payload and response drawers only when you need deeper debugging.</li>
-                        </ul>
                     </Surface>
                 {/if}
             </div>

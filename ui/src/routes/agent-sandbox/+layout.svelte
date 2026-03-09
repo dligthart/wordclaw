@@ -17,29 +17,29 @@
 </script>
 
 <div class="mx-auto flex max-w-7xl flex-col gap-6">
-    <div class="flex flex-col gap-4">
-        <div class="flex flex-wrap items-center gap-2">
-            <Badge variant="warning">Experimental</Badge>
-            <Badge variant="outline">Split into simpler pages</Badge>
-        </div>
-
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div class="space-y-2">
-            <h1 class="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
-                Agent Sandbox
-            </h1>
-            <p class="max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                Use the sandbox in two human-facing modes: guided walkthroughs when you want a
-                step-by-step demo, and request lab when you want to explore calls manually. The
-                old single-page lab is intentionally broken apart here.
-            </p>
+            <div class="flex flex-wrap items-center gap-2">
+                <Badge variant="warning">Experimental</Badge>
+                <Badge variant="outline">Sandbox</Badge>
+            </div>
+            <div class="space-y-1">
+                <h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+                    Agent Sandbox
+                </h1>
+                <p class="max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                    Use guided walkthroughs to learn the product flow, or open Request Lab for
+                    manual API exploration.
+                </p>
+            </div>
         </div>
 
-        <nav class="flex flex-wrap gap-2">
+        <nav class="inline-flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white/70 p-1 dark:border-slate-800 dark:bg-slate-950/40">
             {#each navItems as item}
                 {@const isActive = $page.url.pathname === item.href}
                 <a
                     href={item.href}
-                    class={`inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${navLinkClass(isActive)}`}
+                    class={`inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium transition-colors ${navLinkClass(isActive)}`}
                 >
                     {item.label}
                 </a>

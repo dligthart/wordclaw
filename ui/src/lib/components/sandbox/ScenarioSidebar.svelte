@@ -85,8 +85,8 @@
     }
 </script>
 
-<div
-    class="flex h-full w-full shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/50 lg:w-72"
+<aside
+    class="w-full shrink-0 self-start rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/50 lg:sticky lg:top-4 lg:w-72"
 >
     <div class="border-b border-slate-200 p-4 dark:border-slate-800">
         <h2
@@ -95,8 +95,8 @@
             <PlayCircle class="h-4 w-4 text-indigo-500" />
             Guided Scenarios
         </h2>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Active walkthroughs are limited to core runtime and L402 use cases.
+        <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Pick one focused walkthrough. Archived demos stay collapsed until you need them.
         </p>
     </div>
 
@@ -109,12 +109,9 @@
                     >
                         {section.title}
                     </h3>
-                    <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {section.description}
-                    </p>
                 </div>
 
-                <div class="space-y-3">
+                <div class="space-y-2">
                     {#each section.groups as [groupName, groupScenarios]}
                         <div class="space-y-1.5">
                             {#if section.groups.length > 1}
@@ -227,4 +224,4 @@
             </details>
         {/if}
     </div>
-</div>
+</aside>
