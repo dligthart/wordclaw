@@ -10,7 +10,6 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
-    import ScenarioSidebar from "$lib/components/sandbox/ScenarioSidebar.svelte";
     import StepTimeline from "$lib/components/sandbox/StepTimeline.svelte";
     import NarrationBlock from "$lib/components/sandbox/NarrationBlock.svelte";
     import StatusBadge from "$lib/components/sandbox/StatusBadge.svelte";
@@ -138,6 +137,12 @@
         webhook: "Webhook",
     };
 
+    const SCENARIO_TRACK_LABELS: Record<string, string> = {
+        core: "Core runtime",
+        l402: "L402",
+        archived: "Archived demos",
+    };
+
     function clearError() {
         errorTitle = null;
         errorMsg = null;
@@ -178,6 +183,23 @@
             return "Expect a payment challenge before the action succeeds.";
         }
         return `Expect a handled ${status} error response.`;
+    }
+
+    let scenarioSelectGroups = $derived.by(() =>
+        (["core", "l402", "archived"] as const)
+            .map((track) => ({
+                label: SCENARIO_TRACK_LABELS[track],
+                options: SCENARIOS.filter((scenario) => scenario.track === track),
+            }))
+            .filter((group) => group.options.length > 0),
+    );
+
+    function handleScenarioChange(event: Event) {
+        const select = event.currentTarget as HTMLSelectElement;
+        const scenario = findScenarioById(select.value);
+        if (scenario) {
+            selectScenario(scenario);
+        }
     }
 
     function getLatestScenarioStepIndex(): number | null {
@@ -2050,88 +2072,98 @@
     {/if}
 
     {#if isGuidedView}
-        <div class="grid gap-6 xl:grid-cols-[18rem,minmax(0,1fr)]">
-            <ScenarioSidebar
-                scenarios={SCENARIOS}
-                activeScenarioId={engine.activeScenario?.id || null}
-                onSelect={selectScenario}
-            />
-
-            <div class="space-y-4">
-                {#if engine.activeScenario}
-                    <Surface class="space-y-5">
-                        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div class="space-y-2">
-                                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                                    {engine.activeScenario.differentiator}
-                                </p>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <h2 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
-                                        {engine.activeScenario.title}
-                                    </h2>
-                                    {#if engine.activeScenario.track === "l402"}
-                                        <Badge variant="outline">L402</Badge>
-                                    {/if}
-                                    {#if activeScenarioIsArchived}
-                                        <Badge variant="warning">Archived</Badge>
-                                    {/if}
-                                </div>
-                                <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
-                                    {engine.activeScenario.tagline}
-                                </p>
+        <div class="space-y-4">
+            {#if engine.activeScenario}
+                <Surface class="space-y-5">
+                    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr),18rem] lg:items-start">
+                        <div class="space-y-2">
+                            <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                Scenario
+                            </p>
+                            <div class="max-w-xl">
+                                <Select
+                                    aria-label="Scenario selector"
+                                    value={engine.activeScenario.id}
+                                    onchange={handleScenarioChange}
+                                >
+                                    {#each scenarioSelectGroups as group}
+                                        <optgroup label={group.label}>
+                                            {#each group.options as scenario}
+                                                <option value={scenario.id}>{scenario.title}</option>
+                                            {/each}
+                                        </optgroup>
+                                    {/each}
+                                </Select>
                             </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <p class="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">
+                                    {engine.activeScenario.title}
+                                </p>
+                                {#if engine.activeScenario.track === "l402"}
+                                    <Badge variant="outline">L402</Badge>
+                                {/if}
+                                {#if activeScenarioIsArchived}
+                                    <Badge variant="warning">Archived</Badge>
+                                {/if}
+                            </div>
+                            <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
+                                {engine.activeScenario.tagline}
+                            </p>
+                            {#if activeScenarioIsArchived}
+                                <p class="text-xs leading-5 text-amber-700 dark:text-amber-300">
+                                    {engine.activeScenario.archiveReason ??
+                                        "This walkthrough is retained for historical reference and sits outside the focused sandbox path."}
+                                </p>
+                            {/if}
+                        </div>
 
-                            <div class="flex flex-wrap gap-2">
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/30">
+                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                                Overview
+                            </p>
+                            <div class="mt-4 flex flex-wrap gap-2">
                                 <Badge variant="outline">{engine.activeScenario.steps.length} steps</Badge>
                                 <Badge variant="muted">
                                     {engine.isComplete ? "Completed" : `Current: step ${engine.currentStepIndex + 1}`}
                                 </Badge>
                                 <Badge variant="muted">{engine.stepResults.size} finished</Badge>
                             </div>
+                            <p class="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                Pick a scenario, read the current step, then run it before moving on.
+                            </p>
                         </div>
+                    </div>
+                </Surface>
+            {/if}
 
-                        {#if activeScenarioIsArchived}
-                            <div
-                                class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100"
-                            >
-                                <p class="font-medium">Archived scenario</p>
-                                <p class="mt-1 text-xs leading-5">
-                                    {engine.activeScenario.archiveReason ??
-                                        "This walkthrough is retained for historical reference and sits outside the focused sandbox path."}
-                                </p>
-                            </div>
+            {#if engine.activeScenario}
+                <Surface tone="subtle" class="space-y-4">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="space-y-1">
+                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                                Progress
+                            </p>
+                            <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
+                                Follow the steps in order. Use “Run this step” to advance the walkthrough.
+                            </p>
+                        </div>
+                        {#if getLatestScenarioStep() && getLatestScenarioResult()}
+                            <StatusBadge
+                                expectedStatus={getLatestScenarioStep()?.expectedStatus}
+                                actualStatus={getLatestScenarioResult()?.status}
+                            />
                         {/if}
-                    </Surface>
-                {/if}
+                    </div>
+                    <StepTimeline
+                        scenario={engine.activeScenario}
+                        currentIndex={engine.currentStepIndex}
+                        results={engine.stepResults}
+                    />
+                </Surface>
+            {/if}
 
-                {#if engine.activeScenario}
-                    <Surface tone="subtle" class="space-y-4">
-                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                            <div class="space-y-1">
-                                <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                    Progress
-                                </p>
-                                <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
-                                    Follow the steps in order. Use “Run this step” to advance the walkthrough.
-                                </p>
-                            </div>
-                            {#if getLatestScenarioStep() && getLatestScenarioResult()}
-                                <StatusBadge
-                                    expectedStatus={getLatestScenarioStep()?.expectedStatus}
-                                    actualStatus={getLatestScenarioResult()?.status}
-                                />
-                            {/if}
-                        </div>
-                        <StepTimeline
-                            scenario={engine.activeScenario}
-                            currentIndex={engine.currentStepIndex}
-                            results={engine.stepResults}
-                        />
-                    </Surface>
-                {/if}
-
-                {#if engine.activeScenario && engine.currentStep}
-                    <Surface class="space-y-5">
+            {#if engine.activeScenario && engine.currentStep}
+                <Surface class="space-y-5">
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div class="space-y-2">
                                 <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
@@ -2253,164 +2285,163 @@
                                 </p>
                             </div>
                         </div>
-                    </Surface>
-                {:else if engine.isComplete && engine.activeScenario}
-                    <Surface class="flex flex-col items-center justify-center gap-4 py-12 text-center">
-                        <div
-                            class="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300"
+                </Surface>
+            {:else if engine.isComplete && engine.activeScenario}
+                <Surface class="flex flex-col items-center justify-center gap-4 py-12 text-center">
+                    <div
+                        class="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300"
+                    >
+                        <Icon src={Check} class="h-8 w-8" />
+                    </div>
+                    <div class="space-y-2">
+                        <h2 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+                            Scenario complete
+                        </h2>
+                        <p class="max-w-lg text-sm leading-6 text-slate-500 dark:text-slate-400">
+                            You completed every step in "{engine.activeScenario.title}".
+                            Replay the last step if you want to inspect the final response again,
+                            or reset the walkthrough and start from the beginning.
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 justify-center">
+                        <Button
+                            onclick={replayCurrentScenarioStep}
+                            variant="outline"
                         >
-                            <Icon src={Check} class="h-8 w-8" />
-                        </div>
-                        <div class="space-y-2">
-                            <h2 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
-                                Scenario complete
-                            </h2>
-                            <p class="max-w-lg text-sm leading-6 text-slate-500 dark:text-slate-400">
-                                You completed every step in "{engine.activeScenario.title}".
-                                Replay the last step if you want to inspect the final response again,
-                                or reset the walkthrough and start from the beginning.
+                            Replay last step
+                        </Button>
+                        <Button
+                            onclick={() => engine.resetScenario()}
+                            variant="outline"
+                        >
+                            Start over
+                        </Button>
+                    </div>
+                </Surface>
+            {:else}
+                <Surface tone="muted" class="flex min-h-[24rem] items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400">
+                    Choose a scenario to start the walkthrough.
+                </Surface>
+            {/if}
+
+            {#if errorMsg || getLatestScenarioResult()}
+                <Surface tone="muted" class="space-y-4">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="space-y-1">
+                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                                Latest outcome
                             </p>
+                            <h4 class="text-base font-semibold text-slate-900 dark:text-white">
+                                {#if errorMsg}
+                                    The last request needs attention
+                                {:else}
+                                    Last step completed
+                                {/if}
+                            </h4>
                         </div>
-                        <div class="flex flex-wrap gap-2 justify-center">
-                            <Button
-                                onclick={replayCurrentScenarioStep}
-                                variant="outline"
-                            >
-                                Replay last step
-                            </Button>
-                            <Button
-                                onclick={() => engine.resetScenario()}
-                                variant="outline"
-                            >
-                                Start over
-                            </Button>
-                        </div>
-                    </Surface>
-                {:else}
-                    <Surface tone="muted" class="flex min-h-[24rem] items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400">
-                        Choose a scenario to start the walkthrough.
-                    </Surface>
-                {/if}
-
-                {#if errorMsg || getLatestScenarioResult()}
-                    <Surface tone="muted" class="space-y-4">
-                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div class="space-y-1">
-                                <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                    Latest outcome
-                                </p>
-                                <h4 class="text-base font-semibold text-slate-900 dark:text-white">
-                                    {#if errorMsg}
-                                        The last request needs attention
-                                    {:else}
-                                        Last step completed
-                                    {/if}
-                                </h4>
-                            </div>
-                            {#if getLatestScenarioStep() && getLatestScenarioResult()}
-                                <StatusBadge
-                                    expectedStatus={getLatestScenarioStep()?.expectedStatus}
-                                    actualStatus={getLatestScenarioResult()?.status}
-                                />
-                            {/if}
-                        </div>
-
-                        {#if errorMsg}
-                            <ErrorBanner
-                                title={errorTitle ?? undefined}
-                                message={errorMsg}
-                                details={errorDetails}
-                                actionLabel={errorAction === "refresh-context"
-                                    ? "Refresh demo data"
-                                    : undefined}
-                                onAction={errorAction === "refresh-context"
-                                    ? refreshTemplateContext
-                                    : undefined}
+                        {#if getLatestScenarioStep() && getLatestScenarioResult()}
+                            <StatusBadge
+                                expectedStatus={getLatestScenarioStep()?.expectedStatus}
+                                actualStatus={getLatestScenarioResult()?.status}
                             />
                         {/if}
+                    </div>
 
-                        {#if getLatestScenarioResult()}
-                            {@const lastStepIndex = getLatestScenarioStepIndex()}
-                            {@const lastStep = getLatestScenarioStep()}
-                            {@const lastResult = getLatestScenarioResult()}
-                            {#if lastResult}
-                                {@const lastInsight = extractResponseInsight(lastResult.data)}
+                    {#if errorMsg}
+                        <ErrorBanner
+                            title={errorTitle ?? undefined}
+                            message={errorMsg}
+                            details={errorDetails}
+                            actionLabel={errorAction === "refresh-context"
+                                ? "Refresh demo data"
+                                : undefined}
+                            onAction={errorAction === "refresh-context"
+                                ? refreshTemplateContext
+                                : undefined}
+                        />
+                    {/if}
 
-                                <div class="grid gap-3 sm:grid-cols-3">
-                                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
-                                        <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                            Step
-                                        </p>
-                                        <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
-                                            {lastStepIndex !== null ? lastStepIndex + 1 : "?"}. {lastStep?.title}
-                                        </p>
-                                    </div>
-                                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
-                                        <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                            Status
-                                        </p>
-                                        <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
-                                            {lastResult.status}
-                                        </p>
-                                    </div>
-                                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
-                                        <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                            Time
-                                        </p>
-                                        <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
-                                            {lastResult.elapsed.toFixed(1)} ms
-                                        </p>
-                                    </div>
+                    {#if getLatestScenarioResult()}
+                        {@const lastStepIndex = getLatestScenarioStepIndex()}
+                        {@const lastStep = getLatestScenarioStep()}
+                        {@const lastResult = getLatestScenarioResult()}
+                        {#if lastResult}
+                            {@const lastInsight = extractResponseInsight(lastResult.data)}
+
+                            <div class="grid gap-3 sm:grid-cols-3">
+                                <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
+                                    <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                                        Step
+                                    </p>
+                                    <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+                                        {lastStepIndex !== null ? lastStepIndex + 1 : "?"}. {lastStep?.title}
+                                    </p>
                                 </div>
+                                <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
+                                    <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                                        Status
+                                    </p>
+                                    <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+                                        {lastResult.status}
+                                    </p>
+                                </div>
+                                <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
+                                    <p class="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                                        Time
+                                    </p>
+                                    <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+                                        {lastResult.elapsed.toFixed(1)} ms
+                                    </p>
+                                </div>
+                            </div>
 
-                                {#if lastInsight}
-                                    <div
-                                        class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100"
-                                    >
-                                        {#if lastInsight.code}
-                                            <p><strong>Code:</strong> {lastInsight.code}</p>
-                                        {/if}
-                                        {#if lastInsight.message}
-                                            <p><strong>Message:</strong> {lastInsight.message}</p>
-                                        {/if}
-                                        {#if lastInsight.remediation}
-                                            <p><strong>Remediation:</strong> {lastInsight.remediation}</p>
-                                        {/if}
-                                        {#if lastInsight.recommendedNextAction}
-                                            <p>
-                                                <strong>Recommended next action:</strong>
-                                                {lastInsight.recommendedNextAction}
-                                            </p>
-                                        {/if}
-                                    </div>
-                                {/if}
-
-                                <details
-                                    class="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950/40"
+                            {#if lastInsight}
+                                <div
+                                    class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100"
                                 >
-                                    <summary
-                                        class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200"
-                                    >
-                                        View raw response
-                                    </summary>
-                                    <div class="border-t border-slate-200 p-4 dark:border-slate-700">
-                                        {#if isPlainTextPayload(lastResult.data)}
-                                            <pre
-                                                class="m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs font-mono text-slate-800 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200"
-                                            ><code>{lastResult.data}</code></pre>
-                                        {:else}
-                                            <JsonCodeBlock
-                                                value={lastResult.data}
-                                                class="m-0"
-                                            />
-                                        {/if}
-                                    </div>
-                                </details>
+                                    {#if lastInsight.code}
+                                        <p><strong>Code:</strong> {lastInsight.code}</p>
+                                    {/if}
+                                    {#if lastInsight.message}
+                                        <p><strong>Message:</strong> {lastInsight.message}</p>
+                                    {/if}
+                                    {#if lastInsight.remediation}
+                                        <p><strong>Remediation:</strong> {lastInsight.remediation}</p>
+                                    {/if}
+                                    {#if lastInsight.recommendedNextAction}
+                                        <p>
+                                            <strong>Recommended next action:</strong>
+                                            {lastInsight.recommendedNextAction}
+                                        </p>
+                                    {/if}
+                                </div>
                             {/if}
+
+                            <details
+                                class="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950/40"
+                            >
+                                <summary
+                                    class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200"
+                                >
+                                    View raw response
+                                </summary>
+                                <div class="border-t border-slate-200 p-4 dark:border-slate-700">
+                                    {#if isPlainTextPayload(lastResult.data)}
+                                        <pre
+                                            class="m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs font-mono text-slate-800 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200"
+                                        ><code>{lastResult.data}</code></pre>
+                                    {:else}
+                                        <JsonCodeBlock
+                                            value={lastResult.data}
+                                            class="m-0"
+                                        />
+                                    {/if}
+                                </div>
+                            </details>
                         {/if}
-                    </Surface>
-                {/if}
-            </div>
+                    {/if}
+                </Surface>
+            {/if}
         </div>
     {:else if isAdvancedView}
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1.05fr),minmax(0,0.95fr)]">
