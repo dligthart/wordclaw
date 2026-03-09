@@ -5,7 +5,6 @@
     let { children } = $props();
 
     const navItems = [
-        { href: "/ui/agent-sandbox", label: "Overview" },
         { href: "/ui/agent-sandbox/scenarios", label: "Guided Scenarios" },
         { href: "/ui/agent-sandbox/request-lab", label: "Request Lab" },
     ];
@@ -37,10 +36,7 @@
 
         <nav class="flex flex-wrap gap-2">
             {#each navItems as item}
-                {@const isActive =
-                    $page.url.pathname === item.href ||
-                    ($page.url.pathname === "/ui/agent-sandbox/" &&
-                        item.href === "/ui/agent-sandbox")}
+                {@const isActive = $page.url.pathname === item.href}
                 <a
                     href={item.href}
                     class={`inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${navLinkClass(isActive)}`}
