@@ -183,22 +183,6 @@
         return statuses.join(" / ");
     }
 
-    function formatStatusExpectation(status?: number | number[]): string {
-        if (!status) {
-            return "The response may vary.";
-        }
-        if (Array.isArray(status)) {
-            return `Expect one of these responses: ${status.join(", ")}.`;
-        }
-        if (status >= 200 && status < 300) {
-            return `Expect a successful ${status} response.`;
-        }
-        if (status === 402) {
-            return "Expect a payment challenge before the action succeeds.";
-        }
-        return `Expect a handled ${status} error response.`;
-    }
-
     let scenarioSelectGroups = $derived.by(() =>
         (["core", "l402", "archived"] as const)
             .map((track) => ({
@@ -2100,7 +2084,7 @@
         <div class="space-y-4">
             {#if engine.activeScenario}
                 <Surface class="space-y-5">
-                    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr),18rem] lg:items-start">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div class="space-y-2">
                             <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                                 Scenario
@@ -2131,31 +2115,23 @@
                                     <Badge variant="warning">Archived</Badge>
                                 {/if}
                             </div>
-                            <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
+                            <p class="max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
                                 {engine.activeScenario.tagline}
                             </p>
                             {#if activeScenarioIsArchived}
-                                <p class="text-xs leading-5 text-amber-700 dark:text-amber-300">
+                                <p class="text-xs leading-5 text-slate-500 dark:text-slate-400">
                                     {engine.activeScenario.archiveReason ??
                                         "This walkthrough is retained for historical reference and sits outside the focused sandbox path."}
                                 </p>
                             {/if}
                         </div>
 
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/30">
-                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                Overview
-                            </p>
-                            <div class="mt-4 flex flex-wrap gap-2">
-                                <Badge variant="outline">{engine.activeScenario.steps.length} steps</Badge>
-                                <Badge variant="muted">
-                                    {engine.isComplete ? "Completed" : `Current: step ${engine.currentStepIndex + 1}`}
-                                </Badge>
-                                <Badge variant="muted">{engine.stepResults.size} finished</Badge>
-                            </div>
-                            <p class="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                Pick a scenario, read the current step, then run it before moving on.
-                            </p>
+                        <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                            <Badge variant="outline">{engine.activeScenario.steps.length} steps</Badge>
+                            <Badge variant="muted">
+                                {engine.isComplete ? "Completed" : `Step ${engine.currentStepIndex + 1}`}
+                            </Badge>
+                            <Badge variant="muted">{engine.stepResults.size} finished</Badge>
                         </div>
                     </div>
                 </Surface>
@@ -2163,15 +2139,10 @@
 
             {#if engine.activeScenario}
                 <Surface tone="subtle" class="sticky top-4 z-10 space-y-4 backdrop-blur supports-[backdrop-filter]:bg-white/85 dark:supports-[backdrop-filter]:bg-slate-950/75">
-                    <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div class="space-y-1">
-                            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                                Progress
-                            </p>
-                            <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
-                                Follow the steps in order. Use “Run this step” to advance the walkthrough.
-                            </p>
-                        </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                            Progress
+                        </p>
                         {#if getLatestScenarioStep() && getLatestScenarioResult()}
                             <StatusBadge
                                 expectedStatus={getLatestScenarioStep()?.expectedStatus}
@@ -2197,9 +2168,6 @@
                                 <h3 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">
                                     {engine.currentStep.title}
                                 </h3>
-                                <p class="text-sm leading-6 text-slate-500 dark:text-slate-400">
-                                    {formatStatusExpectation(engine.currentStep.expectedStatus)}
-                                </p>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2">
@@ -2305,9 +2273,6 @@
                                         </Button>
                                     {/if}
                                 </div>
-                                <p class="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                    Run the current request, then review the outcome below before moving on.
-                                </p>
                             </div>
                         </div>
                 </Surface>
@@ -2358,9 +2323,9 @@
                             </p>
                             <h4 class="text-base font-semibold text-slate-900 dark:text-white">
                                 {#if errorMsg}
-                                    The last request needs attention
+                                    Needs attention
                                 {:else}
-                                    Last step completed
+                                    Step completed
                                 {/if}
                             </h4>
                         </div>

@@ -615,16 +615,6 @@
 
             <main class="min-h-[calc(100vh-4rem)]">
                 <div class="wc-page-scroll mx-auto max-w-[76rem] px-5 py-7 sm:px-7 lg:px-10">
-                    {#if activeExperimentalItem}
-                        <div class="mb-6 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <Badge variant="warning">Experimental surface</Badge>
-                            </div>
-                            <p class="mt-2 leading-6">
-                                {activeExperimentalItem.notice}
-                            </p>
-                        </div>
-                    {/if}
                     {@render children()}
                 </div>
             </main>
