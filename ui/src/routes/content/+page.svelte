@@ -138,6 +138,10 @@
     let loadingItems = $state(false);
     let error = $state<string | null>(null);
     let rollingBack = $state(false);
+    let showModelFilterModal = $state(false);
+    let showSchemaInfoModal = $state(false);
+    let schemaPickerSearch = $state("");
+    let draftSelectedTypeId = $state<number | null>(null);
 
     let availableTransitions = $derived.by(() => {
         if (!activeWorkflow || !selectedItem) {
@@ -200,6 +204,38 @@
     let selectedTypeStatusSummary = $derived.by(() =>
         selectedType ? summarizeTypeStatuses(selectedType) : [],
     );
+    let selectedTypeMetrics = $derived.by(() =>
+        selectedType
+            ? resolveSchemaMetrics(selectedType)
+            : { fieldCount: 0, requiredCount: 0 },
+    );
+    let schemaOverview = $derived.by(() => ({
+        totalSchemas: contentTypes.length,
+        schemasWithContent: contentTypes.filter(
+            (type) => resolveTypeItemCount(type) > 0,
+        ).length,
+        paidSchemas: contentTypes.filter((type) => (type.basePrice ?? 0) > 0)
+            .length,
+        totalItems: contentTypes.reduce(
+            (sum, type) => sum + resolveTypeItemCount(type),
+            0,
+        ),
+    }));
+    let highlightedSchemas = $derived.by(() =>
+        sortedContentTypes.slice(0, 6),
+    );
+    let schemaPickerTypes = $derived.by(() => {
+        const query = schemaPickerSearch.trim().toLowerCase();
+        if (!query) {
+            return sortedContentTypes;
+        }
+
+        return sortedContentTypes.filter((type) =>
+            [type.name, type.slug, type.description ?? ""].some((value) =>
+                value.toLowerCase().includes(query),
+            ),
+        );
+    });
 
     function normalizeMeta(meta: Record<string, unknown> | null | undefined): ContentListMeta {
         return {
@@ -453,6 +489,18 @@
     }
 
     function resolveSchemaSummary(type: ContentType): string {
+        const metrics = resolveSchemaMetrics(type);
+        if (metrics.fieldCount === 0) {
+            return "Custom schema";
+        }
+
+        return `${metrics.fieldCount} fields, ${metrics.requiredCount} required`;
+    }
+
+    function resolveSchemaMetrics(type: ContentType): {
+        fieldCount: number;
+        requiredCount: number;
+    } {
         try {
             const parsed = JSON.parse(type.schema) as {
                 properties?: Record<string, unknown>;
@@ -462,14 +510,9 @@
             const requiredCount = Array.isArray(parsed.required)
                 ? parsed.required.length
                 : 0;
-
-            if (fieldCount === 0) {
-                return "Custom schema";
-            }
-
-            return `${fieldCount} fields, ${requiredCount} required`;
+            return { fieldCount, requiredCount };
         } catch {
-            return "Custom schema";
+            return { fieldCount: 0, requiredCount: 0 };
         }
     }
 
@@ -504,6 +547,37 @@
             })
             .slice(0, 3)
             .map(([status, count]) => ({ status, count }));
+    }
+
+    function selectTypeById(typeId: string) {
+        const nextType = contentTypes.find((type) => type.id === Number(typeId));
+        if (!nextType || nextType.id === selectedType?.id) {
+            return;
+        }
+
+        void selectType(nextType);
+    }
+
+    function openModelFilterModal() {
+        draftSelectedTypeId = selectedType?.id ?? sortedContentTypes[0]?.id ?? null;
+        schemaPickerSearch = "";
+        showModelFilterModal = true;
+    }
+
+    async function applySchemaSelection() {
+        if (draftSelectedTypeId === null) {
+            showModelFilterModal = false;
+            return;
+        }
+
+        const nextType =
+            sortedContentTypes.find((type) => type.id === draftSelectedTypeId) ??
+            null;
+        showModelFilterModal = false;
+
+        if (nextType && nextType.id !== selectedType?.id) {
+            await selectType(nextType);
+        }
     }
 
     function buildItemsQuery(offset = 0): string {
@@ -945,15 +1019,14 @@
     <title>Content Browser | WordClaw Supervisor</title>
 </svelte:head>
 
-<div class="h-full flex flex-col">
+<div class="flex h-full flex-col">
     <div class="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
             <h2 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
                 Content Browser
             </h2>
             <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-                Find content by title, slug, status, or date, then inspect
-                version history before taking workflow or rollback actions.
+                Browse content by schema first, then narrow within that model and inspect individual items.
             </p>
         </div>
         <Button
@@ -971,7 +1044,7 @@
                 }
             }}
         >
-            <Icon src={ArrowPath} class="w-4 h-4" />
+            <Icon src={ArrowPath} class="h-4 w-4" />
             Refresh
         </Button>
     </div>
@@ -980,514 +1053,830 @@
         <ErrorBanner class="mb-6" message={error} />
     {/if}
 
-    <div class="flex-1 flex flex-col lg:flex-row gap-6 overflow-hidden">
-        <aside
-            class="w-full lg:w-72 xl:w-[17.5rem] flex flex-col overflow-hidden {selectedType
-                ? 'hidden lg:flex'
-                : 'flex'}"
-        >
-            <Surface class="flex h-full flex-col overflow-hidden p-0">
-                <div
-                    class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30"
-                >
-                    <div class="flex items-center justify-between gap-2">
-                        <div>
-                            <h3
-                                class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                            >
-                                Models
-                            </h3>
-                            <p class="mt-1 text-[0.72rem] text-slate-500 dark:text-slate-400">
-                                Compact schema map
-                            </p>
-                        </div>
-                        <Badge variant="muted">{contentTypes.length}</Badge>
-                    </div>
+    {#snippet SchemaLanding()}
+        <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
+            <Surface class="p-8 lg:p-10">
+                <p class="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                    Schema-first browser
+                </p>
+                <h3 class="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+                    Start by choosing a content schema
+                </h3>
+                <p class="mt-4 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    The browser is organized around schema first, item second. Select the model you want to inspect, then review only the content created from that schema.
+                </p>
+
+                <div class="mt-6 flex flex-wrap items-center gap-3">
+                    <Button type="button" onclick={openModelFilterModal}>
+                        Choose schema
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onclick={() => void loadContentTypes()}
+                    >
+                        Refresh schemas
+                    </Button>
                 </div>
-                <div class="flex-1 overflow-y-auto p-2.5">
-                {#if loading}
-                    <div class="flex justify-center p-8">
-                        <LoadingSpinner size="md" />
-                    </div>
-                {:else if contentTypes.length === 0}
-                    <p class="text-center text-sm text-gray-500 p-8">
-                        No types defined.
+
+                <div class="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Total schemas
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                            {schemaOverview.totalSchemas}
+                        </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            With content
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                            {schemaOverview.schemasWithContent}
+                        </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Total items
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                            {schemaOverview.totalItems}
+                        </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Paid schemas
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                            {schemaOverview.paidSchemas}
+                        </p>
+                    </Surface>
+                </div>
+            </Surface>
+
+            <Surface class="overflow-hidden p-0">
+                <div class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Recently active schemas
                     </p>
-                {:else}
-                    <ul class="space-y-1.5">
-                        {#each sortedContentTypes as type}
-                            {@const typeStatusSummary =
-                                summarizeTypeStatuses(type)}
-                            {@const previewLines =
-                                resolveSchemaPreviewLines(type)}
-                            <li>
-                                <button
-                                    type="button"
-                                    onclick={() => selectType(type)}
-                                    class="w-full rounded-2xl border px-3 py-3 text-left transition-colors {selectedType?.id ===
-                                    type.id
-                                        ? 'border-slate-300 bg-slate-50 text-slate-950 shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50'
-                                        : 'border-transparent bg-transparent hover:border-slate-200 hover:bg-slate-50/80 dark:hover:border-slate-700 dark:hover:bg-slate-800/70'}"
-                                >
-                                    <div
-                                        class="flex items-start justify-between gap-2"
+                    <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                        Jump into the models with the most recent content activity.
+                    </p>
+                </div>
+
+                <div class="p-4">
+                    {#if loading}
+                        <div class="flex justify-center p-8">
+                            <LoadingSpinner size="md" />
+                        </div>
+                    {:else if highlightedSchemas.length === 0}
+                        <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                            No content schemas are available yet.
+                        </div>
+                    {:else}
+                        <ul class="space-y-2">
+                            {#each highlightedSchemas as type}
+                                <li>
+                                    <button
+                                        type="button"
+                                        onclick={() => selectType(type)}
+                                        class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:border-slate-600 dark:hover:bg-slate-800/40"
                                     >
-                                        <div class="min-w-0">
-                                            <div class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                                {type.name}
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div class="min-w-0">
+                                                <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                                    {type.name}
+                                                </p>
+                                                <p class="mt-0.5 truncate text-[0.72rem] font-mono text-slate-500 dark:text-slate-400">
+                                                    {type.slug}
+                                                </p>
                                             </div>
-                                            <div
-                                                class="mt-0.5 truncate text-[0.68rem] font-mono text-slate-500 dark:text-slate-400"
-                                            >
-                                                {type.slug}
-                                            </div>
-                                        </div>
-                                        <div class="flex items-center gap-1 shrink-0">
                                             <Badge variant="outline">
                                                 {resolveTypeItemCount(type)}
                                             </Badge>
-                                            {#if (type.basePrice ?? 0) > 0}
-                                                <Badge variant="paid">
-                                                    Paid
-                                                </Badge>
-                                            {/if}
                                         </div>
-                                    </div>
-                                    <div
-                                        class="mt-2 rounded-xl bg-slate-50 px-2.5 py-2 dark:bg-slate-950/50"
-                                    >
-                                        <div class="flex items-center justify-between gap-2">
-                                            <p
-                                                class="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                                            >
-                                                Structure
-                                            </p>
-                                            <span
-                                                class="text-[0.62rem] text-slate-500 dark:text-slate-400"
-                                            >
-                                                {resolveSchemaSummary(type)}
-                                            </span>
+                                        <div class="mt-3 flex items-center justify-between gap-3 text-[0.72rem] text-slate-500 dark:text-slate-400">
+                                            <span>{resolveSchemaSummary(type)}</span>
+                                            <span>{resolveTypeLastActivity(type)}</span>
                                         </div>
-                                        <div
-                                            class="mt-2 border-l border-slate-200 pl-2 dark:border-slate-700"
-                                        >
-                                            {#each previewLines as line}
-                                                <div
-                                                    class="flex items-center gap-1.5 py-0.5 text-[0.68rem]"
-                                                    style={`padding-left: ${line.depth * 0.75}rem`}
-                                                >
-                                                    <span
-                                                        class="text-slate-400 dark:text-slate-500"
-                                                        >{line.summary ? "…" : "└"}</span
-                                                    >
-                                                    <span
-                                                        class={line.summary
-                                                            ? "truncate italic text-slate-500 dark:text-slate-400"
-                                                            : "truncate text-slate-700 dark:text-slate-200"}
-                                                    >
-                                                        {line.label}
-                                                    </span>
-                                                    {#if line.typeLabel}
-                                                        <Badge
-                                                            variant="muted"
-                                                            class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide"
-                                                        >
-                                                            {line.typeLabel}
-                                                        </Badge>
-                                                    {/if}
-                                                    {#if line.required}
-                                                        <Badge
-                                                            variant="info"
-                                                            class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide"
-                                                        >
-                                                            req
-                                                        </Badge>
-                                                    {/if}
-                                                </div>
-                                            {/each}
-                                        </div>
-                                    </div>
-                                    {#if typeStatusSummary.length > 0}
-                                        <div class="mt-2 flex flex-wrap gap-1">
-                                            {#each typeStatusSummary as summary}
-                                                <span
-                                                    class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[0.6rem] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
-                                                >
-                                                    {formatStatusLabel(
-                                                        summary.status,
-                                                    )}
-                                                    <span class="ml-1 font-mono"
-                                                        >{summary.count}</span
-                                                    >
-                                                </span>
-                                            {/each}
-                                        </div>
-                                    {/if}
-                                    <div
-                                        class="mt-2 flex items-center justify-between gap-2 text-[0.65rem] text-slate-500 dark:text-slate-400"
-                                    >
-                                        <span>{resolveTypeItemCount(type)} items</span>
-                                        <span
-                                            >Updated {formatRelativeDate(
-                                                type.updatedAt,
-                                            )}</span
-                                        >
-                                    </div>
-                                </button>
-                            </li>
-                        {/each}
-                    </ul>
-                {/if}
+                                    </button>
+                                </li>
+                            {/each}
+                        </ul>
+                    {/if}
                 </div>
             </Surface>
-        </aside>
+        </div>
+    {/snippet}
 
-        <div
-            class="relative flex-1 min-w-0 overflow-hidden {!selectedType
-                ? 'hidden lg:flex'
-                : 'flex'}"
-        >
-            {#if !selectedType}
-                <Surface class="flex flex-1 items-center justify-center text-sm italic text-slate-400 dark:text-slate-500">
-                    Select a content model to view items.
-                </Surface>
-            {:else}
-                <Surface class="flex w-full flex-col overflow-hidden p-0">
-                    <div
-                        class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/30"
-                    >
-                        <div
-                            class="flex items-start justify-between gap-3 flex-wrap"
-                        >
-                            <div class="flex items-start gap-3 min-w-0">
-                                <button
-                                    class="lg:hidden mt-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                                    aria-label="Back to models"
-                                    onclick={() => {
-                                        selectedType = null;
-                                        activeWorkflow = null;
-                                        items = [];
-                                        itemsMeta = { ...DEFAULT_ITEMS_META };
-                                        resetSelectedItemContext();
-                                    }}
+    {#snippet CurrentSchemaRail()}
+        {#if selectedType}
+            {@const previewLines = resolveSchemaPreviewLines(selectedType)}
+            <Surface class="flex flex-col overflow-hidden p-0 xl:h-full">
+                <div class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/30">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Selected schema
+                    </p>
+                    <h3 class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
+                        {selectedType.name}
+                    </h3>
+                    <p class="mt-1 text-[0.72rem] font-mono text-slate-500 dark:text-slate-400">
+                        {selectedType.slug}
+                    </p>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                    <p class="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        {selectedType.description || "Structured content model for supervised AI and operator workflows."}
+                    </p>
+
+                    <div class="grid gap-3">
+                        <Surface tone="subtle" class="p-4">
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Activity
+                            </p>
+                            <p class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                                {selectedType.stats?.lastItemUpdatedAt
+                                    ? formatRelativeDate(selectedType.stats.lastItemUpdatedAt)
+                                    : "No items yet"}
+                            </p>
+                        </Surface>
+                    </div>
+
+                    <Surface tone="subtle" class="p-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Structure
+                            </p>
+                            <span class="text-[0.72rem] text-slate-500 dark:text-slate-400">
+                                {resolveSchemaSummary(selectedType)}
+                            </span>
+                        </div>
+                        <div class="mt-3 space-y-1.5">
+                            {#each previewLines as line}
+                                <div
+                                    class="flex items-center gap-1.5 text-[0.72rem]"
+                                    style={`padding-left: ${line.depth * 0.75}rem`}
                                 >
-                                    <Icon src={ChevronLeft} class="w-5 h-5" />
+                                    <span class="text-slate-400 dark:text-slate-500">{line.summary ? "…" : "└"}</span>
+                                    <span class={line.summary
+                                        ? "truncate italic text-slate-500 dark:text-slate-400"
+                                        : "truncate text-slate-700 dark:text-slate-200"}
+                                    >
+                                        {line.label}
+                                    </span>
+                                    {#if line.typeLabel}
+                                        <Badge variant="muted" class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide">
+                                            {line.typeLabel}
+                                        </Badge>
+                                    {/if}
+                                    {#if line.required}
+                                        <Badge variant="info" class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide">
+                                            req
+                                        </Badge>
+                                    {/if}
+                                </div>
+                            {/each}
+                        </div>
+                    </Surface>
+
+                    {#if selectedTypeStatusSummary.length > 0}
+                        <Surface tone="subtle" class="p-4">
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Status mix
+                            </p>
+                            <div class="mt-3 flex flex-wrap gap-1.5">
+                                {#each selectedTypeStatusSummary as summary}
+                                    <Badge variant="muted">
+                                        {formatStatusLabel(summary.status)} {summary.count}
+                                    </Badge>
+                                {/each}
+                            </div>
+                        </Surface>
+                    {/if}
+                </div>
+            </Surface>
+        {/if}
+    {/snippet}
+
+    {#snippet InspectorContent()}
+        {#if !selectedItem}
+            <div class="flex h-full items-center justify-center p-6 text-center">
+                <div class="max-w-sm">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Inspector
+                    </p>
+                    <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50">
+                        Select an item
+                    </h3>
+                    <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                        Choose an item from the list to inspect its payload, workflow state, and version history.
+                    </p>
+                </div>
+            </div>
+        {:else}
+            <div class="flex h-full flex-col overflow-hidden">
+                <div class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    class="2xl:hidden text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                    aria-label="Close inspector"
+                                    onclick={() => resetSelectedItemContext()}
+                                >
+                                    <Icon src={ChevronLeft} class="h-5 w-5" />
                                 </button>
-                                <div class="min-w-0">
-                                    <div class="flex flex-wrap items-center gap-2">
-                                        <h3
-                                            class="text-base font-semibold text-gray-900 dark:text-white"
-                                        >
-                                            {selectedType.name}
-                                        </h3>
-                                        {#if (selectedType.basePrice ?? 0) > 0}
-                                            <Badge variant="paid">Paid</Badge>
-                                        {/if}
-                                        {#if activeWorkflow}
-                                            <Badge variant="info">Workflow active</Badge>
-                                        {/if}
-                                    </div>
-                                    <p
-                                        class="mt-1 text-xs font-mono text-gray-500 dark:text-gray-400"
-                                    >
-                                        {selectedType.slug}
-                                    </p>
-                                    <p
-                                        class="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300"
-                                    >
-                                        {selectedType.description ||
-                                            "Structured content model for supervised AI and operator workflows."}
-                                    </p>
+                                <h3 class="truncate text-lg font-semibold text-slate-900 dark:text-slate-50">
+                                    {resolveItemLabel(selectedItem)}
+                                </h3>
+                                <Badge variant={resolveStatusBadgeVariant(selectedItem.status)}>
+                                    {formatStatusLabel(selectedItem.status)}
+                                </Badge>
+                            </div>
+                            <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                                {resolveItemSummary(selectedItem)}
+                            </p>
+                            <div class="mt-3 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400">
+                                <span class="font-mono">#{selectedItem.id}</span>
+                                <span class="font-mono">v{selectedItem.version}</span>
+                                <span>Updated {formatDateTime(selectedItem.updatedAt)}</span>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            class="2xl:hidden text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                            aria-label="Close inspector"
+                            onclick={() => resetSelectedItemContext()}
+                        >
+                            <Icon src={XMark} class="h-5 w-5" />
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-5 space-y-4">
+                    <Surface tone="muted" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Overview
+                        </p>
+                        <dl class="mt-3 grid gap-3 text-sm">
+                            <div>
+                                <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    Primary label
+                                </dt>
+                                <dd class="mt-1 text-slate-900 dark:text-slate-50">
+                                    {resolveItemLabel(selectedItem)}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    Summary
+                                </dt>
+                                <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                    {resolveItemSummary(selectedItem)}
+                                </dd>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 text-xs text-slate-500 dark:text-slate-400">
+                                <div>
+                                    <dt class="font-semibold uppercase">Status</dt>
+                                    <dd class="mt-1 text-sm text-slate-900 dark:text-slate-50">
+                                        {formatStatusLabel(selectedItem.status)}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt class="font-semibold uppercase">Version</dt>
+                                    <dd class="mt-1 text-sm text-slate-900 dark:text-slate-50">
+                                        v{selectedItem.version}
+                                    </dd>
                                 </div>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline">{itemsMeta.total} items</Badge>
-                                <Badge variant="muted">{resolveSchemaSummary(selectedType)}</Badge>
+                        </dl>
+                    </Surface>
+
+                    {#if activeWorkflow}
+                        <Surface tone="subtle" class="p-4">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                        Workflow
+                                    </p>
+                                    <h4 class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                                        {activeWorkflow.name}
+                                    </h4>
+                                </div>
+                            </div>
+                            {#if availableTransitions.length > 0}
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    {#each availableTransitions as transition}
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onclick={() => submitForReview(transition.id)}
+                                            disabled={submittingReview}
+                                        >
+                                            {transition.toState === "published"
+                                                ? "Publish"
+                                                : `Move to ${formatStatusLabel(transition.toState)}`}
+                                        </Button>
+                                    {/each}
+                                </div>
+                            {:else}
+                                <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                                    No workflow transitions are available from the current state.
+                                </p>
+                            {/if}
+                        </Surface>
+                    {/if}
+
+                    <Surface tone="subtle" class="p-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                    Payload
+                                </p>
+                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    Current structured content data for this item.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <JsonCodeBlock value={selectedItem.data} />
+                        </div>
+                    </Surface>
+
+                    <Surface tone="subtle" class="p-4">
+                        <div class="flex items-start justify-between gap-3 flex-wrap">
+                            <div>
+                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                    Compare version
+                                </p>
+                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    Review the selected historical version before rollback.
+                                </p>
+                            </div>
+                            {#if versions.length > 0}
+                                <div class="w-full sm:w-48">
+                                    <Select
+                                        onchange={(event) => {
+                                            selectedVersionForDiff = Number(
+                                                (event.currentTarget as HTMLSelectElement).value,
+                                            );
+                                        }}
+                                    >
+                                        {#each versions as version}
+                                            <option
+                                                value={version.version}
+                                                selected={selectedDiffVersion?.version === version.version}
+                                            >
+                                                Version {version.version}
+                                            </option>
+                                        {/each}
+                                    </Select>
+                                </div>
+                            {/if}
+                        </div>
+                        {#if !selectedDiffVersion}
+                            <p class="mt-4 text-sm italic text-slate-500 dark:text-slate-400">
+                                No historical versions available yet.
+                            </p>
+                        {:else}
+                            <div class="mt-4 space-y-3">
+                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-200">
+                                    Comparing current version v{selectedItem.version} with v{selectedDiffVersion.version}. {selectedDiffEntries.length} field-level difference(s).
+                                </div>
+                                {#if selectedDiffEntries.length === 0}
+                                    <p class="text-sm italic text-slate-500 dark:text-slate-400">
+                                        No payload changes detected between these versions.
+                                    </p>
+                                {:else}
+                                    <div class="max-h-64 space-y-2 overflow-y-auto pr-1">
+                                        {#each selectedDiffEntries as entry}
+                                            <div class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700">
+                                                <div class="flex items-center justify-between gap-3">
+                                                    <code class="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                                        {entry.key}
+                                                    </code>
+                                                    <span class="text-[0.65rem] font-semibold uppercase tracking-wide {entry.change === 'added'
+                                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                                        : entry.change === 'removed'
+                                                            ? 'text-rose-600 dark:text-rose-400'
+                                                            : 'text-amber-600 dark:text-amber-300'}">
+                                                        {entry.change}
+                                                    </span>
+                                                </div>
+                                                <div class="mt-2 grid gap-2 text-xs">
+                                                    <div class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60">
+                                                        <p class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                                            Current
+                                                        </p>
+                                                        <p class="mt-1 break-words font-mono text-slate-700 dark:text-slate-200">
+                                                            {entry.before}
+                                                        </p>
+                                                    </div>
+                                                    <div class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60">
+                                                        <p class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                                            Selected
+                                                        </p>
+                                                        <p class="mt-1 break-words font-mono text-slate-700 dark:text-slate-200">
+                                                            {entry.after}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {/if}
+                                <div class="flex justify-end">
+                                    <Button
+                                        type="button"
+                                        variant="destructive"
+                                        size="sm"
+                                        onclick={() => rollbackToVersion(selectedDiffVersion.version)}
+                                        disabled={rollingBack}
+                                    >
+                                        Roll back to v{selectedDiffVersion.version}
+                                    </Button>
+                                </div>
+                            </div>
+                        {/if}
+                    </Surface>
+
+                    {#if activeWorkflow}
+                        <Surface tone="subtle" class="p-4">
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Discussion
+                            </p>
+                            <div class="mt-3 max-h-52 space-y-3 overflow-y-auto pr-1">
+                                {#if comments.length === 0}
+                                    <p class="text-sm italic text-slate-500 dark:text-slate-400">
+                                        No comments yet.
+                                    </p>
+                                {:else}
+                                    {#each comments as comment}
+                                        <div class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/30">
+                                            <div class="flex items-center justify-between gap-2">
+                                                <span class="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                                    {comment.authorId}
+                                                </span>
+                                                <span class="text-[0.68rem] text-slate-500 dark:text-slate-400">
+                                                    {formatDateTime(comment.createdAt)}
+                                                </span>
+                                            </div>
+                                            <p class="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
+                                                {comment.comment}
+                                            </p>
+                                        </div>
+                                    {/each}
+                                {/if}
+                            </div>
+                            <form
+                                class="mt-4 flex gap-2"
+                                onsubmit={(event) => {
+                                    event.preventDefault();
+                                    void postComment();
+                                }}
+                            >
+                                <Input
+                                    type="text"
+                                    bind:value={newComment}
+                                    placeholder="Add a comment"
+                                    class="flex-1"
+                                />
+                                <Button
+                                    type="submit"
+                                    variant="secondary"
+                                    disabled={!newComment.trim()}
+                                >
+                                    Post
+                                </Button>
+                            </form>
+                        </Surface>
+                    {/if}
+
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Version history
+                        </p>
+                        {#if versions.length === 0}
+                            <p class="mt-3 text-sm italic text-slate-500 dark:text-slate-400">
+                                No historical versions found.
+                            </p>
+                        {:else}
+                            <div class="mt-3 space-y-3">
+                                {#each versions as version}
+                                    {@const versionDiff = buildDiffEntries(
+                                        selectedItem.data,
+                                        version.data,
+                                        selectedItem.status,
+                                        version.status,
+                                    )}
+                                    <div class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p class="text-sm font-semibold text-slate-900 dark:text-slate-50">
+                                                    Version {version.version}
+                                                </p>
+                                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                    {formatStatusLabel(version.status)} · {formatDateTime(version.createdAt)}
+                                                </p>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onclick={() => {
+                                                        selectedVersionForDiff = version.version;
+                                                    }}
+                                                >
+                                                    Compare
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    onclick={() => rollbackToVersion(version.version)}
+                                                    disabled={rollingBack}
+                                                >
+                                                    Roll back
+                                                </Button>
+                                            </div>
+                                        </div>
+                                        <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                                            {resolveItemSummary(version)}
+                                        </p>
+                                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                            {versionDiff.length} change(s) from the current item
+                                        </p>
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
+                    </Surface>
+                </div>
+            </div>
+        {/if}
+    {/snippet}
+
+    {#if !selectedType}
+        {@render SchemaLanding()}
+    {:else}
+        <div class="grid flex-1 gap-6 overflow-hidden xl:grid-cols-[17rem_minmax(0,1fr)] 2xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
+            <aside class="hidden min-h-0 xl:block">
+                <div class="h-full">
+                    {@render CurrentSchemaRail()}
+                </div>
+            </aside>
+
+            <section class="min-h-0 min-w-0 flex flex-col gap-4">
+                <div class="xl:hidden">
+                    {@render CurrentSchemaRail()}
+                </div>
+
+                <Surface class="p-5">
+                    <div class="flex items-start justify-between gap-4 flex-wrap">
+                        <div class="min-w-0">
+                            <p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Browsing content
+                            </p>
+                            <div class="mt-2 flex flex-wrap items-center gap-2">
+                                <h3 class="text-xl font-semibold text-slate-900 dark:text-slate-50">
+                                    {selectedType.name}
+                                </h3>
+                                {#if (selectedType.basePrice ?? 0) > 0}
+                                    <Badge variant="paid">Paid</Badge>
+                                {/if}
+                                {#if activeWorkflow}
+                                    <Badge variant="info">Workflow active</Badge>
+                                {/if}
+                            </div>
+                            <p class="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
+                                {resolveTypeItemCount(selectedType)} total item(s) defined for this schema. Use filters below to narrow the list, then inspect an item on the right.
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onclick={() => (showSchemaInfoModal = true)}
+                            >
+                                Info
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onclick={openModelFilterModal}
+                            >
+                                Change schema
+                            </Button>
+                        </div>
+                    </div>
+                </Surface>
+
+                <Surface class="p-4">
+                    <form
+                        class="space-y-4"
+                        onsubmit={(event) => {
+                            event.preventDefault();
+                            applyFilters();
+                        }}
+                    >
+                        <div>
+                            <div>
+                                <label
+                                    for="content-search"
+                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                >
+                                    Search items
+                                </label>
+                                <Input
+                                    id="content-search"
+                                    bind:value={itemSearch}
+                                    type="search"
+                                    placeholder="Search title, slug, summary, author, or item ID"
+                                />
                             </div>
                         </div>
 
-                        <form
-                            class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/30"
-                            onsubmit={(event) => {
-                                event.preventDefault();
-                                applyFilters();
-                            }}
-                        >
-                            <div class="grid gap-3 xl:grid-cols-[minmax(0,1.8fr)_220px_220px_auto] xl:items-end">
-                                <div>
-                                    <label
-                                        for="content-search"
-                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                    >
-                                        Find items
-                                    </label>
-                                    <Input
-                                        id="content-search"
-                                        bind:value={itemSearch}
-                                        type="search"
-                                        placeholder="Search title, slug, excerpt, author, or item ID"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label
-                                        for="sort-by"
-                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                    >
-                                        Sort by
-                                    </label>
-                                    <Select
-                                        id="sort-by"
-                                        bind:value={sortBy}
-                                    >
-                                        <option value="updatedAt">
-                                            Updated
-                                        </option>
-                                        <option value="createdAt">
-                                            Created
-                                        </option>
-                                        <option value="version">
-                                            Version
-                                        </option>
-                                    </Select>
-                                </div>
-
-                                <div>
-                                    <label
-                                        for="sort-dir"
-                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                    >
-                                        Order
-                                    </label>
-                                    <Select
-                                        id="sort-dir"
-                                        bind:value={sortDir}
-                                    >
-                                        <option value="desc">Newest first</option>
-                                        <option value="asc">Oldest first</option>
-                                    </Select>
-                                </div>
-
-                                <div
-                                    class="flex flex-wrap items-center gap-2 xl:justify-end"
+                        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                            <div>
+                                <label
+                                    for="sort-by"
+                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
                                 >
-                                    <Button type="submit">
-                                        Apply
-                                    </Button>
-                                    {#if hasActiveFilters}
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            onclick={clearFilters}
-                                        >
-                                            Clear
-                                        </Button>
-                                    {/if}
-                                </div>
+                                    Sort by
+                                </label>
+                                <Select id="sort-by" bind:value={sortBy}>
+                                    <option value="updatedAt">Updated</option>
+                                    <option value="createdAt">Created</option>
+                                    <option value="version">Version</option>
+                                </Select>
                             </div>
-
-                            <div class="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px] xl:items-end">
-                                <div>
-                                    <p
-                                        class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                            <div>
+                                <label
+                                    for="sort-dir"
+                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                >
+                                    Order
+                                </label>
+                                <Select id="sort-dir" bind:value={sortDir}>
+                                    <option value="desc">Newest first</option>
+                                    <option value="asc">Oldest first</option>
+                                </Select>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2 md:justify-end">
+                                <Button type="submit">Apply</Button>
+                                {#if hasActiveFilters}
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onclick={clearFilters}
                                     >
-                                        Quick status
-                                    </p>
-                                    <div class="mt-2 flex flex-wrap gap-2">
+                                        Clear
+                                    </Button>
+                                {/if}
+                            </div>
+                        </div>
+
+                        <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px] xl:items-end">
+                            <div>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    Status
+                                </p>
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onclick={() => applyStatusFilter("")}
+                                        class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus === ''
+                                            ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
+                                    >
+                                        <span>All</span>
+                                        <span class="font-mono">{resolveTypeItemCount(selectedType)}</span>
+                                    </button>
+                                    {#each selectedTypeStatusSummary as summary}
                                         <button
                                             type="button"
-                                            onclick={() => applyStatusFilter("")}
-                                            class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus ===
-                                            ''
+                                            onclick={() => applyStatusFilter(summary.status)}
+                                            class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus === summary.status
                                                 ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
                                                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
                                         >
-                                            <span>All items</span>
-                                            <span class="font-mono"
-                                                >{resolveTypeItemCount(
-                                                    selectedType,
-                                                )}</span
-                                            >
+                                            <span>{formatStatusLabel(summary.status)}</span>
+                                            <span class="font-mono">{summary.count}</span>
                                         </button>
-                                        {#each selectedTypeStatusSummary as summary}
-                                            <button
-                                                type="button"
-                                                onclick={() =>
-                                                    applyStatusFilter(
-                                                        summary.status,
-                                                    )}
-                                                class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus ===
-                                                summary.status
-                                                    ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
-                                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
-                                            >
-                                                <span
-                                                    >{formatStatusLabel(
-                                                        summary.status,
-                                                    )}</span
-                                                >
-                                                <span class="font-mono"
-                                                    >{summary.count}</span
-                                                >
-                                            </button>
-                                        {/each}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label
-                                        for="created-after"
-                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                    >
-                                        Created after
-                                    </label>
-                                    <Input
-                                        id="created-after"
-                                        bind:value={createdAfter}
-                                        type="date"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label
-                                        for="created-before"
-                                        class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1"
-                                    >
-                                        Created before
-                                    </label>
-                                    <Input
-                                        id="created-before"
-                                        bind:value={createdBefore}
-                                        type="date"
-                                    />
+                                    {/each}
                                 </div>
                             </div>
-
-                            {#if hasActiveFilters}
-                                <div
-                                    class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700"
-                                >
-                                    <p
-                                        class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                                    >
-                                        Active filters
-                                    </p>
-                                    <div class="mt-2 flex flex-wrap gap-2">
-                                        {#if itemSearch.trim()}
-                                            <button
-                                                type="button"
-                                                onclick={() =>
-                                                    clearFilterChip("search")}
-                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
-                                            >
-                                                <span
-                                                    >Search: "{itemSearch.trim()}"</span
-                                                >
-                                                <span aria-hidden="true">×</span>
-                                            </button>
-                                        {/if}
-                                        {#if filterStatus}
-                                            <button
-                                                type="button"
-                                                onclick={() =>
-                                                    clearFilterChip("status")}
-                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
-                                            >
-                                                <span
-                                                    >Status: {formatStatusLabel(
-                                                        filterStatus,
-                                                    )}</span
-                                                >
-                                                <span aria-hidden="true">×</span>
-                                            </button>
-                                        {/if}
-                                        {#if createdAfter}
-                                            <button
-                                                type="button"
-                                                onclick={() =>
-                                                    clearFilterChip(
-                                                        "createdAfter",
-                                                    )}
-                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
-                                            >
-                                                <span
-                                                    >After: {formatDate(
-                                                        `${createdAfter}T00:00:00.000Z`,
-                                                    )}</span
-                                                >
-                                                <span aria-hidden="true">×</span>
-                                            </button>
-                                        {/if}
-                                        {#if createdBefore}
-                                            <button
-                                                type="button"
-                                                onclick={() =>
-                                                    clearFilterChip(
-                                                        "createdBefore",
-                                                    )}
-                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
-                                            >
-                                                <span
-                                                    >Before: {formatDate(
-                                                        `${createdBefore}T00:00:00.000Z`,
-                                                    )}</span
-                                                >
-                                                <span aria-hidden="true">×</span>
-                                            </button>
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/if}
-                        </form>
-                    </div>
-
-                    <div class="flex-1 overflow-y-auto p-3 relative">
-                        <div
-                            class="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/25"
-                        >
                             <div>
-                                <p
-                                    class="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400"
+                                <label
+                                    for="created-after"
+                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
                                 >
+                                    Created after
+                                </label>
+                                <Input id="created-after" bind:value={createdAfter} type="date" />
+                            </div>
+                            <div>
+                                <label
+                                    for="created-before"
+                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                >
+                                    Created before
+                                </label>
+                                <Input id="created-before" bind:value={createdBefore} type="date" />
+                            </div>
+                        </div>
+
+                        {#if hasActiveFilters}
+                            <div class="border-t border-slate-200 pt-3 dark:border-slate-700">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    Active filters
+                                </p>
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                    {#if itemSearch.trim()}
+                                        <button
+                                            type="button"
+                                            onclick={() => clearFilterChip("search")}
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
+                                        >
+                                            <span>Search: "{itemSearch.trim()}"</span>
+                                            <span aria-hidden="true">×</span>
+                                        </button>
+                                    {/if}
+                                    {#if filterStatus}
+                                        <button
+                                            type="button"
+                                            onclick={() => clearFilterChip("status")}
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
+                                        >
+                                            <span>Status: {formatStatusLabel(filterStatus)}</span>
+                                            <span aria-hidden="true">×</span>
+                                        </button>
+                                    {/if}
+                                    {#if createdAfter}
+                                        <button
+                                            type="button"
+                                            onclick={() => clearFilterChip("createdAfter")}
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
+                                        >
+                                            <span>After: {formatDate(`${createdAfter}T00:00:00.000Z`)}</span>
+                                            <span aria-hidden="true">×</span>
+                                        </button>
+                                    {/if}
+                                    {#if createdBefore}
+                                        <button
+                                            type="button"
+                                            onclick={() => clearFilterChip("createdBefore")}
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
+                                        >
+                                            <span>Before: {formatDate(`${createdBefore}T00:00:00.000Z`)}</span>
+                                            <span aria-hidden="true">×</span>
+                                        </button>
+                                    {/if}
+                                </div>
+                            </div>
+                        {/if}
+                    </form>
+                </Surface>
+
+                <Surface class="min-h-0 flex flex-1 flex-col overflow-hidden p-0">
+                    <div class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30">
+                        <div class="flex items-start justify-between gap-4 flex-wrap">
+                            <div>
+                                <p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                                     Results
                                 </p>
-                                <p
-                                    class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100"
-                                >
-                                    Showing {currentRangeStart}-{currentRangeEnd}
-                                    of {itemsMeta.total}
-                                </p>
-                                <p
-                                    class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                                >
+                                <h3 class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
+                                    Showing {currentRangeStart}-{currentRangeEnd} of {itemsMeta.total}
+                                </h3>
+                                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
                                     {hasActiveFilters
-                                        ? "Filtered list for the selected model."
-                                        : "Most recent items first. Select an item to inspect its history."}
+                                        ? `Filtered results inside ${selectedType.name}.`
+                                        : `All content stored against ${selectedType.name}. Select an item to inspect its history.`}
                                 </p>
                             </div>
                             {#if activeWorkflow}
-                                <div
-                                    class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-200"
-                                >
-                                    <div class="font-semibold uppercase tracking-wide">
-                                        Workflow
-                                    </div>
+                                <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-200">
+                                    <div class="font-semibold uppercase tracking-wide">Workflow</div>
                                     <div class="mt-1">{activeWorkflow.name}</div>
                                 </div>
                             {/if}
                         </div>
+                    </div>
 
+                    <div class="relative flex-1 overflow-y-auto p-4">
                         {#if loadingItems && items.length === 0}
                             <div class="flex justify-center p-10">
                                 <LoadingSpinner size="md" />
                             </div>
                         {:else if items.length === 0}
-                            <div
-                                class="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
-                            >
-                                <p>
-                                    No items found matching the current filters.
-                                </p>
+                            <div class="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                <p>No items found for the current schema and filters.</p>
                                 {#if hasActiveFilters}
                                     <Button
                                         type="button"
@@ -1506,86 +1895,43 @@
                                         <button
                                             type="button"
                                             onclick={() => selectItem(item)}
-                                            class="w-full rounded-2xl border p-4 text-left transition-all {selectedItem?.id ===
-                                            item.id
-                                                ? 'border-slate-300 bg-slate-50 shadow-sm dark:border-slate-600 dark:bg-slate-800/90'
-                                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/20 dark:hover:border-slate-600 dark:hover:bg-slate-800/60'}"
+                                            class="w-full rounded-2xl border px-4 py-4 text-left transition-all {selectedItem?.id === item.id
+                                                ? 'border-slate-300 bg-slate-50 shadow-sm dark:border-slate-600 dark:bg-slate-800/70'
+                                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/20 dark:hover:border-slate-600 dark:hover:bg-slate-800/40'}"
                                         >
-                                            <div
-                                                class="flex items-start justify-between gap-3"
-                                            >
+                                            <div class="flex items-start justify-between gap-4">
                                                 <div class="min-w-0">
-                                                    <p
-                                                        class="text-sm font-semibold text-gray-900 dark:text-white truncate"
-                                                    >
+                                                    <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">
                                                         {resolveItemLabel(item)}
                                                     </p>
-                                                    <div
-                                                        class="mt-1 flex flex-wrap items-center gap-2 text-[0.7rem] text-gray-500 dark:text-gray-400"
-                                                    >
-                                                        <span
-                                                            class="font-mono"
-                                                        >
-                                                            #{item.id}
-                                                        </span>
+                                                    <div class="mt-1 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400">
+                                                        <span class="font-mono">#{item.id}</span>
                                                         {#if resolveItemSlug(item)}
-                                                            <span
-                                                                class="font-mono"
-                                                            >
-                                                                {resolveItemSlug(
-                                                                    item,
-                                                                )}
-                                                            </span>
+                                                            <span class="font-mono">{resolveItemSlug(item)}</span>
                                                         {/if}
                                                         {#if resolveItemAttribution(item)}
-                                                            <span>
-                                                                by {resolveItemAttribution(
-                                                                    item,
-                                                                )}
-                                                            </span>
+                                                            <span>by {resolveItemAttribution(item)}</span>
                                                         {/if}
                                                     </div>
                                                 </div>
-                                                <div
-                                                    class="flex items-center gap-2 shrink-0"
-                                                >
-                                                    <Badge
-                                                        variant={resolveStatusBadgeVariant(item.status)}
-                                                    >
-                                                        {formatStatusLabel(
-                                                            item.status,
-                                                        )}
+                                                <div class="flex shrink-0 items-center gap-2">
+                                                    <Badge variant={resolveStatusBadgeVariant(item.status)}>
+                                                        {formatStatusLabel(item.status)}
                                                     </Badge>
-                                                    <span
-                                                        class="text-xs font-mono text-gray-500 dark:text-gray-400"
-                                                    >
+                                                    <span class="text-xs font-mono text-slate-500 dark:text-slate-400">
                                                         v{item.version}
                                                     </span>
                                                 </div>
                                             </div>
-
-                                            <p
-                                                class="mt-3 text-sm text-gray-600 dark:text-gray-300 line-clamp-3"
-                                            >
+                                            <p class="mt-3 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">
                                                 {resolveItemSummary(item)}
                                             </p>
-
-                                            <div
-                                                class="mt-4 flex flex-wrap items-center gap-2 text-[0.7rem] text-gray-500 dark:text-gray-400"
-                                            >
-                                                <span
-                                                    class="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-800"
-                                                >
-                                                    Updated {formatDate(
-                                                        item.updatedAt,
-                                                    )}
+                                            <div class="mt-4 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400">
+                                                <span class="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-800">
+                                                    Updated {formatDate(item.updatedAt)}
                                                 </span>
-                                                <span
-                                                    class="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-800"
-                                                >
-                                                    Created {formatDate(
-                                                        item.createdAt,
-                                                    )}
+                                                <span class="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-800">
+                                                    Created {formatDate(item.createdAt)}
                                                 </span>
                                             </div>
                                         </button>
@@ -1595,20 +1941,15 @@
                         {/if}
 
                         {#if loadingItems && items.length > 0}
-                            <div
-                                class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex items-center justify-center"
-                            >
+                            <div class="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-slate-950/50">
                                 <LoadingSpinner size="lg" />
                             </div>
                         {/if}
                     </div>
 
-                    <div
-                        class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-700"
-                    >
-                        <p class="text-gray-600 dark:text-gray-300">
-                            Showing {currentRangeStart}-{currentRangeEnd} of
-                            {itemsMeta.total}
+                    <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-700">
+                        <p class="text-slate-600 dark:text-slate-300">
+                            Showing {currentRangeStart}-{currentRangeEnd} of {itemsMeta.total}
                         </p>
                         <div class="flex items-center gap-2">
                             <Button
@@ -1630,562 +1971,286 @@
                         </div>
                     </div>
                 </Surface>
+            </section>
 
-                {#if selectedItem}
-                    <button
-                        type="button"
-                        class="fixed inset-0 z-30 bg-slate-950/55 xl:hidden"
-                        aria-label="Close detail view"
-                        onclick={() => resetSelectedItemContext()}
-                    ></button>
-                    <section
-                        class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900 xl:absolute xl:inset-y-3 xl:right-3 xl:w-[23rem] xl:max-w-none xl:rounded-2xl xl:border xl:border-slate-200 xl:shadow-xl dark:xl:border-slate-700 2xl:w-[25rem]"
-                    >
-                        <div
-                            class="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-700 dark:bg-slate-950/60"
-                        >
-                            <div class="min-w-0">
-                                <div class="flex items-center gap-3">
-                                    <button
-                                        class="xl:hidden text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                                        aria-label="Close detail"
-                                        onclick={() => resetSelectedItemContext()}
-                                    >
-                                        <Icon
-                                            src={ChevronLeft}
-                                            class="w-5 h-5"
-                                        />
-                                    </button>
-                                    <h2
-                                        class="truncate text-lg font-semibold text-gray-900 dark:text-white"
-                                    >
-                                        {resolveItemLabel(selectedItem)}
-                                    </h2>
-                                    <Badge
-                                        variant={resolveStatusBadgeVariant(selectedItem.status)}
-                                    >
-                                        {formatStatusLabel(selectedItem.status)}
-                                    </Badge>
-                                </div>
-                                <p
-                                    class="mt-2 text-sm text-gray-600 dark:text-gray-300"
-                                >
-                                    {resolveItemSummary(selectedItem)}
-                                </p>
-                                <div
-                                    class="mt-3 flex flex-wrap items-center gap-2 text-[0.7rem] text-gray-500 dark:text-gray-400"
-                                >
-                                    <span class="font-mono"
-                                        >Item #{selectedItem.id}</span
-                                    >
-                                    <span class="font-mono"
-                                        >Current version v{selectedItem.version}</span
-                                    >
-                                    <span
-                                        >Updated {formatDateTime(
-                                            selectedItem.updatedAt,
-                                        )}</span
-                                    >
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                aria-label="Close detail view"
-                                onclick={() => resetSelectedItemContext()}
-                                class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                            >
-                                <Icon src={XMark} class="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
-                            <div class="grid grid-cols-1 2xl:grid-cols-2 gap-4">
-                                <Surface tone="muted" class="p-4">
-                                    <h4
-                                        class="text-sm font-semibold text-gray-900 dark:text-white"
-                                    >
-                                        Current Snapshot
-                                    </h4>
-                                    <p
-                                        class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                                    >
-                                        Readable summary of the current content
-                                        item before reviewing raw JSON.
-                                    </p>
-                                    <dl class="mt-4 grid grid-cols-1 gap-3 text-sm">
-                                        <div>
-                                            <dt
-                                                class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                                            >
-                                                Primary label
-                                            </dt>
-                                            <dd
-                                                class="mt-1 text-gray-900 dark:text-white"
-                                            >
-                                                {resolveItemLabel(selectedItem)}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                                            >
-                                                Summary
-                                            </dt>
-                                            <dd
-                                                class="mt-1 text-gray-700 dark:text-gray-300"
-                                            >
-                                                {resolveItemSummary(selectedItem)}
-                                            </dd>
-                                        </div>
-                                        <div
-                                            class="grid grid-cols-2 gap-3 text-xs text-gray-500 dark:text-gray-400"
-                                        >
-                                            <div>
-                                                <dt class="font-semibold uppercase">
-                                                    Status
-                                                </dt>
-                                                <dd class="mt-1 text-sm">
-                                                    {formatStatusLabel(
-                                                        selectedItem.status,
-                                                    )}
-                                                </dd>
-                                            </div>
-                                            <div>
-                                                <dt class="font-semibold uppercase">
-                                                    Version
-                                                </dt>
-                                                <dd class="mt-1 text-sm">
-                                                    v{selectedItem.version}
-                                                </dd>
-                                            </div>
-                                        </div>
-                                    </dl>
-                                </Surface>
-
-                                <Surface class="p-4">
-                                    <div
-                                        class="flex items-start justify-between gap-3 flex-wrap"
-                                    >
-                                        <div>
-                                            <h4
-                                                class="text-sm font-semibold text-gray-900 dark:text-white"
-                                            >
-                                                Version Diff
-                                            </h4>
-                                            <p
-                                                class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                                            >
-                                                Compare the current item to a
-                                                historical version before
-                                                rollback.
-                                            </p>
-                                        </div>
-                                        {#if versions.length > 0}
-                                            <Select
-                                                onchange={(event) => {
-                                                    selectedVersionForDiff = Number(
-                                                        (
-                                                            event.currentTarget as HTMLSelectElement
-                                                        ).value,
-                                                    );
-                                                }}
-                                            >
-                                                {#each versions as version}
-                                                    <option
-                                                        value={version.version}
-                                                        selected={selectedDiffVersion?.version ===
-                                                            version.version}
-                                                    >
-                                                        Compare with v{version.version}
-                                                    </option>
-                                                {/each}
-                                            </Select>
-                                        {/if}
-                                    </div>
-
-                                    {#if !selectedDiffVersion}
-                                        <p
-                                            class="mt-4 text-sm text-gray-500 dark:text-gray-400 italic"
-                                        >
-                                            No historical versions available for
-                                            comparison.
-                                        </p>
-                                    {:else}
-                                        <div class="mt-4 space-y-3">
-                                            <div
-                                                class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-200"
-                                            >
-                                                Comparing current version
-                                                v{selectedItem.version} with
-                                                v{selectedDiffVersion.version}.
-                                                {selectedDiffEntries.length}
-                                                field-level difference(s)
-                                                detected.
-                                            </div>
-
-                                            {#if selectedDiffEntries.length === 0}
-                                                <p
-                                                    class="text-sm text-gray-500 dark:text-gray-400 italic"
-                                                >
-                                                    No payload changes detected
-                                                    between the selected
-                                                    versions.
-                                                </p>
-                                            {:else}
-                                                <div
-                                                    class="max-h-72 overflow-y-auto space-y-2 pr-1"
-                                                >
-                                                    {#each selectedDiffEntries as entry}
-                                                        <div
-                                                            class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700"
-                                                        >
-                                                            <div
-                                                                class="flex items-center justify-between gap-3"
-                                                            >
-                                                                <code
-                                                                    class="text-xs font-semibold text-gray-800 dark:text-gray-100"
-                                                                >
-                                                                    {entry.key}
-                                                                </code>
-                                                                <span
-                                                                    class="text-[0.65rem] font-semibold uppercase tracking-wide {entry.change ===
-                                                                    'added'
-                                                                        ? 'text-emerald-600 dark:text-emerald-400'
-                                                                        : entry.change ===
-                                                                                'removed'
-                                                                            ? 'text-rose-600 dark:text-rose-400'
-                                                                            : 'text-amber-600 dark:text-amber-300'}"
-                                                                >
-                                                                    {entry.change}
-                                                                </span>
-                                                            </div>
-                                                            <div
-                                                                class="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-2 text-xs"
-                                                            >
-                                                                <div
-                                                                    class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60"
-                                                                >
-                                                                    <p
-                                                                        class="font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"
-                                                                    >
-                                                                        Current
-                                                                    </p>
-                                                                    <p
-                                                                        class="mt-1 font-mono text-gray-700 dark:text-gray-200 break-words"
-                                                                    >
-                                                                        {entry.before}
-                                                                    </p>
-                                                                </div>
-                                                                <div
-                                                                    class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60"
-                                                                >
-                                                                    <p
-                                                                        class="font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"
-                                                                    >
-                                                                        Selected
-                                                                    </p>
-                                                                    <p
-                                                                        class="mt-1 font-mono text-gray-700 dark:text-gray-200 break-words"
-                                                                    >
-                                                                        {entry.after}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    {/each}
-                                                </div>
-                                            {/if}
-                                        </div>
-                                    {/if}
-                                </Surface>
-                            </div>
-
-                            <div>
-                                <h4
-                                    class="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide"
-                                >
-                                    Current Data Payload
-                                </h4>
-                                <JsonCodeBlock value={selectedItem.data} />
-                            </div>
-
-                            {#if activeWorkflow}
-                                <div class="space-y-4">
-                                    <hr class="border-gray-200 dark:border-gray-700" />
-                                    <div>
-                                        <h4
-                                            class="text-sm font-semibold text-gray-900 dark:text-white mb-2 uppercase tracking-wide"
-                                        >
-                                            Workflow: {activeWorkflow.name}
-                                        </h4>
-                                        {#if availableTransitions.length > 0}
-                                            <div
-                                                class="flex flex-wrap gap-2 mb-4"
-                                            >
-                                                {#each availableTransitions as transition}
-                                                    <Button
-                                                        type="button"
-                                                        onclick={() =>
-                                                            submitForReview(
-                                                                transition.id,
-                                                            )}
-                                                        disabled={submittingReview}
-                                                    >
-                                                        {transition.toState ===
-                                                        "published"
-                                                            ? "Publish"
-                                                            : `Submit for ${transition.toState}`}
-                                                    </Button>
-                                                {/each}
-                                            </div>
-                                        {:else}
-                                            <p
-                                                class="text-sm text-gray-500 dark:text-gray-400 italic mb-4"
-                                            >
-                                                No transitions available from the
-                                                current state.
-                                            </p>
-                                        {/if}
-                                    </div>
-
-                                    <Surface tone="muted" class="p-4">
-                                        <h5
-                                            class="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3"
-                                        >
-                                            Discussion
-                                        </h5>
-
-                                        <div
-                                            class="space-y-3 mb-4 max-h-48 overflow-y-auto pr-2"
-                                        >
-                                            {#if comments.length === 0}
-                                                <p
-                                                    class="text-xs text-center text-gray-400 italic"
-                                                >
-                                                    No comments yet.
-                                                </p>
-                                            {:else}
-                                                {#each comments as comment}
-                                                    <div
-                                                        class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-950/30"
-                                                    >
-                                                        <div
-                                                            class="flex justify-between items-center mb-1 gap-2"
-                                                        >
-                                                            <span
-                                                                class="text-xs font-bold text-gray-800 dark:text-gray-200"
-                                                            >
-                                                                {comment.authorId}
-                                                            </span>
-                                                            <span
-                                                                class="text-[0.65rem] text-gray-500"
-                                                            >
-                                                                {formatDateTime(
-                                                                    comment.createdAt,
-                                                                )}
-                                                            </span>
-                                                        </div>
-                                                        <p
-                                                            class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap"
-                                                        >
-                                                            {comment.comment}
-                                                        </p>
-                                                    </div>
-                                                {/each}
-                                            {/if}
-                                        </div>
-
-                                        <form
-                                            onsubmit={(event) => {
-                                                event.preventDefault();
-                                                void postComment();
-                                            }}
-                                            class="flex gap-2"
-                                        >
-                                            <Input
-                                                type="text"
-                                                bind:value={newComment}
-                                                placeholder="Add a comment..."
-                                                class="flex-1"
-                                            />
-                                            <Button
-                                                type="submit"
-                                                disabled={!newComment.trim()}
-                                                variant="secondary"
-                                            >
-                                                Post
-                                            </Button>
-                                        </form>
-                                    </Surface>
-                                </div>
-                            {/if}
-
-                            <hr class="border-gray-200 dark:border-gray-700" />
-
-                            <div>
-                                <h4
-                                    class="text-sm font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide"
-                                >
-                                    Version Timeline
-                                </h4>
-
-                                <div class="space-y-4">
-                                    <Surface tone="muted" class="p-4">
-                                        <div
-                                            class="flex items-start justify-between gap-3"
-                                        >
-                                            <div>
-                                                <p
-                                                    class="text-sm font-bold text-blue-900 dark:text-blue-200"
-                                                >
-                                                    Current State
-                                                </p>
-                                                <p
-                                                    class="mt-1 text-xs text-blue-700 dark:text-blue-300"
-                                                >
-                                                    v{selectedItem.version} ·
-                                                    {selectedItem.status} ·
-                                                    {formatDateTime(
-                                                        selectedItem.updatedAt,
-                                                    )}
-                                                </p>
-                                            </div>
-                                            <Badge variant="info">
-                                                Live
-                                            </Badge>
-                                        </div>
-                                        <p
-                                            class="mt-3 text-sm text-blue-900 dark:text-blue-100"
-                                        >
-                                            {resolveItemSummary(selectedItem)}
-                                        </p>
-                                    </Surface>
-
-                                    {#each versions as version}
-                                        {@const versionDiff = buildDiffEntries(
-                                            selectedItem.data,
-                                            version.data,
-                                            selectedItem.status,
-                                            version.status,
-                                        )}
-                                        <div
-                                            class="rounded-2xl border p-4 {selectedDiffVersion?.version ===
-                                            version.version
-                                                ? 'border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/80'
-                                                : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950/20'}"
-                                        >
-                                            <div
-                                                class="flex items-start justify-between gap-3 flex-wrap"
-                                            >
-                                                <div>
-                                                    <p
-                                                        class="text-sm font-bold text-gray-900 dark:text-white"
-                                                    >
-                                                        Version {version.version}
-                                                    </p>
-                                                    <p
-                                                        class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                                                    >
-                                                        {version.status} ·
-                                                        {formatDateTime(
-                                                            version.createdAt,
-                                                        )}
-                                                    </p>
-                                                </div>
-                                                <div
-                                                    class="flex items-center gap-2"
-                                                >
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onclick={() => {
-                                                            selectedVersionForDiff = version.version;
-                                                        }}
-                                                    >
-                                                        Compare
-                                                    </Button>
-                                                    <Button
-                                                        type="button"
-                                                        variant="destructive"
-                                                        size="sm"
-                                                        onclick={() =>
-                                                            rollbackToVersion(
-                                                                version.version,
-                                                            )}
-                                                        disabled={rollingBack}
-                                                    >
-                                                        Rollback
-                                                    </Button>
-                                                </div>
-                                            </div>
-
-                                            <p
-                                                class="mt-3 text-sm text-gray-600 dark:text-gray-300"
-                                            >
-                                                {resolveItemSummary(version)}
-                                            </p>
-
-                                            <div
-                                                class="mt-4 rounded-xl bg-slate-50 p-3 dark:bg-slate-950/40"
-                                            >
-                                                <p
-                                                    class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
-                                                >
-                                                    Diff Summary
-                                                </p>
-                                                <p
-                                                    class="mt-2 text-sm text-gray-700 dark:text-gray-300"
-                                                >
-                                                    {versionDiff.length}
-                                                    change(s) from the current
-                                                    item.
-                                                </p>
-                                                {#if versionDiff.length > 0}
-                                                    <ul
-                                                        class="mt-3 space-y-2 text-xs text-gray-600 dark:text-gray-300"
-                                                    >
-                                                        {#each versionDiff.slice(0, 3) as entry}
-                                                            <li>
-                                                                <code
-                                                                    class="font-semibold text-gray-800 dark:text-gray-100"
-                                                                >
-                                                                    {entry.key}
-                                                                </code>
-                                                                <span>
-                                                                    : {entry.before}
-                                                                    -> {entry.after}
-                                                                </span>
-                                                            </li>
-                                                        {/each}
-                                                        {#if versionDiff.length > 3}
-                                                            <li
-                                                                class="text-gray-500 dark:text-gray-400"
-                                                            >
-                                                                +{versionDiff.length -
-                                                                    3} more
-                                                                change(s)
-                                                            </li>
-                                                        {/if}
-                                                    </ul>
-                                                {/if}
-                                            </div>
-                                        </div>
-                                    {/each}
-                                </div>
-
-                                {#if versions.length === 0}
-                                    <p
-                                        class="text-sm text-gray-500 italic mt-4"
-                                    >
-                                        No historical versions found.
-                                    </p>
-                                {/if}
-                            </div>
-                        </div>
-                    </section>
-                {/if}
+            {#if selectedItem}
+                <aside class="hidden min-h-0 2xl:block">
+                    <Surface class="h-full overflow-hidden p-0">
+                        {@render InspectorContent()}
+                    </Surface>
+                </aside>
             {/if}
         </div>
-    </div>
+    {/if}
+
+    {#if selectedType && selectedItem}
+        <button
+            type="button"
+            class="fixed inset-0 z-30 bg-slate-950/55 2xl:hidden"
+            aria-label="Close inspector"
+            onclick={() => resetSelectedItemContext()}
+        ></button>
+        <section
+            class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900 2xl:hidden"
+        >
+            {@render InspectorContent()}
+        </section>
+    {/if}
+
+    {#if selectedType && showSchemaInfoModal}
+        <button
+            type="button"
+            class="fixed inset-0 z-40 bg-slate-950/55"
+            aria-label="Close schema details"
+            onclick={() => (showSchemaInfoModal = false)}
+        ></button>
+        <div
+            class="fixed inset-x-4 top-1/2 z-50 mx-auto flex max-h-[80vh] w-full max-w-3xl -translate-y-1/2 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Schema details"
+        >
+            <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-700">
+                <div>
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Schema details
+                    </p>
+                    <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50">
+                        {selectedType.name}
+                    </h3>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {selectedType.description || "Structured content model for supervised AI and operator workflows."}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    aria-label="Close schema details"
+                    class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    onclick={() => (showSchemaInfoModal = false)}
+                >
+                    <Icon src={XMark} class="h-5 w-5" />
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto px-6 py-5">
+                <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Items
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                            {resolveTypeItemCount(selectedType)}
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Stored in this schema
+                        </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Fields
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                            {selectedTypeMetrics.fieldCount}
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {selectedTypeMetrics.requiredCount} required
+                        </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Matching items
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                            {itemsMeta.total}
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Current result set
+                        </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Schema shape
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                            {selectedTypeMetrics.fieldCount}
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {selectedTypeMetrics.requiredCount} required field(s)
+                        </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Last activity
+                        </p>
+                        <p class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
+                            {selectedType.stats?.lastItemUpdatedAt
+                                ? formatRelativeDate(selectedType.stats.lastItemUpdatedAt)
+                                : "No items yet"}
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {selectedType.stats?.lastItemUpdatedAt
+                                ? formatDateTime(selectedType.stats.lastItemUpdatedAt)
+                                : "This schema has not been used yet"}
+                        </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Workflow
+                        </p>
+                        <p class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
+                            {activeWorkflow ? activeWorkflow.name : "No active workflow"}
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {activeWorkflow
+                                ? `${activeWorkflow.transitions.length} transition(s) available`
+                                : "Items keep their current status until a workflow is assigned"}
+                        </p>
+                    </Surface>
+                </div>
+
+                {#if selectedTypeStatusSummary.length > 0}
+                    <Surface tone="subtle" class="mt-4 p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Status mix
+                        </p>
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            {#each selectedTypeStatusSummary as summary}
+                                <Badge variant="muted">
+                                    {formatStatusLabel(summary.status)} {summary.count}
+                                </Badge>
+                            {/each}
+                        </div>
+                    </Surface>
+                {/if}
+            </div>
+
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-700">
+                <Button
+                    type="button"
+                    variant="outline"
+                    onclick={() => (showSchemaInfoModal = false)}
+                >
+                    Close
+                </Button>
+            </div>
+        </div>
+    {/if}
+
+    {#if showModelFilterModal}
+        <button
+            type="button"
+            class="fixed inset-0 z-40 bg-slate-950/55"
+            aria-label="Close model chooser"
+            onclick={() => (showModelFilterModal = false)}
+        ></button>
+        <div
+            class="fixed inset-x-4 top-1/2 z-50 mx-auto flex max-h-[80vh] w-full max-w-2xl -translate-y-1/2 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose content schema"
+        >
+            <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-700">
+                <div>
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Content models
+                    </p>
+                    <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50">
+                        Choose content schema
+                    </h3>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Select the schema you want to browse. The browser will then show all content created from that schema.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    aria-label="Close model chooser"
+                    class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    onclick={() => (showModelFilterModal = false)}
+                >
+                    <Icon src={XMark} class="h-5 w-5" />
+                </button>
+            </div>
+
+            <div class="border-b border-slate-200 px-6 py-4 dark:border-slate-700">
+                <Input
+                    bind:value={schemaPickerSearch}
+                    type="search"
+                    placeholder="Find a content schema"
+                />
+            </div>
+
+            <div class="flex-1 overflow-y-auto px-6 py-4">
+                <div class="space-y-3">
+                    {#each schemaPickerTypes as type}
+                        <label
+                            class="flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-4 transition-colors {draftSelectedTypeId ===
+                            type.id
+                                ? 'border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60'
+                                : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/40'}"
+                        >
+                            <input
+                                type="radio"
+                                name="schema-picker"
+                                checked={draftSelectedTypeId === type.id}
+                                onchange={() => (draftSelectedTypeId = type.id)}
+                                class="mt-0.5 h-4 w-4 border-slate-300 text-slate-900 focus:ring-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-slate-700"
+                            />
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                            {type.name}
+                                        </p>
+                                        <p class="mt-0.5 truncate text-[0.72rem] font-mono text-slate-500 dark:text-slate-400">
+                                            {type.slug}
+                                        </p>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <Badge variant="outline">
+                                            {resolveTypeItemCount(type)}
+                                        </Badge>
+                                        {#if (type.basePrice ?? 0) > 0}
+                                            <Badge variant="paid">Paid</Badge>
+                                        {/if}
+                                    </div>
+                                </div>
+                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {type.description || resolveSchemaSummary(type)}
+                                </p>
+                            </div>
+                        </label>
+                    {/each}
+                    {#if schemaPickerTypes.length === 0}
+                        <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                            No schemas match “{schemaPickerSearch.trim()}”.
+                        </div>
+                    {/if}
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-700">
+                <p class="text-sm text-slate-500 dark:text-slate-400">
+                    {draftSelectedTypeId === null
+                        ? "No schema selected"
+                        : `${schemaPickerTypes.find((type) => type.id === draftSelectedTypeId)?.name ?? "Schema selected"}`}
+                </p>
+                <div class="flex items-center gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onclick={() => (showModelFilterModal = false)}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        type="button"
+                        onclick={() => void applySchemaSelection()}
+                        disabled={draftSelectedTypeId === null}
+                    >
+                        Apply
+                    </Button>
+                </div>
+            </div>
+        </div>
+    {/if}
 </div>
