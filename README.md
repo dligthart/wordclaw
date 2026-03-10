@@ -161,6 +161,11 @@ WordClaw includes core demos plus a clearly separated experimental sandbox in `d
    - Run the setup script: `npx tsx scripts/setup-skills-marketplace.ts`
    - Start the demo: `cd demos/agent-skills-marketplace && npm run dev`
 
+6. **Coinbase AgentKit L402 Demo (`demos/agentkit-l402-client.ts`)**  
+   Core payments demo.
+   An autonomous LangChain agent running via Coinbase AgentKit. Features a custom `ActionProvider` that bridges the LLM to Lightning to autonomously pay an L402 invoice upon receiving a `402 Payment Required` response.
+   - Run the demo: `export OPENAI_API_KEY="sk-..." && npx tsx demos/agentkit-l402-client.ts`
+
 ## 📚 Documentation
 
 For detailed guides on setting up the Supervisor UI, authentication, testing, and system architecture, please refer to the `doc/` directory:

@@ -64,6 +64,7 @@ Legacy pay-per-request behavior remains available for routes or items where no a
 
 *   **LND gRPC Native Support**: Add an additional production payment provider communicating natively over gRPC with LND implementations instead of standard REST.
 *   **Agent SDK Integration**: Update the WordClaw Agent SDK to automatically handle L402 challenges, pay invoices, and append the required `Authorization` header to subsequent requests natively.
+*   **Coinbase AgentKit Support**: Expose custom ActionProviders (demonstrated in `demos/agentkit-l402-client.ts`) that bridge popular LLM toolkits (Langchain, Autotools) to WordClaw LLM execution paths via autonomous Lightning wallet intercepts.
 
 ## Testing
 
