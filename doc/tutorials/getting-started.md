@@ -98,6 +98,7 @@ The repo also ships with a JSON-first CLI for MCP and REST automation:
 npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts capabilities show
+npx tsx src/cli/index.ts l402 guide --item 123
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 

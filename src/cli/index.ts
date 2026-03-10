@@ -27,6 +27,7 @@ import {
     RestCliError,
     type RestCliResponse,
 } from './lib/rest-client.js';
+import { buildL402Guide } from './lib/l402-guide.js';
 
 type JsonMap = Record<string, unknown>;
 
@@ -45,7 +46,7 @@ const REST_SUBCOMMANDS = ['request'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
 const CONTENT_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
 const WORKFLOW_SUBCOMMANDS = ['active', 'submit', 'tasks', 'decide'] as const;
-const L402_SUBCOMMANDS = ['offers', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
+const L402_SUBCOMMANDS = ['offers', 'guide', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
 
 const TOP_LEVEL_ALIASES: Record<string, string> = {
     caps: 'capabilities',
@@ -124,6 +125,7 @@ Commands:
   workflow decide --id <n> --decision approved|rejected
 
   l402 offers --item <n>
+  l402 guide --item <n> [--offer <n>]
   l402 purchase --offer <n> [--payment-method lightning]
   l402 confirm --offer <n> --macaroon <value> --preimage <value> [--payment-hash <hash>]
   l402 entitlements
@@ -702,6 +704,70 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
             path: `/content-items/${itemId}/offers`,
         });
         printResponse(args, response);
+        return;
+    }
+
+    if (action === 'guide') {
+        const itemId = getNumberFlag(args, 'item');
+        if (itemId === undefined) {
+            throw new Error('l402 guide requires --item.');
+        }
+        const apiKeyConfigured = Boolean(getStringFlag(args, 'api-key') ?? process.env.WORDCLAW_API_KEY);
+        let offers: Array<{
+            id: number;
+            slug: string;
+            name: string;
+            scopeType: string;
+            scopeRef: number | null;
+            priceSats: number;
+            active: boolean;
+        }> = [];
+        let warnings: string[] = [];
+
+        try {
+            const response = await client.request({
+                method: 'GET',
+                path: `/content-items/${itemId}/offers`,
+            });
+            const body = requireJsonMap(response.body, 'L402 guide response');
+            offers = Array.isArray(body.data) ? body.data as typeof offers : [];
+        } catch (error) {
+            if (
+                error instanceof RestCliError
+                && error.response.body
+                && typeof error.response.body === 'object'
+                && 'code' in (error.response.body as Record<string, unknown>)
+            ) {
+                const code = String((error.response.body as Record<string, unknown>).code);
+                if (code === 'AUTH_MISSING_API_KEY' || code === 'AUTH_INSUFFICIENT_SCOPE' || code === 'API_KEY_REQUIRED') {
+                    warnings = ['Live offer discovery is unavailable until an API key is configured. Showing the generic paid-content task plan instead.'];
+                } else {
+                    throw error;
+                }
+            } else {
+                throw error;
+            }
+        }
+
+        const guide = buildL402Guide({
+            itemId,
+            offers,
+            apiKeyConfigured,
+            preferredOfferId: getNumberFlag(args, 'offer'),
+        });
+        if (warnings.length > 0) {
+            guide.warnings = [...(guide.warnings ?? []), ...warnings];
+        }
+
+        printStructured(
+            args,
+            {
+                transport: 'rest',
+                action: 'guide',
+                guide,
+            },
+            guide,
+        );
         return;
     }
 

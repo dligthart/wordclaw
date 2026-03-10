@@ -111,6 +111,7 @@ WordClaw now includes a repo-native CLI for MCP and REST workflows:
 # Run from source
 npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
+npx tsx src/cli/index.ts l402 guide --item 123
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json

@@ -220,6 +220,7 @@ Supported features:
 Use REST-based commands for L402 and entitlement flows:
 
 ```bash
+node dist/cli/index.js l402 guide --item 345
 node dist/cli/index.js l402 offers --item 345
 node dist/cli/index.js l402 purchase --offer 7
 node dist/cli/index.js l402 confirm --offer 7 --macaroon <macaroon> --preimage <preimage>
@@ -230,12 +231,15 @@ node dist/cli/index.js l402 read --item 345 --entitlement-id 21
 
 Supported features:
 
+- generate a task-oriented paid-content plan from the current live offers
 - list item offers
 - start a purchase flow
 - confirm settlement with `Authorization: L402 <macaroon>:<preimage>`
 - list entitlements owned by the current API key
 - inspect a specific entitlement
 - perform paid reads with an entitlement header
+
+If no API key is configured, `l402 guide` falls back to a generic blocked plan instead of failing immediately. That still shows the required purchase/confirm/read sequence and tells the agent what auth is missing.
 
 ## Input Patterns
 
