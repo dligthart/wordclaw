@@ -10,6 +10,11 @@ The L402 integration in WordClaw acts as the built-in Lightning-gated access lay
 
 1.  **Payment Provider (`src/interfaces/payment-provider.ts`)**: An interface defining the contract for generating Lightning invoices and returning explicit states (`pending`, `paid`, `expired`, `failed`). This enables switching underlying Lightning backends.
 2.  **Payment Providers (`src/services/*-payment-provider.ts`)**: We implement both a test/dev `mock-payment-provider.ts` and a production `lnbits-payment-provider.ts` that connects to Lightning backends.
+    *   **Self-Hosted Node Provisioning (LNbits)**: If you are running your own Lightning node (or using a managed LNbits instance), you can provision WordClaw to use it as the production L402 backend. Set the following environment variables:
+        *   `PAYMENT_PROVIDER=lnbits`
+        *   `LNBITS_BASE_URL=https://your-lnbits-domain.com` (or your internal network URL/IP)
+        *   `LNBITS_ADMIN_KEY=your_wallet_admin_key`
+    *   When `NODE_ENV=production` is set, WordClaw automatically defaults to requiring the `lnbits` provider to prevent mocked payments from succeeding in production unless explicitly overridden.
 3.  **L402 Middleware (`src/middleware/l402.ts`)**: A Fastify middleware that handles the core L402 logic. It generates true Macaroons (with tenant and route caveats) and challenges requests lacking payments.
 4.  **Payment Settlement & Reconciliation**: Support is built for asynchronous settlement webhooks (e.g. `LNbits`) and a timed background reconciliation worker (`PaymentReconciliationWorker`) that cleans up stale pending payments deterministically.
 
