@@ -160,6 +160,16 @@ describe('API Route Contracts', () => {
                         id: string;
                         enabled: boolean;
                     }>;
+                    agentGuidance: {
+                        routingHints: Array<{
+                            intent: string;
+                            preferredSurface: string;
+                        }>;
+                        taskRecipes: Array<{
+                            id: string;
+                            preferredSurface: string;
+                        }>;
+                    };
                     limitations: string[];
                 };
             };
@@ -175,6 +185,26 @@ describe('API Route Contracts', () => {
                 expect.arrayContaining([
                     expect.objectContaining({ id: 'content-runtime', enabled: true }),
                     expect.objectContaining({ id: 'agent-runs', enabled: false }),
+                ]),
+            );
+            expect(body.data.agentGuidance.routingHints).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        intent: 'discover-deployment',
+                        preferredSurface: 'rest',
+                    }),
+                    expect.objectContaining({
+                        intent: 'author-content',
+                        preferredSurface: 'mcp',
+                    }),
+                ]),
+            );
+            expect(body.data.agentGuidance.taskRecipes).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'consume-paid-content',
+                        preferredSurface: 'rest',
+                    }),
                 ]),
             );
         } finally {

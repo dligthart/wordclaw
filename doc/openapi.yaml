@@ -1306,6 +1306,80 @@ paths:
                   paidContent:
                     type: object
                     additionalProperties: true
+                  agentGuidance:
+                    type: object
+                    required:
+                      - routingHints
+                      - taskRecipes
+                    properties:
+                      routingHints:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - intent
+                            - preferredSurface
+                            - rationale
+                          properties:
+                            intent:
+                              type: string
+                            preferredSurface:
+                              type: string
+                            fallbackSurface:
+                              type: string
+                              nullable: true
+                            rationale:
+                              type: string
+                      taskRecipes:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - id
+                            - goal
+                            - preferredSurface
+                            - recommendedAuth
+                            - requiredModules
+                            - dryRunRecommended
+                            - steps
+                          properties:
+                            id:
+                              type: string
+                            goal:
+                              type: string
+                            preferredSurface:
+                              type: string
+                            fallbackSurface:
+                              type: string
+                              nullable: true
+                            recommendedAuth:
+                              type: string
+                            requiredModules:
+                              type: array
+                              items:
+                                type: string
+                            dryRunRecommended:
+                              type: boolean
+                            steps:
+                              type: array
+                              items:
+                                type: object
+                                required:
+                                  - title
+                                  - surface
+                                  - operation
+                                  - purpose
+                                properties:
+                                  title:
+                                    type: string
+                                  surface:
+                                    type: string
+                                  operation:
+                                    type: string
+                                  purpose:
+                                    type: string
+                                  optional:
+                                    type: boolean
                   capabilities:
                     type: array
                     items:

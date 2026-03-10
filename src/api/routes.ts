@@ -598,6 +598,30 @@ export default async function apiRoutes(server: FastifyInstance) {
                         entitlementReadSurface: Type.String(),
                         note: Type.String()
                     }),
+                    agentGuidance: Type.Object({
+                        routingHints: Type.Array(Type.Object({
+                            intent: Type.String(),
+                            preferredSurface: Type.String(),
+                            fallbackSurface: Type.Union([Type.String(), Type.Null()]),
+                            rationale: Type.String()
+                        })),
+                        taskRecipes: Type.Array(Type.Object({
+                            id: Type.String(),
+                            goal: Type.String(),
+                            preferredSurface: Type.String(),
+                            fallbackSurface: Type.Union([Type.String(), Type.Null()]),
+                            recommendedAuth: Type.String(),
+                            requiredModules: Type.Array(Type.String()),
+                            dryRunRecommended: Type.Boolean(),
+                            steps: Type.Array(Type.Object({
+                                title: Type.String(),
+                                surface: Type.String(),
+                                operation: Type.String(),
+                                purpose: Type.String(),
+                                optional: Type.Optional(Type.Boolean())
+                            }))
+                        }))
+                    }),
                     capabilities: Type.Array(Type.Object({
                         id: Type.String(),
                         description: Type.String(),

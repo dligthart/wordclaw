@@ -38,7 +38,7 @@ describe('buildCapabilityManifest', () => {
         restoreEnv();
     });
 
-    it('reports discovery, protocol, and paid-content surfaces', () => {
+    it('reports discovery, protocol, paid-content, and agent-guidance surfaces', () => {
         delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
         delete process.env.ENABLE_EXPERIMENTAL_DELEGATION;
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
@@ -55,6 +55,30 @@ describe('buildCapabilityManifest', () => {
         expect(manifest.protocolContract.required).toEqual(['rest', 'mcp']);
         expect(manifest.protocolContract.compatibility).toEqual(['graphql']);
         expect(manifest.paidContent.purchaseFlowSurface).toBe('rest');
+        expect(manifest.agentGuidance.routingHints).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    intent: 'author-content',
+                    preferredSurface: 'mcp',
+                }),
+                expect.objectContaining({
+                    intent: 'consume-paid-content',
+                    preferredSurface: 'rest',
+                }),
+            ]),
+        );
+        expect(manifest.agentGuidance.taskRecipes).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'discover-deployment',
+                    recommendedAuth: 'none',
+                }),
+                expect.objectContaining({
+                    id: 'author-content',
+                    dryRunRecommended: true,
+                }),
+            ]),
+        );
         expect(
             manifest.capabilities.some((capability) => capability.id === 'create_content_item'),
         ).toBe(true);

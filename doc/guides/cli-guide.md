@@ -148,6 +148,7 @@ The manifest reports:
 - auth and domain-context expectations
 - enabled core and experimental modules
 - the current core capability matrix and dry-run support
+- task-oriented routing hints and recommended recipes for common agent jobs
 
 ### Content Types
 
