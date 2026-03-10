@@ -60,6 +60,18 @@ For paid content purchases, L402 is the currently enabled settlement rail in the
 
 Legacy pay-per-request behavior remains available for routes or items where no active offers are present, but it now sits inside the same supported payment lane rather than outside the default product story.
 
+### Default Accessibility Policy
+
+In WordClaw, paid content is not universally guaranteed to be accessible forever—it depends on the License Policy attached to the purchased Offer. However, **the default policy is permanent, unlimited access** for the buyer. 
+
+Unless explicitly configured otherwise by the publisher, the default `license_policies` enforce:
+- **Unlimited Reads** (`maxReads`: `null`)
+- **No Expiration** (`expiresAt`: `null`)
+- **No Redistribution** (`allowRedistribution`: `false`)
+- **No Platform Restrictions** (`allowedChannels`: `[]`)
+
+If a publisher has not specified an Offer but has instead set a `basePrice` directly on the `ContentType` schema, WordClaw falls back to its legacy L402 "pay-per-request" behavior safely. This behaves exactly like an unlimited default offer—the buyer pays the invoice once, receives the L402 Macaroon, and that Macaroon grants permanent read access to the created item.
+
 ## Future Enhancements
 
 *   **LND gRPC Native Support**: Add an additional production payment provider communicating natively over gRPC with LND implementations instead of standard REST.
