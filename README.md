@@ -164,6 +164,7 @@ WordClaw includes core demos plus a clearly separated experimental sandbox in `d
 6. **Coinbase AgentKit L402 Demo (`demos/agentkit-l402-client.ts`)**  
    Core payments demo.
    An autonomous LangChain agent running via Coinbase AgentKit. Features a custom `ActionProvider` that bridges the LLM to Lightning to autonomously pay an L402 invoice upon receiving a `402 Payment Required` response.
+   - **Note:** This demo does *not* require a Coinbase Developer Platform (CDP) API key because we supply a custom ActionProvider in place of the default CDP EVM wallets. It also uses WordClaw's local mocked Lightning preimage.
    - Run the demo: `export OPENAI_API_KEY="sk-..." && npx tsx demos/agentkit-l402-client.ts`
 
 ## 📚 Documentation

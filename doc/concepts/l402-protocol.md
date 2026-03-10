@@ -64,7 +64,8 @@ Legacy pay-per-request behavior remains available for routes or items where no a
 
 *   **LND gRPC Native Support**: Add an additional production payment provider communicating natively over gRPC with LND implementations instead of standard REST.
 *   **Agent SDK Integration**: Update the WordClaw Agent SDK to automatically handle L402 challenges, pay invoices, and append the required `Authorization` header to subsequent requests natively.
-*   **Coinbase AgentKit Support**: Expose custom ActionProviders (demonstrated in `demos/agentkit-l402-client.ts`) that bridge popular LLM toolkits (Langchain, Autotools) to WordClaw LLM execution paths via autonomous Lightning wallet intercepts.
+*   **Coinbase AgentKit Support**: Expose custom ActionProviders (demonstrated in `demos/agentkit-l402-client.ts`) that bridge popular LLM toolkits (Langchain, Autotools) to WordClaw LLM execution paths via autonomous Lightning wallet intercepts. 
+    * *Note on Provisioning:* Because AgentKit is modular, implementing this demo does **not** require a Coinbase Developer Platform (CDP) API key. Instead of injecting the CDP EVM wallet tools, we inject our own custom `LightningL402ActionProvider`. The Langchain agent only needs an `OPENAI_API_KEY` to run the reasoning loop. In local development, the custom provider resolves invoices using WordClaw's mock preimage (`mock_preimage_12345`), but in production, this same modular provider could be configured to pass API credentials (e.g., `STRIKE_API_KEY` or an Alby OAuth token) to hit a live Lightning network backend.
 
 ## Testing
 
