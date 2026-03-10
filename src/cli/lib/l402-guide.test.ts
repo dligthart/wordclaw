@@ -29,9 +29,22 @@ describe('buildL402Guide', () => {
                 { id: 11, slug: 'blog-post', name: 'Blog Post Unlock', scopeType: 'item', scopeRef: 99, priceSats: 300, active: true },
             ],
             apiKeyConfigured: true,
+            currentActor: {
+                actorId: 'api_key:11',
+                actorType: 'api_key',
+                actorSource: 'db',
+                actorProfileId: 'api-key',
+                domainId: 2,
+                scopes: ['content:read'],
+            },
         });
 
         expect(guide.selectedOfferId).toBe(11);
+        expect(guide.actorReadiness).toEqual(expect.objectContaining({
+            status: 'ready',
+            supportedActorProfile: true,
+            requiredScopesSatisfied: true,
+        }));
         expect(guide.steps).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -56,6 +69,7 @@ describe('buildL402Guide', () => {
             apiKeyConfigured: false,
         });
 
+        expect(guide.actorReadiness.status).toBe('blocked');
         expect(guide.steps.find((step) => step.id === 'start-purchase')).toEqual(
             expect.objectContaining({
                 status: 'blocked',
@@ -77,5 +91,58 @@ describe('buildL402Guide', () => {
                 command: null,
             }),
         );
+    });
+
+    it('blocks purchase when the current actor does not satisfy the paid-content profile requirements', () => {
+        const guide = buildL402Guide({
+            itemId: 99,
+            offers: [
+                { id: 11, slug: 'blog-post', name: 'Blog Post Unlock', scopeType: 'item', scopeRef: 99, priceSats: 300, active: true },
+            ],
+            apiKeyConfigured: true,
+            currentActor: {
+                actorId: 'supervisor:1',
+                actorType: 'supervisor',
+                actorSource: 'cookie',
+                actorProfileId: 'supervisor-session',
+                domainId: 1,
+                scopes: ['admin'],
+            },
+        });
+
+        expect(guide.actorReadiness).toEqual(expect.objectContaining({
+            status: 'blocked',
+            supportedActorProfile: false,
+            requiredScopesSatisfied: true,
+        }));
+        expect(guide.steps.find((step) => step.id === 'start-purchase')).toEqual(
+            expect.objectContaining({
+                status: 'blocked',
+            }),
+        );
+    });
+
+    it('warns when the current actor uses an env-backed API key profile', () => {
+        const guide = buildL402Guide({
+            itemId: 99,
+            offers: [
+                { id: 11, slug: 'blog-post', name: 'Blog Post Unlock', scopeType: 'item', scopeRef: 99, priceSats: 300, active: true },
+            ],
+            apiKeyConfigured: true,
+            currentActor: {
+                actorId: 'env_key:remote-admin',
+                actorType: 'env_key',
+                actorSource: 'env',
+                actorProfileId: 'env-key',
+                domainId: 1,
+                scopes: ['admin'],
+            },
+        });
+
+        expect(guide.actorReadiness).toEqual(expect.objectContaining({
+            status: 'warning',
+            supportedActorProfile: true,
+            requiredScopesSatisfied: true,
+        }));
     });
 });

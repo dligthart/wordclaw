@@ -1,3 +1,5 @@
+import type { CurrentActorSnapshot } from '../../services/actor-identity.js';
+
 type OfferLike = {
     id: number;
     slug: string;
@@ -22,6 +24,15 @@ export type L402Guide = {
     itemId: number;
     selectedOfferId: number | null;
     requiredAuth: 'api-key';
+    requiredActorProfiles: Array<'api-key' | 'env-key'>;
+    requiredScopes: string[];
+    currentActor: CurrentActorSnapshot | null;
+    actorReadiness: {
+        status: 'ready' | 'blocked' | 'warning';
+        supportedActorProfile: boolean;
+        requiredScopesSatisfied: boolean;
+        notes: string[];
+    };
     availableOffers: OfferLike[];
     apiKeyConfigured: boolean;
     warnings?: string[];
@@ -47,11 +58,45 @@ export function buildL402Guide(options: {
     itemId: number;
     offers: OfferLike[];
     apiKeyConfigured: boolean;
+    currentActor?: CurrentActorSnapshot | null;
     baseCommand?: string;
     preferredOfferId?: number;
 }): L402Guide {
     const baseCommand = options.baseCommand ?? 'node dist/cli/index.js';
     const selectedOffer = selectOfferForGuide(options.offers, options.preferredOfferId);
+    const currentActor = options.currentActor ?? null;
+    const requiredActorProfiles: Array<'api-key' | 'env-key'> = ['api-key', 'env-key'];
+    const requiredScopes = ['content:read'];
+    const supportedActorProfile = currentActor
+        ? requiredActorProfiles.includes(currentActor.actorProfileId as 'api-key' | 'env-key')
+        : false;
+    const requiredScopesSatisfied = currentActor
+        ? currentActor.scopes.includes('admin') || requiredScopes.every((scope) => currentActor.scopes.includes(scope))
+        : false;
+    const actorReadinessNotes: string[] = [];
+
+    if (!currentActor) {
+        actorReadinessNotes.push('No authenticated actor snapshot is available yet.');
+    } else {
+        actorReadinessNotes.push(`Current actor ${currentActor.actorId} is using profile ${currentActor.actorProfileId} in domain ${currentActor.domainId}.`);
+        if (!supportedActorProfile) {
+            actorReadinessNotes.push('Paid-content consumption requires an API-key-backed actor profile.');
+        }
+        if (!requiredScopesSatisfied) {
+            actorReadinessNotes.push('The current actor is missing content:read or admin scope for entitlement-backed reads.');
+        }
+        if (currentActor.actorProfileId === 'env-key') {
+            actorReadinessNotes.push('Environment-configured API keys are best suited for local or single-domain deployments.');
+        }
+    }
+
+    const actorReadinessStatus = !currentActor
+        ? 'blocked'
+        : !supportedActorProfile || !requiredScopesSatisfied
+            ? 'blocked'
+            : currentActor.actorProfileId === 'env-key'
+                ? 'warning'
+                : 'ready';
     const purchaseCommand = selectedOffer
         ? `${baseCommand} l402 purchase --offer ${selectedOffer.id}`
         : null;
@@ -64,6 +109,15 @@ export function buildL402Guide(options: {
         itemId: options.itemId,
         selectedOfferId: selectedOffer?.id ?? null,
         requiredAuth: 'api-key',
+        requiredActorProfiles,
+        requiredScopes,
+        currentActor,
+        actorReadiness: {
+            status: actorReadinessStatus,
+            supportedActorProfile,
+            requiredScopesSatisfied,
+            notes: actorReadinessNotes,
+        },
         availableOffers: options.offers,
         apiKeyConfigured: options.apiKeyConfigured,
         warnings: options.apiKeyConfigured
@@ -80,7 +134,7 @@ export function buildL402Guide(options: {
             {
                 id: 'start-purchase',
                 title: 'Start the L402 purchase',
-                status: !options.apiKeyConfigured
+                status: !options.apiKeyConfigured || actorReadinessStatus === 'blocked'
                     ? 'blocked'
                     : selectedOffer
                         ? 'ready'
@@ -99,7 +153,7 @@ export function buildL402Guide(options: {
             {
                 id: 'confirm-purchase',
                 title: 'Confirm payment settlement',
-                status: !options.apiKeyConfigured
+                status: !options.apiKeyConfigured || actorReadinessStatus === 'blocked'
                     ? 'blocked'
                     : selectedOffer
                         ? 'ready'
@@ -115,14 +169,14 @@ export function buildL402Guide(options: {
             {
                 id: 'inspect-entitlements',
                 title: 'Inspect current entitlements',
-                status: options.apiKeyConfigured ? 'ready' : 'blocked',
+                status: options.apiKeyConfigured && actorReadinessStatus !== 'blocked' ? 'ready' : 'blocked',
                 command: `${baseCommand} l402 entitlements`,
                 purpose: 'List active or pending entitlements for the current API key principal.',
             },
             {
                 id: 'read-content',
                 title: 'Read the paid content',
-                status: options.apiKeyConfigured ? 'ready' : 'blocked',
+                status: options.apiKeyConfigured && actorReadinessStatus !== 'blocked' ? 'ready' : 'blocked',
                 command: `${baseCommand} l402 read --item ${options.itemId} --entitlement-id <entitlementId>`,
                 purpose: 'Use the activated entitlement to fetch the premium content item.',
                 notes: [

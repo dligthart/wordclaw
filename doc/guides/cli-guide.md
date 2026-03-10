@@ -241,6 +241,7 @@ node dist/cli/index.js l402 read --item 345 --entitlement-id 21
 Supported features:
 
 - generate a task-oriented paid-content plan from the current live offers
+- include the current actor snapshot and a readiness assessment for the paid-content task
 - list item offers
 - start a purchase flow
 - confirm settlement with `Authorization: L402 <macaroon>:<preimage>`
@@ -248,7 +249,7 @@ Supported features:
 - inspect a specific entitlement
 - perform paid reads with an entitlement header
 
-If no API key is configured, `l402 guide` falls back to a generic blocked plan instead of failing immediately. That still shows the required purchase/confirm/read sequence and tells the agent what auth is missing.
+If no API key is configured, `l402 guide` falls back to a generic blocked plan instead of failing immediately. That still shows the required purchase/confirm/read sequence, attempts to explain which actor is missing, and tells the agent what auth is required.
 
 ## Input Patterns
 

@@ -28,6 +28,7 @@ import {
     type RestCliResponse,
 } from './lib/rest-client.js';
 import { buildL402Guide } from './lib/l402-guide.js';
+import type { CurrentActorSnapshot } from '../services/actor-identity.js';
 
 type JsonMap = Record<string, unknown>;
 
@@ -739,6 +740,7 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
             throw new Error('l402 guide requires --item.');
         }
         const apiKeyConfigured = Boolean(getStringFlag(args, 'api-key') ?? process.env.WORDCLAW_API_KEY);
+        let currentActor: CurrentActorSnapshot | null = null;
         let offers: Array<{
             id: number;
             slug: string;
@@ -749,6 +751,34 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
             active: boolean;
         }> = [];
         let warnings: string[] = [];
+
+        try {
+            const identityResponse = await client.request({
+                method: 'GET',
+                path: '/identity',
+            });
+            const identityBody = requireJsonMap(identityResponse.body, 'Current actor identity response');
+            const data = identityBody.data;
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                currentActor = data as CurrentActorSnapshot;
+            }
+        } catch (error) {
+            if (
+                error instanceof RestCliError
+                && error.response.body
+                && typeof error.response.body === 'object'
+                && 'code' in (error.response.body as Record<string, unknown>)
+            ) {
+                const code = String((error.response.body as Record<string, unknown>).code);
+                if (code === 'AUTH_MISSING_API_KEY' || code === 'AUTH_INSUFFICIENT_SCOPE' || code === 'API_KEY_REQUIRED') {
+                    warnings.push('Current actor identity is unavailable until an API key is configured. The guide is showing a blocked paid-content path.');
+                } else {
+                    throw error;
+                }
+            } else {
+                throw error;
+            }
+        }
 
         try {
             const response = await client.request({
@@ -779,6 +809,7 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
             itemId,
             offers,
             apiKeyConfigured,
+            currentActor,
             preferredOfferId: getNumberFlag(args, 'offer'),
         });
         if (warnings.length > 0) {
