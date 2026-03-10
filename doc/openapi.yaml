@@ -1310,6 +1310,7 @@ paths:
                     type: object
                     required:
                       - routingHints
+                      - actorProfiles
                       - taskRecipes
                     properties:
                       routingHints:
@@ -1319,17 +1320,78 @@ paths:
                           required:
                             - intent
                             - preferredSurface
+                            - preferredActorProfile
                             - rationale
                           properties:
                             intent:
                               type: string
                             preferredSurface:
                               type: string
+                            preferredActorProfile:
+                              type: string
                             fallbackSurface:
                               type: string
                               nullable: true
                             rationale:
                               type: string
+                      actorProfiles:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - id
+                            - label
+                            - actorType
+                            - authMode
+                            - availableSurfaces
+                            - actorIdExamples
+                            - recommendedFor
+                            - domainContext
+                            - notes
+                          properties:
+                            id:
+                              type: string
+                            label:
+                              type: string
+                            actorType:
+                              type: string
+                            authMode:
+                              type: string
+                            availableSurfaces:
+                              type: array
+                              items:
+                                type: string
+                            actorIdExamples:
+                              type: array
+                              items:
+                                type: string
+                            recommendedFor:
+                              type: array
+                              items:
+                                type: string
+                            developmentOnly:
+                              type: boolean
+                            domainContext:
+                              type: object
+                              required:
+                                - required
+                                - strategy
+                                - note
+                              properties:
+                                required:
+                                  type: boolean
+                                strategy:
+                                  type: string
+                                header:
+                                  type: string
+                                environmentVariable:
+                                  type: string
+                                note:
+                                  type: string
+                            notes:
+                              type: array
+                              items:
+                                type: string
                       taskRecipes:
                         type: array
                         items:
@@ -1339,6 +1401,9 @@ paths:
                             - goal
                             - preferredSurface
                             - recommendedAuth
+                            - preferredActorProfile
+                            - supportedActorProfiles
+                            - recommendedApiKeyScopes
                             - requiredModules
                             - dryRunRecommended
                             - steps
@@ -1354,6 +1419,16 @@ paths:
                               nullable: true
                             recommendedAuth:
                               type: string
+                            preferredActorProfile:
+                              type: string
+                            supportedActorProfiles:
+                              type: array
+                              items:
+                                type: string
+                            recommendedApiKeyScopes:
+                              type: array
+                              items:
+                                type: string
                             requiredModules:
                               type: array
                               items:

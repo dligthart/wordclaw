@@ -148,6 +148,7 @@ The manifest reports:
 - required vs compatibility protocol surfaces
 - MCP transport behavior
 - auth and domain-context expectations
+- reusable actor profiles for API keys, supervisor sessions, local MCP, and public discovery
 - enabled core and experimental modules
 - the current core capability matrix and dry-run support
 - task-oriented routing hints and recommended recipes for common agent jobs

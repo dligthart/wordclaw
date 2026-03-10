@@ -60,10 +60,32 @@ describe('buildCapabilityManifest', () => {
                 expect.objectContaining({
                     intent: 'author-content',
                     preferredSurface: 'mcp',
+                    preferredActorProfile: 'api-key',
                 }),
                 expect.objectContaining({
                     intent: 'consume-paid-content',
                     preferredSurface: 'rest',
+                    preferredActorProfile: 'api-key',
+                }),
+            ]),
+        );
+        expect(manifest.agentGuidance.actorProfiles).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'api-key',
+                    actorType: 'api_key',
+                    authMode: 'api-key',
+                    domainContext: expect.objectContaining({
+                        strategy: 'implicit-from-key',
+                    }),
+                }),
+                expect.objectContaining({
+                    id: 'supervisor-session',
+                    actorType: 'supervisor',
+                    domainContext: expect.objectContaining({
+                        strategy: 'header',
+                        header: 'x-wordclaw-domain',
+                    }),
                 }),
             ]),
         );
@@ -72,10 +94,13 @@ describe('buildCapabilityManifest', () => {
                 expect.objectContaining({
                     id: 'discover-deployment',
                     recommendedAuth: 'none',
+                    preferredActorProfile: 'public-discovery',
+                    supportedActorProfiles: expect.arrayContaining(['public-discovery', 'api-key']),
                 }),
                 expect.objectContaining({
                     id: 'author-content',
                     dryRunRecommended: true,
+                    recommendedApiKeyScopes: ['content:write'],
                 }),
             ]),
         );

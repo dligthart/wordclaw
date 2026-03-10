@@ -16,39 +16,139 @@ export function buildCapabilityManifest() {
     const experimentalRevenue = isExperimentalRevenueEnabled();
     const experimentalDelegation = isExperimentalDelegationEnabled();
     const experimentalAgentRuns = isExperimentalAgentRunsEnabled();
+    const actorProfiles = [
+        {
+            id: 'public-discovery',
+            label: 'Public discovery',
+            actorType: 'system',
+            authMode: 'none',
+            availableSurfaces: ['rest'],
+            actorIdExamples: [],
+            recommendedFor: ['discover-deployment'],
+            domainContext: {
+                required: false,
+                strategy: 'none',
+                note: 'Use this unauthenticated profile only for deployment discovery via GET /api/capabilities.',
+            },
+            notes: [
+                'No authentication is required.',
+                'This profile is read-only and does not create a persisted actor identity.',
+            ],
+        },
+        {
+            id: 'api-key',
+            label: 'Domain-scoped API key',
+            actorType: 'api_key',
+            authMode: 'api-key',
+            availableSurfaces: ['rest', 'mcp-http'],
+            actorIdExamples: ['api_key:12'],
+            recommendedFor: ['author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content'],
+            domainContext: {
+                required: true,
+                strategy: 'implicit-from-key',
+                note: 'The API key record fixes the active domain. Do not send x-wordclaw-domain for API-key requests.',
+            },
+            notes: [
+                'Use x-api-key or Authorization: Bearer <api-key>.',
+                'Prefer content:write for mutations and review tasks; content:read is sufficient for read-only paid-content access.',
+            ],
+        },
+        {
+            id: 'supervisor-session',
+            label: 'Supervisor session',
+            actorType: 'supervisor',
+            authMode: 'supervisor-session',
+            availableSurfaces: ['rest', 'mcp-http'],
+            actorIdExamples: ['supervisor:1'],
+            recommendedFor: ['review-workflow', 'manage-integrations'],
+            domainContext: {
+                required: true,
+                strategy: 'header',
+                header: 'x-wordclaw-domain',
+                note: 'Supervisor sessions must send the active domain on each request.',
+            },
+            notes: [
+                'Use the supervisor_session cookie from operator login.',
+                'Best suited for browser-attached MCP sessions or human-in-the-loop review flows.',
+            ],
+        },
+        {
+            id: 'mcp-local',
+            label: 'Local MCP session',
+            actorType: 'mcp',
+            authMode: 'local-stdio',
+            availableSurfaces: ['mcp-stdio'],
+            actorIdExamples: ['mcp-local'],
+            recommendedFor: ['discover-deployment', 'author-content', 'review-workflow', 'manage-integrations'],
+            domainContext: {
+                required: true,
+                strategy: 'environment',
+                environmentVariable: 'WORDCLAW_DOMAIN_ID',
+                note: 'Local stdio MCP sessions derive the active domain from WORDCLAW_DOMAIN_ID.',
+            },
+            notes: [
+                'Default for CLI-spawned local MCP sessions.',
+                'Use remote HTTP MCP plus an API key when you need a shareable attachable agent session.',
+            ],
+        },
+        {
+            id: 'anonymous-local-dev',
+            label: 'Insecure local admin fallback',
+            actorType: 'anonymous',
+            authMode: 'none',
+            availableSurfaces: ['rest'],
+            actorIdExamples: ['anonymous'],
+            recommendedFor: [],
+            developmentOnly: true,
+            domainContext: {
+                required: true,
+                strategy: 'local-default',
+                note: 'Only available when ALLOW_INSECURE_LOCAL_ADMIN=true; defaults to domain 1.',
+            },
+            notes: [
+                'Development only. Do not depend on this profile for hosted or production agents.',
+            ],
+        },
+    ];
     const agentGuidance = {
         routingHints: [
             {
                 intent: 'discover-deployment',
                 preferredSurface: 'rest',
+                preferredActorProfile: 'public-discovery',
                 fallbackSurface: 'mcp',
                 rationale: 'The REST manifest is public and easiest to read before you authenticate or connect over MCP.',
             },
             {
                 intent: 'author-content',
                 preferredSurface: 'mcp',
+                preferredActorProfile: 'api-key',
                 fallbackSurface: 'rest',
                 rationale: 'MCP is the most natural agent surface for schema discovery, dry-run validation, and content mutations.',
             },
             {
                 intent: 'review-workflow',
                 preferredSurface: 'mcp',
+                preferredActorProfile: 'api-key',
                 fallbackSurface: 'rest',
                 rationale: 'Workflow review and comments fit agent-style tool calls well, while REST remains a direct fallback.',
             },
             {
                 intent: 'manage-integrations',
                 preferredSurface: 'mcp',
+                preferredActorProfile: 'api-key',
                 fallbackSurface: 'rest',
                 rationale: 'API keys and webhooks are available on MCP and are simpler to automate as tool calls.',
             },
             {
                 intent: 'consume-paid-content',
                 preferredSurface: 'rest',
+                preferredActorProfile: 'api-key',
                 fallbackSurface: null,
                 rationale: 'L402 settlement and entitlement-backed reads remain REST-first even though discovery is available elsewhere.',
             },
         ],
+        actorProfiles,
         taskRecipes: [
             {
                 id: 'discover-deployment',
@@ -56,6 +156,9 @@ export function buildCapabilityManifest() {
                 preferredSurface: 'rest',
                 fallbackSurface: 'mcp',
                 recommendedAuth: 'none',
+                preferredActorProfile: 'public-discovery',
+                supportedActorProfiles: ['public-discovery', 'api-key', 'supervisor-session', 'mcp-local'],
+                recommendedApiKeyScopes: [],
                 requiredModules: [],
                 dryRunRecommended: false,
                 steps: [
@@ -80,6 +183,9 @@ export function buildCapabilityManifest() {
                 preferredSurface: 'mcp',
                 fallbackSurface: 'rest',
                 recommendedAuth: 'api-key',
+                preferredActorProfile: 'api-key',
+                supportedActorProfiles: ['api-key', 'mcp-local', 'supervisor-session'],
+                recommendedApiKeyScopes: ['content:write'],
                 requiredModules: ['content-runtime'],
                 dryRunRecommended: true,
                 steps: [
@@ -116,6 +222,9 @@ export function buildCapabilityManifest() {
                 preferredSurface: 'mcp',
                 fallbackSurface: 'rest',
                 recommendedAuth: 'api-key-or-supervisor',
+                preferredActorProfile: 'api-key',
+                supportedActorProfiles: ['api-key', 'supervisor-session', 'mcp-local'],
+                recommendedApiKeyScopes: ['content:write'],
                 requiredModules: ['content-runtime', 'workflow-review'],
                 dryRunRecommended: false,
                 steps: [
@@ -153,6 +262,9 @@ export function buildCapabilityManifest() {
                 preferredSurface: 'mcp',
                 fallbackSurface: 'rest',
                 recommendedAuth: 'api-key-or-supervisor',
+                preferredActorProfile: 'api-key',
+                supportedActorProfiles: ['api-key', 'supervisor-session', 'mcp-local'],
+                recommendedApiKeyScopes: ['content:write'],
                 requiredModules: ['api-keys-webhooks'],
                 dryRunRecommended: false,
                 steps: [
@@ -184,6 +296,9 @@ export function buildCapabilityManifest() {
                 preferredSurface: 'rest',
                 fallbackSurface: null,
                 recommendedAuth: 'api-key',
+                preferredActorProfile: 'api-key',
+                supportedActorProfiles: ['api-key'],
+                recommendedApiKeyScopes: ['content:read'],
                 requiredModules: ['payments-l402'],
                 dryRunRecommended: false,
                 steps: [

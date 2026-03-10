@@ -602,8 +602,27 @@ export default async function apiRoutes(server: FastifyInstance) {
                         routingHints: Type.Array(Type.Object({
                             intent: Type.String(),
                             preferredSurface: Type.String(),
+                            preferredActorProfile: Type.String(),
                             fallbackSurface: Type.Union([Type.String(), Type.Null()]),
                             rationale: Type.String()
+                        })),
+                        actorProfiles: Type.Array(Type.Object({
+                            id: Type.String(),
+                            label: Type.String(),
+                            actorType: Type.String(),
+                            authMode: Type.String(),
+                            availableSurfaces: Type.Array(Type.String()),
+                            actorIdExamples: Type.Array(Type.String()),
+                            recommendedFor: Type.Array(Type.String()),
+                            developmentOnly: Type.Optional(Type.Boolean()),
+                            domainContext: Type.Object({
+                                required: Type.Boolean(),
+                                strategy: Type.String(),
+                                header: Type.Optional(Type.String()),
+                                environmentVariable: Type.Optional(Type.String()),
+                                note: Type.String()
+                            }),
+                            notes: Type.Array(Type.String())
                         })),
                         taskRecipes: Type.Array(Type.Object({
                             id: Type.String(),
@@ -611,6 +630,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                             preferredSurface: Type.String(),
                             fallbackSurface: Type.Union([Type.String(), Type.Null()]),
                             recommendedAuth: Type.String(),
+                            preferredActorProfile: Type.String(),
+                            supportedActorProfiles: Type.Array(Type.String()),
+                            recommendedApiKeyScopes: Type.Array(Type.String()),
                             requiredModules: Type.Array(Type.String()),
                             dryRunRecommended: Type.Boolean(),
                             steps: Type.Array(Type.Object({

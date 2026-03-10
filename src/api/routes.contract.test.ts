@@ -164,10 +164,22 @@ describe('API Route Contracts', () => {
                         routingHints: Array<{
                             intent: string;
                             preferredSurface: string;
+                            preferredActorProfile: string;
+                        }>;
+                        actorProfiles: Array<{
+                            id: string;
+                            actorType: string;
+                            authMode: string;
+                            domainContext: {
+                                strategy: string;
+                            };
                         }>;
                         taskRecipes: Array<{
                             id: string;
                             preferredSurface: string;
+                            preferredActorProfile: string;
+                            supportedActorProfiles: string[];
+                            recommendedApiKeyScopes: string[];
                         }>;
                     };
                     limitations: string[];
@@ -192,10 +204,31 @@ describe('API Route Contracts', () => {
                     expect.objectContaining({
                         intent: 'discover-deployment',
                         preferredSurface: 'rest',
+                        preferredActorProfile: 'public-discovery',
                     }),
                     expect.objectContaining({
                         intent: 'author-content',
                         preferredSurface: 'mcp',
+                        preferredActorProfile: 'api-key',
+                    }),
+                ]),
+            );
+            expect(body.data.agentGuidance.actorProfiles).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'api-key',
+                        actorType: 'api_key',
+                        authMode: 'api-key',
+                        domainContext: expect.objectContaining({
+                            strategy: 'implicit-from-key',
+                        }),
+                    }),
+                    expect.objectContaining({
+                        id: 'mcp-local',
+                        actorType: 'mcp',
+                        domainContext: expect.objectContaining({
+                            strategy: 'environment',
+                        }),
                     }),
                 ]),
             );
@@ -204,6 +237,9 @@ describe('API Route Contracts', () => {
                     expect.objectContaining({
                         id: 'consume-paid-content',
                         preferredSurface: 'rest',
+                        preferredActorProfile: 'api-key',
+                        supportedActorProfiles: ['api-key'],
+                        recommendedApiKeyScopes: ['content:read'],
                     }),
                 ]),
             );

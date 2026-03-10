@@ -136,10 +136,27 @@ describe('MCP HTTP transport', () => {
         expect(typeof guidanceText).toBe('string');
         expect(JSON.parse(guidanceText as string)).toEqual(expect.objectContaining({
             routingHints: expect.arrayContaining([
-                expect.objectContaining({ intent: 'author-content' })
+                expect.objectContaining({
+                    intent: 'author-content',
+                    preferredActorProfile: 'api-key',
+                })
+            ]),
+            actorProfiles: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'api-key',
+                    actorType: 'api_key',
+                }),
+                expect.objectContaining({
+                    id: 'supervisor-session',
+                    actorType: 'supervisor',
+                }),
             ]),
             taskRecipes: expect.arrayContaining([
-                expect.objectContaining({ id: 'author-content' })
+                expect.objectContaining({
+                    id: 'author-content',
+                    preferredActorProfile: 'api-key',
+                    recommendedApiKeyScopes: ['content:write'],
+                })
             ])
         }));
         const taskPromptText = extractPromptUserText(
@@ -147,6 +164,10 @@ describe('MCP HTTP transport', () => {
         );
         expect(taskPromptText).toContain('Task: author-content');
         expect(taskPromptText).toContain('Preferred surface: mcp');
+        expect(taskPromptText).toContain('Preferred actor profile: api-key');
+        expect(taskPromptText).toContain('Supported actor profiles: api-key, mcp-local, supervisor-session');
+        expect(taskPromptText).toContain('Actor type: api_key');
+        expect(taskPromptText).toContain('Domain context: implicit-from-key');
 
         const decisionText = extractFirstText(policyDecision.content as Array<{ type: string; text?: string }>);
         expect(JSON.parse(decisionText)).toEqual(expect.objectContaining({

@@ -2259,8 +2259,24 @@ server.prompt(
             };
         }
 
+        const actorProfiles = recipe.supportedActorProfiles
+            .map((profileId) => manifest.agentGuidance.actorProfiles.find((profile) => profile.id === profileId))
+            .filter((profile): profile is NonNullable<typeof profile> => Boolean(profile));
+
         const steps = recipe.steps
             .map((step, index) => `${index + 1}. ${step.title} [${step.surface}] ${step.operation}\n   Purpose: ${step.purpose}${'optional' in step && step.optional ? ' (optional)' : ''}`)
+            .join('\n');
+        const actors = actorProfiles
+            .map((profile) => {
+                const actorExamples = profile.actorIdExamples.length > 0
+                    ? profile.actorIdExamples.join(', ')
+                    : 'none (public unauthenticated)';
+                const domainContext = profile.domainContext.required
+                    ? `${profile.domainContext.strategy}${profile.domainContext.header ? ` via ${profile.domainContext.header}` : ''}${profile.domainContext.environmentVariable ? ` via ${profile.domainContext.environmentVariable}` : ''}`
+                    : 'not required';
+
+                return `- ${profile.id} (${profile.label})\n   Actor type: ${profile.actorType}\n   Auth mode: ${profile.authMode}\n   Surfaces: ${profile.availableSurfaces.join(', ')}\n   Domain context: ${domainContext}\n   Actor IDs: ${actorExamples}\n   Notes: ${profile.notes.join(' ')}`;
+            })
             .join('\n');
 
         return {
@@ -2268,7 +2284,7 @@ server.prompt(
                 role: 'user',
                 content: {
                     type: 'text',
-                    text: `Task: ${recipe.id}\nGoal: ${recipe.goal}\nPreferred surface: ${recipe.preferredSurface}\nFallback surface: ${recipe.fallbackSurface ?? 'none'}\nRecommended auth: ${recipe.recommendedAuth}\nRequired modules: ${recipe.requiredModules.join(', ') || 'none'}\nDry-run recommended: ${recipe.dryRunRecommended ? 'yes' : 'no'}\n\nSteps:\n${steps}`
+                    text: `Task: ${recipe.id}\nGoal: ${recipe.goal}\nPreferred surface: ${recipe.preferredSurface}\nFallback surface: ${recipe.fallbackSurface ?? 'none'}\nRecommended auth: ${recipe.recommendedAuth}\nPreferred actor profile: ${recipe.preferredActorProfile}\nSupported actor profiles: ${recipe.supportedActorProfiles.join(', ')}\nRecommended API-key scopes: ${recipe.recommendedApiKeyScopes.join(', ') || 'none'}\nRequired modules: ${recipe.requiredModules.join(', ') || 'none'}\nDry-run recommended: ${recipe.dryRunRecommended ? 'yes' : 'no'}\n\nActor guidance:\n${actors}\n\nSteps:\n${steps}`
                 }
             }]
         };

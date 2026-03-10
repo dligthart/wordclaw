@@ -11,7 +11,7 @@ WordClaw now exposes MCP in two ways:
 - **Local stdio** for embedded or developer-run MCP sessions
 - **Streamable HTTP** at `/mcp` for attachable remote clients
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, and task-oriented routing hints for agent workflows such as authoring, review, integration setup, and paid-content consumption. If you want only the task-routing layer, use `system://agent-guidance` instead.
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as authoring, review, integration setup, and paid-content consumption. If you want only the task-routing layer, use `system://agent-guidance` instead.
 
 ## Starting the Local MCP Server
 

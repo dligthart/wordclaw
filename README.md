@@ -137,7 +137,7 @@ export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
 ```
 
-For deployment discovery before acting, use `GET /api/capabilities` or `mcp inspect`. The manifest now includes task-oriented routing hints so an agent can choose the right surface for discovery, content authoring, workflow review, integration setup, and paid-content consumption.
+For deployment discovery before acting, use `GET /api/capabilities` or `mcp inspect`. The manifest now includes task-oriented routing hints plus explicit actor/auth profiles so an agent can choose the right surface, credential, and domain-context path for discovery, content authoring, workflow review, integration setup, and paid-content consumption.
 
 ## 🎮 Demos
 
