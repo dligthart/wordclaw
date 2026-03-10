@@ -2105,6 +2105,19 @@ server.resource(
 );
 
 server.resource(
+    'agent-guidance',
+    'system://agent-guidance',
+    async (uri) => {
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(buildCapabilityManifest().agentGuidance, null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
     'content-types',
     'content://types',
     async (uri, extra) => {
@@ -2217,6 +2230,45 @@ server.prompt(
                 content: {
                     type: 'text',
                     text: `You are an AI assistant helping with content management in WordClaw.\n\nHere is the recommended workflow:\n1. List available content types using 'list_content_types'.\n2. If a suitable type exists, use 'get_content_items' to see existing examples.\n3. Create a new item using 'create_content_item'.\n4. If no suitable type exists, create one using 'create_content_type'.\n\nAlways check for 'recommendedNextAction' in API responses.`
+                }
+            }]
+        };
+    }
+);
+
+server.prompt(
+    'task-guidance',
+    'Explain the preferred WordClaw workflow for a specific agent task',
+    {
+        taskId: z.string().describe('Task recipe id, e.g. author-content or consume-paid-content')
+    },
+    async ({ taskId }) => {
+        const manifest = buildCapabilityManifest();
+        const recipe = manifest.agentGuidance.taskRecipes.find((task) => task.id === taskId);
+
+        if (!recipe) {
+            const available = manifest.agentGuidance.taskRecipes.map((task) => task.id).join(', ');
+            return {
+                messages: [{
+                    role: 'user',
+                    content: {
+                        type: 'text',
+                        text: `Unknown task "${taskId}". Available tasks: ${available}.`
+                    }
+                }]
+            };
+        }
+
+        const steps = recipe.steps
+            .map((step, index) => `${index + 1}. ${step.title} [${step.surface}] ${step.operation}\n   Purpose: ${step.purpose}${'optional' in step && step.optional ? ' (optional)' : ''}`)
+            .join('\n');
+
+        return {
+            messages: [{
+                role: 'user',
+                content: {
+                    type: 'text',
+                    text: `Task: ${recipe.id}\nGoal: ${recipe.goal}\nPreferred surface: ${recipe.preferredSurface}\nFallback surface: ${recipe.fallbackSurface ?? 'none'}\nRecommended auth: ${recipe.recommendedAuth}\nRequired modules: ${recipe.requiredModules.join(', ') || 'none'}\nDry-run recommended: ${recipe.dryRunRecommended ? 'yes' : 'no'}\n\nSteps:\n${steps}`
                 }
             }]
         };

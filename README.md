@@ -183,6 +183,7 @@ For detailed guides on setting up the Supervisor UI, authentication, testing, an
 - [MCP Integration](doc/guides/mcp-integration.md) — Model Context Protocol implementation details.
 
 WordClaw MCP is available both as a local stdio server (`npm run mcp:start`) and as a remote Streamable HTTP endpoint at `/mcp` when the main HTTP server is running.
+The MCP surface now also exposes `system://agent-guidance` plus a `task-guidance` prompt so connected agents can ask for the recommended workflow for tasks like authoring, review, integration setup, and paid-content consumption without parsing the full manifest themselves.
 - [Feature Proposals (RFCs)](doc/rfc) — Methodology and history of proposed platform features.
 
 ### API Documentation

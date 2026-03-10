@@ -11,7 +11,7 @@ WordClaw now exposes MCP in two ways:
 - **Local stdio** for embedded or developer-run MCP sessions
 - **Streamable HTTP** at `/mcp` for attachable remote clients
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, and task-oriented routing hints for agent workflows such as authoring, review, integration setup, and paid-content consumption.
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, and task-oriented routing hints for agent workflows such as authoring, review, integration setup, and paid-content consumption. If you want only the task-routing layer, use `system://agent-guidance` instead.
 
 ## Starting the Local MCP Server
 
@@ -105,6 +105,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | Resource         | Description                           |
 |------------------|---------------------------------------|
 | `capabilities`   | Deployment capability manifest as JSON |
+| `agent-guidance` | Task-oriented routing hints and recipes for agent workflows |
 | `content-types`  | Returns the content type catalog as text |
 
 Resources give agents read-only context about the system state.
@@ -115,6 +116,7 @@ Resources give agents read-only context about the system state.
 |---------------------------------|--------------------------------------------------|
 | `content-generation-template`   | Guides the agent to generate content matching a schema |
 | `workflow-guidance`             | Step-by-step workflow for creating content        |
+| `task-guidance`                 | Returns the preferred surface and step recipe for a specific task id |
 
 Prompts are templates that help agents follow best practices when interacting with the CMS.
 

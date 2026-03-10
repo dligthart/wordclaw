@@ -84,7 +84,9 @@ Use MCP commands for local discovery and tool execution:
 node dist/cli/index.js mcp inspect
 node dist/cli/index.js mcp call list_content_types --json '{"limit":5}'
 node dist/cli/index.js mcp prompt workflow-guidance
+node dist/cli/index.js mcp prompt task-guidance --json '{"taskId":"author-content"}'
 node dist/cli/index.js mcp resource content://types
+node dist/cli/index.js mcp resource system://agent-guidance
 node dist/cli/index.js mcp smoke
 
 # Attach to a running remote MCP endpoint instead of spawning stdio

@@ -37,6 +37,23 @@ function extractFirstText(contents: Array<{ type: string; text?: string }>): str
     return text;
 }
 
+function extractPromptUserText(
+    messages: Array<{ role: 'user' | 'assistant'; content: { type: string; text?: string } }>,
+): string {
+    const text = messages.find(
+        (message) =>
+            message.role === 'user'
+            && message.content.type === 'text'
+            && typeof message.content.text === 'string',
+    )?.content.text;
+
+    if (typeof text !== 'string') {
+        throw new Error('Expected text content in MCP prompt result.');
+    }
+
+    return text;
+}
+
 describe('MCP HTTP transport', () => {
     let app: FastifyInstance | null = null;
     let client: Client | null = null;
@@ -82,7 +99,15 @@ describe('MCP HTTP transport', () => {
 
         const tools = await client.listTools();
         const resources = await client.listResources();
+        const prompts = await client.listPrompts();
         const capabilityResource = await client.readResource({ uri: 'system://capabilities' });
+        const guidanceResource = await client.readResource({ uri: 'system://agent-guidance' });
+        const taskPrompt = await client.getPrompt({
+            name: 'task-guidance',
+            arguments: {
+                taskId: 'author-content'
+            }
+        });
         const policyDecision = await client.callTool({
             name: 'evaluate_policy',
             arguments: {
@@ -93,6 +118,8 @@ describe('MCP HTTP transport', () => {
 
         expect(tools.tools.some((tool) => tool.name === 'evaluate_policy')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
+        expect(resources.resources.some((resource) => resource.uri === 'system://agent-guidance')).toBe(true);
+        expect(prompts.prompts.some((prompt) => prompt.name === 'task-guidance')).toBe(true);
 
         const manifestText = capabilityResource.contents.find((entry) => 'text' in entry)?.text;
         expect(typeof manifestText).toBe('string');
@@ -105,6 +132,21 @@ describe('MCP HTTP transport', () => {
                 })
             })
         }));
+        const guidanceText = guidanceResource.contents.find((entry) => 'text' in entry)?.text;
+        expect(typeof guidanceText).toBe('string');
+        expect(JSON.parse(guidanceText as string)).toEqual(expect.objectContaining({
+            routingHints: expect.arrayContaining([
+                expect.objectContaining({ intent: 'author-content' })
+            ]),
+            taskRecipes: expect.arrayContaining([
+                expect.objectContaining({ id: 'author-content' })
+            ])
+        }));
+        const taskPromptText = extractPromptUserText(
+            taskPrompt.messages as Array<{ role: 'user' | 'assistant'; content: { type: string; text?: string } }>,
+        );
+        expect(taskPromptText).toContain('Task: author-content');
+        expect(taskPromptText).toContain('Preferred surface: mcp');
 
         const decisionText = extractFirstText(policyDecision.content as Array<{ type: string; text?: string }>);
         expect(JSON.parse(decisionText)).toEqual(expect.objectContaining({
