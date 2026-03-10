@@ -1,7 +1,6 @@
 <script lang="ts">
     import { fetchApi, ApiError } from "$lib/api";
     import { onMount } from "svelte";
-    import DataTable from "$lib/components/DataTable.svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
@@ -32,16 +31,17 @@
     let creating = $state(false);
 
     let generatedKey = $state<{ name: string; apiKey: string } | null>(null);
-    let activeKeyCount = $derived(keys.filter((key) => !key.revokedAt).length);
-    let revokedKeyCount = $derived(keys.filter((key) => !!key.revokedAt).length);
-
-    const columns = [
-        { key: "name", label: "Name", sortable: true },
-        { key: "keyPrefix", label: "Key Prefix" },
-        { key: "scopes", label: "Scopes" },
-        { key: "lastUsedAt", label: "Last Used", sortable: true },
-        { key: "actions", label: "", width: "100px" },
-    ];
+    let activeKeys = $derived.by(() =>
+        keys.filter((key) => !key.revokedAt),
+    );
+    let revokedKeys = $derived.by(() =>
+        keys.filter((key) => !!key.revokedAt),
+    );
+    let activeKeyCount = $derived(activeKeys.length);
+    let revokedKeyCount = $derived(revokedKeys.length);
+    let adminKeyCount = $derived.by(
+        () => activeKeys.filter((key) => key.scopes.includes("admin")).length,
+    );
 
     const availableScopes = [
         "content:read",
@@ -347,109 +347,215 @@
         </div>
     {/if}
 
-    <!-- Keys List -->
-    <Surface
-        class="flex-1 flex flex-col overflow-hidden p-0"
-    >
+    <div class="grid gap-4 lg:grid-cols-3">
+        <Surface tone="subtle" class="p-4">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                Active keys
+            </p>
+            <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+                {activeKeyCount}
+            </p>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Keys currently able to access WordClaw.
+            </p>
+        </Surface>
+        <Surface tone="subtle" class="p-4">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                Admin scope
+            </p>
+            <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+                {adminKeyCount}
+            </p>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Active keys with full administrative access.
+            </p>
+        </Surface>
+        <Surface tone="subtle" class="p-4">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                Revoked history
+            </p>
+            <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+                {revokedKeyCount}
+            </p>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Keys kept for operator audit history.
+            </p>
+        </Surface>
+    </div>
+
+    <Surface class="mt-4 flex-1 overflow-hidden p-0">
         {#if loading}
-            <div class="flex-1 flex justify-center items-center p-12">
+            <div class="flex items-center justify-center p-12">
                 <LoadingSpinner size="lg" />
             </div>
         {:else if keys.length === 0}
             <div
-                class="flex-1 flex flex-col justify-center items-center text-gray-500 p-12"
+                class="flex flex-col items-center justify-center p-12 text-center text-gray-500"
             >
-                <Icon src={Key} class="w-16 h-16 text-gray-300 mb-4" />
+                <Icon src={Key} class="mb-4 h-16 w-16 text-gray-300" />
                 <p class="text-lg font-medium">No API keys yet</p>
-                <p class="text-sm">
+                <p class="mt-1 text-sm">
                     Create a key to grant agents access to WordClaw.
                 </p>
             </div>
         {:else}
-            <DataTable {columns} data={keys} keyField="id">
-                {#snippet cell(ctx: any)}
-                    {@const row = ctx.row}
-                    {@const column = ctx.column}
-                    {#if column.key === "name"}
-                        <div class="flex items-center">
-                            {#if row.revokedAt}
-                                <span
-                                    class="flex-shrink-0 h-2.5 w-2.5 rounded-full bg-red-500 mr-2"
-                                    title="Revoked"
-                                ></span>
-                            {:else}
-                                <span
-                                    class="flex-shrink-0 h-2.5 w-2.5 rounded-full bg-green-500 mr-2"
-                                    title="Active"
-                                ></span>
-                            {/if}
-                            <div>
-                                <div
-                                    class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2"
-                                >
-                                    {row.name}
-                                    {#if row.revokedAt}
-                                        <Badge variant="danger">Revoked</Badge>
-                                    {/if}
-                                </div>
-                                <div class="text-xs text-slate-500 dark:text-slate-400">
-                                    Created: {formatDate(row.createdAt)}
-                                </div>
-                            </div>
+            <div class="flex flex-col gap-4 p-4">
+                <div class="rounded-3xl border border-slate-200 bg-white/70 p-5 dark:border-slate-700 dark:bg-slate-950/30">
+                    <div class="flex items-start justify-between gap-4 flex-wrap">
+                        <div>
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Active keys
+                            </p>
+                            <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
+                                Live credentials
+                            </h3>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                Rotate or revoke active keys here. New secrets are shown only once after creation or rotation.
+                            </p>
                         </div>
-                    {:else if column.key === "keyPrefix"}
-                        <span class="font-mono"
-                            >{row.keyPrefix}••••••••</span
-                        >
-                    {:else if column.key === "scopes"}
-                        <div class="flex flex-wrap gap-1 max-w-[200px]">
-                            {#each row.scopes as scope}
-                                <Badge variant="muted" class="font-mono normal-case">
-                                    {scope}
-                                </Badge>
+                        <Badge variant="outline">{activeKeyCount} active</Badge>
+                    </div>
+
+                    <div class="mt-5 space-y-3">
+                        {#if activeKeys.length === 0}
+                            <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                No active keys. Create a new key to grant access.
+                            </div>
+                        {:else}
+                            {#each activeKeys as key}
+                                <article class="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/40">
+                                    <div class="flex items-start justify-between gap-4 flex-wrap">
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-2">
+                                                <span
+                                                    class="h-2.5 w-2.5 rounded-full bg-emerald-500"
+                                                    title="Active"
+                                                ></span>
+                                                <h4 class="truncate text-base font-semibold text-slate-900 dark:text-white">
+                                                    {key.name}
+                                                </h4>
+                                                {#if key.scopes.includes("admin")}
+                                                    <Badge variant="info">Admin</Badge>
+                                                {/if}
+                                            </div>
+                                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                                Created {formatDate(key.createdAt)}
+                                            </p>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onclick={() => rotateKey(key.id)}
+                                            >
+                                                <Icon src={ArrowPath} class="h-4 w-4" />
+                                                Rotate
+                                            </Button>
+                                            <Button
+                                                variant="destructive"
+                                                size="sm"
+                                                onclick={() => revokeKey(key.id)}
+                                            >
+                                                <Icon src={Trash} class="h-4 w-4" />
+                                                Revoke
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
+                                        <div>
+                                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                Key prefix
+                                            </p>
+                                            <code class="mt-2 block rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                                                {key.keyPrefix}••••••••
+                                            </code>
+                                        </div>
+                                        <div>
+                                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                Scopes
+                                            </p>
+                                            <div class="mt-2 flex flex-wrap gap-1.5">
+                                                {#each key.scopes as scope}
+                                                    <Badge variant="muted" class="font-mono normal-case">
+                                                        {scope}
+                                                    </Badge>
+                                                {/each}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                Last used
+                                            </p>
+                                            <p class="mt-2 text-sm text-slate-900 dark:text-slate-100">
+                                                {key.lastUsedAt ? formatDate(key.lastUsedAt) : "Never"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </article>
+                            {/each}
+                        {/if}
+                    </div>
+                </div>
+
+                <details class="rounded-3xl border border-slate-200 bg-white/60 p-5 dark:border-slate-700 dark:bg-slate-950/20">
+                    <summary class="flex cursor-pointer list-none items-center justify-between gap-3">
+                        <div>
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Revoked history
+                            </p>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                Historical keys kept for audit and troubleshooting.
+                            </p>
+                        </div>
+                        <Badge variant="muted">{revokedKeyCount} revoked</Badge>
+                    </summary>
+
+                    {#if revokedKeys.length > 0}
+                        <div class="mt-5 space-y-3">
+                            {#each revokedKeys as key}
+                                <article class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
+                                    <div class="flex items-start justify-between gap-3 flex-wrap">
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-2">
+                                                <span
+                                                    class="h-2.5 w-2.5 rounded-full bg-rose-500"
+                                                    title="Revoked"
+                                                ></span>
+                                                <h4 class="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                                                    {key.name}
+                                                </h4>
+                                                <Badge variant="danger">Revoked</Badge>
+                                            </div>
+                                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                Created {formatDate(key.createdAt)}
+                                            </p>
+                                        </div>
+                                        <div class="text-right text-xs text-slate-500 dark:text-slate-400">
+                                            Revoked {formatDate(key.revokedAt)}
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
+                                        <code class="block rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                                            {key.keyPrefix}••••••••
+                                        </code>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            {#each key.scopes as scope}
+                                                <Badge variant="muted" class="font-mono normal-case">
+                                                    {scope}
+                                                </Badge>
+                                            {/each}
+                                        </div>
+                                        <div class="text-xs text-slate-500 dark:text-slate-400">
+                                            Last used {key.lastUsedAt ? formatDate(key.lastUsedAt) : "Never"}
+                                        </div>
+                                    </div>
+                                </article>
                             {/each}
                         </div>
-                    {:else if column.key === "lastUsedAt"}
-                        {#if row.lastUsedAt}
-                            <div class="text-gray-900 dark:text-gray-200">
-                                {formatDate(row.lastUsedAt).split(",")[0]}
-                            </div>
-                            <div class="text-xs">
-                                {formatDate(row.lastUsedAt).split(",")[1]}
-                            </div>
-                        {:else}
-                            <span class="italic text-gray-400">Never</span>
-                        {/if}
-                    {:else if column.key === "actions"}
-                        {#if !row.revokedAt}
-                            <div
-                                class="flex items-center justify-end gap-2 pr-2"
-                            >
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onclick={() => rotateKey(row.id)}
-                                    title="Rotate Key"
-                                >
-                                    <Icon src={ArrowPath} class="w-5 h-5" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onclick={() => revokeKey(row.id)}
-                                    title="Revoke Key"
-                                >
-                                    <Icon src={Trash} class="w-5 h-5" />
-                                </Button>
-                            </div>
-                        {:else}
-                            <span class="block text-right text-xs text-slate-500 dark:text-slate-400"
-                                >Revoked on {formatDate(row.revokedAt)}</span
-                            >
-                        {/if}
                     {/if}
-                {/snippet}
-            </DataTable>
+                </details>
+            </div>
         {/if}
     </Surface>
 </div>

@@ -140,6 +140,7 @@
     let rollingBack = $state(false);
     let showModelFilterModal = $state(false);
     let showSchemaInfoModal = $state(false);
+    let showAdvancedFilters = $state(false);
     let schemaPickerSearch = $state("");
     let draftSelectedTypeId = $state<number | null>(null);
 
@@ -166,6 +167,14 @@
                 sortBy !== "updatedAt" ||
                 sortDir !== "desc",
         ),
+    );
+    let hasAdvancedFilters = $derived(
+        Boolean(filterStatus || createdAfter || createdBefore),
+    );
+    let activeAdvancedFilterCount = $derived(
+        (filterStatus ? 1 : 0) +
+            (createdAfter ? 1 : 0) +
+            (createdBefore ? 1 : 0),
     );
     let selectedDiffVersion = $derived(
         selectedVersionForDiff === null
@@ -1191,6 +1200,25 @@
                         {selectedType.description || "Structured content model for supervised AI and operator workflows."}
                     </p>
 
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onclick={() => (showSchemaInfoModal = true)}
+                        >
+                            Info
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onclick={openModelFilterModal}
+                        >
+                            Change schema
+                        </Button>
+                    </div>
+
                     <div class="grid gap-3">
                         <Surface tone="subtle" class="p-4">
                             <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
@@ -1635,48 +1663,6 @@
                     {@render CurrentSchemaRail()}
                 </div>
 
-                <Surface class="p-5">
-                    <div class="flex items-start justify-between gap-4 flex-wrap">
-                        <div class="min-w-0">
-                            <p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                Browsing content
-                            </p>
-                            <div class="mt-2 flex flex-wrap items-center gap-2">
-                                <h3 class="text-xl font-semibold text-slate-900 dark:text-slate-50">
-                                    {selectedType.name}
-                                </h3>
-                                {#if (selectedType.basePrice ?? 0) > 0}
-                                    <Badge variant="paid">Paid</Badge>
-                                {/if}
-                                {#if activeWorkflow}
-                                    <Badge variant="info">Workflow active</Badge>
-                                {/if}
-                            </div>
-                            <p class="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
-                                {resolveTypeItemCount(selectedType)} total item(s) defined for this schema. Use filters below to narrow the list, then inspect an item on the right.
-                            </p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onclick={() => (showSchemaInfoModal = true)}
-                            >
-                                Info
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                onclick={openModelFilterModal}
-                            >
-                                Change schema
-                            </Button>
-                        </div>
-                    </div>
-                </Surface>
-
                 <Surface class="p-4">
                     <form
                         class="space-y-4"
@@ -1685,7 +1671,7 @@
                             applyFilters();
                         }}
                     >
-                        <div>
+                        <div class="grid gap-3 xl:grid-cols-[minmax(0,1.8fr)_180px_180px_auto] xl:items-end">
                             <div>
                                 <label
                                     for="content-search"
@@ -1700,15 +1686,12 @@
                                     placeholder="Search title, slug, summary, author, or item ID"
                                 />
                             </div>
-                        </div>
-
-                        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                             <div>
                                 <label
                                     for="sort-by"
                                     class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
                                 >
-                                    Sort by
+                                    Sort
                                 </label>
                                 <Select id="sort-by" bind:value={sortBy}>
                                     <option value="updatedAt">Updated</option>
@@ -1728,7 +1711,23 @@
                                     <option value="asc">Oldest first</option>
                                 </Select>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2 md:justify-end">
+                            <div class="flex flex-wrap items-center gap-2 xl:justify-end">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onclick={() => {
+                                        showAdvancedFilters = !showAdvancedFilters;
+                                    }}
+                                >
+                                    {#if showAdvancedFilters || hasAdvancedFilters}
+                                        Hide filters
+                                    {:else}
+                                        More filters
+                                        {#if activeAdvancedFilterCount > 0}
+                                            ({activeAdvancedFilterCount})
+                                        {/if}
+                                    {/if}
+                                </Button>
                                 <Button type="submit">Apply</Button>
                                 {#if hasActiveFilters}
                                     <Button
@@ -1742,55 +1741,57 @@
                             </div>
                         </div>
 
-                        <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px] xl:items-end">
-                            <div>
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                    Status
-                                </p>
-                                <div class="mt-2 flex flex-wrap gap-2">
-                                    <button
-                                        type="button"
-                                        onclick={() => applyStatusFilter("")}
-                                        class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus === ''
-                                            ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
-                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
-                                    >
-                                        <span>All</span>
-                                        <span class="font-mono">{resolveTypeItemCount(selectedType)}</span>
-                                    </button>
-                                    {#each selectedTypeStatusSummary as summary}
+                        {#if showAdvancedFilters || hasAdvancedFilters}
+                            <div class="grid gap-3 rounded-2xl border border-slate-200/80 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_170px_170px] lg:items-end dark:border-slate-700">
+                                <div>
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                        Status
+                                    </p>
+                                    <div class="mt-2 flex flex-wrap gap-2">
                                         <button
                                             type="button"
-                                            onclick={() => applyStatusFilter(summary.status)}
-                                            class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {filterStatus === summary.status
+                                            onclick={() => applyStatusFilter("")}
+                                            class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors {filterStatus === ''
                                                 ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
                                                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
                                         >
-                                            <span>{formatStatusLabel(summary.status)}</span>
-                                            <span class="font-mono">{summary.count}</span>
+                                            <span>All</span>
+                                            <span class="font-mono">{resolveTypeItemCount(selectedType)}</span>
                                         </button>
-                                    {/each}
+                                        {#each selectedTypeStatusSummary as summary}
+                                            <button
+                                                type="button"
+                                                onclick={() => applyStatusFilter(summary.status)}
+                                                class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors {filterStatus === summary.status
+                                                    ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+                                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
+                                            >
+                                                <span>{formatStatusLabel(summary.status)}</span>
+                                                <span class="font-mono">{summary.count}</span>
+                                            </button>
+                                        {/each}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label
+                                        for="created-after"
+                                        class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                    >
+                                        After
+                                    </label>
+                                    <Input id="created-after" bind:value={createdAfter} type="date" />
+                                </div>
+                                <div>
+                                    <label
+                                        for="created-before"
+                                        class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                    >
+                                        Before
+                                    </label>
+                                    <Input id="created-before" bind:value={createdBefore} type="date" />
                                 </div>
                             </div>
-                            <div>
-                                <label
-                                    for="created-after"
-                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                                >
-                                    Created after
-                                </label>
-                                <Input id="created-after" bind:value={createdAfter} type="date" />
-                            </div>
-                            <div>
-                                <label
-                                    for="created-before"
-                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                                >
-                                    Created before
-                                </label>
-                                <Input id="created-before" bind:value={createdBefore} type="date" />
-                            </div>
-                        </div>
+                        {/if}
 
                         {#if hasActiveFilters}
                             <div class="border-t border-slate-200 pt-3 dark:border-slate-700">
@@ -1889,55 +1890,84 @@
                                 {/if}
                             </div>
                         {:else}
-                            <ul class="space-y-3">
-                                {#each items as item}
-                                    <li>
-                                        <button
-                                            type="button"
-                                            onclick={() => selectItem(item)}
-                                            class="w-full rounded-2xl border px-4 py-4 text-left transition-all {selectedItem?.id === item.id
-                                                ? 'border-slate-300 bg-slate-50 shadow-sm dark:border-slate-600 dark:bg-slate-800/70'
-                                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/20 dark:hover:border-slate-600 dark:hover:bg-slate-800/40'}"
-                                        >
-                                            <div class="flex items-start justify-between gap-4">
-                                                <div class="min-w-0">
-                                                    <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">
-                                                        {resolveItemLabel(item)}
-                                                    </p>
-                                                    <div class="mt-1 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400">
-                                                        <span class="font-mono">#{item.id}</span>
-                                                        {#if resolveItemSlug(item)}
-                                                            <span class="font-mono">{resolveItemSlug(item)}</span>
-                                                        {/if}
-                                                        {#if resolveItemAttribution(item)}
-                                                            <span>by {resolveItemAttribution(item)}</span>
-                                                        {/if}
-                                                    </div>
-                                                </div>
-                                                <div class="flex shrink-0 items-center gap-2">
-                                                    <Badge variant={resolveStatusBadgeVariant(item.status)}>
-                                                        {formatStatusLabel(item.status)}
-                                                    </Badge>
-                                                    <span class="text-xs font-mono text-slate-500 dark:text-slate-400">
+                            <div class="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+                                <div class="overflow-x-auto">
+                                    <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                                        <thead class="bg-slate-50/80 dark:bg-slate-900/60">
+                                            <tr>
+                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                    Item
+                                                </th>
+                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                    Slug
+                                                </th>
+                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                    Status
+                                                </th>
+                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                    Version
+                                                </th>
+                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                    Updated
+                                                </th>
+                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                                    Created
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-200 bg-white dark:divide-slate-700 dark:bg-slate-900/20">
+                                            {#each items as item}
+                                                <tr
+                                                    class={`cursor-pointer transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/50 ${selectedItem?.id === item.id ? 'bg-slate-50 dark:bg-slate-800/60' : ''}`}
+                                                    onclick={() => selectItem(item)}
+                                                >
+                                                    <td class="px-4 py-3 align-top">
+                                                        <div class="min-w-0">
+                                                            <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">
+                                                                {resolveItemLabel(item)}
+                                                            </p>
+                                                            <div class="mt-1 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400">
+                                                                <span class="font-mono">#{item.id}</span>
+                                                                {#if resolveItemAttribution(item)}
+                                                                    <span>by {resolveItemAttribution(item)}</span>
+                                                                {/if}
+                                                            </div>
+                                                            <p class="mt-2 line-clamp-1 text-xs text-slate-500 dark:text-slate-400">
+                                                                {resolveItemSummary(item)}
+                                                            </p>
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-4 py-3 align-top text-sm text-slate-600 dark:text-slate-300">
+                                                        <span class="font-mono text-xs">
+                                                            {resolveItemSlug(item) ?? "—"}
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-4 py-3 align-top">
+                                                        <Badge variant={resolveStatusBadgeVariant(item.status)}>
+                                                            {formatStatusLabel(item.status)}
+                                                        </Badge>
+                                                    </td>
+                                                    <td class="px-4 py-3 align-top text-sm text-slate-600 dark:text-slate-300">
                                                         v{item.version}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <p class="mt-3 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">
-                                                {resolveItemSummary(item)}
-                                            </p>
-                                            <div class="mt-4 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400">
-                                                <span class="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-800">
-                                                    Updated {formatDate(item.updatedAt)}
-                                                </span>
-                                                <span class="rounded-full bg-slate-100 px-2 py-1 dark:bg-slate-800">
-                                                    Created {formatDate(item.createdAt)}
-                                                </span>
-                                            </div>
-                                        </button>
-                                    </li>
-                                {/each}
-                            </ul>
+                                                    </td>
+                                                    <td class="px-4 py-3 align-top text-sm text-slate-600 dark:text-slate-300">
+                                                        <div>{formatDate(item.updatedAt)}</div>
+                                                        <div class="text-xs text-slate-500 dark:text-slate-400">
+                                                            {formatRelativeDate(item.updatedAt)}
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-4 py-3 align-top text-sm text-slate-600 dark:text-slate-300">
+                                                        <div>{formatDate(item.createdAt)}</div>
+                                                        <div class="text-xs text-slate-500 dark:text-slate-400">
+                                                            {formatRelativeDate(item.createdAt)}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            {/each}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         {/if}
 
                         {#if loadingItems && items.length > 0}

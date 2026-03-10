@@ -63,6 +63,22 @@
         await loadTypes();
     });
 
+    function normalizeSchemaString(schema: unknown): string {
+        if (typeof schema === "string") {
+            try {
+                return JSON.stringify(JSON.parse(schema), null, 2);
+            } catch {
+                return schema;
+            }
+        }
+
+        try {
+            return JSON.stringify(schema, null, 2);
+        } catch {
+            return String(schema ?? "");
+        }
+    }
+
     async function loadTypes() {
         loading = true;
         try {
@@ -87,10 +103,7 @@
         editingSlug = t.slug;
         editingDesc = t.description || "";
         editingBasePrice = t.basePrice ?? null;
-        editingSchemaStr =
-            typeof t.schema === "string"
-                ? t.schema
-                : JSON.stringify(t.schema, null, 2);
+        editingSchemaStr = normalizeSchemaString(t.schema);
         schemaError = null;
         previewValidationResult = null;
     }
@@ -135,6 +148,8 @@
             return;
         }
 
+        const normalizedSchemaStr = JSON.stringify(schemaObj, null, 2);
+
         try {
             if (isCreating) {
                 const res = await fetchApi("/content-types", {
@@ -143,7 +158,7 @@
                         name: editingName,
                         slug: editingSlug,
                         description: editingDesc,
-                        schema: editingSchemaStr,
+                        schema: normalizedSchemaStr,
                         basePrice: editingBasePrice,
                     }),
                 });
@@ -157,7 +172,7 @@
                         body: JSON.stringify({
                             name: editingName,
                             description: editingDesc,
-                            schema: editingSchemaStr,
+                            schema: normalizedSchemaStr,
                             basePrice: editingBasePrice,
                         }),
                     },
