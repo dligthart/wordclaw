@@ -67,8 +67,14 @@
     ENABLE_EXPERIMENTAL_AGENT_RUNS=false
     AGENT_RUN_WORKER_INTERVAL_MS=1000
     AGENT_RUN_WORKER_BATCH_SIZE=25
+    PAYMENT_PROVIDER=lnbits
+    LNBITS_BASE_URL=
+    LNBITS_ADMIN_KEY=
     ```
-    `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). If unset, semantic search returns a clear disabled response and write-side embedding sync is skipped. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth. `ENABLE_EXPERIMENTAL_REVENUE`, `ENABLE_EXPERIMENTAL_DELEGATION`, and `ENABLE_EXPERIMENTAL_AGENT_RUNS` remain `false` by default and should only be enabled if you explicitly want those incubator surfaces available. When experimental agent runs are enabled, `AGENT_RUN_WORKER_INTERVAL_MS` and `AGENT_RUN_WORKER_BATCH_SIZE` control async sweep cadence and per-sweep run volume.
+    `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). If unset, semantic search returns a clear disabled response and write-side embedding sync is skipped. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth. 
+    
+    ### L402 / Lightning Provisioning
+    By default, WordClaw uses a mocked Lightning network locally. If you run WordClaw in `NODE_ENV=production`, it requires a real Lightning backend. To provision a self-hosted Lightning node, set `PAYMENT_PROVIDER=lnbits` and configure the `LNBITS_BASE_URL` (e.g. `https://your-lnbits-domain.com`) and your `LNBITS_ADMIN_KEY`.
 
 ## 🗄️ Database Setup
 
