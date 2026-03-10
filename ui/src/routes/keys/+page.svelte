@@ -3,6 +3,7 @@
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import DataTable from "$lib/components/DataTable.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import Input from "$lib/components/ui/Input.svelte";
@@ -42,6 +43,23 @@
     let adminKeyCount = $derived.by(
         () => activeKeys.filter((key) => key.scopes.includes("admin")).length,
     );
+
+    const activeColumns = [
+        { key: "name", label: "Name", sortable: true },
+        { key: "keyPrefix", label: "Prefix" },
+        { key: "scopes", label: "Scopes" },
+        { key: "createdAt", label: "Created", sortable: true },
+        { key: "lastUsedAt", label: "Last Used", sortable: true },
+        { key: "_actions", label: "", width: "160px" }
+    ];
+
+    const revokedColumns = [
+        { key: "name", label: "Name", sortable: true },
+        { key: "keyPrefix", label: "Prefix" },
+        { key: "scopes", label: "Scopes" },
+        { key: "revokedAt", label: "Revoked", sortable: true },
+        { key: "lastUsedAt", label: "Last Used", sortable: true }
+    ];
 
     const availableScopes = [
         "content:read",
@@ -416,85 +434,48 @@
                         <Badge variant="outline">{activeKeyCount} active</Badge>
                     </div>
 
-                    <div class="mt-5 space-y-3">
-                        {#if activeKeys.length === 0}
-                            <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    <div class="mt-5">
+                        <DataTable columns={activeColumns} data={activeKeys} keyField="id">
+                            {#snippet cell({ row, column, value })}
+                                {#if column.key === "name"}
+                                    <div class="flex items-center gap-2">
+                                        <span class="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" title="Active"></span>
+                                        <span class="font-semibold text-slate-900 dark:text-white">{row.name}</span>
+                                        {#if row.scopes.includes("admin")}
+                                            <Badge variant="info">Admin</Badge>
+                                        {/if}
+                                    </div>
+                                {:else if column.key === "keyPrefix"}
+                                    <code class="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-xs text-slate-800 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                                        {row.keyPrefix}••••••••
+                                    </code>
+                                {:else if column.key === "scopes"}
+                                    <div class="flex flex-wrap gap-1">
+                                        {#each row.scopes as scope}
+                                            <Badge variant="muted" class="font-mono normal-case text-[0.65rem]">{scope}</Badge>
+                                        {/each}
+                                    </div>
+                                {:else if column.key === "createdAt" || column.key === "lastUsedAt"}
+                                    <span class="text-slate-500 dark:text-slate-400">
+                                        {row[column.key] ? formatDate(row[column.key]) : "Never"}
+                                    </span>
+                                {:else if column.key === "_actions"}
+                                    <div class="flex items-center justify-end gap-2">
+                                        <Button variant="outline" size="sm" onclick={() => rotateKey(row.id)}>
+                                            <Icon src={ArrowPath} class="h-4 w-4" />
+                                            Rotate
+                                        </Button>
+                                        <Button variant="destructive" size="sm" onclick={() => revokeKey(row.id)}>
+                                            <Icon src={Trash} class="h-4 w-4" />
+                                            Revoke
+                                        </Button>
+                                    </div>
+                                {/if}
+                            {/snippet}
+                            {#snippet empty()}
                                 No active keys. Create a new key to grant access.
-                            </div>
-                        {:else}
-                            {#each activeKeys as key}
-                                <article class="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/40">
-                                    <div class="flex items-start justify-between gap-4 flex-wrap">
-                                        <div class="min-w-0">
-                                            <div class="flex items-center gap-2">
-                                                <span
-                                                    class="h-2.5 w-2.5 rounded-full bg-emerald-500"
-                                                    title="Active"
-                                                ></span>
-                                                <h4 class="truncate text-base font-semibold text-slate-900 dark:text-white">
-                                                    {key.name}
-                                                </h4>
-                                                {#if key.scopes.includes("admin")}
-                                                    <Badge variant="info">Admin</Badge>
-                                                {/if}
-                                            </div>
-                                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                                Created {formatDate(key.createdAt)}
-                                            </p>
-                                        </div>
-                                        <div class="flex items-center gap-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onclick={() => rotateKey(key.id)}
-                                            >
-                                                <Icon src={ArrowPath} class="h-4 w-4" />
-                                                Rotate
-                                            </Button>
-                                            <Button
-                                                variant="destructive"
-                                                size="sm"
-                                                onclick={() => revokeKey(key.id)}
-                                            >
-                                                <Icon src={Trash} class="h-4 w-4" />
-                                                Revoke
-                                            </Button>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
-                                        <div>
-                                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                Key prefix
-                                            </p>
-                                            <code class="mt-2 block rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
-                                                {key.keyPrefix}••••••••
-                                            </code>
-                                        </div>
-                                        <div>
-                                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                Scopes
-                                            </p>
-                                            <div class="mt-2 flex flex-wrap gap-1.5">
-                                                {#each key.scopes as scope}
-                                                    <Badge variant="muted" class="font-mono normal-case">
-                                                        {scope}
-                                                    </Badge>
-                                                {/each}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                Last used
-                                            </p>
-                                            <p class="mt-2 text-sm text-slate-900 dark:text-slate-100">
-                                                {key.lastUsedAt ? formatDate(key.lastUsedAt) : "Never"}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </article>
-                            {/each}
-                        {/if}
+                            {/snippet}
+                        </DataTable>
                     </div>
                 </div>
 
@@ -512,46 +493,32 @@
                     </summary>
 
                     {#if revokedKeys.length > 0}
-                        <div class="mt-5 space-y-3">
-                            {#each revokedKeys as key}
-                                <article class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/40">
-                                    <div class="flex items-start justify-between gap-3 flex-wrap">
-                                        <div class="min-w-0">
-                                            <div class="flex items-center gap-2">
-                                                <span
-                                                    class="h-2.5 w-2.5 rounded-full bg-rose-500"
-                                                    title="Revoked"
-                                                ></span>
-                                                <h4 class="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                                                    {key.name}
-                                                </h4>
-                                                <Badge variant="danger">Revoked</Badge>
-                                            </div>
-                                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                Created {formatDate(key.createdAt)}
-                                            </p>
+                        <div class="mt-5">
+                            <DataTable columns={revokedColumns} data={revokedKeys} keyField="id">
+                                {#snippet cell({ row, column, value })}
+                                    {#if column.key === "name"}
+                                        <div class="flex items-center gap-2">
+                                            <span class="h-2.5 w-2.5 rounded-full bg-rose-500 shrink-0" title="Revoked"></span>
+                                            <span class="font-semibold text-slate-900 dark:text-white">{row.name}</span>
+                                            <Badge variant="danger">Revoked</Badge>
                                         </div>
-                                        <div class="text-right text-xs text-slate-500 dark:text-slate-400">
-                                            Revoked {formatDate(key.revokedAt)}
-                                        </div>
-                                    </div>
-                                    <div class="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
-                                        <code class="block rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
-                                            {key.keyPrefix}••••••••
+                                    {:else if column.key === "keyPrefix"}
+                                        <code class="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-xs text-slate-800 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                                            {row.keyPrefix}••••••••
                                         </code>
-                                        <div class="flex flex-wrap gap-1.5">
-                                            {#each key.scopes as scope}
-                                                <Badge variant="muted" class="font-mono normal-case">
-                                                    {scope}
-                                                </Badge>
+                                    {:else if column.key === "scopes"}
+                                        <div class="flex flex-wrap gap-1">
+                                            {#each row.scopes as scope}
+                                                <Badge variant="muted" class="font-mono normal-case text-[0.65rem]">{scope}</Badge>
                                             {/each}
                                         </div>
-                                        <div class="text-xs text-slate-500 dark:text-slate-400">
-                                            Last used {key.lastUsedAt ? formatDate(key.lastUsedAt) : "Never"}
-                                        </div>
-                                    </div>
-                                </article>
-                            {/each}
+                                    {:else if column.key === "revokedAt" || column.key === "lastUsedAt"}
+                                        <span class="text-slate-500 dark:text-slate-400">
+                                            {row[column.key] ? formatDate(row[column.key]) : "Never"}
+                                        </span>
+                                    {/if}
+                                {/snippet}
+                            </DataTable>
                         </div>
                     {/if}
                 </details>

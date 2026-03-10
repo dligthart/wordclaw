@@ -16,13 +16,36 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
-import { buildMcpLocalPrincipal } from '../services/actor-identity.js';
+import { buildMcpLocalPrincipal, type ActorPrincipal } from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
+
+type McpRequestExtra = {
+    authInfo?: {
+        extra?: Record<string, unknown>;
+    };
+};
+
+function resolveMcpPrincipal(extra?: McpRequestExtra): ActorPrincipal {
+    const principal = extra?.authInfo?.extra?.wordclawPrincipal;
+
+    if (
+        principal
+        && typeof principal === 'object'
+        && 'domainId' in principal
+        && 'scopes' in principal
+        && 'keyId' in principal
+    ) {
+        return principal as ActorPrincipal;
+    }
+
+    const domainId = Number(process.env.WORDCLAW_DOMAIN_ID) || 1;
+    return buildMcpLocalPrincipal(domainId);
+}
 
 function withMCPPolicy<T>(operation: string, extractResource: (args: T) => any, handler: (args: T, extra: any, domainId: number) => Promise<ToolResult>) {
     return async (args: T, extra: any) => {
-        const domainId = Number(process.env.WORDCLAW_DOMAIN_ID) || 1;
-        const principal = buildMcpLocalPrincipal(domainId);
+        const principal = resolveMcpPrincipal(extra);
+        const domainId = principal.domainId;
         const resource = extractResource(args) || { type: 'system' };
         const operationContext = buildOperationContext('mcp', principal, operation, resource);
         const decision = await PolicyEngine.evaluate(operationContext);
@@ -33,244 +56,243 @@ function withMCPPolicy<T>(operation: string, extractResource: (args: T) => any, 
     };
 }
 
-const server = new McpServer({
-    name: 'WordClaw CMS',
-    version: '1.0.0'
-});
+export function createServer() {
+    const server = new McpServer({
+        name: 'WordClaw CMS',
+        version: '1.0.0'
+    });
 
-const TARGET_VERSION_NOT_FOUND = 'Target version not found';
-const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
-    'content_types_slug_unique',
-    'content_types_domain_slug_unique'
-]);
+    const TARGET_VERSION_NOT_FOUND = 'Target version not found';
+    const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
+        'content_types_slug_unique',
+        'content_types_domain_slug_unique'
+    ]);
 
-type ToolResult = {
-    content: Array<{ type: 'text'; text: string }>;
-    isError?: true;
-};
-
-function ok(text: string): ToolResult {
-    return {
-        content: [{ type: 'text', text }]
+    type ToolResult = {
+        content: Array<{ type: 'text'; text: string }>;
+        isError?: true;
     };
-}
 
-function okJson(data: unknown): ToolResult {
-    return ok(JSON.stringify(data, null, 2));
-}
-
-function err(text: string): ToolResult {
-    return {
-        isError: true,
-        content: [{ type: 'text', text }]
-    };
-}
-
-function validationFailureToText(failure: ValidationFailure): string {
-    const context = failure.context ? ` Context: ${JSON.stringify(failure.context)}` : '';
-    return `${failure.code}: ${failure.error}. ${failure.remediation}${context}`;
-}
-
-function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
-    const visited = new Set<unknown>();
-    let candidate: unknown = error;
-
-    while (candidate && typeof candidate === 'object' && !visited.has(candidate)) {
-        visited.add(candidate);
-        const maybeDbError = candidate as { code?: string; constraint?: string; cause?: unknown };
-        if (
-            maybeDbError.code === '23505'
-            && typeof maybeDbError.constraint === 'string'
-            && constraints.has(maybeDbError.constraint)
-        ) {
-            return true;
-        }
-        candidate = maybeDbError.cause;
-    }
-
-    return false;
-}
-
-function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
-    return Object.fromEntries(
-        Object.entries(value).filter(([, entry]) => entry !== undefined)
-    ) as Partial<T>;
-}
-
-function hasDefinedValues<T extends Record<string, unknown>>(value: T): boolean {
-    return Object.keys(stripUndefined(value)).length > 0;
-}
-
-function clampLimit(limit: number | undefined, fallback = 50, max = 500): number {
-    if (limit === undefined) {
-        return fallback;
-    }
-
-    return Math.max(1, Math.min(limit, max));
-}
-
-function clampOffset(offset: number | undefined): number {
-    if (offset === undefined) {
-        return 0;
-    }
-
-    return Math.max(0, offset);
-}
-
-function parseDateArg(value: string | undefined, fieldName: string): Date | null {
-    if (!value) {
-        return null;
-    }
-
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-        throw new Error(`Invalid ${fieldName}: expected ISO-8601 date-time string`);
-    }
-
-    return parsed;
-}
-
-// Removed isValidUrl in favor of isSafeWebhookUrl
-
-function encodeCursor(createdAt: Date, id: number): string {
-    return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id }), 'utf8').toString('base64url');
-}
-
-function decodeCursor(cursor: string): { createdAt: Date; id: number } | null {
-    try {
-        const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
-            createdAt?: string;
-            id?: number;
-        };
-
-        if (!decoded.createdAt || typeof decoded.id !== 'number') {
-            return null;
-        }
-
-        const createdAt = new Date(decoded.createdAt);
-        if (Number.isNaN(createdAt.getTime())) {
-            return null;
-        }
-
+    function ok(text: string): ToolResult {
         return {
-            createdAt,
-            id: decoded.id
+            content: [{ type: 'text', text }]
         };
-    } catch {
-        return null;
     }
-}
 
-function toIsoString(value: Date | null): string | null {
-    if (!value) {
-        return null;
+    function okJson(data: unknown): ToolResult {
+        return ok(JSON.stringify(data, null, 2));
     }
-    return value.toISOString();
-}
 
-function serializeAgentRunDefinition(definition: {
-    id: number;
-    domainId: number;
-    name: string;
-    runType: string;
-    strategyConfig: unknown;
-    active: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-}) {
-    return {
-        id: definition.id,
-        domainId: definition.domainId,
-        name: definition.name,
-        runType: definition.runType,
-        strategyConfig: definition.strategyConfig,
-        active: definition.active,
-        createdAt: definition.createdAt.toISOString(),
-        updatedAt: definition.updatedAt.toISOString()
-    };
-}
+    function err(text: string): ToolResult {
+        return {
+            isError: true,
+            content: [{ type: 'text', text }]
+        };
+    }
 
-function serializeAgentRun(run: {
-    id: number;
-    domainId: number;
-    definitionId: number | null;
-    goal: string;
-    runType: string;
-    status: string;
-    requestedBy: string | null;
-    metadata: unknown;
-    startedAt: Date | null;
-    completedAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-}) {
-    return {
-        id: run.id,
-        domainId: run.domainId,
-        definitionId: run.definitionId,
-        goal: run.goal,
-        runType: run.runType,
-        status: run.status,
-        requestedBy: run.requestedBy,
-        metadata: run.metadata,
-        startedAt: toIsoString(run.startedAt),
-        completedAt: toIsoString(run.completedAt),
-        createdAt: run.createdAt.toISOString(),
-        updatedAt: run.updatedAt.toISOString()
-    };
-}
+    function validationFailureToText(failure: ValidationFailure): string {
+        const context = failure.context ? ` Context: ${JSON.stringify(failure.context)}` : '';
+        return `${failure.code}: ${failure.error}. ${failure.remediation}${context}`;
+    }
 
-function serializeAgentRunStep(step: {
-    id: number;
-    runId: number;
-    domainId: number;
-    stepIndex: number;
-    stepKey: string;
-    actionType: string;
-    status: string;
-    requestSnapshot: unknown;
-    responseSnapshot: unknown;
-    errorMessage: string | null;
-    startedAt: Date | null;
-    completedAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-}) {
-    return {
-        id: step.id,
-        runId: step.runId,
-        domainId: step.domainId,
-        stepIndex: step.stepIndex,
-        stepKey: step.stepKey,
-        actionType: step.actionType,
-        status: step.status,
-        requestSnapshot: step.requestSnapshot,
-        responseSnapshot: step.responseSnapshot,
-        errorMessage: step.errorMessage,
-        startedAt: toIsoString(step.startedAt),
-        completedAt: toIsoString(step.completedAt),
-        createdAt: step.createdAt.toISOString(),
-        updatedAt: step.updatedAt.toISOString()
-    };
-}
+    function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
+        const visited = new Set<unknown>();
+        let candidate: unknown = error;
 
-function serializeAgentRunCheckpoint(checkpoint: {
-    id: number;
-    runId: number;
-    domainId: number;
-    checkpointKey: string;
-    payload: unknown;
-    createdAt: Date;
-}) {
-    return {
-        id: checkpoint.id,
-        runId: checkpoint.runId,
-        domainId: checkpoint.domainId,
-        checkpointKey: checkpoint.checkpointKey,
-        payload: checkpoint.payload,
-        createdAt: checkpoint.createdAt.toISOString()
-    };
-}
+        while (candidate && typeof candidate === 'object' && !visited.has(candidate)) {
+            visited.add(candidate);
+            const maybeDbError = candidate as { code?: string; constraint?: string; cause?: unknown };
+            if (
+                maybeDbError.code === '23505'
+                && typeof maybeDbError.constraint === 'string'
+                && constraints.has(maybeDbError.constraint)
+            ) {
+                return true;
+            }
+            candidate = maybeDbError.cause;
+        }
+
+        return false;
+    }
+
+    function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
+        return Object.fromEntries(
+            Object.entries(value).filter(([, entry]) => entry !== undefined)
+        ) as Partial<T>;
+    }
+
+    function hasDefinedValues<T extends Record<string, unknown>>(value: T): boolean {
+        return Object.keys(stripUndefined(value)).length > 0;
+    }
+
+    function clampLimit(limit: number | undefined, fallback = 50, max = 500): number {
+        if (limit === undefined) {
+            return fallback;
+        }
+
+        return Math.max(1, Math.min(limit, max));
+    }
+
+    function clampOffset(offset: number | undefined): number {
+        if (offset === undefined) {
+            return 0;
+        }
+
+        return Math.max(0, offset);
+    }
+
+    function parseDateArg(value: string | undefined, fieldName: string): Date | null {
+        if (!value) {
+            return null;
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            throw new Error(`Invalid ${fieldName}: expected ISO-8601 date-time string`);
+        }
+
+        return parsed;
+    }
+
+    function encodeCursor(createdAt: Date, id: number): string {
+        return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id }), 'utf8').toString('base64url');
+    }
+
+    function decodeCursor(cursor: string): { createdAt: Date; id: number } | null {
+        try {
+            const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
+                createdAt?: string;
+                id?: number;
+            };
+
+            if (!decoded.createdAt || typeof decoded.id !== 'number') {
+                return null;
+            }
+
+            const createdAt = new Date(decoded.createdAt);
+            if (Number.isNaN(createdAt.getTime())) {
+                return null;
+            }
+
+            return {
+                createdAt,
+                id: decoded.id
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    function toIsoString(value: Date | null): string | null {
+        if (!value) {
+            return null;
+        }
+        return value.toISOString();
+    }
+
+    function serializeAgentRunDefinition(definition: {
+        id: number;
+        domainId: number;
+        name: string;
+        runType: string;
+        strategyConfig: unknown;
+        active: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+    }) {
+        return {
+            id: definition.id,
+            domainId: definition.domainId,
+            name: definition.name,
+            runType: definition.runType,
+            strategyConfig: definition.strategyConfig,
+            active: definition.active,
+            createdAt: definition.createdAt.toISOString(),
+            updatedAt: definition.updatedAt.toISOString()
+        };
+    }
+
+    function serializeAgentRun(run: {
+        id: number;
+        domainId: number;
+        definitionId: number | null;
+        goal: string;
+        runType: string;
+        status: string;
+        requestedBy: string | null;
+        metadata: unknown;
+        startedAt: Date | null;
+        completedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
+    }) {
+        return {
+            id: run.id,
+            domainId: run.domainId,
+            definitionId: run.definitionId,
+            goal: run.goal,
+            runType: run.runType,
+            status: run.status,
+            requestedBy: run.requestedBy,
+            metadata: run.metadata,
+            startedAt: toIsoString(run.startedAt),
+            completedAt: toIsoString(run.completedAt),
+            createdAt: run.createdAt.toISOString(),
+            updatedAt: run.updatedAt.toISOString()
+        };
+    }
+
+    function serializeAgentRunStep(step: {
+        id: number;
+        runId: number;
+        domainId: number;
+        stepIndex: number;
+        stepKey: string;
+        actionType: string;
+        status: string;
+        requestSnapshot: unknown;
+        responseSnapshot: unknown;
+        errorMessage: string | null;
+        startedAt: Date | null;
+        completedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
+    }) {
+        return {
+            id: step.id,
+            runId: step.runId,
+            domainId: step.domainId,
+            stepIndex: step.stepIndex,
+            stepKey: step.stepKey,
+            actionType: step.actionType,
+            status: step.status,
+            requestSnapshot: step.requestSnapshot,
+            responseSnapshot: step.responseSnapshot,
+            errorMessage: step.errorMessage,
+            startedAt: toIsoString(step.startedAt),
+            completedAt: toIsoString(step.completedAt),
+            createdAt: step.createdAt.toISOString(),
+            updatedAt: step.updatedAt.toISOString()
+        };
+    }
+
+    function serializeAgentRunCheckpoint(checkpoint: {
+        id: number;
+        runId: number;
+        domainId: number;
+        checkpointKey: string;
+        payload: unknown;
+        createdAt: Date;
+    }) {
+        return {
+            id: checkpoint.id,
+            runId: checkpoint.runId,
+            domainId: checkpoint.domainId,
+            checkpointKey: checkpoint.checkpointKey,
+            payload: checkpoint.payload,
+            createdAt: checkpoint.createdAt.toISOString()
+        };
+    }
 
 server.tool(
     'create_content_type',
@@ -1813,7 +1835,7 @@ server.tool(
                 definitionId,
                 requireApproval,
                 metadata,
-                requestedBy: 'mcp-local'
+                requestedBy: resolveMcpPrincipal(_extra).actorId
             });
 
             return okJson(serializeAgentRun(run));
@@ -1939,7 +1961,7 @@ server.tool(
     withMCPPolicy('policy.read', () => ({ type: 'system' }), async ({ operation, resourceType, resourceId, contentTypeId }, extra, domainId) => {
         const operationContext = buildOperationContext(
             'mcp',
-            { keyId: 'mcp-local', domainId, scopes: new Set(['admin']), source: 'local' },
+            resolveMcpPrincipal(extra),
             operation,
             { type: resourceType, id: resourceId, contentTypeId }
         );
@@ -2081,8 +2103,8 @@ server.resource(
 server.resource(
     'content-types',
     'content://types',
-    async (uri) => {
-        const domainId = Number(process.env.WORDCLAW_DOMAIN_ID) || 1;
+    async (uri, extra) => {
+        const domainId = resolveMcpPrincipal(extra as McpRequestExtra | undefined).domainId;
         const types = await db.select().from(contentTypes).where(eq(contentTypes.domainId, domainId));
         return {
             contents: [{
@@ -2100,9 +2122,9 @@ server.prompt(
         contentTypeId: z.string().describe('ID of the content type to generate content for'),
         topic: z.string().describe('Topic or subject of the content')
     },
-    async ({ contentTypeId, topic }) => {
+    async ({ contentTypeId, topic }, extra) => {
         const id = Number.parseInt(contentTypeId, 10);
-        const domainId = Number(process.env.WORDCLAW_DOMAIN_ID) || 1;
+        const domainId = resolveMcpPrincipal(extra).domainId;
         const [type] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, domainId)));
 
         if (!type) {
@@ -2197,7 +2219,11 @@ server.prompt(
     }
 );
 
+return server;
+}
+
 export async function startServer() {
+    const server = createServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error('WordClaw MCP Server running on stdio');

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { fetchApi } from "$lib/api";
+    import { fetchApi, ApiError } from "$lib/api";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
@@ -63,6 +63,44 @@
         await loadTypes();
     });
 
+    const DRAFT_PREFIX = "wc_schema_draft_";
+
+    function getDraftKey(id: number | null) {
+        return `${DRAFT_PREFIX}${id || "new"}`;
+    }
+
+    function saveDraft() {
+        if (!isEditing && !isCreating) return;
+        const key = getDraftKey(isCreating ? null : (selectedType?.id ?? null));
+        const draft = {
+            name: editingName,
+            slug: editingSlug,
+            desc: editingDesc,
+            basePrice: editingBasePrice,
+            schemaStr: editingSchemaStr,
+            updatedAt: Date.now(),
+        };
+        sessionStorage.setItem(key, JSON.stringify(draft));
+    }
+
+    function loadDraft(id: number | null) {
+        const key = getDraftKey(id);
+        const saved = sessionStorage.getItem(key);
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    function clearDraft(id: number | null) {
+        const key = getDraftKey(id);
+        sessionStorage.removeItem(key);
+    }
+
     function normalizeSchemaString(schema: unknown): string {
         if (typeof schema === "string") {
             try {
@@ -89,6 +127,9 @@
                 severity: "error",
                 title: "Failed to load content types",
                 message: err.message || "An error occurred.",
+                code: err instanceof ApiError ? err.code : undefined,
+                remediation:
+                    err instanceof ApiError ? err.remediation : undefined,
             });
         } finally {
             loading = false;
@@ -98,12 +139,23 @@
     function selectType(t: ContentType) {
         selectedType = t;
         isCreating = false;
-        isEditing = false;
-        editingName = t.name;
-        editingSlug = t.slug;
-        editingDesc = t.description || "";
-        editingBasePrice = t.basePrice ?? null;
-        editingSchemaStr = normalizeSchemaString(t.schema);
+
+        const draft = loadDraft(t.id);
+        if (draft) {
+            isEditing = true;
+            editingName = draft.name;
+            editingSlug = draft.slug;
+            editingDesc = draft.desc;
+            editingBasePrice = draft.basePrice;
+            editingSchemaStr = draft.schemaStr;
+        } else {
+            isEditing = false;
+            editingName = t.name;
+            editingSlug = t.slug;
+            editingDesc = t.description || "";
+            editingBasePrice = t.basePrice ?? null;
+            editingSchemaStr = normalizeSchemaString(t.schema);
+        }
         schemaError = null;
         previewValidationResult = null;
     }
@@ -112,11 +164,21 @@
         selectedType = null;
         isCreating = true;
         isEditing = true;
-        editingName = "";
-        editingSlug = "";
-        editingDesc = "";
-        editingBasePrice = null;
-        editingSchemaStr = defaultSchemaStr;
+
+        const draft = loadDraft(null);
+        if (draft) {
+            editingName = draft.name;
+            editingSlug = draft.slug;
+            editingDesc = draft.desc;
+            editingBasePrice = draft.basePrice;
+            editingSchemaStr = draft.schemaStr;
+        } else {
+            editingName = "";
+            editingSlug = "";
+            editingDesc = "";
+            editingBasePrice = null;
+            editingSchemaStr = defaultSchemaStr;
+        }
         schemaError = null;
         previewValidationResult = null;
     }
@@ -126,13 +188,40 @@
     }
 
     function cancelEdit() {
+        clearDraft(isCreating ? null : (selectedType?.id ?? null));
         if (isCreating) {
             isCreating = false;
             isEditing = false;
             selectedType = types.length > 0 ? types[0] : null;
+            if (selectedType) {
+                const draft = loadDraft(selectedType.id);
+                if (draft) {
+                    isEditing = true;
+                    editingName = draft.name;
+                    editingSlug = draft.slug;
+                    editingDesc = draft.desc;
+                    editingBasePrice = draft.basePrice;
+                    editingSchemaStr = draft.schemaStr;
+                } else {
+                    editingName = selectedType.name;
+                    editingSlug = selectedType.slug;
+                    editingDesc = selectedType.description || "";
+                    editingBasePrice = selectedType.basePrice ?? null;
+                    editingSchemaStr = normalizeSchemaString(
+                        selectedType.schema,
+                    );
+                }
+            }
         } else {
             isEditing = false;
-            selectType(selectedType!);
+            if (selectedType) {
+                // Return to clean state
+                editingName = selectedType.name;
+                editingSlug = selectedType.slug;
+                editingDesc = selectedType.description || "";
+                editingBasePrice = selectedType.basePrice ?? null;
+                editingSchemaStr = normalizeSchemaString(selectedType.schema);
+            }
         }
     }
 
@@ -162,6 +251,7 @@
                         basePrice: editingBasePrice,
                     }),
                 });
+                clearDraft(null);
                 await loadTypes();
                 selectType(types.find((t) => t.id === res.data.id)!);
             } else {
@@ -177,6 +267,7 @@
                         }),
                     },
                 );
+                clearDraft(selectedType!.id);
                 await loadTypes();
                 selectType(types.find((t) => t.id === res.data.id)!);
             }
@@ -192,6 +283,9 @@
                 message:
                     err.message ||
                     `Failed to ${isCreating ? "create" : "update"} content type`,
+                code: err instanceof ApiError ? err.code : undefined,
+                remediation:
+                    err instanceof ApiError ? err.remediation : undefined,
             });
         }
     }
@@ -248,17 +342,16 @@
 <div class="h-full flex flex-col">
     <div class="mb-6 flex justify-between items-end">
         <div>
-            <h2 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+            <h2
+                class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
+            >
                 Schema Manager
             </h2>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Govern the data shapes that content agents produce.
             </p>
         </div>
-        <Button
-            onclick={startCreate}
-            disabled={isCreating}
-        >
+        <Button onclick={startCreate} disabled={isCreating}>
             <Icon src={Plus} class="w-5 h-5" />
             New Content Model
         </Button>
@@ -324,7 +417,9 @@
         <!-- Schema Editor area -->
         <div class="flex-1 flex flex-col gap-6 overflow-hidden">
             {#if !selectedType && !isCreating}
-                <Surface class="flex-1 flex flex-col items-center justify-center p-12 text-center text-sm italic text-slate-400 dark:text-slate-500">
+                <Surface
+                    class="flex-1 flex flex-col items-center justify-center p-12 text-center text-sm italic text-slate-400 dark:text-slate-500"
+                >
                     <Icon
                         src={ArchiveBox}
                         class="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4"
@@ -348,18 +443,17 @@
                                 <Button
                                     onclick={cancelEdit}
                                     variant="outline"
-                                    size="sm"
-                                >Cancel</Button>
-                                <Button
-                                    onclick={saveType}
-                                    size="sm"
-                                >Save Schema</Button>
+                                    size="sm">Cancel</Button
+                                >
+                                <Button onclick={saveType} size="sm"
+                                    >Save Schema</Button
+                                >
                             {:else}
                                 <Button
                                     onclick={startEdit}
                                     variant="outline"
-                                    size="sm"
-                                >Edit Model</Button>
+                                    size="sm">Edit Model</Button
+                                >
                             {/if}
                         </div>
                     </div>

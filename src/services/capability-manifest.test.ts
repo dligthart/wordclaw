@@ -47,7 +47,9 @@ describe('buildCapabilityManifest', () => {
 
         expect(manifest.discovery.restManifestPath).toBe('/api/capabilities');
         expect(manifest.discovery.mcpResourceUri).toBe('system://capabilities');
-        expect(manifest.protocolSurfaces.mcp.transport).toBe('stdio');
+        expect(manifest.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
+        expect(manifest.protocolSurfaces.mcp.endpoint).toBe('/mcp');
+        expect(manifest.protocolSurfaces.mcp.attachable).toBe(true);
         expect(manifest.protocolContract.required).toEqual(['rest', 'mcp']);
         expect(manifest.protocolContract.compatibility).toEqual(['graphql']);
         expect(manifest.paidContent.purchaseFlowSurface).toBe('rest');

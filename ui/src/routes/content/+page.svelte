@@ -6,6 +6,7 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import DataTable from "$lib/components/DataTable.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import Input from "$lib/components/ui/Input.svelte";
@@ -115,6 +116,15 @@
         hasMore: false,
     };
 
+    const contentColumns = [
+        { key: "_item", label: "Item" },
+        { key: "slug", label: "Slug" },
+        { key: "status", label: "Status" },
+        { key: "version", label: "Version" },
+        { key: "updatedAt", label: "Updated" },
+        { key: "createdAt", label: "Created" },
+    ];
+
     let contentTypes = $state<ContentType[]>([]);
     let selectedType = $state<ContentType | null>(null);
     let items = $state<ContentItem[]>([]);
@@ -136,7 +146,7 @@
     let submittingReview = $state(false);
     let loading = $state(true);
     let loadingItems = $state(false);
-    let error = $state<string | null>(null);
+    let error = $state<any>(null);
     let rollingBack = $state(false);
     let showModelFilterModal = $state(false);
     let showSchemaInfoModal = $state(false);
@@ -154,7 +164,9 @@
             (transition) => transition.fromState === currentItem.status,
         );
     });
-    let currentRangeStart = $derived(items.length === 0 ? 0 : itemsMeta.offset + 1);
+    let currentRangeStart = $derived(
+        items.length === 0 ? 0 : itemsMeta.offset + 1,
+    );
     let currentRangeEnd = $derived(
         items.length === 0 ? 0 : itemsMeta.offset + items.length,
     );
@@ -178,10 +190,12 @@
     );
     let selectedDiffVersion = $derived(
         selectedVersionForDiff === null
-            ? versions[0] ?? null
-            : versions.find(
+            ? (versions[0] ?? null)
+            : (versions.find(
                   (version) => version.version === selectedVersionForDiff,
-              ) ?? versions[0] ?? null,
+              ) ??
+                  versions[0] ??
+                  null),
     );
     let selectedDiffEntries = $derived(
         selectedDiffVersion && selectedItem
@@ -230,9 +244,7 @@
             0,
         ),
     }));
-    let highlightedSchemas = $derived.by(() =>
-        sortedContentTypes.slice(0, 6),
-    );
+    let highlightedSchemas = $derived.by(() => sortedContentTypes.slice(0, 6));
     let schemaPickerTypes = $derived.by(() => {
         const query = schemaPickerSearch.trim().toLowerCase();
         if (!query) {
@@ -246,7 +258,9 @@
         );
     });
 
-    function normalizeMeta(meta: Record<string, unknown> | null | undefined): ContentListMeta {
+    function normalizeMeta(
+        meta: Record<string, unknown> | null | undefined,
+    ): ContentListMeta {
         return {
             total: Number(meta?.total ?? 0),
             offset: Number(meta?.offset ?? 0),
@@ -255,7 +269,9 @@
         };
     }
 
-    function parseStructuredData(payload: unknown): Record<string, unknown> | null {
+    function parseStructuredData(
+        payload: unknown,
+    ): Record<string, unknown> | null {
         const parsed = deepParseJson(payload);
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
             return null;
@@ -300,7 +316,10 @@
 
     function resolveItemLabel(item: Pick<ContentItem, "id" | "data">): string {
         const structured = parseStructuredData(item.data);
-        return pickFirstString(structured, PRIMARY_LABEL_FIELDS) ?? `Item #${item.id}`;
+        return (
+            pickFirstString(structured, PRIMARY_LABEL_FIELDS) ??
+            `Item #${item.id}`
+        );
     }
 
     function resolveItemSummary(item: Pick<ContentItem, "data">): string {
@@ -398,7 +417,9 @@
 
             processedAtDepth += 1;
             const node =
-                rawNode && typeof rawNode === "object" && !Array.isArray(rawNode)
+                rawNode &&
+                typeof rawNode === "object" &&
+                !Array.isArray(rawNode)
                     ? (rawNode as Record<string, unknown>)
                     : null;
 
@@ -480,7 +501,8 @@
                 new Set(
                     Array.isArray(parsed.required)
                         ? parsed.required.filter(
-                              (field): field is string => typeof field === "string",
+                              (field): field is string =>
+                                  typeof field === "string",
                           )
                         : [],
                 ),
@@ -559,7 +581,9 @@
     }
 
     function selectTypeById(typeId: string) {
-        const nextType = contentTypes.find((type) => type.id === Number(typeId));
+        const nextType = contentTypes.find(
+            (type) => type.id === Number(typeId),
+        );
         if (!nextType || nextType.id === selectedType?.id) {
             return;
         }
@@ -568,7 +592,8 @@
     }
 
     function openModelFilterModal() {
-        draftSelectedTypeId = selectedType?.id ?? sortedContentTypes[0]?.id ?? null;
+        draftSelectedTypeId =
+            selectedType?.id ?? sortedContentTypes[0]?.id ?? null;
         schemaPickerSearch = "";
         showModelFilterModal = true;
     }
@@ -580,8 +605,9 @@
         }
 
         const nextType =
-            sortedContentTypes.find((type) => type.id === draftSelectedTypeId) ??
-            null;
+            sortedContentTypes.find(
+                (type) => type.id === draftSelectedTypeId,
+            ) ?? null;
         showModelFilterModal = false;
 
         if (nextType && nextType.id !== selectedType?.id) {
@@ -641,14 +667,17 @@
         error = null;
 
         try {
-            const res = await fetchApi("/content-types?limit=200&includeStats=true");
+            const res = await fetchApi(
+                "/content-types?limit=200&includeStats=true",
+            );
             const nextTypes = res.data as ContentType[];
             const selectedTypeId = selectedType?.id ?? null;
 
             contentTypes = nextTypes;
             if (selectedTypeId !== null) {
                 selectedType =
-                    nextTypes.find((type) => type.id === selectedTypeId) ?? null;
+                    nextTypes.find((type) => type.id === selectedTypeId) ??
+                    null;
                 if (!selectedType) {
                     items = [];
                     itemsMeta = { ...DEFAULT_ITEMS_META };
@@ -657,7 +686,7 @@
                 }
             }
         } catch (err: any) {
-            error = err.message || "Failed to load content types";
+            error = err;
         } finally {
             loading = false;
         }
@@ -706,7 +735,7 @@
 
             return nextItems;
         } catch (err: any) {
-            error = err.message || "Failed to load items";
+            error = err;
             items = [];
             itemsMeta = { ...DEFAULT_ITEMS_META };
             if (!preserveSelection) {
@@ -736,7 +765,9 @@
         error = null;
 
         try {
-            const response = await fetchApi(`/content-items/${item.id}/versions`);
+            const response = await fetchApi(
+                `/content-items/${item.id}/versions`,
+            );
             versions = response.data;
             selectedVersionForDiff = response.data[0]?.version ?? null;
 
@@ -747,7 +778,7 @@
                 comments = commentsRes.data;
             }
         } catch (err: any) {
-            error = err.message || "Failed to load item context";
+            error = err;
         }
     }
 
@@ -817,8 +848,8 @@
                     before === undefined
                         ? "added"
                         : after === undefined
-                            ? "removed"
-                            : "changed",
+                          ? "removed"
+                          : "changed",
             });
         }
 
@@ -878,10 +909,14 @@
                         body: JSON.stringify({ version }),
                     });
 
-                    const refreshedItems = await loadItems(itemsMeta.offset, true);
+                    const refreshedItems = await loadItems(
+                        itemsMeta.offset,
+                        true,
+                    );
                     const refreshedItem =
-                        refreshedItems.find((item) => item.id === currentItemId) ??
-                        null;
+                        refreshedItems.find(
+                            (item) => item.id === currentItemId,
+                        ) ?? null;
 
                     if (refreshedItem) {
                         await selectItem(refreshedItem);
@@ -942,6 +977,9 @@
                 severity: "error",
                 title: "Failed to submit",
                 message: err.message,
+                code: err instanceof ApiError ? err.code : undefined,
+                remediation:
+                    err instanceof ApiError ? err.remediation : undefined,
             });
         } finally {
             submittingReview = false;
@@ -971,6 +1009,9 @@
                 severity: "error",
                 title: "Failed to post comment",
                 message: err.message,
+                code: err instanceof ApiError ? err.code : undefined,
+                remediation:
+                    err instanceof ApiError ? err.remediation : undefined,
             });
         }
     }
@@ -1031,11 +1072,14 @@
 <div class="flex h-full flex-col">
     <div class="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
-            <h2 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+            <h2
+                class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
+            >
                 Content Browser
             </h2>
             <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-                Browse content by schema first, then narrow within that model and inspect individual items.
+                Browse content by schema first, then narrow within that model
+                and inspect individual items.
             </p>
         </div>
         <Button
@@ -1059,20 +1103,32 @@
     </div>
 
     {#if error}
-        <ErrorBanner class="mb-6" message={error} />
+        <ErrorBanner
+            class="mb-6"
+            {error}
+            message={typeof error === "string" ? error : undefined}
+        />
     {/if}
 
     {#snippet SchemaLanding()}
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
             <Surface class="p-8 lg:p-10">
-                <p class="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                <p
+                    class="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400"
+                >
                     Schema-first browser
                 </p>
-                <h3 class="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+                <h3
+                    class="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+                >
                     Start by choosing a content schema
                 </h3>
-                <p class="mt-4 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    The browser is organized around schema first, item second. Select the model you want to inspect, then review only the content created from that schema.
+                <p
+                    class="mt-4 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300"
+                >
+                    The browser is organized around schema first, item second.
+                    Select the model you want to inspect, then review only the
+                    content created from that schema.
                 </p>
 
                 <div class="mt-6 flex flex-wrap items-center gap-3">
@@ -1090,34 +1146,50 @@
 
                 <div class="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Total schemas
                         </p>
-                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {schemaOverview.totalSchemas}
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             With content
                         </p>
-                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {schemaOverview.schemasWithContent}
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Total items
                         </p>
-                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {schemaOverview.totalItems}
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Paid schemas
                         </p>
-                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {schemaOverview.paidSchemas}
                         </p>
                     </Surface>
@@ -1125,12 +1197,17 @@
             </Surface>
 
             <Surface class="overflow-hidden p-0">
-                <div class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30">
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <div
+                    class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30"
+                >
+                    <p
+                        class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                    >
                         Recently active schemas
                     </p>
                     <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        Jump into the models with the most recent content activity.
+                        Jump into the models with the most recent content
+                        activity.
                     </p>
                 </div>
 
@@ -1140,7 +1217,9 @@
                             <LoadingSpinner size="md" />
                         </div>
                     {:else if highlightedSchemas.length === 0}
-                        <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        <div
+                            class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                        >
                             No content schemas are available yet.
                         </div>
                     {:else}
@@ -1152,12 +1231,18 @@
                                         onclick={() => selectType(type)}
                                         class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:border-slate-600 dark:hover:bg-slate-800/40"
                                     >
-                                        <div class="flex items-start justify-between gap-3">
+                                        <div
+                                            class="flex items-start justify-between gap-3"
+                                        >
                                             <div class="min-w-0">
-                                                <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                                <p
+                                                    class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100"
+                                                >
                                                     {type.name}
                                                 </p>
-                                                <p class="mt-0.5 truncate text-[0.72rem] font-mono text-slate-500 dark:text-slate-400">
+                                                <p
+                                                    class="mt-0.5 truncate text-[0.72rem] font-mono text-slate-500 dark:text-slate-400"
+                                                >
                                                     {type.slug}
                                                 </p>
                                             </div>
@@ -1165,9 +1250,19 @@
                                                 {resolveTypeItemCount(type)}
                                             </Badge>
                                         </div>
-                                        <div class="mt-3 flex items-center justify-between gap-3 text-[0.72rem] text-slate-500 dark:text-slate-400">
-                                            <span>{resolveSchemaSummary(type)}</span>
-                                            <span>{resolveTypeLastActivity(type)}</span>
+                                        <div
+                                            class="mt-3 flex items-center justify-between gap-3 text-[0.72rem] text-slate-500 dark:text-slate-400"
+                                        >
+                                            <span
+                                                >{resolveSchemaSummary(
+                                                    type,
+                                                )}</span
+                                            >
+                                            <span
+                                                >{resolveTypeLastActivity(
+                                                    type,
+                                                )}</span
+                                            >
                                         </div>
                                     </button>
                                 </li>
@@ -1182,22 +1277,35 @@
     {#snippet CurrentSchemaRail()}
         {#if selectedType}
             {@const previewLines = resolveSchemaPreviewLines(selectedType)}
-            <Surface class="flex flex-col overflow-hidden p-0 xl:h-full">
-                <div class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/30">
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+            <Surface
+                class="flex flex-col overflow-hidden p-0 min-[1500px]:h-full"
+            >
+                <div
+                    class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/30"
+                >
+                    <p
+                        class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                    >
                         Selected schema
                     </p>
-                    <h3 class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
+                    <h3
+                        class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50"
+                    >
                         {selectedType.name}
                     </h3>
-                    <p class="mt-1 text-[0.72rem] font-mono text-slate-500 dark:text-slate-400">
+                    <p
+                        class="mt-1 text-[0.72rem] font-mono text-slate-500 dark:text-slate-400"
+                    >
                         {selectedType.slug}
                     </p>
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-4 space-y-4">
-                    <p class="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                        {selectedType.description || "Structured content model for supervised AI and operator workflows."}
+                    <p
+                        class="text-sm leading-6 text-slate-600 dark:text-slate-300"
+                    >
+                        {selectedType.description ||
+                            "Structured content model for supervised AI and operator workflows."}
                     </p>
 
                     <div class="flex flex-wrap gap-2">
@@ -1221,12 +1329,18 @@
 
                     <div class="grid gap-3">
                         <Surface tone="subtle" class="p-4">
-                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            <p
+                                class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                            >
                                 Activity
                             </p>
-                            <p class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                            <p
+                                class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50"
+                            >
                                 {selectedType.stats?.lastItemUpdatedAt
-                                    ? formatRelativeDate(selectedType.stats.lastItemUpdatedAt)
+                                    ? formatRelativeDate(
+                                          selectedType.stats.lastItemUpdatedAt,
+                                      )
                                     : "No items yet"}
                             </p>
                         </Surface>
@@ -1234,10 +1348,14 @@
 
                     <Surface tone="subtle" class="p-4">
                         <div class="flex items-center justify-between gap-3">
-                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            <p
+                                class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                            >
                                 Structure
                             </p>
-                            <span class="text-[0.72rem] text-slate-500 dark:text-slate-400">
+                            <span
+                                class="text-[0.72rem] text-slate-500 dark:text-slate-400"
+                            >
                                 {resolveSchemaSummary(selectedType)}
                             </span>
                         </div>
@@ -1247,20 +1365,30 @@
                                     class="flex items-center gap-1.5 text-[0.72rem]"
                                     style={`padding-left: ${line.depth * 0.75}rem`}
                                 >
-                                    <span class="text-slate-400 dark:text-slate-500">{line.summary ? "…" : "└"}</span>
-                                    <span class={line.summary
-                                        ? "truncate italic text-slate-500 dark:text-slate-400"
-                                        : "truncate text-slate-700 dark:text-slate-200"}
+                                    <span
+                                        class="text-slate-400 dark:text-slate-500"
+                                        >{line.summary ? "…" : "└"}</span
+                                    >
+                                    <span
+                                        class={line.summary
+                                            ? "truncate italic text-slate-500 dark:text-slate-400"
+                                            : "truncate text-slate-700 dark:text-slate-200"}
                                     >
                                         {line.label}
                                     </span>
                                     {#if line.typeLabel}
-                                        <Badge variant="muted" class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide">
+                                        <Badge
+                                            variant="muted"
+                                            class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide"
+                                        >
                                             {line.typeLabel}
                                         </Badge>
                                     {/if}
                                     {#if line.required}
-                                        <Badge variant="info" class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide">
+                                        <Badge
+                                            variant="info"
+                                            class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide"
+                                        >
                                             req
                                         </Badge>
                                     {/if}
@@ -1271,13 +1399,16 @@
 
                     {#if selectedTypeStatusSummary.length > 0}
                         <Surface tone="subtle" class="p-4">
-                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            <p
+                                class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                            >
                                 Status mix
                             </p>
                             <div class="mt-3 flex flex-wrap gap-1.5">
                                 {#each selectedTypeStatusSummary as summary}
                                     <Badge variant="muted">
-                                        {formatStatusLabel(summary.status)} {summary.count}
+                                        {formatStatusLabel(summary.status)}
+                                        {summary.count}
                                     </Badge>
                                 {/each}
                             </div>
@@ -1288,24 +1419,105 @@
         {/if}
     {/snippet}
 
+    {#snippet CurrentSchemaSummary()}
+        {#if selectedType}
+            <Surface class="p-4">
+                <div
+                    class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+                >
+                    <div class="min-w-0">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
+                            Selected schema
+                        </p>
+                        <h3
+                            class="mt-2 truncate text-lg font-semibold text-slate-900 dark:text-slate-50"
+                        >
+                            {selectedType.name}
+                        </h3>
+                        <p
+                            class="mt-1 truncate text-[0.72rem] font-mono text-slate-500 dark:text-slate-400"
+                        >
+                            {selectedType.slug}
+                        </p>
+                        <p
+                            class="mt-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300"
+                        >
+                            {selectedType.description ||
+                                "Structured content model for supervised AI and operator workflows."}
+                        </p>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onclick={() => (showSchemaInfoModal = true)}
+                        >
+                            Info
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onclick={openModelFilterModal}
+                        >
+                            Change schema
+                        </Button>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <Badge variant="outline">
+                        {selectedType.stats?.lastItemUpdatedAt
+                            ? `Updated ${formatRelativeDate(selectedType.stats.lastItemUpdatedAt)}`
+                            : "No items yet"}
+                    </Badge>
+                    <Badge variant="outline">
+                        {resolveSchemaSummary(selectedType)}
+                    </Badge>
+                    {#if selectedTypeStatusSummary.length > 0}
+                        <Badge variant="muted">
+                            {formatStatusLabel(
+                                selectedTypeStatusSummary[0].status,
+                            )}
+                            {selectedTypeStatusSummary[0].count}
+                        </Badge>
+                    {/if}
+                </div>
+            </Surface>
+        {/if}
+    {/snippet}
+
     {#snippet InspectorContent()}
         {#if !selectedItem}
-            <div class="flex h-full items-center justify-center p-6 text-center">
+            <div
+                class="flex h-full items-center justify-center p-6 text-center"
+            >
                 <div class="max-w-sm">
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    <p
+                        class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                    >
                         Inspector
                     </p>
-                    <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50">
+                    <h3
+                        class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50"
+                    >
                         Select an item
                     </h3>
                     <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        Choose an item from the list to inspect its payload, workflow state, and version history.
+                        Choose an item from the list to inspect its payload,
+                        workflow state, and version history.
                     </p>
                 </div>
             </div>
         {:else}
             <div class="flex h-full flex-col overflow-hidden">
-                <div class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30">
+                <div
+                    class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30"
+                >
                     <div class="flex items-start justify-between gap-4">
                         <div class="min-w-0">
                             <div class="flex items-center gap-2">
@@ -1317,20 +1529,37 @@
                                 >
                                     <Icon src={ChevronLeft} class="h-5 w-5" />
                                 </button>
-                                <h3 class="truncate text-lg font-semibold text-slate-900 dark:text-slate-50">
+                                <h3
+                                    class="truncate text-lg font-semibold text-slate-900 dark:text-slate-50"
+                                >
                                     {resolveItemLabel(selectedItem)}
                                 </h3>
-                                <Badge variant={resolveStatusBadgeVariant(selectedItem.status)}>
+                                <Badge
+                                    variant={resolveStatusBadgeVariant(
+                                        selectedItem.status,
+                                    )}
+                                >
                                     {formatStatusLabel(selectedItem.status)}
                                 </Badge>
                             </div>
-                            <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                            <p
+                                class="mt-2 text-sm text-slate-600 dark:text-slate-300"
+                            >
                                 {resolveItemSummary(selectedItem)}
                             </p>
-                            <div class="mt-3 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400">
-                                <span class="font-mono">#{selectedItem.id}</span>
-                                <span class="font-mono">v{selectedItem.version}</span>
-                                <span>Updated {formatDateTime(selectedItem.updatedAt)}</span>
+                            <div
+                                class="mt-3 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400"
+                            >
+                                <span class="font-mono">#{selectedItem.id}</span
+                                >
+                                <span class="font-mono"
+                                    >v{selectedItem.version}</span
+                                >
+                                <span
+                                    >Updated {formatDateTime(
+                                        selectedItem.updatedAt,
+                                    )}</span
+                                >
                             </div>
                         </div>
                         <button
@@ -1346,36 +1575,56 @@
 
                 <div class="flex-1 overflow-y-auto p-5 space-y-4">
                     <Surface tone="muted" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Overview
                         </p>
                         <dl class="mt-3 grid gap-3 text-sm">
                             <div>
-                                <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                <dt
+                                    class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                >
                                     Primary label
                                 </dt>
-                                <dd class="mt-1 text-slate-900 dark:text-slate-50">
+                                <dd
+                                    class="mt-1 text-slate-900 dark:text-slate-50"
+                                >
                                     {resolveItemLabel(selectedItem)}
                                 </dd>
                             </div>
                             <div>
-                                <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                <dt
+                                    class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                >
                                     Summary
                                 </dt>
-                                <dd class="mt-1 text-slate-700 dark:text-slate-300">
+                                <dd
+                                    class="mt-1 text-slate-700 dark:text-slate-300"
+                                >
                                     {resolveItemSummary(selectedItem)}
                                 </dd>
                             </div>
-                            <div class="grid grid-cols-2 gap-3 text-xs text-slate-500 dark:text-slate-400">
+                            <div
+                                class="grid grid-cols-2 gap-3 text-xs text-slate-500 dark:text-slate-400"
+                            >
                                 <div>
-                                    <dt class="font-semibold uppercase">Status</dt>
-                                    <dd class="mt-1 text-sm text-slate-900 dark:text-slate-50">
+                                    <dt class="font-semibold uppercase">
+                                        Status
+                                    </dt>
+                                    <dd
+                                        class="mt-1 text-sm text-slate-900 dark:text-slate-50"
+                                    >
                                         {formatStatusLabel(selectedItem.status)}
                                     </dd>
                                 </div>
                                 <div>
-                                    <dt class="font-semibold uppercase">Version</dt>
-                                    <dd class="mt-1 text-sm text-slate-900 dark:text-slate-50">
+                                    <dt class="font-semibold uppercase">
+                                        Version
+                                    </dt>
+                                    <dd
+                                        class="mt-1 text-sm text-slate-900 dark:text-slate-50"
+                                    >
                                         v{selectedItem.version}
                                     </dd>
                                 </div>
@@ -1387,10 +1636,14 @@
                         <Surface tone="subtle" class="p-4">
                             <div class="flex items-start justify-between gap-3">
                                 <div>
-                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                    <p
+                                        class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                    >
                                         Workflow
                                     </p>
-                                    <h4 class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                                    <h4
+                                        class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50"
+                                    >
                                         {activeWorkflow.name}
                                     </h4>
                                 </div>
@@ -1401,7 +1654,8 @@
                                         <Button
                                             type="button"
                                             size="sm"
-                                            onclick={() => submitForReview(transition.id)}
+                                            onclick={() =>
+                                                submitForReview(transition.id)}
                                             disabled={submittingReview}
                                         >
                                             {transition.toState === "published"
@@ -1411,8 +1665,11 @@
                                     {/each}
                                 </div>
                             {:else}
-                                <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                                    No workflow transitions are available from the current state.
+                                <p
+                                    class="mt-3 text-sm text-slate-500 dark:text-slate-400"
+                                >
+                                    No workflow transitions are available from
+                                    the current state.
                                 </p>
                             {/if}
                         </Surface>
@@ -1421,11 +1678,16 @@
                     <Surface tone="subtle" class="p-4">
                         <div class="flex items-center justify-between gap-3">
                             <div>
-                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                <p
+                                    class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                >
                                     Payload
                                 </p>
-                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    Current structured content data for this item.
+                                <p
+                                    class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                >
+                                    Current structured content data for this
+                                    item.
                                 </p>
                             </div>
                         </div>
@@ -1435,13 +1697,20 @@
                     </Surface>
 
                     <Surface tone="subtle" class="p-4">
-                        <div class="flex items-start justify-between gap-3 flex-wrap">
+                        <div
+                            class="flex items-start justify-between gap-3 flex-wrap"
+                        >
                             <div>
-                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                <p
+                                    class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                >
                                     Compare version
                                 </p>
-                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    Review the selected historical version before rollback.
+                                <p
+                                    class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                >
+                                    Review the selected historical version
+                                    before rollback.
                                 </p>
                             </div>
                             {#if versions.length > 0}
@@ -1449,14 +1718,17 @@
                                     <Select
                                         onchange={(event) => {
                                             selectedVersionForDiff = Number(
-                                                (event.currentTarget as HTMLSelectElement).value,
+                                                (
+                                                    event.currentTarget as HTMLSelectElement
+                                                ).value,
                                             );
                                         }}
                                     >
                                         {#each versions as version}
                                             <option
                                                 value={version.version}
-                                                selected={selectedDiffVersion?.version === version.version}
+                                                selected={selectedDiffVersion?.version ===
+                                                    version.version}
                                             >
                                                 Version {version.version}
                                             </option>
@@ -1466,48 +1738,83 @@
                             {/if}
                         </div>
                         {#if !selectedDiffVersion}
-                            <p class="mt-4 text-sm italic text-slate-500 dark:text-slate-400">
+                            <p
+                                class="mt-4 text-sm italic text-slate-500 dark:text-slate-400"
+                            >
                                 No historical versions available yet.
                             </p>
                         {:else}
                             <div class="mt-4 space-y-3">
-                                <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-200">
-                                    Comparing current version v{selectedItem.version} with v{selectedDiffVersion.version}. {selectedDiffEntries.length} field-level difference(s).
+                                <div
+                                    class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-200"
+                                >
+                                    Comparing current version v{selectedItem.version}
+                                    with v{selectedDiffVersion.version}. {selectedDiffEntries.length}
+                                    field-level difference(s).
                                 </div>
                                 {#if selectedDiffEntries.length === 0}
-                                    <p class="text-sm italic text-slate-500 dark:text-slate-400">
-                                        No payload changes detected between these versions.
+                                    <p
+                                        class="text-sm italic text-slate-500 dark:text-slate-400"
+                                    >
+                                        No payload changes detected between
+                                        these versions.
                                     </p>
                                 {:else}
-                                    <div class="max-h-64 space-y-2 overflow-y-auto pr-1">
+                                    <div
+                                        class="max-h-64 space-y-2 overflow-y-auto pr-1"
+                                    >
                                         {#each selectedDiffEntries as entry}
-                                            <div class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700">
-                                                <div class="flex items-center justify-between gap-3">
-                                                    <code class="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                            <div
+                                                class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700"
+                                            >
+                                                <div
+                                                    class="flex items-center justify-between gap-3"
+                                                >
+                                                    <code
+                                                        class="text-xs font-semibold text-slate-800 dark:text-slate-100"
+                                                    >
                                                         {entry.key}
                                                     </code>
-                                                    <span class="text-[0.65rem] font-semibold uppercase tracking-wide {entry.change === 'added'
-                                                        ? 'text-emerald-600 dark:text-emerald-400'
-                                                        : entry.change === 'removed'
-                                                            ? 'text-rose-600 dark:text-rose-400'
-                                                            : 'text-amber-600 dark:text-amber-300'}">
+                                                    <span
+                                                        class="text-[0.65rem] font-semibold uppercase tracking-wide {entry.change ===
+                                                        'added'
+                                                            ? 'text-emerald-600 dark:text-emerald-400'
+                                                            : entry.change ===
+                                                                'removed'
+                                                              ? 'text-rose-600 dark:text-rose-400'
+                                                              : 'text-amber-600 dark:text-amber-300'}"
+                                                    >
                                                         {entry.change}
                                                     </span>
                                                 </div>
-                                                <div class="mt-2 grid gap-2 text-xs">
-                                                    <div class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60">
-                                                        <p class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                                <div
+                                                    class="mt-2 grid gap-2 text-xs"
+                                                >
+                                                    <div
+                                                        class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60"
+                                                    >
+                                                        <p
+                                                            class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                                        >
                                                             Current
                                                         </p>
-                                                        <p class="mt-1 break-words font-mono text-slate-700 dark:text-slate-200">
+                                                        <p
+                                                            class="mt-1 break-words font-mono text-slate-700 dark:text-slate-200"
+                                                        >
                                                             {entry.before}
                                                         </p>
                                                     </div>
-                                                    <div class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60">
-                                                        <p class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                                    <div
+                                                        class="rounded-lg bg-slate-50 p-2 dark:bg-slate-950/60"
+                                                    >
+                                                        <p
+                                                            class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                                        >
                                                             Selected
                                                         </p>
-                                                        <p class="mt-1 break-words font-mono text-slate-700 dark:text-slate-200">
+                                                        <p
+                                                            class="mt-1 break-words font-mono text-slate-700 dark:text-slate-200"
+                                                        >
                                                             {entry.after}
                                                         </p>
                                                     </div>
@@ -1521,7 +1828,10 @@
                                         type="button"
                                         variant="destructive"
                                         size="sm"
-                                        onclick={() => rollbackToVersion(selectedDiffVersion.version)}
+                                        onclick={() =>
+                                            rollbackToVersion(
+                                                selectedDiffVersion.version,
+                                            )}
                                         disabled={rollingBack}
                                     >
                                         Roll back to v{selectedDiffVersion.version}
@@ -1533,26 +1843,44 @@
 
                     {#if activeWorkflow}
                         <Surface tone="subtle" class="p-4">
-                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            <p
+                                class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                            >
                                 Discussion
                             </p>
-                            <div class="mt-3 max-h-52 space-y-3 overflow-y-auto pr-1">
+                            <div
+                                class="mt-3 max-h-52 space-y-3 overflow-y-auto pr-1"
+                            >
                                 {#if comments.length === 0}
-                                    <p class="text-sm italic text-slate-500 dark:text-slate-400">
+                                    <p
+                                        class="text-sm italic text-slate-500 dark:text-slate-400"
+                                    >
                                         No comments yet.
                                     </p>
                                 {:else}
                                     {#each comments as comment}
-                                        <div class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/30">
-                                            <div class="flex items-center justify-between gap-2">
-                                                <span class="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                        <div
+                                            class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/30"
+                                        >
+                                            <div
+                                                class="flex items-center justify-between gap-2"
+                                            >
+                                                <span
+                                                    class="text-xs font-semibold text-slate-800 dark:text-slate-100"
+                                                >
                                                     {comment.authorId}
                                                 </span>
-                                                <span class="text-[0.68rem] text-slate-500 dark:text-slate-400">
-                                                    {formatDateTime(comment.createdAt)}
+                                                <span
+                                                    class="text-[0.68rem] text-slate-500 dark:text-slate-400"
+                                                >
+                                                    {formatDateTime(
+                                                        comment.createdAt,
+                                                    )}
                                                 </span>
                                             </div>
-                                            <p class="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">
+                                            <p
+                                                class="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300"
+                                            >
                                                 {comment.comment}
                                             </p>
                                         </div>
@@ -1584,11 +1912,15 @@
                     {/if}
 
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Version history
                         </p>
                         {#if versions.length === 0}
-                            <p class="mt-3 text-sm italic text-slate-500 dark:text-slate-400">
+                            <p
+                                class="mt-3 text-sm italic text-slate-500 dark:text-slate-400"
+                            >
                                 No historical versions found.
                             </p>
                         {:else}
@@ -1600,23 +1932,38 @@
                                         selectedItem.status,
                                         version.status,
                                     )}
-                                    <div class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700">
-                                        <div class="flex items-start justify-between gap-3">
+                                    <div
+                                        class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700"
+                                    >
+                                        <div
+                                            class="flex items-start justify-between gap-3"
+                                        >
                                             <div>
-                                                <p class="text-sm font-semibold text-slate-900 dark:text-slate-50">
+                                                <p
+                                                    class="text-sm font-semibold text-slate-900 dark:text-slate-50"
+                                                >
                                                     Version {version.version}
                                                 </p>
-                                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                    {formatStatusLabel(version.status)} · {formatDateTime(version.createdAt)}
+                                                <p
+                                                    class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                                >
+                                                    {formatStatusLabel(
+                                                        version.status,
+                                                    )} · {formatDateTime(
+                                                        version.createdAt,
+                                                    )}
                                                 </p>
                                             </div>
-                                            <div class="flex items-center gap-2">
+                                            <div
+                                                class="flex items-center gap-2"
+                                            >
                                                 <Button
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
                                                     onclick={() => {
-                                                        selectedVersionForDiff = version.version;
+                                                        selectedVersionForDiff =
+                                                            version.version;
                                                     }}
                                                 >
                                                     Compare
@@ -1625,18 +1972,26 @@
                                                     type="button"
                                                     variant="destructive"
                                                     size="sm"
-                                                    onclick={() => rollbackToVersion(version.version)}
+                                                    onclick={() =>
+                                                        rollbackToVersion(
+                                                            version.version,
+                                                        )}
                                                     disabled={rollingBack}
                                                 >
                                                     Roll back
                                                 </Button>
                                             </div>
                                         </div>
-                                        <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                                        <p
+                                            class="mt-3 text-sm text-slate-600 dark:text-slate-300"
+                                        >
                                             {resolveItemSummary(version)}
                                         </p>
-                                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                            {versionDiff.length} change(s) from the current item
+                                        <p
+                                            class="mt-2 text-xs text-slate-500 dark:text-slate-400"
+                                        >
+                                            {versionDiff.length} change(s) from the
+                                            current item
                                         </p>
                                     </div>
                                 {/each}
@@ -1651,16 +2006,18 @@
     {#if !selectedType}
         {@render SchemaLanding()}
     {:else}
-        <div class="grid flex-1 gap-6 overflow-hidden xl:grid-cols-[17rem_minmax(0,1fr)] 2xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
-            <aside class="hidden min-h-0 xl:block">
+        <div
+            class="grid flex-1 gap-6 overflow-hidden min-[1500px]:grid-cols-[15rem_minmax(0,1fr)] min-[1850px]:grid-cols-[15rem_minmax(0,1fr)_24rem]"
+        >
+            <aside class="hidden min-h-0 min-[1500px]:block">
                 <div class="h-full">
                     {@render CurrentSchemaRail()}
                 </div>
             </aside>
 
             <section class="min-h-0 min-w-0 flex flex-col gap-4">
-                <div class="xl:hidden">
-                    {@render CurrentSchemaRail()}
+                <div class="min-[1500px]:hidden">
+                    {@render CurrentSchemaSummary()}
                 </div>
 
                 <Surface class="p-4">
@@ -1671,8 +2028,10 @@
                             applyFilters();
                         }}
                     >
-                        <div class="grid gap-3 xl:grid-cols-[minmax(0,1.8fr)_180px_180px_auto] xl:items-end">
-                            <div>
+                        <div
+                            class="flex flex-col gap-3 min-[1180px]:flex-row min-[1180px]:items-end"
+                        >
+                            <div class="min-w-0 flex-1">
                                 <label
                                     for="content-search"
                                     class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
@@ -1686,37 +2045,51 @@
                                     placeholder="Search title, slug, summary, author, or item ID"
                                 />
                             </div>
-                            <div>
-                                <label
-                                    for="sort-by"
-                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                                >
-                                    Sort
-                                </label>
-                                <Select id="sort-by" bind:value={sortBy}>
-                                    <option value="updatedAt">Updated</option>
-                                    <option value="createdAt">Created</option>
-                                    <option value="version">Version</option>
-                                </Select>
+                            <div
+                                class="grid gap-3 sm:grid-cols-2 min-[1180px]:w-[22rem]"
+                            >
+                                <div>
+                                    <label
+                                        for="sort-by"
+                                        class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                    >
+                                        Sort
+                                    </label>
+                                    <Select id="sort-by" bind:value={sortBy}>
+                                        <option value="updatedAt"
+                                            >Updated</option
+                                        >
+                                        <option value="createdAt"
+                                            >Created</option
+                                        >
+                                        <option value="version">Version</option>
+                                    </Select>
+                                </div>
+                                <div>
+                                    <label
+                                        for="sort-dir"
+                                        class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                    >
+                                        Order
+                                    </label>
+                                    <Select id="sort-dir" bind:value={sortDir}>
+                                        <option value="desc"
+                                            >Newest first</option
+                                        >
+                                        <option value="asc">Oldest first</option
+                                        >
+                                    </Select>
+                                </div>
                             </div>
-                            <div>
-                                <label
-                                    for="sort-dir"
-                                    class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                                >
-                                    Order
-                                </label>
-                                <Select id="sort-dir" bind:value={sortDir}>
-                                    <option value="desc">Newest first</option>
-                                    <option value="asc">Oldest first</option>
-                                </Select>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2 xl:justify-end">
+                            <div
+                                class="flex flex-wrap items-center gap-2 min-[1180px]:justify-end"
+                            >
                                 <Button
                                     type="button"
                                     variant="outline"
                                     onclick={() => {
-                                        showAdvancedFilters = !showAdvancedFilters;
+                                        showAdvancedFilters =
+                                            !showAdvancedFilters;
                                     }}
                                 >
                                     {#if showAdvancedFilters || hasAdvancedFilters}
@@ -1742,32 +2115,52 @@
                         </div>
 
                         {#if showAdvancedFilters || hasAdvancedFilters}
-                            <div class="grid gap-3 rounded-2xl border border-slate-200/80 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_170px_170px] lg:items-end dark:border-slate-700">
+                            <div
+                                class="grid gap-3 rounded-2xl border border-slate-200/80 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_170px_170px] lg:items-end dark:border-slate-700"
+                            >
                                 <div>
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    <p
+                                        class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                    >
                                         Status
                                     </p>
                                     <div class="mt-2 flex flex-wrap gap-2">
                                         <button
                                             type="button"
-                                            onclick={() => applyStatusFilter("")}
-                                            class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors {filterStatus === ''
+                                            onclick={() =>
+                                                applyStatusFilter("")}
+                                            class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors {filterStatus ===
+                                            ''
                                                 ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
                                                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
                                         >
                                             <span>All</span>
-                                            <span class="font-mono">{resolveTypeItemCount(selectedType)}</span>
+                                            <span class="font-mono"
+                                                >{resolveTypeItemCount(
+                                                    selectedType,
+                                                )}</span
+                                            >
                                         </button>
                                         {#each selectedTypeStatusSummary as summary}
                                             <button
                                                 type="button"
-                                                onclick={() => applyStatusFilter(summary.status)}
-                                                class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors {filterStatus === summary.status
+                                                onclick={() =>
+                                                    applyStatusFilter(
+                                                        summary.status,
+                                                    )}
+                                                class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors {filterStatus ===
+                                                summary.status
                                                     ? 'border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
                                                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-slate-800'}"
                                             >
-                                                <span>{formatStatusLabel(summary.status)}</span>
-                                                <span class="font-mono">{summary.count}</span>
+                                                <span
+                                                    >{formatStatusLabel(
+                                                        summary.status,
+                                                    )}</span
+                                                >
+                                                <span class="font-mono"
+                                                    >{summary.count}</span
+                                                >
                                             </button>
                                         {/each}
                                     </div>
@@ -1779,7 +2172,11 @@
                                     >
                                         After
                                     </label>
-                                    <Input id="created-after" bind:value={createdAfter} type="date" />
+                                    <Input
+                                        id="created-after"
+                                        bind:value={createdAfter}
+                                        type="date"
+                                    />
                                 </div>
                                 <div>
                                     <label
@@ -1788,54 +2185,82 @@
                                     >
                                         Before
                                     </label>
-                                    <Input id="created-before" bind:value={createdBefore} type="date" />
+                                    <Input
+                                        id="created-before"
+                                        bind:value={createdBefore}
+                                        type="date"
+                                    />
                                 </div>
                             </div>
                         {/if}
 
                         {#if hasActiveFilters}
-                            <div class="border-t border-slate-200 pt-3 dark:border-slate-700">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            <div
+                                class="border-t border-slate-200 pt-3 dark:border-slate-700"
+                            >
+                                <p
+                                    class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                >
                                     Active filters
                                 </p>
                                 <div class="mt-2 flex flex-wrap gap-2">
                                     {#if itemSearch.trim()}
                                         <button
                                             type="button"
-                                            onclick={() => clearFilterChip("search")}
+                                            onclick={() =>
+                                                clearFilterChip("search")}
                                             class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
                                         >
-                                            <span>Search: "{itemSearch.trim()}"</span>
+                                            <span
+                                                >Search: "{itemSearch.trim()}"</span
+                                            >
                                             <span aria-hidden="true">×</span>
                                         </button>
                                     {/if}
                                     {#if filterStatus}
                                         <button
                                             type="button"
-                                            onclick={() => clearFilterChip("status")}
+                                            onclick={() =>
+                                                clearFilterChip("status")}
                                             class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
                                         >
-                                            <span>Status: {formatStatusLabel(filterStatus)}</span>
+                                            <span
+                                                >Status: {formatStatusLabel(
+                                                    filterStatus,
+                                                )}</span
+                                            >
                                             <span aria-hidden="true">×</span>
                                         </button>
                                     {/if}
                                     {#if createdAfter}
                                         <button
                                             type="button"
-                                            onclick={() => clearFilterChip("createdAfter")}
+                                            onclick={() =>
+                                                clearFilterChip("createdAfter")}
                                             class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
                                         >
-                                            <span>After: {formatDate(`${createdAfter}T00:00:00.000Z`)}</span>
+                                            <span
+                                                >After: {formatDate(
+                                                    `${createdAfter}T00:00:00.000Z`,
+                                                )}</span
+                                            >
                                             <span aria-hidden="true">×</span>
                                         </button>
                                     {/if}
                                     {#if createdBefore}
                                         <button
                                             type="button"
-                                            onclick={() => clearFilterChip("createdBefore")}
+                                            onclick={() =>
+                                                clearFilterChip(
+                                                    "createdBefore",
+                                                )}
                                             class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
                                         >
-                                            <span>Before: {formatDate(`${createdBefore}T00:00:00.000Z`)}</span>
+                                            <span
+                                                >Before: {formatDate(
+                                                    `${createdBefore}T00:00:00.000Z`,
+                                                )}</span
+                                            >
                                             <span aria-hidden="true">×</span>
                                         </button>
                                     {/if}
@@ -1845,26 +2270,47 @@
                     </form>
                 </Surface>
 
-                <Surface class="min-h-0 flex flex-1 flex-col overflow-hidden p-0">
-                    <div class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30">
-                        <div class="flex items-start justify-between gap-4 flex-wrap">
+                <Surface
+                    class="min-h-0 flex flex-1 flex-col overflow-hidden p-0"
+                >
+                    <div
+                        class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30"
+                    >
+                        <div
+                            class="flex items-start justify-between gap-4 flex-wrap"
+                        >
                             <div>
-                                <p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                <p
+                                    class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                >
                                     Results
                                 </p>
-                                <h3 class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
-                                    Showing {currentRangeStart}-{currentRangeEnd} of {itemsMeta.total}
+                                <h3
+                                    class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50"
+                                >
+                                    Showing {currentRangeStart}-{currentRangeEnd}
+                                    of {itemsMeta.total}
                                 </h3>
-                                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                <p
+                                    class="mt-1 text-sm text-slate-500 dark:text-slate-400"
+                                >
                                     {hasActiveFilters
                                         ? `Filtered results inside ${selectedType.name}.`
                                         : `All content stored against ${selectedType.name}. Select an item to inspect its history.`}
                                 </p>
                             </div>
                             {#if activeWorkflow}
-                                <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-200">
-                                    <div class="font-semibold uppercase tracking-wide">Workflow</div>
-                                    <div class="mt-1">{activeWorkflow.name}</div>
+                                <div
+                                    class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/30 dark:text-slate-200"
+                                >
+                                    <div
+                                        class="font-semibold uppercase tracking-wide"
+                                    >
+                                        Workflow
+                                    </div>
+                                    <div class="mt-1">
+                                        {activeWorkflow.name}
+                                    </div>
                                 </div>
                             {/if}
                         </div>
@@ -1876,8 +2322,13 @@
                                 <LoadingSpinner size="md" />
                             </div>
                         {:else if items.length === 0}
-                            <div class="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                <p>No items found for the current schema and filters.</p>
+                            <div
+                                class="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                            >
+                                <p>
+                                    No items found for the current schema and
+                                    filters.
+                                </p>
                                 {#if hasActiveFilters}
                                     <Button
                                         type="button"
@@ -1890,94 +2341,195 @@
                                 {/if}
                             </div>
                         {:else}
-                            <div class="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
-                                <div class="overflow-x-auto">
-                                    <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-                                        <thead class="bg-slate-50/80 dark:bg-slate-900/60">
-                                            <tr>
-                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                    Item
-                                                </th>
-                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                    Slug
-                                                </th>
-                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                    Status
-                                                </th>
-                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                    Version
-                                                </th>
-                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                    Updated
-                                                </th>
-                                                <th class="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                                    Created
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-slate-200 bg-white dark:divide-slate-700 dark:bg-slate-900/20">
-                                            {#each items as item}
-                                                <tr
-                                                    class={`cursor-pointer transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/50 ${selectedItem?.id === item.id ? 'bg-slate-50 dark:bg-slate-800/60' : ''}`}
-                                                    onclick={() => selectItem(item)}
+                            <div class="space-y-3 lg:hidden">
+                                {#each items as item}
+                                    <button
+                                        type="button"
+                                        class={`w-full rounded-2xl border px-4 py-4 text-left transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/50 ${
+                                            selectedItem?.id === item.id
+                                                ? "border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60"
+                                                : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900/20"
+                                        }`}
+                                        onclick={() => selectItem(item)}
+                                    >
+                                        <div
+                                            class="flex items-start justify-between gap-3"
+                                        >
+                                            <div class="min-w-0">
+                                                <p
+                                                    class="truncate text-sm font-semibold text-slate-900 dark:text-slate-50"
                                                 >
-                                                    <td class="px-4 py-3 align-top">
-                                                        <div class="min-w-0">
-                                                            <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">
-                                                                {resolveItemLabel(item)}
-                                                            </p>
-                                                            <div class="mt-1 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400">
-                                                                <span class="font-mono">#{item.id}</span>
-                                                                {#if resolveItemAttribution(item)}
-                                                                    <span>by {resolveItemAttribution(item)}</span>
-                                                                {/if}
-                                                            </div>
-                                                            <p class="mt-2 line-clamp-1 text-xs text-slate-500 dark:text-slate-400">
-                                                                {resolveItemSummary(item)}
-                                                            </p>
-                                                        </div>
-                                                    </td>
-                                                    <td class="px-4 py-3 align-top text-sm text-slate-600 dark:text-slate-300">
-                                                        <span class="font-mono text-xs">
-                                                            {resolveItemSlug(item) ?? "—"}
-                                                        </span>
-                                                    </td>
-                                                    <td class="px-4 py-3 align-top">
-                                                        <Badge variant={resolveStatusBadgeVariant(item.status)}>
-                                                            {formatStatusLabel(item.status)}
-                                                        </Badge>
-                                                    </td>
-                                                    <td class="px-4 py-3 align-top text-sm text-slate-600 dark:text-slate-300">
-                                                        v{item.version}
-                                                    </td>
-                                                    <td class="px-4 py-3 align-top text-sm text-slate-600 dark:text-slate-300">
-                                                        <div>{formatDate(item.updatedAt)}</div>
-                                                        <div class="text-xs text-slate-500 dark:text-slate-400">
-                                                            {formatRelativeDate(item.updatedAt)}
-                                                        </div>
-                                                    </td>
-                                                    <td class="px-4 py-3 align-top text-sm text-slate-600 dark:text-slate-300">
-                                                        <div>{formatDate(item.createdAt)}</div>
-                                                        <div class="text-xs text-slate-500 dark:text-slate-400">
-                                                            {formatRelativeDate(item.createdAt)}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            {/each}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                    {resolveItemLabel(item)}
+                                                </p>
+                                                <div
+                                                    class="mt-1 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400"
+                                                >
+                                                    <span class="font-mono"
+                                                        >#{item.id}</span
+                                                    >
+                                                    {#if resolveItemSlug(item)}
+                                                        <span class="font-mono"
+                                                            >{resolveItemSlug(
+                                                                item,
+                                                            )}</span
+                                                        >
+                                                    {/if}
+                                                    <span>v{item.version}</span>
+                                                </div>
+                                            </div>
+                                            <Badge
+                                                variant={resolveStatusBadgeVariant(
+                                                    item.status,
+                                                )}
+                                            >
+                                                {formatStatusLabel(item.status)}
+                                            </Badge>
+                                        </div>
+                                        <p
+                                            class="mt-3 line-clamp-2 text-sm text-slate-600 dark:text-slate-300"
+                                        >
+                                            {resolveItemSummary(item)}
+                                        </p>
+                                        <div
+                                            class="mt-3 grid gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400 sm:grid-cols-2"
+                                        >
+                                            <div>
+                                                <span
+                                                    class="font-semibold uppercase tracking-wide"
+                                                    >Updated</span
+                                                >
+                                                <div class="mt-1">
+                                                    {formatDate(item.updatedAt)}
+                                                    · {formatRelativeDate(
+                                                        item.updatedAt,
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span
+                                                    class="font-semibold uppercase tracking-wide"
+                                                    >Created</span
+                                                >
+                                                <div class="mt-1">
+                                                    {formatDate(item.createdAt)}
+                                                    · {formatRelativeDate(
+                                                        item.createdAt,
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                {/each}
+                            </div>
+
+                            <div class="hidden lg:block">
+                                <DataTable
+                                    columns={contentColumns}
+                                    data={items}
+                                    keyField="id"
+                                    onRowClick={(row) =>
+                                        selectItem(
+                                            row as unknown as ContentItem,
+                                        )}
+                                >
+                                    {#snippet cell({ row, column })}
+                                        {@const item =
+                                            row as unknown as ContentItem}
+                                        {#if column.key === "_item"}
+                                            <div class="min-w-0">
+                                                <p
+                                                    class="truncate text-sm font-semibold text-slate-900 dark:text-slate-50"
+                                                >
+                                                    {resolveItemLabel(item)}
+                                                </p>
+                                                <div
+                                                    class="mt-1 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400"
+                                                >
+                                                    <span class="font-mono"
+                                                        >#{item.id}</span
+                                                    >
+                                                    {#if resolveItemAttribution(item)}
+                                                        <span
+                                                            >by {resolveItemAttribution(
+                                                                item,
+                                                            )}</span
+                                                        >
+                                                    {/if}
+                                                </div>
+                                                <p
+                                                    class="mt-2 line-clamp-1 text-xs text-slate-500 dark:text-slate-400"
+                                                >
+                                                    {resolveItemSummary(item)}
+                                                </p>
+                                            </div>
+                                        {:else if column.key === "slug"}
+                                            <span
+                                                class="font-mono text-xs text-slate-600 dark:text-slate-300"
+                                            >
+                                                {resolveItemSlug(item) ?? "—"}
+                                            </span>
+                                        {:else if column.key === "status"}
+                                            <Badge
+                                                variant={resolveStatusBadgeVariant(
+                                                    item.status,
+                                                )}
+                                            >
+                                                {formatStatusLabel(item.status)}
+                                            </Badge>
+                                        {:else if column.key === "version"}
+                                            <span
+                                                class="text-sm text-slate-600 dark:text-slate-300"
+                                            >
+                                                v{item.version}
+                                            </span>
+                                        {:else if column.key === "updatedAt"}
+                                            <div
+                                                class="text-sm text-slate-600 dark:text-slate-300"
+                                            >
+                                                <div>
+                                                    {formatDate(item.updatedAt)}
+                                                </div>
+                                                <div
+                                                    class="text-xs text-slate-500 dark:text-slate-400"
+                                                >
+                                                    {formatRelativeDate(
+                                                        item.updatedAt,
+                                                    )}
+                                                </div>
+                                            </div>
+                                        {:else if column.key === "createdAt"}
+                                            <div
+                                                class="text-sm text-slate-600 dark:text-slate-300"
+                                            >
+                                                <div>
+                                                    {formatDate(item.createdAt)}
+                                                </div>
+                                                <div
+                                                    class="text-xs text-slate-500 dark:text-slate-400"
+                                                >
+                                                    {formatRelativeDate(
+                                                        item.createdAt,
+                                                    )}
+                                                </div>
+                                            </div>
+                                        {/if}
+                                    {/snippet}
+                                </DataTable>
                             </div>
                         {/if}
 
                         {#if loadingItems && items.length > 0}
-                            <div class="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-slate-950/50">
+                            <div
+                                class="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-slate-950/50"
+                            >
                                 <LoadingSpinner size="lg" />
                             </div>
                         {/if}
                     </div>
 
-                    <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-700">
+                    <div
+                        class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-700"
+                    >
                         <p class="text-slate-600 dark:text-slate-300">
                             Showing {currentRangeStart}-{currentRangeEnd} of {itemsMeta.total}
                         </p>
@@ -1986,7 +2538,8 @@
                                 type="button"
                                 variant="outline"
                                 onclick={goToPrevPage}
-                                disabled={itemsMeta.offset === 0 || loadingItems}
+                                disabled={itemsMeta.offset === 0 ||
+                                    loadingItems}
                             >
                                 Previous
                             </Button>
@@ -2004,7 +2557,7 @@
             </section>
 
             {#if selectedItem}
-                <aside class="hidden min-h-0 2xl:block">
+                <aside class="hidden min-h-0 min-[1850px]:block">
                     <Surface class="h-full overflow-hidden p-0">
                         {@render InspectorContent()}
                     </Surface>
@@ -2016,12 +2569,12 @@
     {#if selectedType && selectedItem}
         <button
             type="button"
-            class="fixed inset-0 z-30 bg-slate-950/55 2xl:hidden"
+            class="fixed inset-0 z-30 bg-slate-950/55 min-[1850px]:hidden"
             aria-label="Close inspector"
             onclick={() => resetSelectedItemContext()}
         ></button>
         <section
-            class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900 2xl:hidden"
+            class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900 min-[1850px]:hidden"
         >
             {@render InspectorContent()}
         </section>
@@ -2040,16 +2593,23 @@
             aria-modal="true"
             aria-label="Schema details"
         >
-            <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-700">
+            <div
+                class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-700"
+            >
                 <div>
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    <p
+                        class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                    >
                         Schema details
                     </p>
-                    <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50">
+                    <h3
+                        class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50"
+                    >
                         {selectedType.name}
                     </h3>
                     <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        {selectedType.description || "Structured content model for supervised AI and operator workflows."}
+                        {selectedType.description ||
+                            "Structured content model for supervised AI and operator workflows."}
                     </p>
                 </div>
                 <button
@@ -2065,72 +2625,114 @@
             <div class="flex-1 overflow-y-auto px-6 py-5">
                 <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Items
                         </p>
-                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {resolveTypeItemCount(selectedType)}
                         </p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p
+                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                        >
                             Stored in this schema
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Fields
                         </p>
-                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {selectedTypeMetrics.fieldCount}
                         </p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p
+                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                        >
                             {selectedTypeMetrics.requiredCount} required
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Matching items
                         </p>
-                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {itemsMeta.total}
                         </p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p
+                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                        >
                             Current result set
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Schema shape
                         </p>
-                        <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {selectedTypeMetrics.fieldCount}
                         </p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p
+                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                        >
                             {selectedTypeMetrics.requiredCount} required field(s)
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Last activity
                         </p>
-                        <p class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
+                        <p
+                            class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50"
+                        >
                             {selectedType.stats?.lastItemUpdatedAt
-                                ? formatRelativeDate(selectedType.stats.lastItemUpdatedAt)
+                                ? formatRelativeDate(
+                                      selectedType.stats.lastItemUpdatedAt,
+                                  )
                                 : "No items yet"}
                         </p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p
+                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                        >
                             {selectedType.stats?.lastItemUpdatedAt
-                                ? formatDateTime(selectedType.stats.lastItemUpdatedAt)
+                                ? formatDateTime(
+                                      selectedType.stats.lastItemUpdatedAt,
+                                  )
                                 : "This schema has not been used yet"}
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Workflow
                         </p>
-                        <p class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50">
-                            {activeWorkflow ? activeWorkflow.name : "No active workflow"}
+                        <p
+                            class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50"
+                        >
+                            {activeWorkflow
+                                ? activeWorkflow.name
+                                : "No active workflow"}
                         </p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p
+                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                        >
                             {activeWorkflow
                                 ? `${activeWorkflow.transitions.length} transition(s) available`
                                 : "Items keep their current status until a workflow is assigned"}
@@ -2140,13 +2742,16 @@
 
                 {#if selectedTypeStatusSummary.length > 0}
                     <Surface tone="subtle" class="mt-4 p-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
                             Status mix
                         </p>
                         <div class="mt-3 flex flex-wrap gap-2">
                             {#each selectedTypeStatusSummary as summary}
                                 <Badge variant="muted">
-                                    {formatStatusLabel(summary.status)} {summary.count}
+                                    {formatStatusLabel(summary.status)}
+                                    {summary.count}
                                 </Badge>
                             {/each}
                         </div>
@@ -2154,7 +2759,9 @@
                 {/if}
             </div>
 
-            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-700">
+            <div
+                class="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4 dark:border-slate-700"
+            >
                 <Button
                     type="button"
                     variant="outline"
@@ -2179,16 +2786,23 @@
             aria-modal="true"
             aria-label="Choose content schema"
         >
-            <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-700">
+            <div
+                class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-700"
+            >
                 <div>
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    <p
+                        class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                    >
                         Content models
                     </p>
-                    <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50">
+                    <h3
+                        class="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-50"
+                    >
                         Choose content schema
                     </h3>
                     <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        Select the schema you want to browse. The browser will then show all content created from that schema.
+                        Select the schema you want to browse. The browser will
+                        then show all content created from that schema.
                     </p>
                 </div>
                 <button
@@ -2201,7 +2815,9 @@
                 </button>
             </div>
 
-            <div class="border-b border-slate-200 px-6 py-4 dark:border-slate-700">
+            <div
+                class="border-b border-slate-200 px-6 py-4 dark:border-slate-700"
+            >
                 <Input
                     bind:value={schemaPickerSearch}
                     type="search"
@@ -2226,12 +2842,18 @@
                                 class="mt-0.5 h-4 w-4 border-slate-300 text-slate-900 focus:ring-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-slate-700"
                             />
                             <div class="min-w-0 flex-1">
-                                <div class="flex items-center justify-between gap-3">
+                                <div
+                                    class="flex items-center justify-between gap-3"
+                                >
                                     <div class="min-w-0">
-                                        <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                        <p
+                                            class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100"
+                                        >
                                             {type.name}
                                         </p>
-                                        <p class="mt-0.5 truncate text-[0.72rem] font-mono text-slate-500 dark:text-slate-400">
+                                        <p
+                                            class="mt-0.5 truncate text-[0.72rem] font-mono text-slate-500 dark:text-slate-400"
+                                        >
                                             {type.slug}
                                         </p>
                                     </div>
@@ -2244,21 +2866,28 @@
                                         {/if}
                                     </div>
                                 </div>
-                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {type.description || resolveSchemaSummary(type)}
+                                <p
+                                    class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                >
+                                    {type.description ||
+                                        resolveSchemaSummary(type)}
                                 </p>
                             </div>
                         </label>
                     {/each}
                     {#if schemaPickerTypes.length === 0}
-                        <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        <div
+                            class="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                        >
                             No schemas match “{schemaPickerSearch.trim()}”.
                         </div>
                     {/if}
                 </div>
             </div>
 
-            <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-700">
+            <div
+                class="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-700"
+            >
                 <p class="text-sm text-slate-500 dark:text-slate-400">
                     {draftSelectedTypeId === null
                         ? "No schema selected"

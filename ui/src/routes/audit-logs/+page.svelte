@@ -68,7 +68,7 @@
             hasMore = res.meta.hasMore;
             nextCursor = res.meta.nextCursor;
         } catch (err: any) {
-            error = err.message || "Failed to load audit logs";
+            error = err;
         } finally {
             loading = false;
         }
@@ -105,7 +105,9 @@
 <div class="h-full flex flex-col">
     <div class="mb-6 flex items-start justify-between gap-4">
         <div>
-            <h2 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+            <h2
+                class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white"
+            >
                 Audit Logs
             </h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -158,7 +160,11 @@
                 {/each}
             </Select>
         </div>
-        <Button onclick={applyFilters} variant="secondary" class="w-full md:w-auto">
+        <Button
+            onclick={applyFilters}
+            variant="secondary"
+            class="w-full md:w-auto"
+        >
             Apply Filters
         </Button>
         {#if filterAction || filterEntityType}
@@ -177,7 +183,11 @@
     </Surface>
 
     {#if error}
-        <ErrorBanner class="mb-6" message={error} />
+        <ErrorBanner
+            class="mb-6"
+            {error}
+            message={typeof error === "string" ? error : undefined}
+        />
     {/if}
 
     <!-- Table -->

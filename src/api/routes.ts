@@ -559,7 +559,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                         }),
                         mcp: Type.Object({
                             role: Type.String(),
-                            transport: Type.String(),
+                            transports: Type.Array(Type.String()),
+                            endpoint: Type.String(),
                             attachable: Type.Boolean()
                         }),
                         graphql: Type.Object({

@@ -35,8 +35,9 @@ export function buildCapabilityManifest() {
             },
             mcp: {
                 role: 'primary',
-                transport: 'stdio',
-                attachable: false,
+                transports: ['stdio', 'streamable-http'],
+                endpoint: '/mcp',
+                attachable: true,
             },
             graphql: {
                 role: 'compatibility',
@@ -117,7 +118,6 @@ export function buildCapabilityManifest() {
             compatibility: [...compatibilityProtocolSurfaces],
         },
         limitations: [
-            'mcp_stdio_only',
             'graphql_compatibility_only',
         ],
     };

@@ -145,7 +145,8 @@ describe('API Route Contracts', () => {
                     };
                     protocolSurfaces: {
                         mcp: {
-                            transport: string;
+                            transports: string[];
+                            endpoint: string;
                             attachable: boolean;
                         };
                     };
@@ -159,15 +160,15 @@ describe('API Route Contracts', () => {
 
             expect(body.data.discovery.restManifestPath).toBe('/api/capabilities');
             expect(body.data.discovery.mcpResourceUri).toBe('system://capabilities');
-            expect(body.data.protocolSurfaces.mcp.transport).toBe('stdio');
-            expect(body.data.protocolSurfaces.mcp.attachable).toBe(false);
+            expect(body.data.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
+            expect(body.data.protocolSurfaces.mcp.endpoint).toBe('/mcp');
+            expect(body.data.protocolSurfaces.mcp.attachable).toBe(true);
             expect(body.data.modules).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({ id: 'content-runtime', enabled: true }),
                     expect.objectContaining({ id: 'agent-runs', enabled: false }),
                 ]),
             );
-            expect(body.data.limitations).toContain('mcp_stdio_only');
         } finally {
             await app.close();
         }

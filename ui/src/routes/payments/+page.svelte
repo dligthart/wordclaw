@@ -70,7 +70,11 @@
     </div>
 
     {#if error}
-        <ErrorBanner class="mb-6" message={error} />
+        <ErrorBanner
+            class="mb-6"
+            {error}
+            message={typeof error === "string" ? error : undefined}
+        />
     {/if}
 
     <div
@@ -87,7 +91,12 @@
                 </p>
             </div>
         {:else}
-            <DataTable {columns} data={payments} keyField="id" expandable={true}>
+            <DataTable
+                {columns}
+                data={payments}
+                keyField="id"
+                expandable={true}
+            >
                 {#snippet cell(ctx: any)}
                     {@const row = ctx.row}
                     {@const column = ctx.column}
@@ -100,7 +109,9 @@
                             {#if row.actorId}
                                 {row.actorId}
                             {:else}
-                                <span class="italic text-gray-400">Anonymous</span>
+                                <span class="italic text-gray-400"
+                                    >Anonymous</span
+                                >
                             {/if}
                         </span>
                     {:else if column.key === "amountSatoshis"}
@@ -141,7 +152,9 @@
                                 No detailed request context recorded.
                             </p>
                         {/if}
-                        <div class="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                        <div
+                            class="mt-4 text-sm text-gray-500 dark:text-gray-400"
+                        >
                             <strong>Payment Hash:</strong>
                             <span
                                 class="font-mono text-xs ml-2 bg-gray-200 dark:bg-gray-700 p-1 rounded break-all"
