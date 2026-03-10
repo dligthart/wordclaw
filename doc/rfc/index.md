@@ -18,10 +18,6 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0016: AP2 Agentic Monetization](/rfc/proposed/0016-ap2-agentic-monetization)
 - [RFC-0020: Autonomous Content Ops Agent](/rfc/proposed/0020-autonomous-content-ops-agent)
 
-## Partially Implemented
-
-- [RFC-0010: Supervisor UI Usability and Accessibility Hardening](/rfc/partially-implemented/0010-supervisor-ui-usability-and-accessibility-hardening)
-
 ## Implemented Core / Optional
 
 - [RFC-0002: Agent Usability Improvements](/rfc/implemented/0002-agent-usability-improvements)
@@ -29,6 +25,7 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0004: Agentic Content Licensing and Entitlements](/rfc/implemented/0004-agentic-content-licensing-and-entitlements)
 - [RFC-0007: Policy-Driven Editorial Workflow](/rfc/implemented/0007-policy-driven-editorial-workflow)
 - [RFC-0008: Cross-Protocol Policy Parity Framework](/rfc/implemented/0008-cross-protocol-policy-parity-framework)
+- [RFC-0010: Supervisor UI Usability and Accessibility Hardening](/rfc/implemented/0010-supervisor-ui-usability-and-accessibility-hardening)
 - [RFC-0011: Multi-Domain Tenant Support](/rfc/implemented/0011-multi-domain-tenant-support)
 - [RFC-0012: Native Vector RAG Endpoints](/rfc/implemented/0012-native-vector-rag-endpoints)
 - [RFC-0014: L402 Production Readiness Operator Runbook](/rfc/implemented/0014-l402-production-readiness-operator-runbook)
