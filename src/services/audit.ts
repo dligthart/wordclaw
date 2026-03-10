@@ -3,6 +3,7 @@ import { auditLogs } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { auditEventBus } from './event-bus.js';
 import { emitAuditWebhookEvents } from './webhook.js';
+import { toAuditActor, type AuditActor } from './actor-identity.js';
 
 // --- Typed enums ---
 
@@ -24,11 +25,12 @@ export async function logAudit(
     entityType: EntityType,
     entityId: number,
     details?: Record<string, unknown>,
-    userId?: number,
+    actor?: number | AuditActor,
     requestId?: string,
     skipWebhooks = false
 ) {
     try {
+        const auditActor = toAuditActor(actor);
         const detailsWithContext = {
             ...(details || {}),
             ...(requestId ? { requestId } : {})
@@ -39,7 +41,10 @@ export async function logAudit(
             action,
             entityType,
             entityId,
-            userId: userId ?? null,
+            userId: auditActor?.userId ?? null,
+            actorId: auditActor?.actorId ?? null,
+            actorType: auditActor?.actorType ?? null,
+            actorSource: auditActor?.actorSource ?? null,
             details: Object.keys(detailsWithContext).length > 0 ? JSON.stringify(detailsWithContext) : null,
         }).returning();
 
@@ -49,6 +54,9 @@ export async function logAudit(
             entityType: entry.entityType,
             entityId: entry.entityId,
             userId: entry.userId ?? null,
+            actorId: entry.actorId ?? null,
+            actorType: entry.actorType ?? null,
+            actorSource: entry.actorSource ?? null,
             details: entry.details ?? null,
             createdAt: entry.createdAt
         };
@@ -86,6 +94,9 @@ export async function listAuditLogs(domainId: number, filters: AuditLogFilters =
         entityType: auditLogs.entityType,
         entityId: auditLogs.entityId,
         userId: auditLogs.userId,
+        actorId: auditLogs.actorId,
+        actorType: auditLogs.actorType,
+        actorSource: auditLogs.actorSource,
         details: auditLogs.details,
         createdAt: auditLogs.createdAt,
     })

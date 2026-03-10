@@ -59,6 +59,9 @@ export const auditLogs = pgTable('audit_logs', {
     entityType: text('entity_type').notNull(), // 'content_type', 'content_item'
     entityId: integer('entity_id').notNull(),
     userId: integer('user_id'), // Nullable for now
+    actorId: text('actor_id'),
+    actorType: text('actor_type'),
+    actorSource: text('actor_source'),
     details: text('details'), // JSON string or simple text desc
     createdAt: timestamp('created_at').defaultNow().notNull(),
 });

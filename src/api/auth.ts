@@ -1,15 +1,16 @@
 import { IncomingHttpHeaders } from 'node:http';
 
 import { getApiKeyByHash, hashApiKey, isKeyExpired, parseScopes, touchApiKeyUsage, ApiScope } from '../services/api-key.js';
+import {
+    type ActorPrincipal,
+    buildAnonymousLocalPrincipal,
+    buildApiKeyPrincipal,
+    buildEnvKeyPrincipal
+} from '../services/actor-identity.js';
 
 type Scope = ApiScope;
 
-export type AuthPrincipal = {
-    keyId: number | string;
-    domainId: number;
-    scopes: Set<string>;
-    source: 'db' | 'env' | 'anonymous';
-};
+export type AuthPrincipal = ActorPrincipal;
 
 type AuthSuccess = {
     ok: true;
@@ -59,12 +60,7 @@ function anonymousLocalPrincipal(): AuthPrincipal {
         `[WARNING] INSECURE FALLBACK: Proceeding as anonymous admin because ${ENV_AUTH_REQUIRED}=false and ${ENV_ALLOW_INSECURE_LOCAL_ADMIN}=true in a non-production environment.`
     );
 
-    return {
-        keyId: 'anonymous',
-        domainId: 1,
-        scopes: new Set(['admin']),
-        source: 'anonymous'
-    };
+    return buildAnonymousLocalPrincipal();
 }
 
 function parseApiKeyConfig(raw: string | undefined): Map<string, Set<string>> {
@@ -158,12 +154,7 @@ function isAuthFailure(value: AuthPrincipal | AuthFailure): value is AuthFailure
 async function resolvePrincipalFromKey(rawKey: string, envKeys: Map<string, Set<string>>): Promise<AuthPrincipal | AuthFailure> {
     const envScopes = envKeys.get(rawKey);
     if (envScopes) {
-        return {
-            keyId: rawKey.slice(0, 6) + '...',
-            domainId: 1, // Fallback default tenant for ancient .env keys
-            scopes: envScopes,
-            source: 'env'
-        };
+        return buildEnvKeyPrincipal(rawKey.slice(0, 12), 1, envScopes);
     }
 
     const dbKey = await getApiKeyByHash(hashApiKey(rawKey));
@@ -190,12 +181,7 @@ async function resolvePrincipalFromKey(rawKey: string, envKeys: Map<string, Set<
 
     await touchApiKeyUsage(dbKey.id);
 
-    return {
-        keyId: dbKey.id,
-        domainId: dbKey.domainId,
-        scopes: parseScopes(dbKey.scopes),
-        source: 'db'
-    };
+    return buildApiKeyPrincipal(dbKey.id, dbKey.domainId, parseScopes(dbKey.scopes));
 }
 
 export async function authorizeApiRequest(method: string, routePath: string, headers: IncomingHttpHeaders): Promise<AuthResult> {

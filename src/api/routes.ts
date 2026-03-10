@@ -29,6 +29,7 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
+import { buildSupervisorPrincipal, toAuditActor, type AuditActor } from '../services/actor-identity.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -424,7 +425,11 @@ function serializeAgentRunCheckpoint(checkpoint: {
     };
 }
 
-function toAuditActorId(request: { authPrincipal?: { keyId: number | string } }): number | undefined {
+function toAuditActorFromRequest(request: { authPrincipal?: { keyId?: number | string } }): AuditActor | undefined {
+    return toAuditActor(request.authPrincipal);
+}
+
+function toLegacyActorUserId(request: { authPrincipal?: { keyId?: number | string } }): number | undefined {
     return typeof request.authPrincipal?.keyId === 'number' ? request.authPrincipal.keyId : undefined;
 }
 
@@ -486,12 +491,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 if (!domainContext.ok) {
                     return reply.status(domainContext.statusCode).send(domainContext.payload);
                 }
-                principal = {
-                    keyId: `supervisor:${user.sub}`,
-                    scopes: new Set(['admin']),
-                    source: 'cookie',
-                    domainId: domainContext.domainId
-                };
+                principal = buildSupervisorPrincipal(user.sub, domainContext.domainId);
             }
         } catch {
             // Ignore JWT errors, fallback to normal api key auth
@@ -618,7 +618,8 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const body = request.body as { name: string; scopes: string[]; expiresAt?: string };
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
+        const legacyActorUserId = toLegacyActorUserId(request as { authPrincipal?: { keyId?: number | string } });
 
         let scopes: string[];
         try {
@@ -646,7 +647,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { key, plaintext } = await createApiKey({
             domainId: getDomainId(request), name: body.name,
             scopes,
-            createdBy: actorId ?? null,
+            createdBy: legacyActorUserId ?? null,
             expiresAt
         });
 
@@ -730,7 +731,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
         const { id } = request.params as IdParams;
         const revoked = await revokeApiKey(id, getDomainId(request));
         if (!revoked) {
@@ -779,10 +780,11 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
+        const legacyActorUserId = toLegacyActorUserId(request as { authPrincipal?: { keyId?: number | string } });
         const { id } = request.params as IdParams;
 
-        const rotated = await rotateApiKey(id, getDomainId(request), actorId ?? null);
+        const rotated = await rotateApiKey(id, getDomainId(request), legacyActorUserId ?? null);
         if (!rotated) {
             return reply.status(404).send(toErrorPayload(
                 'API key not found',
@@ -877,7 +879,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
         const { mode } = request.query as DryRunQueryType;
         const body = request.body as { url: string; events: string[]; secret: string; active?: boolean };
 
@@ -1051,7 +1053,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
         const { id } = request.params as IdParams;
         const { mode } = request.query as DryRunQueryType;
         const body = request.body as {
@@ -1177,7 +1179,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
         const { mode } = request.query as DryRunQueryType;
         const { id } = request.params as IdParams;
 
@@ -1332,7 +1334,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             'content_type',
             newItem.id,
             newItem,
-            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } }),
             request.id
         );
 
@@ -1545,7 +1547,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             'content_type',
             updatedType.id,
             { ...updateData, previous: 'n/a' },
-            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } }),
             request.id
         );
 
@@ -1611,7 +1613,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             'content_type',
             deletedType.id,
             deletedType,
-            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } }),
             request.id
         );
 
@@ -1707,7 +1709,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             'content_item',
             newItem.id,
             newItem,
-            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } }),
             request.id
         );
 
@@ -1802,7 +1804,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             'content_item',
             newItem.id,
             newItem,
-            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } }),
             request.id
         );
 
@@ -2795,7 +2797,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             'content_item',
             result.id,
             updateData,
-            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } }),
             request.id
         );
 
@@ -2956,7 +2958,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 'content_item',
                 result.id,
                 { fromVersion: result.version - 1, toVersion: version },
-                toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+                toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } }),
                 request.id
             );
 
@@ -3038,7 +3040,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             'content_item',
             deletedItem.id,
             deletedItem,
-            toAuditActorId(request as { authPrincipal?: { keyId: number | string } }),
+            toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } }),
             request.id
         );
 
@@ -3090,7 +3092,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { items } = request.body as {
             items: Array<{ contentTypeId: number; data: string; status?: string }>;
         };
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
         const isAtomic = atomic === true;
 
         if (items.length === 0) {
@@ -3292,7 +3294,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { items } = request.body as {
             items: Array<{ id: number; contentTypeId?: number; data?: string; status?: string }>;
         };
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
         const isAtomic = atomic === true;
 
         if (items.length === 0) {
@@ -3539,7 +3541,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     }, async (request, reply) => {
         const { mode, atomic } = request.query as BatchModeQuery;
         const { ids } = request.body as { ids: number[] };
-        const actorId = toAuditActorId(request as { authPrincipal?: { keyId: number | string } });
+        const actorId = toAuditActorFromRequest(request as { authPrincipal?: { keyId?: number | string } });
         const isAtomic = atomic === true;
 
         if (ids.length === 0) {
@@ -3687,6 +3689,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                     action: Type.String(),
                     entityType: Type.String(),
                     entityId: Type.Number(),
+                    actorId: Type.Union([Type.String(), Type.Null()]),
+                    actorType: Type.Union([Type.String(), Type.Null()]),
+                    actorSource: Type.Union([Type.String(), Type.Null()]),
                     details: Type.Optional(Type.String()),
                     createdAt: Type.String()
                 })))
@@ -3737,6 +3742,9 @@ export default async function apiRoutes(server: FastifyInstance) {
             action: auditLogs.action,
             entityType: auditLogs.entityType,
             entityId: auditLogs.entityId,
+            actorId: auditLogs.actorId,
+            actorType: auditLogs.actorType,
+            actorSource: auditLogs.actorSource,
             details: auditLogs.details,
             createdAt: auditLogs.createdAt
         })

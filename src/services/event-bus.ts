@@ -6,6 +6,9 @@ export type AuditEventPayload = {
     entityType: string;
     entityId: number;
     userId: number | null;
+    actorId: string | null;
+    actorType: string | null;
+    actorSource: string | null;
     details: string | null;
     createdAt: Date;
 };

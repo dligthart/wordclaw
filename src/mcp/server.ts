@@ -16,11 +16,12 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
+import { buildMcpLocalPrincipal } from '../services/actor-identity.js';
 
 function withMCPPolicy<T>(operation: string, extractResource: (args: T) => any, handler: (args: T, extra: any, domainId: number) => Promise<ToolResult>) {
     return async (args: T, extra: any) => {
         const domainId = Number(process.env.WORDCLAW_DOMAIN_ID) || 1;
-        const principal = { keyId: 'mcp-local', domainId, scopes: new Set(['admin']), source: 'local' };
+        const principal = buildMcpLocalPrincipal(domainId);
         const resource = extractResource(args) || { type: 'system' };
         const operationContext = buildOperationContext('mcp', principal, operation, resource);
         const decision = await PolicyEngine.evaluate(operationContext);

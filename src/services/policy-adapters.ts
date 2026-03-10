@@ -5,6 +5,9 @@ export interface AuthPrincipalData {
     domainId?: number;
     scopes?: Set<string> | string[];
     source?: string;
+    actorId?: string;
+    actorType?: string;
+    actorSource?: string;
 }
 
 function requiresDomainContext(resourceType: string): boolean {
@@ -33,10 +36,10 @@ export function buildOperationContext(
 
     return {
         principal: {
-            id: principal?.keyId?.toString() || 'anonymous',
+            id: principal?.actorId || principal?.keyId?.toString() || 'anonymous',
             domainId: principalDomainId,
             scopes: scopesArray,
-            source: principal?.source || 'anonymous'
+            source: principal?.actorSource || principal?.source || 'anonymous'
         },
         operation,
         resource: resourceWithDomain,

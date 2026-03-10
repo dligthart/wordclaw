@@ -23,6 +23,7 @@ import { auditEventBus, type AuditEventPayload } from './services/event-bus.js';
 import { PolicyEngine } from './services/policy.js';
 import { buildOperationContext } from './services/policy-adapters.js';
 import { parseSupervisorDomainHeader } from './api/domain-context.js';
+import { buildSupervisorPrincipal } from './services/actor-identity.js';
 
 function readRequestIdHeader(raw: string | string[] | undefined): string | null {
     if (typeof raw === 'string' && raw.trim().length > 0) {
@@ -148,12 +149,7 @@ export async function buildServer(): Promise<FastifyInstance> {
                         err.remediation = domainContext.payload.remediation;
                         throw err;
                     }
-                    principal = {
-                        keyId: `supervisor:${user.sub}`,
-                        scopes: new Set(['admin']),
-                        source: 'cookie',
-                        domainId: domainContext.domainId
-                    };
+                    principal = buildSupervisorPrincipal(user.sub, domainContext.domainId);
                 }
             } catch (error) {
                 if ((error as { statusCode?: number }).statusCode) {

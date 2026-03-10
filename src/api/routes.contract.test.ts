@@ -747,6 +747,64 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns canonical actor fields for audit log entries', async () => {
+        const app = await buildServer();
+        const countWhereMock = vi.fn().mockResolvedValue([{ total: 1 }]);
+        const limitMock = vi.fn().mockResolvedValue([
+            {
+                id: 91,
+                action: 'update',
+                entityType: 'content_item',
+                entityId: 44,
+                actorId: 'supervisor:7',
+                actorType: 'supervisor',
+                actorSource: 'cookie',
+                details: '{"requestId":"req-1"}',
+                createdAt: new Date('2026-03-08T09:36:03.000Z')
+            }
+        ]);
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: countWhereMock,
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockReturnValue({
+                        orderBy: vi.fn().mockReturnValue({
+                            limit: limitMock,
+                        }),
+                    }),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/audit-logs?limit=10'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: Array<{
+                    actorId?: string;
+                    actorType?: string;
+                    actorSource?: string;
+                }>;
+            };
+
+            expect(body.data[0]).toMatchObject({
+                actorId: 'supervisor:7',
+                actorType: 'supervisor',
+                actorSource: 'cookie'
+            });
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns AUTH_MISSING_API_KEY when auth is required', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'writer=content:read|content:write|audit:read';

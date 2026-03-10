@@ -14,6 +14,7 @@ import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
+import { toAuditActor, type AuditActor } from '../services/actor-identity.js';
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
@@ -247,9 +248,9 @@ function contextView(context: unknown): ResolverContext {
     return context as ResolverContext;
 }
 
-function toActorId(context: unknown): number | undefined {
+function toActorId(context: unknown): AuditActor | undefined {
     const view = contextView(context);
-    return typeof view.authPrincipal?.keyId === 'number' ? view.authPrincipal.keyId : undefined;
+    return toAuditActor(view.authPrincipal);
 }
 
 function toRequestId(context: unknown): string | undefined {
@@ -1009,6 +1010,9 @@ export const resolvers = {
                 action: auditLogs.action,
                 entityType: auditLogs.entityType,
                 entityId: auditLogs.entityId,
+                actorId: auditLogs.actorId,
+                actorType: auditLogs.actorType,
+                actorSource: auditLogs.actorSource,
                 details: auditLogs.details,
                 createdAt: auditLogs.createdAt
             })

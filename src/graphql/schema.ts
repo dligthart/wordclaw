@@ -164,6 +164,12 @@ export const schema = `
     entityType: String!
     """Target entity identifier."""
     entityId: ID!
+    """Canonical actor identifier such as supervisor:12 or api_key:34."""
+    actorId: String
+    """Actor classification such as supervisor, api_key, or mcp."""
+    actorType: String
+    """How the actor authenticated or entered the system."""
+    actorSource: String
     """Optional serialized details payload."""
     details: JSON
     """Event timestamp (ISO-8601)."""
