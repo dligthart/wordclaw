@@ -1,5 +1,6 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
+import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
 import cors from '@fastify/cors';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import path from 'node:path';
@@ -23,7 +24,9 @@ import { auditEventBus, type AuditEventPayload } from './services/event-bus.js';
 import { PolicyEngine } from './services/policy.js';
 import { buildOperationContext } from './services/policy-adapters.js';
 import { parseSupervisorDomainHeader } from './api/domain-context.js';
-import { buildSupervisorPrincipal } from './services/actor-identity.js';
+import { buildSupervisorPrincipal, type ActorPrincipal } from './services/actor-identity.js';
+import { createServer as createMcpServer } from './mcp/server.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 function readRequestIdHeader(raw: string | string[] | undefined): string | null {
     if (typeof raw === 'string' && raw.trim().length > 0) {
@@ -77,6 +80,76 @@ function addRequestContextToErrorPayload(payload: unknown, requestId: string): u
             requestId
         }
     };
+}
+
+function buildMcpAuthInfo(request: { headers: Record<string, unknown> }, principal: ActorPrincipal) {
+    const authorization = typeof request.headers.authorization === 'string'
+        ? request.headers.authorization
+        : typeof request.headers['x-api-key'] === 'string'
+            ? request.headers['x-api-key']
+            : principal.actorId;
+
+    return {
+        token: authorization,
+        clientId: principal.actorId,
+        scopes: [...principal.scopes],
+        extra: {
+            wordclawPrincipal: principal
+        }
+    };
+}
+
+async function resolveInteractivePrincipal(request: {
+    jwtVerify: (options?: Record<string, unknown>) => Promise<unknown>;
+    headers: Record<string, unknown>;
+    user?: unknown;
+}) {
+    let principal: ActorPrincipal | null = null;
+
+    try {
+        await request.jwtVerify({ onlyCookie: true });
+        const user = request.user as { sub: number; role: string } | undefined;
+        if (user && user.role === 'supervisor') {
+            const domainContext = parseSupervisorDomainHeader(request.headers as IncomingHttpHeaders);
+            if (!domainContext.ok) {
+                const err = new Error(domainContext.payload.error) as Error & {
+                    statusCode?: number;
+                    code?: string;
+                    remediation?: string;
+                };
+                err.statusCode = domainContext.statusCode;
+                err.code = domainContext.payload.code;
+                err.remediation = domainContext.payload.remediation;
+                throw err;
+            }
+            principal = buildSupervisorPrincipal(user.sub, domainContext.domainId);
+        }
+    } catch (error) {
+        if ((error as { code?: string }).code === 'FST_JWT_NO_AUTHORIZATION_IN_COOKIE') {
+            // Fall through to API-key auth when no supervisor session is present.
+        } else if ((error as { statusCode?: number }).statusCode) {
+            throw error;
+        }
+    }
+
+    if (principal) {
+        return principal;
+    }
+
+    const auth = await authenticateApiRequest(request.headers as IncomingHttpHeaders);
+    if (!auth.ok) {
+        const err = new Error(auth.payload.error) as Error & {
+            statusCode?: number;
+            code?: string;
+            remediation?: string;
+        };
+        err.statusCode = auth.statusCode;
+        err.code = auth.payload.code;
+        err.remediation = auth.payload.remediation;
+        throw err;
+    }
+
+    return auth.principal;
 }
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -136,43 +209,80 @@ export async function buildServer(): Promise<FastifyInstance> {
         graphiql: enableGraphiql,
         path: '/graphql',
         context: async (request) => {
-            let principal: any = null;
-            try {
-                await request.jwtVerify({ onlyCookie: true });
-                const user = request.user as { sub: number, role: string };
-                if (user && user.role === 'supervisor') {
-                    const domainContext = parseSupervisorDomainHeader(request.headers);
-                    if (!domainContext.ok) {
-                        const err = new Error(domainContext.payload.error) as any;
-                        err.statusCode = domainContext.statusCode;
-                        err.code = domainContext.payload.code;
-                        err.remediation = domainContext.payload.remediation;
-                        throw err;
-                    }
-                    principal = buildSupervisorPrincipal(user.sub, domainContext.domainId);
-                }
-            } catch (error) {
-                if ((error as { statusCode?: number }).statusCode) {
-                    throw error;
-                }
-            }
-
-            if (!principal) {
-                const auth = await authenticateApiRequest(request.headers);
-                if (!auth.ok) {
-                    const err = new Error(auth.payload.error) as any;
-                    err.statusCode = auth.statusCode;
-                    err.code = auth.payload.code;
-                    throw err;
-                }
-                principal = auth.principal;
-            }
-
+            const principal = await resolveInteractivePrincipal(request as typeof request & {
+                headers: Record<string, unknown>;
+            });
             return {
                 requestId: request.id,
                 authPrincipal: principal
             };
         }
+    });
+
+    server.post('/mcp', async (request, reply) => {
+        const principal = await resolveInteractivePrincipal(request as typeof request & {
+            headers: Record<string, unknown>;
+        });
+
+        const mcpServer = createMcpServer();
+        const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: undefined,
+            enableJsonResponse: true
+        });
+
+        const closeTransport = () => {
+            void transport.close();
+            void mcpServer.close();
+        };
+
+        reply.raw.once('close', closeTransport);
+
+        (request.raw as IncomingMessage & {
+            auth?: ReturnType<typeof buildMcpAuthInfo>;
+        }).auth = buildMcpAuthInfo(request as { headers: Record<string, unknown> }, principal);
+
+        try {
+            await mcpServer.connect(transport);
+            await transport.handleRequest(request.raw, reply.raw, request.body);
+            return reply;
+        } catch (error) {
+            reply.raw.off('close', closeTransport);
+            closeTransport();
+            request.log.error({ err: error }, 'Failed to handle MCP HTTP request');
+            if (!reply.sent) {
+                return reply.status(500).send({
+                    jsonrpc: '2.0',
+                    error: {
+                        code: -32603,
+                        message: 'Internal server error'
+                    },
+                    id: null
+                });
+            }
+            return reply;
+        }
+    });
+
+    server.get('/mcp', async (_request, reply) => {
+        return reply.status(405).send({
+            jsonrpc: '2.0',
+            error: {
+                code: -32000,
+                message: 'Method not allowed.'
+            },
+            id: null
+        });
+    });
+
+    server.delete('/mcp', async (_request, reply) => {
+        return reply.status(405).send({
+            jsonrpc: '2.0',
+            error: {
+                code: -32000,
+                message: 'Method not allowed.'
+            },
+            id: null
+        });
     });
 
     server.register(import('@fastify/rate-limit'), {

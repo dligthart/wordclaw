@@ -21,7 +21,7 @@ flowchart TB
     subgraph APIs["API Layer"]
       REST["REST API (Fastify)"]
       GraphQL["GraphQL API (Mercurius)"]
-      MCP["MCP Server (stdio)"]
+      MCP["MCP Server (stdio + /mcp)"]
     end
 
     subgraph Services["Services Layer"]
@@ -80,7 +80,7 @@ Every incoming HTTP request passes through a shared middleware pipeline before r
 WordClaw exposes two core interfaces, one compatibility surface, and a dedicated UI:
 
 - **REST** — Primary HTTP contract under `/api/*` with OpenAPI documentation at `/documentation`.
-- **MCP** — Primary Model Context Protocol surface over stdio for LLM agents.
+- **MCP** — Primary Model Context Protocol surface for LLM agents, available locally over stdio and remotely at `/mcp`.
 - **GraphQL** — Compatibility surface at `/graphql` with GraphiQL playground.
 - **Supervisor UI** — A SvelteKit application served at `/ui` for human oversight, schema management, and audit log review.
 

@@ -75,12 +75,18 @@
    curl http://localhost:4000/health
    ```
 
-## Start the MCP Server
+## Start the Local MCP Server
 
-For AI agent integration over stdio:
+For AI agent integration over local stdio:
 
 ```bash
 npm run mcp:start
+```
+
+For attachable remote MCP clients, use the main HTTP server and connect to:
+
+```text
+http://localhost:4000/mcp
 ```
 
 ## Use the CLI

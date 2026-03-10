@@ -49,6 +49,13 @@ export function buildCapabilityManifest() {
                 bearerHeader: 'Authorization: Bearer <api-key>',
                 supervisorCookie: 'supervisor_session',
             },
+            mcp: {
+                endpoint: '/mcp',
+                apiKeyHeader: 'x-api-key',
+                bearerHeader: 'Authorization: Bearer <api-key>',
+                supervisorCookie: 'supervisor_session',
+                supervisorHeader: 'x-wordclaw-domain',
+            },
             domainContext: {
                 supervisorHeader: 'x-wordclaw-domain',
                 apiKeysAreDomainScoped: true,

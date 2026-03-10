@@ -98,12 +98,11 @@ Supported MCP features:
 
 Important transport note:
 
-- WordClaw MCP currently uses `stdio`
+- WordClaw exposes both `stdio` and remote Streamable HTTP at `/mcp`
+- the current CLI MCP commands still use the local `stdio` transport
 - the CLI starts its own local MCP child process
-- it does **not** attach to a separately running MCP process
+- it does **not** yet attach to a running `/mcp` endpoint
 - `mcp inspect` now also includes the deployment manifest when the MCP server exposes `system://capabilities`
-
-If WordClaw later adds a networked MCP transport, the CLI can be extended to connect to a long-running MCP endpoint instead.
 
 Usability details:
 
@@ -274,7 +273,7 @@ Recommended agent pattern:
 
 ## Current Limitations
 
-- The MCP transport is still `stdio`, so the CLI spawns a new local MCP server process for each MCP session.
+- The CLI MCP workflow still uses `stdio`, so it spawns a new local MCP server process for each MCP session even though the runtime now also exposes `/mcp` for remote clients.
 - L402 purchase confirmation depends on a live offer, a valid invoice challenge, and payment-provider state in the target environment.
 
 ## Related Docs

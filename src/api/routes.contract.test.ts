@@ -150,6 +150,12 @@ describe('API Route Contracts', () => {
                             attachable: boolean;
                         };
                     };
+                    auth: {
+                        mcp: {
+                            endpoint: string;
+                            supervisorHeader: string;
+                        };
+                    };
                     modules: Array<{
                         id: string;
                         enabled: boolean;
@@ -163,6 +169,8 @@ describe('API Route Contracts', () => {
             expect(body.data.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
             expect(body.data.protocolSurfaces.mcp.endpoint).toBe('/mcp');
             expect(body.data.protocolSurfaces.mcp.attachable).toBe(true);
+            expect(body.data.auth.mcp.endpoint).toBe('/mcp');
+            expect(body.data.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
             expect(body.data.modules).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({ id: 'content-runtime', enabled: true }),

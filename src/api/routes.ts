@@ -573,6 +573,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             bearerHeader: Type.String(),
                             supervisorCookie: Type.String()
                         }),
+                        mcp: Type.Object({
+                            endpoint: Type.String(),
+                            apiKeyHeader: Type.String(),
+                            bearerHeader: Type.String(),
+                            supervisorCookie: Type.String(),
+                            supervisorHeader: Type.String()
+                        }),
                         domainContext: Type.Object({
                             supervisorHeader: Type.String(),
                             apiKeysAreDomainScoped: Type.Boolean(),

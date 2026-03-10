@@ -42,20 +42,6 @@ function resolveMcpPrincipal(extra?: McpRequestExtra): ActorPrincipal {
     return buildMcpLocalPrincipal(domainId);
 }
 
-function withMCPPolicy<T>(operation: string, extractResource: (args: T) => any, handler: (args: T, extra: any, domainId: number) => Promise<ToolResult>) {
-    return async (args: T, extra: any) => {
-        const principal = resolveMcpPrincipal(extra);
-        const domainId = principal.domainId;
-        const resource = extractResource(args) || { type: 'system' };
-        const operationContext = buildOperationContext('mcp', principal, operation, resource);
-        const decision = await PolicyEngine.evaluate(operationContext);
-        if (decision.outcome !== 'allow') {
-            return err(`${decision.code}: Access Denied by Policy. ${decision.remediation || ''}`);
-        }
-        return handler(args, extra, domainId);
-    };
-}
-
 export function createServer() {
     const server = new McpServer({
         name: 'WordClaw CMS',
@@ -87,6 +73,24 @@ export function createServer() {
         return {
             isError: true,
             content: [{ type: 'text', text }]
+        };
+    }
+
+    function withMCPPolicy<T>(
+        operation: string,
+        extractResource: (args: T) => any,
+        handler: (args: T, extra: any, domainId: number) => Promise<ToolResult>
+    ) {
+        return async (args: T, extra: any) => {
+            const principal = resolveMcpPrincipal(extra);
+            const domainId = principal.domainId;
+            const resource = extractResource(args) || { type: 'system' };
+            const operationContext = buildOperationContext('mcp', principal, operation, resource);
+            const decision = await PolicyEngine.evaluate(operationContext);
+            if (decision.outcome !== 'allow') {
+                return err(`${decision.code}: Access Denied by Policy. ${decision.remediation || ''}`);
+            }
+            return handler(args, extra, domainId);
         };
     }
 

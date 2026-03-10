@@ -170,6 +170,8 @@ For detailed guides on setting up the Supervisor UI, authentication, testing, an
 - [Architecture Overview](doc/reference/architecture.md) — System layer breakdown and data models.
 - [Features Outline](doc/concepts/features.md) — Content API and Human Supervisor Web Interface capabilities.
 - [MCP Integration](doc/guides/mcp-integration.md) — Model Context Protocol implementation details.
+
+WordClaw MCP is available both as a local stdio server (`npm run mcp:start`) and as a remote Streamable HTTP endpoint at `/mcp` when the main HTTP server is running.
 - [Feature Proposals (RFCs)](doc/rfc) — Methodology and history of proposed platform features.
 
 ### API Documentation

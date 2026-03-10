@@ -50,6 +50,8 @@ describe('buildCapabilityManifest', () => {
         expect(manifest.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
         expect(manifest.protocolSurfaces.mcp.endpoint).toBe('/mcp');
         expect(manifest.protocolSurfaces.mcp.attachable).toBe(true);
+        expect(manifest.auth.mcp.endpoint).toBe('/mcp');
+        expect(manifest.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
         expect(manifest.protocolContract.required).toEqual(['rest', 'mcp']);
         expect(manifest.protocolContract.compatibility).toEqual(['graphql']);
         expect(manifest.paidContent.purchaseFlowSurface).toBe('rest');

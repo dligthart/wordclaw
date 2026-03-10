@@ -4,15 +4,42 @@ WordClaw ships a [Model Context Protocol](https://modelcontextprotocol.io/) serv
 
 The tool coverage documented in this guide reflects the default core parity contract. Incubator-only tools, such as agent-run orchestration, are intentionally excluded unless operators explicitly enable those runtime flags.
 
-## Starting the MCP Server
+## Transports
+
+WordClaw now exposes MCP in two ways:
+
+- **Local stdio** for embedded or developer-run MCP sessions
+- **Streamable HTTP** at `/mcp` for attachable remote clients
+
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, and the currently available MCP transports.
+
+## Starting the Local MCP Server
 
 ```bash
 npm run mcp:start
 ```
 
-The server communicates over **stdio** (stdin/stdout), which is the standard transport for local MCP integrations.
+The local server communicates over **stdio** (stdin/stdout), which remains the default transport for local MCP integrations and the current CLI MCP workflow.
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, and the current MCP transport limitation (`stdio` only).
+## Remote MCP Endpoint
+
+When the HTTP server is running, remote MCP clients can connect to:
+
+```text
+http://localhost:4000/mcp
+```
+
+Authentication for the HTTP endpoint matches the main runtime:
+
+- API key via `x-api-key`
+- API key via `Authorization: Bearer <api-key>`
+- Supervisor session via `supervisor_session` plus `x-wordclaw-domain`
+
+Remote MCP is stateless today:
+
+- `POST /mcp` handles MCP requests
+- `GET /mcp` returns `405`, so clients fall back to request/response mode instead of a long-lived SSE stream
+- no MCP session ID is issued
 
 ## Tools
 
