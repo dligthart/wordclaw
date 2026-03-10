@@ -31,6 +31,7 @@ type JsonMap = Record<string, unknown>;
 
 const TOP_LEVEL_COMMANDS = [
     'mcp',
+    'capabilities',
     'rest',
     'content-types',
     'content',
@@ -38,6 +39,7 @@ const TOP_LEVEL_COMMANDS = [
     'l402',
 ] as const;
 const MCP_SUBCOMMANDS = ['inspect', 'call', 'prompt', 'resource', 'smoke'] as const;
+const CAPABILITY_SUBCOMMANDS = ['show'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
 const CONTENT_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
@@ -45,6 +47,7 @@ const WORKFLOW_SUBCOMMANDS = ['active', 'submit', 'tasks', 'decide'] as const;
 const L402_SUBCOMMANDS = ['offers', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
 
 const TOP_LEVEL_ALIASES: Record<string, string> = {
+    caps: 'capabilities',
     ct: 'content-types',
     wf: 'workflow',
 };
@@ -95,6 +98,8 @@ Commands:
   mcp resource <uri>
   mcp smoke
 
+  capabilities show
+
   rest request <method> <path> [--query-json <object>] [--body-json <object>|--body-file <path>]
 
   content-types list [--limit <n>] [--offset <n>] [--include-stats]
@@ -124,6 +129,7 @@ Commands:
   l402 read --item <n> [--entitlement-id <n>]
 
 Aliases:
+  caps -> capabilities
   ct -> content-types
   wf -> workflow
   content-types ls -> content-types list
@@ -318,6 +324,25 @@ async function handleRest(client: RestCliClient, args: ParsedArgs) {
         path,
         query: query as Record<string, string | number | boolean | undefined>,
         body,
+    });
+    printResponse(args, response);
+}
+
+async function handleCapabilities(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'capabilities subcommand',
+        CAPABILITY_SUBCOMMANDS,
+    );
+
+    if (action !== 'show') {
+        throw buildUnknownCommandError('capabilities subcommand', action, CAPABILITY_SUBCOMMANDS);
+    }
+
+    const response = await client.request({
+        method: 'GET',
+        path: '/capabilities',
     });
     printResponse(args, response);
 }
@@ -766,6 +791,10 @@ async function main(args: ParsedArgs) {
 
     if (command === 'rest') {
         await handleRest(client, args);
+        return;
+    }
+    if (command === 'capabilities') {
+        await handleCapabilities(client, args);
         return;
     }
     if (command === 'content-types') {

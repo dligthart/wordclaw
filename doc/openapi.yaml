@@ -1233,6 +1233,150 @@ paths:
                 description: Specific instructions for the AI agent to fix this error
                 type: string
               context: {}
+  /api/capabilities:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - generatedAt
+                  - product
+                  - discovery
+                  - protocolSurfaces
+                  - modules
+                  - capabilities
+                properties:
+                  generatedAt:
+                    type: string
+                  product:
+                    type: object
+                    required:
+                      - name
+                      - positioning
+                    properties:
+                      name:
+                        type: string
+                      positioning:
+                        type: string
+                  discovery:
+                    type: object
+                    required:
+                      - restManifestPath
+                      - mcpResourceUri
+                      - cliCommand
+                    properties:
+                      restManifestPath:
+                        type: string
+                      mcpResourceUri:
+                        type: string
+                      cliCommand:
+                        type: string
+                  protocolSurfaces:
+                    type: object
+                    additionalProperties: true
+                  auth:
+                    type: object
+                    additionalProperties: true
+                  modules:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - tier
+                        - enabled
+                        - description
+                      properties:
+                        id:
+                          type: string
+                        tier:
+                          type: string
+                        enabled:
+                          type: boolean
+                        description:
+                          type: string
+                  paidContent:
+                    type: object
+                    additionalProperties: true
+                  capabilities:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - description
+                        - dryRun
+                      properties:
+                        id:
+                          type: string
+                        description:
+                          type: string
+                        rest:
+                          type: object
+                          additionalProperties: true
+                        mcp:
+                          type: object
+                          additionalProperties: true
+                        graphql:
+                          type:
+                            - "null"
+                            - object
+                          additionalProperties: true
+                        dryRun:
+                          type: boolean
+                  protocolContract:
+                    type: object
+                    additionalProperties: true
+                  limitations:
+                    type: array
+                    items:
+                      type: string
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
   /api/domains:
     get:
       responses:

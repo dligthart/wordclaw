@@ -12,6 +12,8 @@ npm run mcp:start
 
 The server communicates over **stdio** (stdin/stdout), which is the standard transport for local MCP integrations.
 
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, and the current MCP transport limitation (`stdio` only).
+
 ## Tools
 
 Tools are the primary interface for agents. Each tool maps to a CRUD operation and uses Zod for input validation.
@@ -75,6 +77,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 
 | Resource         | Description                           |
 |------------------|---------------------------------------|
+| `capabilities`   | Deployment capability manifest as JSON |
 | `content-types`  | Returns the content type catalog as text |
 
 Resources give agents read-only context about the system state.

@@ -123,6 +123,56 @@ describe('API Route Contracts', () => {
         restoreAuthEnv();
     });
 
+    it('exposes a public capability manifest without requiring auth', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.ENABLE_EXPERIMENTAL_REVENUE = 'false';
+        process.env.ENABLE_EXPERIMENTAL_DELEGATION = 'false';
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    discovery: {
+                        restManifestPath: string;
+                        mcpResourceUri: string;
+                    };
+                    protocolSurfaces: {
+                        mcp: {
+                            transport: string;
+                            attachable: boolean;
+                        };
+                    };
+                    modules: Array<{
+                        id: string;
+                        enabled: boolean;
+                    }>;
+                    limitations: string[];
+                };
+            };
+
+            expect(body.data.discovery.restManifestPath).toBe('/api/capabilities');
+            expect(body.data.discovery.mcpResourceUri).toBe('system://capabilities');
+            expect(body.data.protocolSurfaces.mcp.transport).toBe('stdio');
+            expect(body.data.protocolSurfaces.mcp.attachable).toBe(false);
+            expect(body.data.modules).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ id: 'content-runtime', enabled: true }),
+                    expect.objectContaining({ id: 'agent-runs', enabled: false }),
+                ]),
+            );
+            expect(body.data.limitations).toContain('mcp_stdio_only');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('does not register the experimental earnings route by default', async () => {
         delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
         const app = await buildServer();

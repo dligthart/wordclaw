@@ -366,6 +366,14 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         client.listResources(),
         client.listPrompts(),
     ]);
+    let manifest: unknown = null;
+
+    try {
+        const manifestText = await client.readResource('system://capabilities');
+        manifest = maybeParseJson(manifestText);
+    } catch {
+        manifest = null;
+    }
 
     return {
         toolCount: tools.length,
@@ -374,6 +382,7 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         tools,
         resources,
         prompts,
+        manifest,
     };
 }
 

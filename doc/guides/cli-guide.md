@@ -101,6 +101,7 @@ Important transport note:
 - WordClaw MCP currently uses `stdio`
 - the CLI starts its own local MCP child process
 - it does **not** attach to a separately running MCP process
+- `mcp inspect` now also includes the deployment manifest when the MCP server exposes `system://capabilities`
 
 If WordClaw later adds a networked MCP transport, the CLI can be extended to connect to a long-running MCP endpoint instead.
 
@@ -125,6 +126,23 @@ Supported flags:
 
 - `--query-json` or `--query-file`
 - `--body-json` or `--body-file`
+
+### Capability Manifest
+
+Use the deployment manifest when an agent needs to discover what this WordClaw instance actually supports before choosing a protocol or auth path:
+
+```bash
+node dist/cli/index.js capabilities show
+node dist/cli/index.js caps show --raw
+```
+
+The manifest reports:
+
+- required vs compatibility protocol surfaces
+- MCP transport behavior
+- auth and domain-context expectations
+- enabled core and experimental modules
+- the current core capability matrix and dry-run support
 
 ### Content Types
 

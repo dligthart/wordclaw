@@ -30,6 +30,7 @@ import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import { buildSupervisorPrincipal, toAuditActor, type AuditActor } from '../services/actor-identity.js';
+import { buildCapabilityManifest } from '../services/capability-manifest.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -504,6 +505,10 @@ export default async function apiRoutes(server: FastifyInstance) {
             return undefined;
         }
 
+        if (path === '/api/capabilities') {
+            return undefined;
+        }
+
         if (!principal) {
             const auth = await authenticateApiRequest(request.headers);
             if (!auth.ok) {
@@ -531,6 +536,97 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         return undefined;
+    });
+
+    server.get('/capabilities', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Object({
+                    generatedAt: Type.String(),
+                    product: Type.Object({
+                        name: Type.String(),
+                        positioning: Type.String()
+                    }),
+                    discovery: Type.Object({
+                        restManifestPath: Type.String(),
+                        mcpResourceUri: Type.String(),
+                        cliCommand: Type.String()
+                    }),
+                    protocolSurfaces: Type.Object({
+                        rest: Type.Object({
+                            role: Type.String(),
+                            basePath: Type.String()
+                        }),
+                        mcp: Type.Object({
+                            role: Type.String(),
+                            transport: Type.String(),
+                            attachable: Type.Boolean()
+                        }),
+                        graphql: Type.Object({
+                            role: Type.String()
+                        })
+                    }),
+                    auth: Type.Object({
+                        rest: Type.Object({
+                            apiKeyHeader: Type.String(),
+                            bearerHeader: Type.String(),
+                            supervisorCookie: Type.String()
+                        }),
+                        domainContext: Type.Object({
+                            supervisorHeader: Type.String(),
+                            apiKeysAreDomainScoped: Type.Boolean(),
+                            mcpDomainEnv: Type.String()
+                        })
+                    }),
+                    modules: Type.Array(Type.Object({
+                        id: Type.String(),
+                        tier: Type.String(),
+                        enabled: Type.Boolean(),
+                        description: Type.String()
+                    })),
+                    paidContent: Type.Object({
+                        l402Enabled: Type.Boolean(),
+                        purchaseFlowSurface: Type.String(),
+                        entitlementReadSurface: Type.String(),
+                        note: Type.String()
+                    }),
+                    capabilities: Type.Array(Type.Object({
+                        id: Type.String(),
+                        description: Type.String(),
+                        rest: Type.Object({
+                            method: Type.String(),
+                            path: Type.String()
+                        }),
+                        mcp: Type.Object({
+                            tool: Type.String()
+                        }),
+                        graphql: Type.Union([
+                            Type.Object({
+                                operation: Type.String(),
+                                field: Type.String()
+                            }),
+                            Type.Null()
+                        ]),
+                        dryRun: Type.Boolean()
+                    })),
+                    protocolContract: Type.Object({
+                        required: Type.Array(Type.String()),
+                        compatibility: Type.Array(Type.String())
+                    }),
+                    limitations: Type.Array(Type.String())
+                }))
+            }
+        }
+    }, async () => {
+        return {
+            data: buildCapabilityManifest(),
+            meta: buildMeta(
+                'Use the deployment manifest to choose protocol, auth path, and enabled module surface before acting.',
+                ['GET /api/capabilities'],
+                'low',
+                1
+            )
+        };
     });
 
     server.post('/sandbox/mcp/execute', {

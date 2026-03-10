@@ -17,6 +17,7 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
 import { buildMcpLocalPrincipal } from '../services/actor-identity.js';
+import { buildCapabilityManifest } from '../services/capability-manifest.js';
 
 function withMCPPolicy<T>(operation: string, extractResource: (args: T) => any, handler: (args: T, extra: any, domainId: number) => Promise<ToolResult>) {
     return async (args: T, extra: any) => {
@@ -2062,6 +2063,19 @@ server.tool(
             return err(`Error adding comment: ${(error as Error).message}`);
         }
     })
+);
+
+server.resource(
+    'capabilities',
+    'system://capabilities',
+    async (uri) => {
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(buildCapabilityManifest(), null, 2)
+            }]
+        };
+    }
 );
 
 server.resource(
