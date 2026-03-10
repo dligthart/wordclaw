@@ -15,11 +15,17 @@ Current config (`drizzle.config.ts`):
 # Apply committed SQL migrations (recommended for shared environments)
 npx drizzle-kit migrate
 
+# Repository runtime migrator wrapper
+npm run db:migrate
+
 # Generate new SQL migration files from schema changes
 npx drizzle-kit generate
 
 # Push schema directly (fast local iteration, no SQL files created)
 npx drizzle-kit push
+
+# Baseline/stamp a pre-existing local database with an empty journal
+npm run db:stamp -- --through 0019_unified_actor_identity
 ```
 
 ## Two Supported Workflows
@@ -41,6 +47,7 @@ npx drizzle-kit generate
 
 ```bash
 npx drizzle-kit migrate
+npm run db:migrate
 ```
 
 This is the safest and most repeatable flow across machines and environments.
@@ -68,6 +75,7 @@ docker compose up -d
 
 ```bash
 npx drizzle-kit migrate
+npm run db:migrate
 ```
 
 If you changed schema and need a new migration first:
@@ -75,7 +83,30 @@ If you changed schema and need a new migration first:
 ```bash
 npx drizzle-kit generate
 npx drizzle-kit migrate
+npm run db:migrate
 ```
+
+## Baseline Existing Local Databases
+
+If your local PostgreSQL database already contains the application tables but
+`drizzle.__drizzle_migrations` is empty, the normal migrator will stop and ask
+you to baseline the journal first.
+
+That usually means the local database predates the committed migration flow.
+
+To baseline that kind of database:
+
+```bash
+npm run db:stamp -- --through 0019_unified_actor_identity
+npm run db:migrate
+```
+
+Notes:
+
+- `db:stamp` is only for pre-existing local databases with real app tables and an empty journal.
+- It refuses to run on an empty schema.
+- It also refuses to run if the journal already contains rows.
+- Choose the `--through` tag that matches the schema already present in that database.
 
 ## Migration Tracking Table
 
