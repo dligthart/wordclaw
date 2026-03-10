@@ -46,7 +46,10 @@ describe('buildCapabilityManifest', () => {
         const manifest = buildCapabilityManifest();
 
         expect(manifest.discovery.restManifestPath).toBe('/api/capabilities');
+        expect(manifest.discovery.restIdentityPath).toBe('/api/identity');
         expect(manifest.discovery.mcpResourceUri).toBe('system://capabilities');
+        expect(manifest.discovery.mcpActorResourceUri).toBe('system://current-actor');
+        expect(manifest.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
         expect(manifest.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
         expect(manifest.protocolSurfaces.mcp.endpoint).toBe('/mcp');
         expect(manifest.protocolSurfaces.mcp.attachable).toBe(true);
@@ -80,6 +83,14 @@ describe('buildCapabilityManifest', () => {
                     }),
                 }),
                 expect.objectContaining({
+                    id: 'env-key',
+                    actorType: 'env_key',
+                    authMode: 'api-key',
+                    domainContext: expect.objectContaining({
+                        strategy: 'server-configured-default',
+                    }),
+                }),
+                expect.objectContaining({
                     id: 'supervisor-session',
                     actorType: 'supervisor',
                     domainContext: expect.objectContaining({
@@ -95,7 +106,7 @@ describe('buildCapabilityManifest', () => {
                     id: 'discover-deployment',
                     recommendedAuth: 'none',
                     preferredActorProfile: 'public-discovery',
-                    supportedActorProfiles: expect.arrayContaining(['public-discovery', 'api-key']),
+                    supportedActorProfiles: expect.arrayContaining(['public-discovery', 'api-key', 'env-key']),
                 }),
                 expect.objectContaining({
                     id: 'author-content',

@@ -16,7 +16,7 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
-import { buildMcpLocalPrincipal, type ActorPrincipal } from '../services/actor-identity.js';
+import { buildCurrentActorSnapshot, buildMcpLocalPrincipal, type ActorPrincipal } from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
 
 type McpRequestExtra = {
@@ -2112,6 +2112,19 @@ server.resource(
             contents: [{
                 uri: uri.href,
                 text: JSON.stringify(buildCapabilityManifest().agentGuidance, null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
+    'current-actor',
+    'system://current-actor',
+    async (uri, extra) => {
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(buildCurrentActorSnapshot(resolveMcpPrincipal(extra as McpRequestExtra | undefined)), null, 2)
             }]
         };
     }

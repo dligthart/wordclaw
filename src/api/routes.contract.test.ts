@@ -141,7 +141,10 @@ describe('API Route Contracts', () => {
                 data: {
                     discovery: {
                         restManifestPath: string;
+                        restIdentityPath: string;
                         mcpResourceUri: string;
+                        mcpActorResourceUri: string;
+                        cliWhoAmICommand: string;
                     };
                     protocolSurfaces: {
                         mcp: {
@@ -187,7 +190,10 @@ describe('API Route Contracts', () => {
             };
 
             expect(body.data.discovery.restManifestPath).toBe('/api/capabilities');
+            expect(body.data.discovery.restIdentityPath).toBe('/api/identity');
             expect(body.data.discovery.mcpResourceUri).toBe('system://capabilities');
+            expect(body.data.discovery.mcpActorResourceUri).toBe('system://current-actor');
+            expect(body.data.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
             expect(body.data.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
             expect(body.data.protocolSurfaces.mcp.endpoint).toBe('/mcp');
             expect(body.data.protocolSurfaces.mcp.attachable).toBe(true);
@@ -230,6 +236,13 @@ describe('API Route Contracts', () => {
                             strategy: 'environment',
                         }),
                     }),
+                    expect.objectContaining({
+                        id: 'env-key',
+                        actorType: 'env_key',
+                        domainContext: expect.objectContaining({
+                            strategy: 'server-configured-default',
+                        }),
+                    }),
                 ]),
             );
             expect(body.data.agentGuidance.taskRecipes).toEqual(
@@ -238,11 +251,58 @@ describe('API Route Contracts', () => {
                         id: 'consume-paid-content',
                         preferredSurface: 'rest',
                         preferredActorProfile: 'api-key',
-                        supportedActorProfiles: ['api-key'],
+                        supportedActorProfiles: ['api-key', 'env-key'],
                         recommendedApiKeyScopes: ['content:read'],
                     }),
                 ]),
             );
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns the current canonical actor snapshot for authenticated callers', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/identity',
+                headers: {
+                    'x-api-key': 'remote-admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    actorId: string;
+                    actorType: string;
+                    actorSource: string;
+                    actorProfileId: string;
+                    domainId: number;
+                    scopes: string[];
+                    profile: {
+                        id: string;
+                        authMode: string;
+                    } | null;
+                };
+            };
+
+            expect(body.data).toEqual(expect.objectContaining({
+                actorId: 'env_key:remote-admin',
+                actorType: 'env_key',
+                actorSource: 'env',
+                actorProfileId: 'env-key',
+                domainId: 1,
+                scopes: ['admin'],
+                profile: expect.objectContaining({
+                    id: 'env-key',
+                    authMode: 'api-key',
+                }),
+            }));
         } finally {
             await app.close();
         }

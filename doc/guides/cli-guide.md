@@ -110,7 +110,7 @@ Important transport note:
 - the CLI defaults to local `stdio` transport unless you pass `--mcp-transport http` or `--mcp-url`
 - when running in `stdio` mode, the CLI starts its own local MCP child process
 - when running in `http` mode, the CLI attaches directly to `/mcp`
-- `mcp inspect` now also includes the deployment manifest when the MCP server exposes `system://capabilities`
+- `mcp inspect` now also includes the deployment manifest and current actor snapshot when the MCP server exposes `system://capabilities` and `system://current-actor`
 
 Usability details:
 
@@ -141,6 +141,7 @@ Use the deployment manifest when an agent needs to discover what this WordClaw i
 ```bash
 node dist/cli/index.js capabilities show
 node dist/cli/index.js caps show --raw
+node dist/cli/index.js capabilities whoami
 ```
 
 The manifest reports:
@@ -152,6 +153,13 @@ The manifest reports:
 - enabled core and experimental modules
 - the current core capability matrix and dry-run support
 - task-oriented routing hints and recommended recipes for common agent jobs
+
+When you need to confirm the active credential before a mutation, use:
+
+```bash
+node dist/cli/index.js capabilities whoami
+node dist/cli/index.js mcp whoami
+```
 
 ### Content Types
 

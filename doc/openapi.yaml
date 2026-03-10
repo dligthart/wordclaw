@@ -1270,14 +1270,23 @@ paths:
                     type: object
                     required:
                       - restManifestPath
+                      - restIdentityPath
                       - mcpResourceUri
+                      - mcpActorResourceUri
                       - cliCommand
+                      - cliWhoAmICommand
                     properties:
                       restManifestPath:
                         type: string
+                      restIdentityPath:
+                        type: string
                       mcpResourceUri:
                         type: string
+                      mcpActorResourceUri:
+                        type: string
                       cliCommand:
+                        type: string
+                      cliWhoAmICommand:
                         type: string
                   protocolSurfaces:
                     type: object
@@ -1498,6 +1507,49 @@ paths:
                   recommendedNextAction:
                     description: The most logical next step for the agent
                     type: string
+  /api/identity:
+    get:
+      responses:
+        "200":
+          description: Current authenticated actor
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - actorId
+                  - actorType
+                  - actorSource
+                  - actorProfileId
+                  - domainId
+                  - scopes
+                properties:
+                  actorId:
+                    type: string
+                  actorType:
+                    type: string
+                  actorSource:
+                    type: string
+                  actorProfileId:
+                    type: string
+                  domainId:
+                    type: integer
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                  profile:
+                    type:
+                      - "null"
+                      - object
+                    additionalProperties: true
+              meta:
+                additionalProperties: true
+                type: object
                   availableActions:
                     description: List of all possible actions from this state
                     type: array

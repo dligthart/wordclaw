@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    buildCurrentActorSnapshot,
+    buildEnvKeyPrincipal,
     buildApiKeyPrincipal,
     buildMcpLocalPrincipal,
     buildSupervisorPrincipal,
+    resolveActorProfileId,
     toAuditActor
 } from './actor-identity.js';
 
@@ -49,6 +52,20 @@ describe('actor identity helpers', () => {
             actorType: 'api_key',
             actorSource: 'db',
             userId: 9
+        });
+    });
+
+    it('maps env-backed API keys to the env-key actor profile', () => {
+        const principal = buildEnvKeyPrincipal('writer', 1, new Set(['content:write']));
+
+        expect(resolveActorProfileId(principal)).toBe('env-key');
+        expect(buildCurrentActorSnapshot(principal)).toEqual({
+            actorId: 'env_key:writer',
+            actorType: 'env_key',
+            actorSource: 'env',
+            actorProfileId: 'env-key',
+            domainId: 1,
+            scopes: ['content:write'],
         });
     });
 });

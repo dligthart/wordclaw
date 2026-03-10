@@ -102,6 +102,7 @@ describe('MCP HTTP transport', () => {
         const prompts = await client.listPrompts();
         const capabilityResource = await client.readResource({ uri: 'system://capabilities' });
         const guidanceResource = await client.readResource({ uri: 'system://agent-guidance' });
+        const actorResource = await client.readResource({ uri: 'system://current-actor' });
         const taskPrompt = await client.getPrompt({
             name: 'task-guidance',
             arguments: {
@@ -119,6 +120,7 @@ describe('MCP HTTP transport', () => {
         expect(tools.tools.some((tool) => tool.name === 'evaluate_policy')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://agent-guidance')).toBe(true);
+        expect(resources.resources.some((resource) => resource.uri === 'system://current-actor')).toBe(true);
         expect(prompts.prompts.some((prompt) => prompt.name === 'task-guidance')).toBe(true);
 
         const manifestText = capabilityResource.contents.find((entry) => 'text' in entry)?.text;
@@ -162,10 +164,18 @@ describe('MCP HTTP transport', () => {
         const taskPromptText = extractPromptUserText(
             taskPrompt.messages as Array<{ role: 'user' | 'assistant'; content: { type: string; text?: string } }>,
         );
+        const actorText = actorResource.contents.find((entry) => 'text' in entry)?.text;
+        expect(typeof actorText).toBe('string');
+        expect(JSON.parse(actorText as string)).toEqual(expect.objectContaining({
+            actorId: 'env_key:remote-admin',
+            actorType: 'env_key',
+            actorProfileId: 'env-key',
+            domainId: 1,
+        }));
         expect(taskPromptText).toContain('Task: author-content');
         expect(taskPromptText).toContain('Preferred surface: mcp');
         expect(taskPromptText).toContain('Preferred actor profile: api-key');
-        expect(taskPromptText).toContain('Supported actor profiles: api-key, mcp-local, supervisor-session');
+        expect(taskPromptText).toContain('Supported actor profiles: api-key, env-key, mcp-local, supervisor-session');
         expect(taskPromptText).toContain('Actor type: api_key');
         expect(taskPromptText).toContain('Domain context: implicit-from-key');
 

@@ -11,7 +11,7 @@ WordClaw now exposes MCP in two ways:
 - **Local stdio** for embedded or developer-run MCP sessions
 - **Streamable HTTP** at `/mcp` for attachable remote clients
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as authoring, review, integration setup, and paid-content consumption. If you want only the task-routing layer, use `system://agent-guidance` instead.
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as authoring, review, integration setup, and paid-content consumption. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
 
 ## Starting the Local MCP Server
 
@@ -105,6 +105,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | Resource         | Description                           |
 |------------------|---------------------------------------|
 | `capabilities`   | Deployment capability manifest as JSON |
+| `current-actor`  | Canonical actor, domain, and scope snapshot for the current MCP session |
 | `agent-guidance` | Task-oriented routing hints and recipes for agent workflows |
 | `content-types`  | Returns the content type catalog as text |
 

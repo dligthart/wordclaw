@@ -40,8 +40,8 @@ const TOP_LEVEL_COMMANDS = [
     'workflow',
     'l402',
 ] as const;
-const MCP_SUBCOMMANDS = ['inspect', 'call', 'prompt', 'resource', 'smoke'] as const;
-const CAPABILITY_SUBCOMMANDS = ['show'] as const;
+const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smoke'] as const;
+const CAPABILITY_SUBCOMMANDS = ['show', 'whoami'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
 const CONTENT_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
@@ -95,6 +95,7 @@ Usage:
 
 Commands:
   mcp inspect
+  mcp whoami
   mcp call <tool> [--json <object>|--file <path>]
   mcp prompt <prompt> [--json <object>|--file <path>]
   mcp resource <uri>
@@ -102,6 +103,7 @@ Commands:
     MCP options: [--mcp-transport stdio|http] [--mcp-url <url>]
 
   capabilities show
+  capabilities whoami
 
   rest request <method> <path> [--query-json <object>] [--body-json <object>|--body-file <path>]
 
@@ -245,6 +247,20 @@ async function handleMcp(repoRoot: string, args: ParsedArgs) {
             return;
         }
 
+        if (action === 'whoami') {
+            const text = await client.readResource('system://current-actor');
+            printStructured(
+                args,
+                {
+                    transport: 'mcp',
+                    action: 'whoami',
+                    actor: JSON.parse(text),
+                },
+                text,
+            );
+            return;
+        }
+
         if (action === 'call') {
             const toolName = requirePositional(args, 2, 'tool name');
             const payload = requireJsonMap(
@@ -360,15 +376,25 @@ async function handleCapabilities(client: RestCliClient, args: ParsedArgs) {
         CAPABILITY_SUBCOMMANDS,
     );
 
-    if (action !== 'show') {
-        throw buildUnknownCommandError('capabilities subcommand', action, CAPABILITY_SUBCOMMANDS);
+    if (action === 'show') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/capabilities',
+        });
+        printResponse(args, response);
+        return;
     }
 
-    const response = await client.request({
-        method: 'GET',
-        path: '/capabilities',
-    });
-    printResponse(args, response);
+    if (action === 'whoami') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/identity',
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    throw buildUnknownCommandError('capabilities subcommand', action, CAPABILITY_SUBCOMMANDS);
 }
 
 async function handleContentTypes(client: RestCliClient, args: ParsedArgs) {

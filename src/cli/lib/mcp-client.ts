@@ -333,12 +333,20 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         client.listPrompts(),
     ]);
     let manifest: unknown = null;
+    let currentActor: unknown = null;
 
     try {
         const manifestText = await client.readResource('system://capabilities');
         manifest = maybeParseJson(manifestText);
     } catch {
         manifest = null;
+    }
+
+    try {
+        const currentActorText = await client.readResource('system://current-actor');
+        currentActor = maybeParseJson(currentActorText);
+    } catch {
+        currentActor = null;
     }
 
     return {
@@ -349,6 +357,7 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         resources,
         prompts,
         manifest,
+        currentActor,
     };
 }
 

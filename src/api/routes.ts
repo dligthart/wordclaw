@@ -29,7 +29,13 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
-import { buildSupervisorPrincipal, toAuditActor, type AuditActor } from '../services/actor-identity.js';
+import {
+    buildCurrentActorSnapshot,
+    buildSupervisorPrincipal,
+    toAuditActor,
+    type ActorPrincipal,
+    type AuditActor,
+} from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
@@ -434,6 +440,19 @@ function toLegacyActorUserId(request: { authPrincipal?: { keyId?: number | strin
     return typeof request.authPrincipal?.keyId === 'number' ? request.authPrincipal.keyId : undefined;
 }
 
+function buildCurrentActorResponse(principal: ActorPrincipal) {
+    const manifest = buildCapabilityManifest();
+    const snapshot = buildCurrentActorSnapshot(principal);
+    const profile = manifest.agentGuidance.actorProfiles.find(
+        (candidate) => candidate.id === snapshot.actorProfileId,
+    );
+
+    return {
+        ...snapshot,
+        profile: profile ?? null,
+    };
+}
+
 function clampLimit(limit: number | undefined, fallback = 50, max = 500): number {
     if (limit === undefined) {
         return fallback;
@@ -483,7 +502,7 @@ function decodeCursor(cursor: string): { createdAt: Date; id: number } | null {
 
 export default async function apiRoutes(server: FastifyInstance) {
     server.addHook('preHandler', async (request, reply) => {
-        let principal: { keyId: number | string; scopes: Set<string>; source: string; domainId?: number } | null = null;
+        let principal: ActorPrincipal | null = null;
         try {
             await request.jwtVerify({ onlyCookie: true });
             const user = request.user as { sub: number, role: string };
@@ -514,7 +533,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             if (!auth.ok) {
                 return reply.status(auth.statusCode).send(auth.payload);
             }
-            principal = auth.principal as { keyId: number | string; scopes: Set<string>; source: string; domainId?: number };
+            principal = auth.principal;
         }
 
         (request as any).authPrincipal = principal;
@@ -549,8 +568,11 @@ export default async function apiRoutes(server: FastifyInstance) {
                     }),
                     discovery: Type.Object({
                         restManifestPath: Type.String(),
+                        restIdentityPath: Type.String(),
                         mcpResourceUri: Type.String(),
-                        cliCommand: Type.String()
+                        mcpActorResourceUri: Type.String(),
+                        cliCommand: Type.String(),
+                        cliWhoAmICommand: Type.String()
                     }),
                     protocolSurfaces: Type.Object({
                         rest: Type.Object({
@@ -679,6 +701,59 @@ export default async function apiRoutes(server: FastifyInstance) {
                 ['GET /api/capabilities'],
                 'low',
                 1
+            )
+        };
+    });
+
+    server.get('/identity', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Object({
+                    actorId: Type.String(),
+                    actorType: Type.String(),
+                    actorSource: Type.String(),
+                    actorProfileId: Type.String(),
+                    domainId: Type.Number(),
+                    scopes: Type.Array(Type.String()),
+                    profile: Type.Union([
+                        Type.Object({
+                            id: Type.String(),
+                            label: Type.String(),
+                            actorType: Type.String(),
+                            authMode: Type.String(),
+                            availableSurfaces: Type.Array(Type.String()),
+                            actorIdExamples: Type.Array(Type.String()),
+                            recommendedFor: Type.Array(Type.String()),
+                            developmentOnly: Type.Optional(Type.Boolean()),
+                            domainContext: Type.Object({
+                                required: Type.Boolean(),
+                                strategy: Type.String(),
+                                header: Type.Optional(Type.String()),
+                                environmentVariable: Type.Optional(Type.String()),
+                                note: Type.String()
+                            }),
+                            notes: Type.Array(Type.String())
+                        }),
+                        Type.Null(),
+                    ]),
+                })),
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+            }
+        }
+    }, async (request) => {
+        const principal = (request as { authPrincipal?: ActorPrincipal }).authPrincipal;
+        if (!principal) {
+            throw new Error('AUTH_PRINCIPAL_UNAVAILABLE');
+        }
+
+        return {
+            data: buildCurrentActorResponse(principal),
+            meta: buildMeta(
+                'Use this actor snapshot to confirm the active credential, domain, and scope set before mutating runtime state.',
+                ['GET /api/capabilities'],
+                'low',
+                1,
             )
         };
     });

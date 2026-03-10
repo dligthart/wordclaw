@@ -1,5 +1,6 @@
 export type ActorType = 'supervisor' | 'api_key' | 'env_key' | 'mcp' | 'anonymous' | 'system';
 export type ActorSource = 'cookie' | 'db' | 'env' | 'local' | 'anonymous' | 'system' | 'test';
+export type ActorProfileId = 'public-discovery' | 'api-key' | 'env-key' | 'supervisor-session' | 'mcp-local' | 'anonymous-local-dev';
 
 export type ActorIdentity = {
     actorId: string;
@@ -21,6 +22,12 @@ export type PrincipalLike = Partial<ActorIdentity> & {
 
 export type AuditActor = ActorIdentity & {
     userId?: number | null;
+};
+
+export type CurrentActorSnapshot = ActorIdentity & {
+    actorProfileId: ActorProfileId;
+    domainId: number;
+    scopes: string[];
 };
 
 export function buildApiKeyPrincipal(keyId: number, domainId: number, scopes: Set<string>): ActorPrincipal {
@@ -173,5 +180,39 @@ export function toAuditActor(actor: number | PrincipalLike | AuditActor | null |
             && typeof actor.keyId === 'number'
             ? actor.keyId
             : null
+    };
+}
+
+export function resolveActorProfileId(principal: PrincipalLike | null | undefined): ActorProfileId {
+    const identity = resolveActorIdentity(principal);
+
+    if (!identity) {
+        return 'public-discovery';
+    }
+
+    switch (identity.actorType) {
+        case 'api_key':
+            return 'api-key';
+        case 'env_key':
+            return 'env-key';
+        case 'supervisor':
+            return 'supervisor-session';
+        case 'mcp':
+            return 'mcp-local';
+        case 'anonymous':
+            return 'anonymous-local-dev';
+        default:
+            return 'public-discovery';
+    }
+}
+
+export function buildCurrentActorSnapshot(principal: ActorPrincipal): CurrentActorSnapshot {
+    return {
+        actorId: principal.actorId,
+        actorType: principal.actorType,
+        actorSource: principal.actorSource,
+        actorProfileId: resolveActorProfileId(principal),
+        domainId: principal.domainId,
+        scopes: Array.from(principal.scopes).sort(),
     };
 }
