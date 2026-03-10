@@ -96,6 +96,7 @@ The repo also ships with a JSON-first CLI for MCP and REST automation:
 ```bash
 # Source mode
 npx tsx src/cli/index.ts mcp inspect
+npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts capabilities show
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
@@ -113,6 +114,8 @@ export WORDCLAW_API_KEY=writer
 ```
 
 Use `node dist/cli/index.js --help` (or `npx tsx src/cli/index.ts --help`) to see the available command groups for capability discovery, MCP, REST, workflows, and L402. The CLI also supports shorthand aliases like `caps`, `ct ls`, and `content ls`, typo suggestions for unknown commands, and `--raw` output when you want only the response body or MCP text.
+
+For MCP commands, the CLI defaults to local `stdio` transport. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` when you want it to attach to the running remote MCP endpoint instead.
 
 Before writing a custom client, you can inspect the deployment contract directly:
 

@@ -1,32 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-
-type JsonRpcRequest = {
-    jsonrpc: '2.0';
-    id?: number;
-    method: string;
-    params?: Record<string, unknown>;
-};
-
-type JsonRpcResponse = {
-    jsonrpc: '2.0';
-    id?: number;
-    result?: unknown;
-    error?: {
-        code?: number;
-        message?: string;
-        data?: unknown;
-    };
-    method?: string;
-    params?: Record<string, unknown>;
-};
-
-type PendingRequest = {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
-};
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 export type ToolDefinition = {
     name: string;
@@ -77,7 +53,15 @@ export type SmokeSummary = {
     failedCount: number;
 };
 
-const REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_MCP_HTTP_ENDPOINT = 'http://localhost:4000/mcp';
+
+export type McpTransportMode = 'stdio' | 'http';
+
+export type WordClawMcpClientOptions = {
+    transport?: McpTransportMode;
+    endpoint?: string;
+    apiKey?: string;
+};
 
 export function resolveRepoRoot(entryPath = process.argv[1]): string {
     const cwdCandidate = path.join(process.cwd(), 'src', 'mcp', 'index.ts');
@@ -106,6 +90,40 @@ function resolveMcpCommand(repoRoot: string): { command: string; args: string[] 
         command: 'npx',
         args: ['tsx', sourceScript],
     };
+}
+
+function stringifyPromptArgs(
+    args: Record<string, unknown>,
+): Record<string, string> | undefined {
+    const entries = Object.entries(args).map(([key, value]) => [
+        key,
+        typeof value === 'string' ? value : JSON.stringify(value),
+    ]);
+
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function sanitizeProcessEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+    return Object.fromEntries(
+        Object.entries(env).filter(
+            (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+    );
+}
+
+export function resolveMcpHttpEndpoint(
+    explicitEndpoint?: string,
+    baseUrl?: string,
+): string {
+    if (explicitEndpoint) {
+        return explicitEndpoint;
+    }
+
+    if (baseUrl) {
+        return new URL('/mcp', `${baseUrl.replace(/\/$/, '')}/`).toString();
+    }
+
+    return DEFAULT_MCP_HTTP_ENDPOINT;
 }
 
 function maybeParseJson(raw: string): unknown {
@@ -183,150 +201,94 @@ function uniqueSlug(prefix: string): string {
 
 export class WordClawMcpClient {
     private readonly repoRoot: string;
-    private readonly child: ChildProcessWithoutNullStreams;
-    private readonly pending = new Map<number, PendingRequest>();
-    private buffer = '';
-    private requestId = 0;
+    private readonly transportMode: McpTransportMode;
+    private readonly endpoint?: string;
+    private readonly apiKey?: string;
+    private client: Client | null = null;
+    private transport: StdioClientTransport | StreamableHTTPClientTransport | null = null;
 
-    constructor(repoRoot: string) {
+    constructor(repoRoot: string, options: WordClawMcpClientOptions = {}) {
         this.repoRoot = repoRoot;
-        const mcp = resolveMcpCommand(repoRoot);
-        this.child = spawn(mcp.command, mcp.args, {
-            cwd: this.repoRoot,
-            env: process.env,
-            stdio: ['pipe', 'pipe', 'pipe'],
-        });
-
-        this.child.stdout.on('data', (data: Buffer) => this.handleData(data));
-        this.child.stderr.on('data', (data: Buffer) => {
-            const message = data.toString().trim();
-            if (message) {
-                console.error(`[mcp] ${message}`);
-            }
-        });
-        this.child.on('exit', (code, signal) => {
-            const error = new Error(
-                `MCP child exited unexpectedly (code=${code ?? 'null'}, signal=${signal ?? 'null'}).`,
-            );
-
-            for (const pending of this.pending.values()) {
-                clearTimeout(pending.timeout);
-                pending.reject(error);
-            }
-            this.pending.clear();
-        });
+        this.transportMode = options.transport ?? 'stdio';
+        this.endpoint = options.endpoint;
+        this.apiKey = options.apiKey;
     }
 
-    private handleData(data: Buffer) {
-        this.buffer += data.toString();
-        const lines = this.buffer.split('\n');
-
-        while (lines.length > 1) {
-            const line = lines.shift();
-            if (!line || !line.trim()) {
-                continue;
-            }
-
-            try {
-                const response = JSON.parse(line) as JsonRpcResponse;
-
-                if (typeof response.id === 'number') {
-                    const pending = this.pending.get(response.id);
-                    if (!pending) {
-                        continue;
-                    }
-
-                    clearTimeout(pending.timeout);
-                    this.pending.delete(response.id);
-
-                    if (response.error) {
-                        pending.reject(
-                            new Error(
-                                response.error.message ??
-                                    `JSON-RPC error on request ${response.id}`,
-                            ),
-                        );
-                    } else {
-                        pending.resolve(response.result);
-                    }
-                }
-            } catch {
-                // Ignore non-JSON log noise on stdout.
-            }
+    private requireClient(): Client {
+        if (!this.client) {
+            throw new Error('MCP client is not initialized.');
         }
 
-        this.buffer = lines.join('\n');
-    }
-
-    private send(
-        method: string,
-        params: Record<string, unknown> = {},
-    ): Promise<unknown> {
-        this.requestId += 1;
-        const id = this.requestId;
-        const request: JsonRpcRequest = {
-            jsonrpc: '2.0',
-            id,
-            method,
-            params,
-        };
-
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.pending.delete(id);
-                reject(
-                    new Error(
-                        `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s: ${method}`,
-                    ),
-                );
-            }, REQUEST_TIMEOUT_MS);
-
-            this.pending.set(id, { resolve, reject, timeout });
-            this.child.stdin.write(`${JSON.stringify(request)}\n`);
-        });
-    }
-
-    private notify(method: string, params: Record<string, unknown> = {}) {
-        const request: JsonRpcRequest = {
-            jsonrpc: '2.0',
-            method,
-            params,
-        };
-        this.child.stdin.write(`${JSON.stringify(request)}\n`);
+        return this.client;
     }
 
     async initialize() {
-        await this.send('initialize', {
-            protocolVersion: '2024-11-05',
-            capabilities: {},
-            clientInfo: {
-                name: 'wordclaw-cli',
-                version: '1.0.0',
-            },
+        if (this.client) {
+            return;
+        }
+
+        const client = new Client({
+            name: 'wordclaw-cli',
+            version: '1.0.0',
         });
-        this.notify('notifications/initialized');
+        if (this.transportMode === 'http') {
+            const headers: Record<string, string> = {};
+            if (this.apiKey) {
+                headers['x-api-key'] = this.apiKey;
+            }
+
+            this.transport = new StreamableHTTPClientTransport(
+                new URL(this.endpoint ?? DEFAULT_MCP_HTTP_ENDPOINT),
+                {
+                    requestInit: Object.keys(headers).length > 0
+                        ? { headers }
+                        : undefined,
+                },
+            );
+        } else {
+            const mcp = resolveMcpCommand(this.repoRoot);
+            const transport = new StdioClientTransport({
+                command: mcp.command,
+                args: mcp.args,
+                cwd: this.repoRoot,
+                env: sanitizeProcessEnv(process.env),
+                stderr: 'pipe',
+            });
+
+            transport.stderr?.on('data', (data: Buffer | string) => {
+                const message = data.toString().trim();
+                if (message) {
+                    console.error(`[mcp] ${message}`);
+                }
+            });
+
+            this.transport = transport;
+        }
+
+        await client.connect(this.transport);
+        this.client = client;
     }
 
     async listTools(): Promise<ToolDefinition[]> {
-        const result = asObject(await this.send('tools/list'), 'tools/list');
-        return asArray<ToolDefinition>(result.tools);
+        const result = await this.requireClient().listTools();
+        return result.tools as ToolDefinition[];
     }
 
     async listResources(): Promise<ResourceDefinition[]> {
-        const result = asObject(await this.send('resources/list'), 'resources/list');
-        return asArray<ResourceDefinition>(result.resources);
+        const result = await this.requireClient().listResources();
+        return result.resources as ResourceDefinition[];
     }
 
     async readResource(uri: string): Promise<string> {
         return extractResourceText(
-            await this.send('resources/read', { uri }),
+            await this.requireClient().readResource({ uri }),
             `resources/read(${uri})`,
         );
     }
 
     async listPrompts(): Promise<PromptDefinition[]> {
-        const result = asObject(await this.send('prompts/list'), 'prompts/list');
-        return asArray<PromptDefinition>(result.prompts);
+        const result = await this.requireClient().listPrompts();
+        return result.prompts as PromptDefinition[];
     }
 
     async getPrompt(
@@ -334,9 +296,9 @@ export class WordClawMcpClient {
         args: Record<string, unknown> = {},
     ): Promise<string> {
         return extractPromptText(
-            await this.send('prompts/get', {
+            await this.requireClient().getPrompt({
                 name,
-                arguments: args,
+                arguments: stringifyPromptArgs(args),
             }),
             `prompts/get(${name})`,
         );
@@ -347,7 +309,7 @@ export class WordClawMcpClient {
         args: Record<string, unknown> = {},
     ): Promise<ToolCallOutput> {
         return extractToolText(
-            await this.send('tools/call', {
+            await this.requireClient().callTool({
                 name,
                 arguments: args,
             }),
@@ -356,7 +318,11 @@ export class WordClawMcpClient {
     }
 
     async stop() {
-        this.child.kill();
+        if (this.client) {
+            await this.client.close();
+            this.client = null;
+        }
+        this.transport = null;
     }
 }
 

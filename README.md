@@ -104,6 +104,7 @@ WordClaw now includes a repo-native CLI for MCP and REST workflows:
 ```bash
 # Run from source
 npx tsx src/cli/index.ts mcp inspect
+npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
@@ -119,6 +120,8 @@ The CLI is JSON-first so agents can script it reliably, and `--raw` is available
 - REST content type and content item CRUD
 - REST workflow submission and approval decisions
 - REST L402 consumption flows for offers, purchase confirmation, entitlements, and paid reads
+
+MCP commands default to local `stdio`. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` to attach the CLI directly to the running remote MCP endpoint instead.
 
 Use environment variables for REST auth:
 

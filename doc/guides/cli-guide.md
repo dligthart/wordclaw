@@ -2,7 +2,7 @@
 
 The WordClaw CLI is a JSON-first command-line interface for agents and operators. It wraps both of the product's primary agent surfaces:
 
-- `MCP` for local tool discovery and stdio-based agent workflows
+- `MCP` for local tool discovery or remote MCP attachment
 - `REST` for content operations, workflows, and L402 purchase/entitlement flows
 
 Use the CLI when you want a scriptable interface without writing a custom MCP client or hand-rolling HTTP requests.
@@ -86,6 +86,12 @@ node dist/cli/index.js mcp call list_content_types --json '{"limit":5}'
 node dist/cli/index.js mcp prompt workflow-guidance
 node dist/cli/index.js mcp resource content://types
 node dist/cli/index.js mcp smoke
+
+# Attach to a running remote MCP endpoint instead of spawning stdio
+node dist/cli/index.js mcp inspect \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
 ```
 
 Supported MCP features:
@@ -99,9 +105,9 @@ Supported MCP features:
 Important transport note:
 
 - WordClaw exposes both `stdio` and remote Streamable HTTP at `/mcp`
-- the current CLI MCP commands still use the local `stdio` transport
-- the CLI starts its own local MCP child process
-- it does **not** yet attach to a running `/mcp` endpoint
+- the CLI defaults to local `stdio` transport unless you pass `--mcp-transport http` or `--mcp-url`
+- when running in `stdio` mode, the CLI starts its own local MCP child process
+- when running in `http` mode, the CLI attaches directly to `/mcp`
 - `mcp inspect` now also includes the deployment manifest when the MCP server exposes `system://capabilities`
 
 Usability details:
@@ -273,7 +279,7 @@ Recommended agent pattern:
 
 ## Current Limitations
 
-- The CLI MCP workflow still uses `stdio`, so it spawns a new local MCP server process for each MCP session even though the runtime now also exposes `/mcp` for remote clients.
+- Use `--mcp-transport http` or `--mcp-url` when you want the CLI to attach to a running remote MCP endpoint instead of spawning a local stdio process.
 - L402 purchase confirmation depends on a live offer, a valid invoice challenge, and payment-provider state in the target environment.
 
 ## Related Docs

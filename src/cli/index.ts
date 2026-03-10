@@ -17,6 +17,7 @@ import {
 } from './lib/command-resolution.js';
 import {
     inspectCapabilities,
+    resolveMcpHttpEndpoint,
     resolveRepoRoot,
     runSmoke,
     WordClawMcpClient,
@@ -97,6 +98,7 @@ Commands:
   mcp prompt <prompt> [--json <object>|--file <path>]
   mcp resource <uri>
   mcp smoke
+    MCP options: [--mcp-transport stdio|http] [--mcp-url <url>]
 
   capabilities show
 
@@ -140,10 +142,14 @@ Global options:
   --help, -h          Show this help message
   --base-url <url>    Override WORDCLAW_BASE_URL for REST commands
   --api-key <key>     Override WORDCLAW_API_KEY for REST commands
+  --mcp-transport     MCP transport for mcp commands: stdio or http
+  --mcp-url <url>     Remote MCP endpoint. Defaults to <base-url>/mcp for HTTP mode
 
 Environment:
   WORDCLAW_BASE_URL   Default: http://localhost:4000
   WORDCLAW_API_KEY    API key used for REST requests
+  WORDCLAW_MCP_URL    Remote MCP endpoint for mcp commands
+  WORDCLAW_MCP_TRANSPORT  Default MCP transport override for mcp commands
 `;
 }
 
@@ -211,7 +217,23 @@ async function handleMcp(repoRoot: string, args: ParsedArgs) {
         'mcp subcommand',
         MCP_SUBCOMMANDS,
     );
-    const client = new WordClawMcpClient(repoRoot);
+    const baseUrl = getStringFlag(args, 'base-url') ?? process.env.WORDCLAW_BASE_URL;
+    const explicitEndpoint = getStringFlag(args, 'mcp-url') ?? process.env.WORDCLAW_MCP_URL;
+    const requestedTransport = getStringFlag(args, 'mcp-transport') ?? process.env.WORDCLAW_MCP_TRANSPORT;
+    if (requestedTransport && requestedTransport !== 'stdio' && requestedTransport !== 'http') {
+        throw new Error('--mcp-transport must be "stdio" or "http".');
+    }
+    const transport = requestedTransport === 'http' || explicitEndpoint
+        ? 'http'
+        : 'stdio';
+    const endpoint = transport === 'http'
+        ? resolveMcpHttpEndpoint(explicitEndpoint, baseUrl)
+        : undefined;
+    const client = new WordClawMcpClient(repoRoot, {
+        transport,
+        endpoint,
+        apiKey: getStringFlag(args, 'api-key') ?? process.env.WORDCLAW_API_KEY,
+    });
 
     try {
         await client.initialize();
