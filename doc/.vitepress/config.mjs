@@ -72,12 +72,7 @@ export default withMermaid(defineConfig({
                             { text: '0020 Autonomous Content Ops Agent', link: '/rfc/proposed/0020-autonomous-content-ops-agent' }
                         ]
                     },
-                    {
-                        text: 'Partially Implemented',
-                        items: [
-                            { text: '0010 Supervisor UI Usability and Accessibility Hardening', link: '/rfc/partially-implemented/0010-supervisor-ui-usability-and-accessibility-hardening' }
-                        ]
-                    },
+
                     {
                         text: 'Implemented Core / Optional',
                         items: [
@@ -86,6 +81,7 @@ export default withMermaid(defineConfig({
                             { text: '0004 Agentic Content Licensing and Entitlements', link: '/rfc/implemented/0004-agentic-content-licensing-and-entitlements' },
                             { text: '0007 Policy-Driven Editorial Workflow', link: '/rfc/implemented/0007-policy-driven-editorial-workflow' },
                             { text: '0008 Cross-Protocol Policy Parity Framework', link: '/rfc/implemented/0008-cross-protocol-policy-parity-framework' },
+                            { text: '0010 Supervisor UI Usability and Accessibility Hardening', link: '/rfc/implemented/0010-supervisor-ui-usability-and-accessibility-hardening' },
                             { text: '0011 Multi-Domain Tenant Support', link: '/rfc/implemented/0011-multi-domain-tenant-support' },
                             { text: '0012 Native Vector RAG Endpoints', link: '/rfc/implemented/0012-native-vector-rag-endpoints' },
                             { text: '0014 L402 Production Readiness Operator Runbook', link: '/rfc/implemented/0014-l402-production-readiness-operator-runbook' },
