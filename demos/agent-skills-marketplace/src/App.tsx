@@ -200,29 +200,30 @@ export default function App() {
       setError(null);
 
       try {
-        const contentTypesResponse = await fetch(`${API_URL}/content-types`, {
+        const targetResponse = await fetch(`${API_URL}/workspace-target?intent=paid`, {
           headers: { 'x-api-key': API_KEY },
         });
-        const contentTypesPayload = (await contentTypesResponse.json()) as ApiEnvelope<
-          Array<{ id: number; slug: string }>
-        >;
 
-        if (!contentTypesResponse.ok) {
+        const targetPayload = (await targetResponse.json()) as ApiEnvelope<{
+          bestTarget?: {
+            contentType?: { id: number; slug: string };
+          };
+        }>;
+
+        if (!targetResponse.ok) {
           throw new Error(
             getErrorMessage(
-              contentTypesPayload,
-              'Failed to load content types for the demo library.',
+              targetPayload,
+              'Failed to resolve the workspace target for paid capabilities.',
             ),
           );
         }
 
-        const capabilityType = contentTypesPayload.data.find(
-          (contentType) => contentType.slug === 'agent-skill',
-        );
+        const capabilityType = targetPayload.data?.bestTarget?.contentType;
 
         if (!capabilityType) {
           throw new Error(
-            'Content type "agent-skill" was not found. Run npx tsx scripts/setup-skills-marketplace.ts first.',
+            'The workspace could not automatically resolve a schema target for paid capabilities. Run npx tsx scripts/setup-skills-marketplace.ts first.',
           );
         }
 
@@ -355,10 +356,10 @@ export default function App() {
         const primaryOffer = offersPayload.data[0] ?? null;
         const activeEntitlement = primaryOffer
           ? entitlementsPayload.data.find(
-              (entitlement) =>
-                entitlement.offerId === primaryOffer.id &&
-                entitlement.status === 'active',
-            ) ?? null
+            (entitlement) =>
+              entitlement.offerId === primaryOffer.id &&
+              entitlement.status === 'active',
+          ) ?? null
           : null;
 
         if (!cancelled) {
@@ -581,22 +582,20 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveView('library')}
-              className={`border-b pb-1 transition ${
-                activeView === 'library'
-                  ? 'border-stone-100 text-stone-100'
-                  : 'border-transparent hover:text-stone-100'
-              }`}
+              className={`border-b pb-1 transition ${activeView === 'library'
+                ? 'border-stone-100 text-stone-100'
+                : 'border-transparent hover:text-stone-100'
+                }`}
             >
               Library
             </button>
             <button
               type="button"
               onClick={() => setActiveView('flow')}
-              className={`border-b pb-1 transition ${
-                activeView === 'flow'
-                  ? 'border-stone-100 text-stone-100'
-                  : 'border-transparent hover:text-stone-100'
-              }`}
+              className={`border-b pb-1 transition ${activeView === 'flow'
+                ? 'border-stone-100 text-stone-100'
+                : 'border-transparent hover:text-stone-100'
+                }`}
             >
               Current Flow
             </button>
@@ -627,12 +626,20 @@ export default function App() {
                 Demo Uses
               </div>
               <div className="mt-3 flex items-center gap-3 text-sm text-stone-200">
+                <Search className="h-4 w-4 text-amber-300" />
+                Smart workspace targeting for paid consumption
+              </div>
+              <div className="mt-2 flex items-center gap-3 text-sm text-stone-200">
                 <FileCode2 className="h-4 w-4 text-amber-300" />
                 Published content items as capability payloads
               </div>
               <div className="mt-2 flex items-center gap-3 text-sm text-stone-200">
                 <Wallet className="h-4 w-4 text-amber-300" />
                 Offers, purchases, and entitlements
+              </div>
+              <div className="mt-2 flex items-center gap-3 text-sm text-stone-200">
+                <ShieldCheck className="h-4 w-4 text-amber-300" />
+                Actor-aware provenance guidance
               </div>
               <div className="mt-2 flex items-center gap-3 text-sm text-stone-200">
                 <KeyRound className="h-4 w-4 text-amber-300" />
@@ -666,7 +673,12 @@ export default function App() {
           >
             {[
               {
-                title: '1. Model capabilities as content',
+                title: '1. Resolve workspace target',
+                body:
+                  'Instead of guessing the API schema, the client asks the runtime for `intent=paid` guidance to auto-resolve the best schema target from the workspace context.',
+              },
+              {
+                title: '2. Model capabilities as content',
                 body:
                   'Capability payloads are plain WordClaw content items. The demo setup script creates the agent-skill content type and publishes several paid capability entries.',
               },
@@ -742,11 +754,10 @@ export default function App() {
                         key={capability.id}
                         type="button"
                         onClick={() => setSelectedCapabilityId(capability.id)}
-                        className={`rounded-3xl border px-5 py-5 text-left transition ${
-                          isSelected
-                            ? 'border-amber-400/50 bg-amber-500/10'
-                            : 'border-white/8 bg-stone-900/70 hover:border-white/20'
-                        }`}
+                        className={`rounded-3xl border px-5 py-5 text-left transition ${isSelected
+                          ? 'border-amber-400/50 bg-amber-500/10'
+                          : 'border-white/8 bg-stone-900/70 hover:border-white/20'
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div>
