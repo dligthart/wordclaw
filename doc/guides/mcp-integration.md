@@ -11,7 +11,7 @@ WordClaw now exposes MCP in two ways:
 - **Local stdio** for embedded or developer-run MCP sessions
 - **Streamable HTTP** at `/mcp` for attachable remote clients
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as authoring, review, integration setup, provenance verification, and paid-content consumption. For the live readiness layer, read `system://deployment-status`. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption. For the live readiness layer, read `system://deployment-status`. For the authenticated workspace layer, read `system://workspace-context`. That workspace snapshot now also groups the strongest authoring, workflow, review, and paid-content targets for the active actor. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
 
 Recommended remote MCP preflight:
 
@@ -31,12 +31,22 @@ node dist/cli/index.js mcp resource system://deployment-status \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
+node dist/cli/index.js mcp resource system://workspace-context \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
 node dist/cli/index.js mcp resource system://agent-guidance \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
 node dist/cli/index.js mcp call guide_task '{"taskId":"discover-deployment"}' \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
+node dist/cli/index.js mcp call guide_task '{"taskId":"discover-workspace"}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
@@ -143,7 +153,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 
 | Tool         | Description                                                                |
 |--------------|----------------------------------------------------------------------------|
-| `guide_task` | Returns live, actor-aware task guidance for deployment discovery, content authoring, review, integrations, provenance checks, or paid-content flows |
+| `guide_task` | Returns live, actor-aware task guidance for deployment discovery, workspace targeting, content authoring, review, integrations, provenance checks, or paid-content flows |
 
 ## Resources
 
@@ -152,6 +162,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | `capabilities`   | Deployment capability manifest as JSON |
 | `deployment-status` | Live readiness snapshot for database, REST, MCP, and enabled workers |
 | `current-actor`  | Canonical actor, domain, and scope snapshot for the current MCP session |
+| `workspace-context` | Current domain, accessible domains, and content-model inventory for the active actor |
 | `agent-guidance` | Task-oriented routing hints and recipes for agent workflows |
 | `content-types`  | Returns the content type catalog as text |
 
@@ -170,6 +181,7 @@ Prompts are templates that help agents follow best practices when interacting wi
 Current task ids exposed through `task-guidance`:
 
 - `discover-deployment`
+- `discover-workspace`
 - `author-content`
 - `review-workflow`
 - `manage-integrations`
@@ -178,6 +190,7 @@ Current task ids exposed through `task-guidance`:
 Current task ids exposed through `guide_task`:
 
 - `discover-deployment`
+- `discover-workspace`
 - `author-content` with `contentTypeId`
 - `review-workflow` with optional `reviewTaskId`
 - `manage-integrations`

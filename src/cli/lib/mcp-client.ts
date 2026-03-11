@@ -335,6 +335,7 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
     let manifest: unknown = null;
     let deploymentStatus: unknown = null;
     let currentActor: unknown = null;
+    let workspaceContext: unknown = null;
 
     try {
         const manifestText = await client.readResource('system://capabilities');
@@ -357,6 +358,13 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         deploymentStatus = null;
     }
 
+    try {
+        const workspaceContextText = await client.readResource('system://workspace-context');
+        workspaceContext = maybeParseJson(workspaceContextText);
+    } catch {
+        workspaceContext = null;
+    }
+
     return {
         toolCount: tools.length,
         resourceCount: resources.length,
@@ -367,6 +375,7 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         manifest,
         deploymentStatus,
         currentActor,
+        workspaceContext,
     };
 }
 

@@ -25,6 +25,8 @@ import { buildWorkflowGuide } from '../cli/lib/workflow-guide.js';
 import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
 import { buildL402Guide } from '../cli/lib/l402-guide.js';
 import { buildAuditGuide } from '../cli/lib/audit-guide.js';
+import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
+import { getWorkspaceContextSnapshot } from '../services/workspace-context.js';
 
 type McpRequestExtra = {
     authInfo?: {
@@ -34,6 +36,7 @@ type McpRequestExtra = {
 
 const GUIDE_TASK_IDS = [
     'discover-deployment',
+    'discover-workspace',
     'author-content',
     'review-workflow',
     'manage-integrations',
@@ -2263,6 +2266,20 @@ server.tool(
             });
         }
 
+        if (taskId === 'discover-workspace') {
+            const workspaceContext = await getWorkspaceContextSnapshot(currentActor);
+            const guide = buildWorkspaceGuide({
+                currentActor,
+                workspace: workspaceContext,
+            });
+
+            return okJson({
+                ...basePayload,
+                workspaceContext,
+                guide,
+            });
+        }
+
         if (taskId === 'author-content') {
             if (contentTypeId === undefined) {
                 return err('MISSING_CONTENT_TYPE_ID: guide_task author-content requires contentTypeId.');
@@ -2555,6 +2572,20 @@ server.resource(
             contents: [{
                 uri: uri.href,
                 text: JSON.stringify(buildCurrentActorSnapshot(resolveMcpPrincipal(extra as McpRequestExtra | undefined)), null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
+    'workspace-context',
+    'system://workspace-context',
+    async (uri, extra) => {
+        const currentActor = buildCurrentActorSnapshot(resolveMcpPrincipal(extra as McpRequestExtra | undefined));
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(await getWorkspaceContextSnapshot(currentActor), null, 2)
             }]
         };
     }

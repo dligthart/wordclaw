@@ -146,11 +146,14 @@ describe('API Route Contracts', () => {
                         restManifestPath: string;
                         restStatusPath: string;
                         restIdentityPath: string;
+                        restWorkspacePath: string;
                         mcpResourceUri: string;
                         mcpStatusResourceUri: string;
                         mcpActorResourceUri: string;
+                        mcpWorkspaceResourceUri: string;
                         cliStatusCommand: string;
                         cliWhoAmICommand: string;
+                        cliWorkspaceCommand: string;
                     };
                     protocolSurfaces: {
                         mcp: {
@@ -198,11 +201,14 @@ describe('API Route Contracts', () => {
             expect(body.data.discovery.restManifestPath).toBe('/api/capabilities');
             expect(body.data.discovery.restStatusPath).toBe('/api/deployment-status');
             expect(body.data.discovery.restIdentityPath).toBe('/api/identity');
+            expect(body.data.discovery.restWorkspacePath).toBe('/api/workspace-context');
             expect(body.data.discovery.mcpResourceUri).toBe('system://capabilities');
             expect(body.data.discovery.mcpStatusResourceUri).toBe('system://deployment-status');
             expect(body.data.discovery.mcpActorResourceUri).toBe('system://current-actor');
+            expect(body.data.discovery.mcpWorkspaceResourceUri).toBe('system://workspace-context');
             expect(body.data.discovery.cliStatusCommand).toBe('node dist/cli/index.js capabilities status');
             expect(body.data.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
+            expect(body.data.discovery.cliWorkspaceCommand).toBe('node dist/cli/index.js workspace guide');
             expect(body.data.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
             expect(body.data.protocolSurfaces.mcp.endpoint).toBe('/mcp');
             expect(body.data.protocolSurfaces.mcp.attachable).toBe(true);
@@ -223,6 +229,11 @@ describe('API Route Contracts', () => {
                     }),
                     expect.objectContaining({
                         intent: 'author-content',
+                        preferredSurface: 'mcp',
+                        preferredActorProfile: 'api-key',
+                    }),
+                    expect.objectContaining({
+                        intent: 'discover-workspace',
                         preferredSurface: 'mcp',
                         preferredActorProfile: 'api-key',
                     }),
@@ -261,10 +272,16 @@ describe('API Route Contracts', () => {
             );
             expect(body.data.agentGuidance.taskRecipes).toEqual(
                 expect.arrayContaining([
-                    expect.objectContaining({
-                        id: 'consume-paid-content',
-                        preferredSurface: 'rest',
-                        preferredActorProfile: 'api-key',
+                expect.objectContaining({
+                    id: 'discover-workspace',
+                    preferredSurface: 'mcp',
+                    preferredActorProfile: 'api-key',
+                    recommendedApiKeyScopes: ['content:read'],
+                }),
+                expect.objectContaining({
+                    id: 'consume-paid-content',
+                    preferredSurface: 'rest',
+                    preferredActorProfile: 'api-key',
                         supportedActorProfiles: ['api-key', 'env-key'],
                         recommendedApiKeyScopes: ['content:read'],
                     }),
@@ -321,6 +338,204 @@ describe('API Route Contracts', () => {
             expect(body.data.checks.agentRuns).toEqual(expect.objectContaining({
                 status: 'disabled',
                 enabled: false,
+            }));
+            expect(body.data.warnings).toEqual([]);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns workspace context for authenticated callers', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        name: 'Local Dev',
+                        hostname: 'localhost',
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        name: 'Scenario Blog Post',
+                        slug: 'scenario-blog-post',
+                        description: 'Scenario content',
+                        schema: '{"type":"object","required":["title"],"properties":{"title":{"type":"string"},"body":{"type":"string"}}}',
+                        basePrice: null,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 500,
+                        contentTypeId: 7,
+                        status: 'published',
+                        updatedAt: new Date('2026-03-10T10:00:00Z'),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 22,
+                        domainId: 1,
+                        name: 'Editorial Flow',
+                        contentTypeId: 7,
+                        active: true,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        workflowId: 22,
+                    }, {
+                        workflowId: 22,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        scopeRef: 7,
+                        priceSats: 150,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        contentItemId: 500,
+                    }]),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/workspace-context',
+                headers: {
+                    'x-api-key': 'remote-admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    currentActor: { actorId: string; actorProfileId: string; domainId: number };
+                    currentDomain: { id: number; name: string; hostname: string; current: boolean };
+                    accessibleDomains: Array<{ id: number; current: boolean }>;
+                    summary: {
+                        totalContentTypes: number;
+                        contentTypesWithContent: number;
+                        workflowEnabledContentTypes: number;
+                        paidContentTypes: number;
+                        pendingReviewTaskCount: number;
+                    };
+                    targets: {
+                        authoring: Array<{
+                            id: number;
+                            reason: string;
+                            recommendedCommands: { contentGuide: string };
+                        }>;
+                        review: Array<{
+                            id: number;
+                            reason: string;
+                        }>;
+                        workflow: Array<{
+                            id: number;
+                            reason: string;
+                        }>;
+                        paid: Array<{
+                            id: number;
+                            reason: string;
+                        }>;
+                    };
+                    contentTypes: Array<{
+                        id: number;
+                        slug: string;
+                        itemCount: number;
+                        pendingReviewTaskCount: number;
+                        workflow: { activeWorkflowCount: number; activeWorkflows: Array<{ transitionCount: number }> };
+                        paid: { activeTypeOfferCount: number; lowestTypeOfferSats: number | null };
+                        recommendedCommands: { contentGuide: string; workflowActive: string };
+                    }>;
+                    warnings: string[];
+                };
+            };
+
+            expect(body.data.currentActor).toEqual(expect.objectContaining({
+                actorId: 'env_key:remote-admin',
+                actorProfileId: 'env-key',
+                domainId: 1,
+            }));
+            expect(body.data.currentDomain).toEqual({
+                id: 1,
+                name: 'Local Dev',
+                hostname: 'localhost',
+                current: true,
+            });
+            expect(body.data.accessibleDomains).toEqual([{
+                id: 1,
+                name: 'Local Dev',
+                hostname: 'localhost',
+                current: true,
+            }]);
+            expect(body.data.summary).toEqual({
+                totalContentTypes: 1,
+                contentTypesWithContent: 1,
+                workflowEnabledContentTypes: 1,
+                paidContentTypes: 1,
+                pendingReviewTaskCount: 1,
+            });
+            expect(body.data.targets).toEqual({
+                authoring: [expect.objectContaining({
+                    id: 7,
+                    reason: '1 stored item(s) and 1 active workflow(s) make this a strong authoring target.',
+                    recommendedCommands: expect.objectContaining({
+                        contentGuide: 'node dist/cli/index.js content guide --content-type-id 7',
+                    }),
+                })],
+                review: [expect.objectContaining({
+                    id: 7,
+                    reason: '1 pending review task(s) across 1 stored item(s).',
+                })],
+                workflow: [expect.objectContaining({
+                    id: 7,
+                    reason: '1 active workflow(s) and 1 pending review task(s) are mapped to this schema.',
+                })],
+                paid: [expect.objectContaining({
+                    id: 7,
+                    reason: '1 active type offer(s), starting at 150 sats.',
+                })],
+            });
+            expect(body.data.contentTypes[0]).toEqual(expect.objectContaining({
+                id: 7,
+                slug: 'scenario-blog-post',
+                itemCount: 1,
+                pendingReviewTaskCount: 1,
+                workflow: expect.objectContaining({
+                    activeWorkflowCount: 1,
+                    activeWorkflows: [expect.objectContaining({
+                        transitionCount: 2,
+                    })],
+                }),
+                paid: expect.objectContaining({
+                    activeTypeOfferCount: 1,
+                    lowestTypeOfferSats: 150,
+                }),
+                recommendedCommands: expect.objectContaining({
+                    contentGuide: 'node dist/cli/index.js content guide --content-type-id 7',
+                    workflowActive: 'node dist/cli/index.js workflow active --content-type-id 7',
+                }),
             }));
             expect(body.data.warnings).toEqual([]);
         } finally {

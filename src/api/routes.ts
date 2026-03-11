@@ -38,6 +38,7 @@ import {
 } from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
 import { getDeploymentStatusSnapshot } from '../services/deployment-status.js';
+import { getWorkspaceContextSnapshot } from '../services/workspace-context.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -573,12 +574,15 @@ export default async function apiRoutes(server: FastifyInstance) {
                         restManifestPath: Type.String(),
                         restStatusPath: Type.String(),
                         restIdentityPath: Type.String(),
+                        restWorkspacePath: Type.String(),
                         mcpResourceUri: Type.String(),
                         mcpStatusResourceUri: Type.String(),
                         mcpActorResourceUri: Type.String(),
+                        mcpWorkspaceResourceUri: Type.String(),
                         cliCommand: Type.String(),
                         cliStatusCommand: Type.String(),
-                        cliWhoAmICommand: Type.String()
+                        cliWhoAmICommand: Type.String(),
+                        cliWorkspaceCommand: Type.String()
                     }),
                     protocolSurfaces: Type.Object({
                         rest: Type.Object({
@@ -849,6 +853,159 @@ export default async function apiRoutes(server: FastifyInstance) {
                 ['GET /api/capabilities'],
                 'low',
                 1,
+            )
+        };
+    });
+
+    server.get('/workspace-context', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Object({
+                    generatedAt: Type.String(),
+                    currentActor: Type.Object({
+                        actorId: Type.String(),
+                        actorType: Type.String(),
+                        actorSource: Type.String(),
+                        actorProfileId: Type.String(),
+                        domainId: Type.Number(),
+                        scopes: Type.Array(Type.String()),
+                        assignmentRefs: Type.Array(Type.String()),
+                    }),
+                    currentDomain: Type.Object({
+                        id: Type.Number(),
+                        name: Type.String(),
+                        hostname: Type.String(),
+                        current: Type.Boolean(),
+                    }),
+                    accessibleDomains: Type.Array(Type.Object({
+                        id: Type.Number(),
+                        name: Type.String(),
+                        hostname: Type.String(),
+                        current: Type.Boolean(),
+                    })),
+                    summary: Type.Object({
+                        totalContentTypes: Type.Number(),
+                        contentTypesWithContent: Type.Number(),
+                        workflowEnabledContentTypes: Type.Number(),
+                        paidContentTypes: Type.Number(),
+                        pendingReviewTaskCount: Type.Number(),
+                    }),
+                    targets: Type.Object({
+                        authoring: Type.Array(Type.Object({
+                            id: Type.Number(),
+                            name: Type.String(),
+                            slug: Type.String(),
+                            itemCount: Type.Number(),
+                            pendingReviewTaskCount: Type.Number(),
+                            activeWorkflowCount: Type.Number(),
+                            activeTypeOfferCount: Type.Number(),
+                            reason: Type.String(),
+                            recommendedCommands: Type.Object({
+                                contentGuide: Type.String(),
+                                listContent: Type.String(),
+                                workflowActive: Type.String(),
+                            }),
+                        })),
+                        review: Type.Array(Type.Object({
+                            id: Type.Number(),
+                            name: Type.String(),
+                            slug: Type.String(),
+                            itemCount: Type.Number(),
+                            pendingReviewTaskCount: Type.Number(),
+                            activeWorkflowCount: Type.Number(),
+                            activeTypeOfferCount: Type.Number(),
+                            reason: Type.String(),
+                            recommendedCommands: Type.Object({
+                                contentGuide: Type.String(),
+                                listContent: Type.String(),
+                                workflowActive: Type.String(),
+                            }),
+                        })),
+                        workflow: Type.Array(Type.Object({
+                            id: Type.Number(),
+                            name: Type.String(),
+                            slug: Type.String(),
+                            itemCount: Type.Number(),
+                            pendingReviewTaskCount: Type.Number(),
+                            activeWorkflowCount: Type.Number(),
+                            activeTypeOfferCount: Type.Number(),
+                            reason: Type.String(),
+                            recommendedCommands: Type.Object({
+                                contentGuide: Type.String(),
+                                listContent: Type.String(),
+                                workflowActive: Type.String(),
+                            }),
+                        })),
+                        paid: Type.Array(Type.Object({
+                            id: Type.Number(),
+                            name: Type.String(),
+                            slug: Type.String(),
+                            itemCount: Type.Number(),
+                            pendingReviewTaskCount: Type.Number(),
+                            activeWorkflowCount: Type.Number(),
+                            activeTypeOfferCount: Type.Number(),
+                            reason: Type.String(),
+                            recommendedCommands: Type.Object({
+                                contentGuide: Type.String(),
+                                listContent: Type.String(),
+                                workflowActive: Type.String(),
+                            }),
+                        })),
+                    }),
+                    contentTypes: Type.Array(Type.Object({
+                        id: Type.Number(),
+                        name: Type.String(),
+                        slug: Type.String(),
+                        description: Type.Union([Type.String(), Type.Null()]),
+                        fieldCount: Type.Number(),
+                        requiredFieldCount: Type.Number(),
+                        itemCount: Type.Number(),
+                        hasContent: Type.Boolean(),
+                        pendingReviewTaskCount: Type.Number(),
+                        lastItemUpdatedAt: Type.Union([Type.String(), Type.Null()]),
+                        paid: Type.Object({
+                            basePrice: Type.Union([Type.Number(), Type.Null()]),
+                            activeTypeOfferCount: Type.Number(),
+                            lowestTypeOfferSats: Type.Union([Type.Number(), Type.Null()]),
+                        }),
+                        workflow: Type.Object({
+                            activeWorkflowCount: Type.Number(),
+                            activeWorkflows: Type.Array(Type.Object({
+                                id: Type.Number(),
+                                name: Type.String(),
+                                transitionCount: Type.Number(),
+                            })),
+                        }),
+                        recommendedCommands: Type.Object({
+                            contentGuide: Type.String(),
+                            listContent: Type.String(),
+                            workflowActive: Type.String(),
+                        }),
+                    })),
+                    warnings: Type.Array(Type.String()),
+                })),
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+            }
+        }
+    }, async (request) => {
+        const principal = (request as { authPrincipal?: ActorPrincipal }).authPrincipal;
+        if (!principal) {
+            throw new Error('AUTH_PRINCIPAL_UNAVAILABLE');
+        }
+
+        const snapshot = await getWorkspaceContextSnapshot(buildCurrentActorSnapshot(principal));
+
+        return {
+            data: snapshot,
+            meta: buildMeta(
+                'Use the workspace context to choose a domain-aware content model before authoring, review, or paid-content actions.',
+                [
+                    'GET /api/identity',
+                    'GET /api/content-types',
+                ],
+                'low',
+                2,
             )
         };
     });

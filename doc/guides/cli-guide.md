@@ -86,10 +86,12 @@ node dist/cli/index.js mcp call list_content_types --json '{"limit":5}'
 node dist/cli/index.js mcp prompt workflow-guidance
 node dist/cli/index.js mcp prompt task-guidance --json '{"taskId":"author-content"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-deployment"}'
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-workspace"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"manage-integrations"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}'
 node dist/cli/index.js mcp resource content://types
 node dist/cli/index.js mcp resource system://deployment-status
+node dist/cli/index.js mcp resource system://workspace-context
 node dist/cli/index.js mcp resource system://agent-guidance
 node dist/cli/index.js mcp smoke
 
@@ -114,8 +116,8 @@ Important transport note:
 - the CLI defaults to local `stdio` transport unless you pass `--mcp-transport http` or `--mcp-url`
 - when running in `stdio` mode, the CLI starts its own local MCP child process
 - when running in `http` mode, the CLI attaches directly to `/mcp`
-- `mcp inspect` now also includes the deployment manifest, deployment status, and current actor snapshot when the MCP server exposes `system://capabilities`, `system://deployment-status`, and `system://current-actor`
-- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, authoring, review, integrations, provenance checks, and paid-content flows
+- `mcp inspect` now also includes the deployment manifest, deployment status, current actor snapshot, and workspace context when the MCP server exposes `system://capabilities`, `system://deployment-status`, `system://current-actor`, and `system://workspace-context`
+- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, workspace targeting, authoring, review, integrations, provenance checks, and paid-content flows
 
 Usability details:
 
@@ -138,6 +140,28 @@ Supported flags:
 
 - `--query-json` or `--query-file`
 - `--body-json` or `--body-file`
+
+### Workspace Guidance
+
+Use the workspace guide when an agent needs to discover which schemas are actually available in the current domain before choosing an authoring or review target:
+
+```bash
+node dist/cli/index.js workspace guide
+```
+
+The guide combines:
+
+- the current actor snapshot from `/api/identity`
+- the authenticated workspace inventory from `/api/workspace-context`
+
+The result tells you:
+
+- which domain the current actor is bound to
+- which domains are selectable for the current actor profile
+- which content models exist in the current domain
+- which models already have content, active workflows, pending review tasks, or active type-level paid offers
+- which grouped authoring, workflow, review, and paid-content targets are the best next candidates
+- which concrete `content guide`, `content list`, and `workflow active` commands to run next
 
 ### Integration Guidance
 
@@ -204,6 +228,7 @@ The manifest reports:
 - enabled core and experimental modules
 - the current core capability matrix and dry-run support
 - task-oriented routing hints and recommended recipes for common agent jobs
+- a workspace-context discovery path for domains and content-model targeting after authentication
 - a dedicated provenance-verification recipe with audit-scope expectations
 
 When you need to confirm the active credential before a mutation, use:

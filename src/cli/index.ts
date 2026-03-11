@@ -32,13 +32,16 @@ import { buildIntegrationGuide } from './lib/integration-guide.js';
 import { buildL402Guide } from './lib/l402-guide.js';
 import { buildWorkflowGuide } from './lib/workflow-guide.js';
 import { buildAuditGuide } from './lib/audit-guide.js';
+import { buildWorkspaceGuide } from './lib/workspace-guide.js';
 import type { CurrentActorSnapshot } from '../services/actor-identity.js';
+import type { WorkspaceContextSnapshot } from '../services/workspace-context.js';
 
 type JsonMap = Record<string, unknown>;
 
 const TOP_LEVEL_COMMANDS = [
     'mcp',
     'capabilities',
+    'workspace',
     'audit',
     'rest',
     'integrations',
@@ -49,6 +52,7 @@ const TOP_LEVEL_COMMANDS = [
 ] as const;
 const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smoke'] as const;
 const CAPABILITY_SUBCOMMANDS = ['show', 'status', 'whoami'] as const;
+const WORKSPACE_SUBCOMMANDS = ['guide'] as const;
 const AUDIT_SUBCOMMANDS = ['list', 'guide'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
@@ -114,6 +118,8 @@ Commands:
   capabilities show
   capabilities status
   capabilities whoami
+
+  workspace guide
 
   audit list [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>] [--cursor <value>]
   audit guide [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>]
@@ -564,6 +570,61 @@ async function handleCapabilities(client: RestCliClient, args: ParsedArgs) {
     }
 
     throw buildUnknownCommandError('capabilities subcommand', action, CAPABILITY_SUBCOMMANDS);
+}
+
+async function handleWorkspace(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'workspace subcommand',
+        WORKSPACE_SUBCOMMANDS,
+    );
+
+    const actorResult = await tryFetchCurrentActor(client);
+    const warnings = [...actorResult.warnings];
+    let workspace: WorkspaceContextSnapshot | null = null;
+
+    if (action === 'guide') {
+        try {
+            const response = await client.request({
+                method: 'GET',
+                path: '/workspace-context',
+            });
+            const body = requireJsonMap(response.body, 'Workspace guide response');
+            const data = body.data;
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                workspace = data as WorkspaceContextSnapshot;
+            }
+        } catch (error) {
+            const code = extractErrorCode(error);
+            if (isMissingActorErrorCode(code)) {
+                warnings.push('Workspace context is unavailable until an authenticated actor is configured.');
+            } else {
+                throw error;
+            }
+        }
+
+        const guide = buildWorkspaceGuide({
+            currentActor: actorResult.currentActor,
+            workspace,
+        });
+        if (warnings.length > 0) {
+            guide.warnings = [...(guide.warnings ?? []), ...warnings];
+        }
+
+        printStructured(
+            args,
+            {
+                transport: 'rest',
+                action: 'guide',
+                guide,
+            },
+            guide,
+        );
+        return;
+    }
+
+    throw buildUnknownCommandError('workspace subcommand', action, WORKSPACE_SUBCOMMANDS);
 }
 
 async function handleAudit(client: RestCliClient, args: ParsedArgs) {
@@ -1344,6 +1405,10 @@ async function main(args: ParsedArgs) {
     }
     if (command === 'capabilities') {
         await handleCapabilities(client, args);
+        return;
+    }
+    if (command === 'workspace') {
+        await handleWorkspace(client, args);
         return;
     }
     if (command === 'audit') {

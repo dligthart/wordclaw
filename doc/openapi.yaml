@@ -1272,12 +1272,15 @@ paths:
                       - restManifestPath
                       - restStatusPath
                       - restIdentityPath
+                      - restWorkspacePath
                       - mcpResourceUri
                       - mcpStatusResourceUri
                       - mcpActorResourceUri
+                      - mcpWorkspaceResourceUri
                       - cliCommand
                       - cliStatusCommand
                       - cliWhoAmICommand
+                      - cliWorkspaceCommand
                     properties:
                       restManifestPath:
                         type: string
@@ -1285,17 +1288,23 @@ paths:
                         type: string
                       restIdentityPath:
                         type: string
+                      restWorkspacePath:
+                        type: string
                       mcpResourceUri:
                         type: string
                       mcpStatusResourceUri:
                         type: string
                       mcpActorResourceUri:
                         type: string
+                      mcpWorkspaceResourceUri:
+                        type: string
                       cliCommand:
                         type: string
                       cliStatusCommand:
                         type: string
                       cliWhoAmICommand:
+                        type: string
+                      cliWorkspaceCommand:
                         type: string
   /api/deployment-status:
     get:
@@ -1626,6 +1635,85 @@ paths:
                 additionalProperties: true
                 type: object
                   availableActions:
+  /api/workspace-context:
+    get:
+      responses:
+        "200":
+          description: Authenticated workspace context snapshot
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - generatedAt
+                  - currentActor
+                  - currentDomain
+                  - accessibleDomains
+                  - summary
+                  - targets
+                  - contentTypes
+                  - warnings
+                properties:
+                  generatedAt:
+                    type: string
+                  currentActor:
+                    type: object
+                    additionalProperties: true
+                  currentDomain:
+                    type: object
+                    additionalProperties: true
+                  accessibleDomains:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  summary:
+                    type: object
+                    additionalProperties: true
+                  targets:
+                    type: object
+                    required:
+                      - authoring
+                      - review
+                      - workflow
+                      - paid
+                    properties:
+                      authoring:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+                      review:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+                      workflow:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+                      paid:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+                  contentTypes:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+              meta:
+                type: object
+                additionalProperties: true
                     description: List of all possible actions from this state
                     type: array
                     items:

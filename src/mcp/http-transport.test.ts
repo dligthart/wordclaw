@@ -102,6 +102,7 @@ describe('MCP HTTP transport', () => {
         const prompts = await client.listPrompts();
         const capabilityResource = await client.readResource({ uri: 'system://capabilities' });
         const deploymentStatusResource = await client.readResource({ uri: 'system://deployment-status' });
+        const workspaceResource = await client.readResource({ uri: 'system://workspace-context' });
         const guidanceResource = await client.readResource({ uri: 'system://agent-guidance' });
         const actorResource = await client.readResource({ uri: 'system://current-actor' });
         const taskPrompt = await client.getPrompt({
@@ -122,6 +123,12 @@ describe('MCP HTTP transport', () => {
                 taskId: 'discover-deployment',
             }
         });
+        const workspaceGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'discover-workspace',
+            }
+        });
         const policyDecision = await client.callTool({
             name: 'evaluate_policy',
             arguments: {
@@ -134,6 +141,7 @@ describe('MCP HTTP transport', () => {
         expect(tools.tools.some((tool) => tool.name === 'guide_task')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://deployment-status')).toBe(true);
+        expect(resources.resources.some((resource) => resource.uri === 'system://workspace-context')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://agent-guidance')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://current-actor')).toBe(true);
         expect(prompts.prompts.some((prompt) => prompt.name === 'task-guidance')).toBe(true);
@@ -151,8 +159,10 @@ describe('MCP HTTP transport', () => {
         }));
         const guidanceText = guidanceResource.contents.find((entry) => 'text' in entry)?.text;
         const deploymentStatusText = deploymentStatusResource.contents.find((entry) => 'text' in entry)?.text;
+        const workspaceText = workspaceResource.contents.find((entry) => 'text' in entry)?.text;
         expect(typeof guidanceText).toBe('string');
         expect(typeof deploymentStatusText).toBe('string');
+        expect(typeof workspaceText).toBe('string');
         expect(JSON.parse(deploymentStatusText as string)).toEqual(expect.objectContaining({
             overallStatus: 'ready',
             checks: expect.objectContaining({
@@ -167,6 +177,10 @@ describe('MCP HTTP transport', () => {
         }));
         expect(JSON.parse(guidanceText as string)).toEqual(expect.objectContaining({
             routingHints: expect.arrayContaining([
+                expect.objectContaining({
+                    intent: 'discover-workspace',
+                    preferredActorProfile: 'api-key',
+                }),
                 expect.objectContaining({
                     intent: 'author-content',
                     preferredActorProfile: 'api-key',
@@ -184,6 +198,11 @@ describe('MCP HTTP transport', () => {
             ]),
             taskRecipes: expect.arrayContaining([
                 expect.objectContaining({
+                    id: 'discover-workspace',
+                    preferredActorProfile: 'api-key',
+                    recommendedApiKeyScopes: ['content:read'],
+                }),
+                expect.objectContaining({
                     id: 'author-content',
                     preferredActorProfile: 'api-key',
                     recommendedApiKeyScopes: ['content:write'],
@@ -195,6 +214,21 @@ describe('MCP HTTP transport', () => {
         );
         const actorText = actorResource.contents.find((entry) => 'text' in entry)?.text;
         expect(typeof actorText).toBe('string');
+        expect(JSON.parse(workspaceText as string)).toEqual(expect.objectContaining({
+            currentActor: expect.objectContaining({
+                actorId: 'env_key:remote-admin',
+                actorProfileId: 'env-key',
+            }),
+            currentDomain: expect.objectContaining({
+                id: 1,
+            }),
+            targets: expect.objectContaining({
+                authoring: expect.any(Array),
+                review: expect.any(Array),
+                workflow: expect.any(Array),
+                paid: expect.any(Array),
+            }),
+        }));
         expect(JSON.parse(actorText as string)).toEqual(expect.objectContaining({
             actorId: 'env_key:remote-admin',
             actorType: 'env_key',
@@ -211,6 +245,7 @@ describe('MCP HTTP transport', () => {
 
         const taskGuideText = extractFirstText(taskGuide.content as Array<{ type: string; text?: string }>);
         const deploymentGuideText = extractFirstText(deploymentGuide.content as Array<{ type: string; text?: string }>);
+        const workspaceGuideText = extractFirstText(workspaceGuide.content as Array<{ type: string; text?: string }>);
         expect(JSON.parse(taskGuideText)).toEqual(expect.objectContaining({
             taskId: 'manage-integrations',
             preferredSurface: 'mcp',
@@ -247,6 +282,37 @@ describe('MCP HTTP transport', () => {
                         command: 'node dist/cli/index.js capabilities status',
                     }),
                 ]),
+            }),
+        }));
+        expect(JSON.parse(workspaceGuideText)).toEqual(expect.objectContaining({
+            taskId: 'discover-workspace',
+            preferredSurface: 'mcp',
+            workspaceContext: expect.objectContaining({
+                currentActor: expect.objectContaining({
+                    actorId: 'env_key:remote-admin',
+                }),
+            }),
+            guide: expect.objectContaining({
+                taskId: 'discover-workspace',
+                steps: expect.arrayContaining([
+                    expect.objectContaining({
+                        command: 'node dist/cli/index.js workspace guide',
+                    }),
+                ]),
+            }),
+        }));
+        expect(JSON.parse(workspaceGuideText)).toEqual(expect.objectContaining({
+            guide: expect.objectContaining({
+                steps: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'choose-authoring-target',
+                    }),
+                ]),
+            }),
+            workspaceContext: expect.objectContaining({
+                targets: expect.objectContaining({
+                    authoring: expect.any(Array),
+                }),
             }),
         }));
 

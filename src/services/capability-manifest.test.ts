@@ -48,11 +48,14 @@ describe('buildCapabilityManifest', () => {
         expect(manifest.discovery.restManifestPath).toBe('/api/capabilities');
         expect(manifest.discovery.restStatusPath).toBe('/api/deployment-status');
         expect(manifest.discovery.restIdentityPath).toBe('/api/identity');
+        expect(manifest.discovery.restWorkspacePath).toBe('/api/workspace-context');
         expect(manifest.discovery.mcpResourceUri).toBe('system://capabilities');
         expect(manifest.discovery.mcpStatusResourceUri).toBe('system://deployment-status');
         expect(manifest.discovery.mcpActorResourceUri).toBe('system://current-actor');
+        expect(manifest.discovery.mcpWorkspaceResourceUri).toBe('system://workspace-context');
         expect(manifest.discovery.cliStatusCommand).toBe('node dist/cli/index.js capabilities status');
         expect(manifest.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
+        expect(manifest.discovery.cliWorkspaceCommand).toBe('node dist/cli/index.js workspace guide');
         expect(manifest.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
         expect(manifest.protocolSurfaces.mcp.endpoint).toBe('/mcp');
         expect(manifest.protocolSurfaces.mcp.attachable).toBe(true);
@@ -70,6 +73,11 @@ describe('buildCapabilityManifest', () => {
                 }),
                 expect.objectContaining({
                     intent: 'author-content',
+                    preferredSurface: 'mcp',
+                    preferredActorProfile: 'api-key',
+                }),
+                expect.objectContaining({
+                    intent: 'discover-workspace',
                     preferredSurface: 'mcp',
                     preferredActorProfile: 'api-key',
                 }),
@@ -126,6 +134,20 @@ describe('buildCapabilityManifest', () => {
                         }),
                         expect.objectContaining({
                             operation: 'read system://deployment-status',
+                        }),
+                    ]),
+                }),
+                expect.objectContaining({
+                    id: 'discover-workspace',
+                    preferredSurface: 'mcp',
+                    preferredActorProfile: 'api-key',
+                    recommendedApiKeyScopes: ['content:read'],
+                    steps: expect.arrayContaining([
+                        expect.objectContaining({
+                            operation: 'GET /api/workspace-context',
+                        }),
+                        expect.objectContaining({
+                            operation: 'read system://workspace-context',
                         }),
                     ]),
                 }),

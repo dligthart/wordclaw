@@ -100,6 +100,7 @@ npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts capabilities show
 npx tsx src/cli/index.ts capabilities status
 npx tsx src/cli/index.ts capabilities whoami
+npx tsx src/cli/index.ts workspace guide
 npx tsx src/cli/index.ts content guide --content-type-id 1
 npx tsx src/cli/index.ts integrations guide
 npx tsx src/cli/index.ts audit guide --entity-type content_item --entity-id 123
@@ -137,7 +138,11 @@ node dist/cli/index.js capabilities status
 # 3. Confirm the current actor before mutating state
 node dist/cli/index.js capabilities whoami
 
-# 4. Ask for task-specific guidance
+# 4. Inspect the authenticated workspace before choosing a target schema
+curl -H "x-api-key: <key>" http://localhost:4000/api/workspace-context
+node dist/cli/index.js workspace guide
+
+# 5. Ask for task-specific guidance
 node dist/cli/index.js content guide --content-type-id 1
 node dist/cli/index.js audit guide --entity-type content_item --entity-id 123
 node dist/cli/index.js workflow guide
@@ -158,9 +163,11 @@ For remote MCP clients, the same deployment guidance is also available in-band:
 - `system://capabilities`
 - `system://deployment-status`
 - `system://current-actor`
+- `system://workspace-context`
 - `system://agent-guidance`
 - `task-guidance`
 - `guide_task` with `{"taskId":"discover-deployment"}`
+- `guide_task` with `{"taskId":"discover-workspace"}`
 
 ## Supervisor Web Interface
 
