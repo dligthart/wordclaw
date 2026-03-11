@@ -66,6 +66,50 @@ type WorkspaceTargetSummary = {
     };
 };
 
+type WorkspaceWorkTargetStatus = 'ready' | 'warning' | 'blocked';
+
+type WorkspaceWorkTarget = {
+    kind: 'content-type' | 'review-task' | 'workflow' | 'paid-content-item';
+    status: WorkspaceWorkTargetStatus;
+    label: string;
+    reason: string;
+    notes: string[];
+    recommendedCommands: string[];
+    contentType: {
+        id: number;
+        name: string;
+        slug: string;
+    };
+    contentItem: {
+        id: number;
+        label: string;
+        status: string;
+        version: number;
+        slug: string | null;
+        createdAt: string;
+        updatedAt: string;
+    } | null;
+    reviewTask: {
+        id: number;
+        status: string;
+        assignee: string | null;
+        workflowTransitionId: number;
+        actionable: boolean;
+        fromState: string;
+        toState: string;
+    } | null;
+    workflow: {
+        id: number;
+        name: string;
+        transitionCount: number;
+    } | null;
+    paid: {
+        activeOfferCount: number;
+        lowestOfferSats: number | null;
+        offerScope: 'item' | 'type' | 'mixed' | 'none';
+    } | null;
+};
+
 export type WorkspaceDiscoveryIntent = 'all' | 'authoring' | 'review' | 'workflow' | 'paid';
 export type WorkspaceTargetIntent = Exclude<WorkspaceDiscoveryIntent, 'all'>;
 
@@ -109,6 +153,7 @@ export type WorkspaceContextSnapshot = {
 export type ResolvedWorkspaceTarget = WorkspaceTargetSummary & {
     rank: number;
     contentType: WorkspaceContentTypeSummary | null;
+    workTarget: WorkspaceWorkTarget | null;
 };
 
 export type WorkspaceTargetResolution = {
@@ -179,6 +224,63 @@ function compareNullableNumberAsc(left: number | null, right: number | null) {
         return -1;
     }
     return left - right;
+}
+
+function toIso(value: Date): string {
+    return value.toISOString();
+}
+
+function extractStringField(record: Record<string, unknown>, field: string): string | null {
+    const value = record[field];
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function summarizeContentItem(data: string, itemId: number) {
+    try {
+        const parsed = JSON.parse(data) as Record<string, unknown>;
+        const label = extractStringField(parsed, 'title')
+            ?? extractStringField(parsed, 'name')
+            ?? extractStringField(parsed, 'headline')
+            ?? extractStringField(parsed, 'subject')
+            ?? extractStringField(parsed, 'label')
+            ?? `Content item #${itemId}`;
+        const slug = extractStringField(parsed, 'slug');
+
+        return { label, slug };
+    } catch {
+        return {
+            label: `Content item #${itemId}`,
+            slug: null,
+        };
+    }
+}
+
+function supportsWriteActorProfile(currentActor: CurrentActorSnapshot) {
+    return ['api-key', 'env-key', 'supervisor-session', 'mcp-local'].includes(currentActor.actorProfileId);
+}
+
+function canWrite(currentActor: CurrentActorSnapshot) {
+    return currentActor.scopes.includes('admin') || currentActor.scopes.includes('content:write');
+}
+
+function canReadPaid(currentActor: CurrentActorSnapshot) {
+    return currentActor.scopes.includes('admin') || currentActor.scopes.includes('content:read');
+}
+
+function canActOnReviewTask(currentActor: CurrentActorSnapshot, assignee: string | null) {
+    if (!supportsWriteActorProfile(currentActor) || !canWrite(currentActor)) {
+        return false;
+    }
+
+    if (currentActor.scopes.includes('admin')) {
+        return true;
+    }
+
+    if (!assignee) {
+        return false;
+    }
+
+    return currentActor.assignmentRefs.includes(assignee);
 }
 
 function buildTargetReason(type: WorkspaceContentTypeSummary, mode: 'authoring' | 'review' | 'workflow' | 'paid'): string {
@@ -282,6 +384,351 @@ function buildWorkspaceTargets(summaries: WorkspaceContentTypeSummary[], limit: 
         .map((summary) => toTargetSummary(summary, 'paid'));
 
     return { authoring, review, workflow, paid };
+}
+
+async function resolveWorkTargetForContentType(
+    currentActor: CurrentActorSnapshot,
+    intent: WorkspaceTargetIntent,
+    contentType: WorkspaceContentTypeSummary,
+    target: WorkspaceTargetSummary,
+): Promise<WorkspaceWorkTarget | null> {
+    if (intent === 'authoring') {
+        const workflow = [...contentType.workflow.activeWorkflows]
+            .sort((left, right) => right.transitionCount - left.transitionCount || compareByNameThenId(left, right))[0] ?? null;
+        const ready = supportsWriteActorProfile(currentActor) && canWrite(currentActor);
+
+        return {
+            kind: 'content-type',
+            status: ready ? 'ready' : 'blocked',
+            label: `Create a new draft in ${contentType.name}`,
+            reason: ready
+                ? 'This schema is ready for authoring in the active domain.'
+                : 'The current actor cannot create drafts for this schema yet.',
+            notes: [
+                target.reason,
+                ready
+                    ? 'Start with a dry-run create to validate the payload before persisting.'
+                    : 'Use an actor with content:write or admin scope to author against this schema.',
+            ],
+            recommendedCommands: [
+                `node dist/cli/index.js content guide --content-type-id ${contentType.id}`,
+                `node dist/cli/index.js content create --content-type-id ${contentType.id} --data-file item.json --dry-run`,
+                ...(workflow ? [`node dist/cli/index.js workflow active --content-type-id ${contentType.id}`] : []),
+            ],
+            contentType: {
+                id: contentType.id,
+                name: contentType.name,
+                slug: contentType.slug,
+            },
+            contentItem: null,
+            reviewTask: null,
+            workflow: workflow
+                ? {
+                    id: workflow.id,
+                    name: workflow.name,
+                    transitionCount: workflow.transitionCount,
+                }
+                : null,
+            paid: null,
+        };
+    }
+
+    const itemRows = await db.select({
+        id: contentItems.id,
+        contentTypeId: contentItems.contentTypeId,
+        data: contentItems.data,
+        status: contentItems.status,
+        version: contentItems.version,
+        createdAt: contentItems.createdAt,
+        updatedAt: contentItems.updatedAt,
+    }).from(contentItems).where(and(
+        eq(contentItems.domainId, currentActor.domainId),
+        eq(contentItems.contentTypeId, contentType.id),
+    ));
+
+    const workflowsForType = await db.select({
+        id: workflows.id,
+        name: workflows.name,
+        contentTypeId: workflows.contentTypeId,
+    }).from(workflows).where(and(
+        eq(workflows.domainId, currentActor.domainId),
+        eq(workflows.contentTypeId, contentType.id),
+        eq(workflows.active, true),
+    ));
+
+    const transitionRows = workflowsForType.length > 0
+        ? await db.select({
+            id: workflowTransitions.id,
+            workflowId: workflowTransitions.workflowId,
+            fromState: workflowTransitions.fromState,
+            toState: workflowTransitions.toState,
+        }).from(workflowTransitions).where(inArray(
+            workflowTransitions.workflowId,
+            workflowsForType.map((workflow) => workflow.id),
+        ))
+        : [];
+
+    const pendingReviewTasks = itemRows.length > 0
+        ? await db.select({
+            id: reviewTasks.id,
+            contentItemId: reviewTasks.contentItemId,
+            workflowTransitionId: reviewTasks.workflowTransitionId,
+            status: reviewTasks.status,
+            assignee: reviewTasks.assignee,
+            createdAt: reviewTasks.createdAt,
+            updatedAt: reviewTasks.updatedAt,
+        }).from(reviewTasks).where(and(
+            eq(reviewTasks.domainId, currentActor.domainId),
+            eq(reviewTasks.status, 'pending'),
+            inArray(reviewTasks.contentItemId, itemRows.map((item) => item.id)),
+        ))
+        : [];
+
+    const itemsById = new Map(itemRows.map((item) => [item.id, item]));
+    const workflowById = new Map(workflowsForType.map((workflow) => [workflow.id, workflow]));
+    const transitionById = new Map(transitionRows.map((transition) => [transition.id, transition]));
+
+    if (intent === 'review' || intent === 'workflow') {
+        const reviewCandidates = pendingReviewTasks
+            .map((task) => {
+                const item = itemsById.get(task.contentItemId);
+                const transition = transitionById.get(task.workflowTransitionId);
+                const workflow = transition ? workflowById.get(transition.workflowId) ?? null : null;
+                if (!item || !transition || !workflow) {
+                    return null;
+                }
+
+                const itemSummary = summarizeContentItem(item.data, item.id);
+                const actionable = canActOnReviewTask(currentActor, task.assignee);
+
+                return {
+                    task,
+                    item,
+                    itemSummary,
+                    transition,
+                    workflow,
+                    actionable,
+                };
+            })
+            .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
+            .sort((left, right) => (
+                Number(right.actionable) - Number(left.actionable)
+                || left.task.createdAt.getTime() - right.task.createdAt.getTime()
+                || left.task.id - right.task.id
+            ));
+
+        if (reviewCandidates.length > 0) {
+            const candidate = reviewCandidates[0];
+            const status: WorkspaceWorkTargetStatus = candidate.actionable ? 'ready' : 'blocked';
+
+            return {
+                kind: 'review-task',
+                status,
+                label: `${candidate.itemSummary.label} (${candidate.transition.fromState} → ${candidate.transition.toState})`,
+                reason: candidate.actionable
+                    ? `Review task #${candidate.task.id} is actionable for the current actor.`
+                    : candidate.task.assignee
+                        ? `Review task #${candidate.task.id} is assigned to ${candidate.task.assignee}, so the current actor cannot decide it yet.`
+                        : `Review task #${candidate.task.id} is unassigned, so a non-admin actor cannot decide it yet.`,
+                notes: [
+                    `Workflow: ${candidate.workflow.name}.`,
+                    `Content item #${candidate.item.id} is currently ${candidate.item.status}.`,
+                ],
+                recommendedCommands: [
+                    `node dist/cli/index.js workflow guide --task ${candidate.task.id}`,
+                    ...(candidate.actionable
+                        ? [`node dist/cli/index.js workflow decide --id ${candidate.task.id} --decision approved`]
+                        : []),
+                    `node dist/cli/index.js content get --id ${candidate.item.id}`,
+                ],
+                contentType: {
+                    id: contentType.id,
+                    name: contentType.name,
+                    slug: contentType.slug,
+                },
+                contentItem: {
+                    id: candidate.item.id,
+                    label: candidate.itemSummary.label,
+                    status: candidate.item.status,
+                    version: candidate.item.version,
+                    slug: candidate.itemSummary.slug,
+                    createdAt: toIso(candidate.item.createdAt),
+                    updatedAt: toIso(candidate.item.updatedAt),
+                },
+                reviewTask: {
+                    id: candidate.task.id,
+                    status: candidate.task.status,
+                    assignee: candidate.task.assignee,
+                    workflowTransitionId: candidate.task.workflowTransitionId,
+                    actionable: candidate.actionable,
+                    fromState: candidate.transition.fromState,
+                    toState: candidate.transition.toState,
+                },
+                workflow: {
+                    id: candidate.workflow.id,
+                    name: candidate.workflow.name,
+                    transitionCount: transitionRows.filter((transition) => transition.workflowId === candidate.workflow.id).length,
+                },
+                paid: null,
+            };
+        }
+
+        if (intent === 'workflow' && workflowsForType.length > 0) {
+            const workflow = [...workflowsForType]
+                .sort((left, right) => (
+                    transitionRows.filter((transition) => transition.workflowId === right.id).length
+                    - transitionRows.filter((transition) => transition.workflowId === left.id).length
+                    || compareByNameThenId(left, right)
+                ))[0];
+            const transitionCount = transitionRows.filter((transition) => transition.workflowId === workflow.id).length;
+            const ready = supportsWriteActorProfile(currentActor) && canWrite(currentActor);
+
+            return {
+                kind: 'workflow',
+                status: ready ? 'ready' : 'blocked',
+                label: workflow.name,
+                reason: ready
+                    ? `Workflow ${workflow.name} is active for this schema.`
+                    : `Workflow ${workflow.name} is active, but the current actor cannot operate it yet.`,
+                notes: [
+                    `${transitionCount} transition(s) are configured for this workflow.`,
+                    target.reason,
+                ],
+                recommendedCommands: [
+                    `node dist/cli/index.js workflow active --content-type-id ${contentType.id}`,
+                    `node dist/cli/index.js content guide --content-type-id ${contentType.id}`,
+                ],
+                contentType: {
+                    id: contentType.id,
+                    name: contentType.name,
+                    slug: contentType.slug,
+                },
+                contentItem: null,
+                reviewTask: null,
+                workflow: {
+                    id: workflow.id,
+                    name: workflow.name,
+                    transitionCount,
+                },
+                paid: null,
+            };
+        }
+
+        return null;
+    }
+
+    const activeOffers = await db.select({
+        id: offers.id,
+        scopeType: offers.scopeType,
+        scopeRef: offers.scopeRef,
+        priceSats: offers.priceSats,
+    }).from(offers).where(and(
+        eq(offers.domainId, currentActor.domainId),
+        eq(offers.active, true),
+    ));
+
+    const typeOfferPrices = activeOffers
+        .filter((offer) => offer.scopeType === 'type' && offer.scopeRef === contentType.id)
+        .map((offer) => offer.priceSats);
+    const directOfferPricesByItemId = new Map<number, number[]>();
+    for (const offer of activeOffers) {
+        if (offer.scopeType !== 'item' || typeof offer.scopeRef !== 'number') {
+            continue;
+        }
+        const bucket = directOfferPricesByItemId.get(offer.scopeRef) ?? [];
+        bucket.push(offer.priceSats);
+        directOfferPricesByItemId.set(offer.scopeRef, bucket);
+    }
+
+    const paidCandidates = itemRows
+        .map((item) => {
+            const itemSummary = summarizeContentItem(item.data, item.id);
+            const directOffers = directOfferPricesByItemId.get(item.id) ?? [];
+            const allPrices = [...directOffers, ...typeOfferPrices];
+            const activeOfferCount = directOffers.length + typeOfferPrices.length;
+            const offerScope: WorkspaceWorkTarget['paid'] extends infer Paid
+                ? Paid extends { offerScope: infer Scope } ? Scope : never
+                : never = directOffers.length > 0 && typeOfferPrices.length > 0
+                ? 'mixed'
+                : directOffers.length > 0
+                    ? 'item'
+                    : typeOfferPrices.length > 0
+                        ? 'type'
+                        : 'none';
+
+            return {
+                item,
+                itemSummary,
+                activeOfferCount,
+                lowestOfferSats: allPrices.length > 0 ? Math.min(...allPrices) : null,
+                offerScope,
+                hasOffer: allPrices.length > 0,
+            };
+        })
+        .sort((left, right) => (
+            Number(right.hasOffer) - Number(left.hasOffer)
+            || Number(right.item.status === 'published') - Number(left.item.status === 'published')
+            || right.item.updatedAt.getTime() - left.item.updatedAt.getTime()
+            || right.item.id - left.item.id
+        ));
+
+    const paidCandidate = paidCandidates[0] ?? null;
+    if (!paidCandidate) {
+        return null;
+    }
+
+    const supportedProfile = ['api-key', 'env-key'].includes(currentActor.actorProfileId);
+    const actorCanConsume = supportedProfile && canReadPaid(currentActor);
+    const status: WorkspaceWorkTargetStatus = !paidCandidate.hasOffer || !actorCanConsume
+        ? 'blocked'
+        : currentActor.actorProfileId === 'env-key'
+            ? 'warning'
+            : 'ready';
+
+    return {
+        kind: 'paid-content-item',
+        status,
+        label: paidCandidate.itemSummary.label,
+        reason: paidCandidate.hasOffer
+            ? `Content item #${paidCandidate.item.id} has ${paidCandidate.activeOfferCount} active offer(s) available for paid reads.`
+            : `Content item #${paidCandidate.item.id} belongs to a paid schema, but no active offers are attached yet.`,
+        notes: [
+            paidCandidate.hasOffer
+                ? `Lowest available price: ${paidCandidate.lowestOfferSats} sats via ${paidCandidate.offerScope} offer(s).`
+                : 'Create or activate an offer before attempting an L402 purchase flow.',
+            actorCanConsume
+                ? 'The current actor can attempt the paid-content flow.'
+                : 'Use an API-key-backed actor with content:read or admin scope for paid-content flows.',
+        ],
+        recommendedCommands: [
+            `node dist/cli/index.js l402 guide --item ${paidCandidate.item.id}`,
+            `node dist/cli/index.js l402 offers --item ${paidCandidate.item.id}`,
+            ...(paidCandidate.hasOffer && actorCanConsume
+                ? [`node dist/cli/index.js l402 read --item ${paidCandidate.item.id} --entitlement-id <entitlementId>`]
+                : []),
+        ],
+        contentType: {
+            id: contentType.id,
+            name: contentType.name,
+            slug: contentType.slug,
+        },
+        contentItem: {
+            id: paidCandidate.item.id,
+            label: paidCandidate.itemSummary.label,
+            status: paidCandidate.item.status,
+            version: paidCandidate.item.version,
+            slug: paidCandidate.itemSummary.slug,
+            createdAt: toIso(paidCandidate.item.createdAt),
+            updatedAt: toIso(paidCandidate.item.updatedAt),
+        },
+        reviewTask: null,
+        workflow: null,
+        paid: {
+            activeOfferCount: paidCandidate.activeOfferCount,
+            lowestOfferSats: paidCandidate.lowestOfferSats,
+            offerScope: paidCandidate.offerScope,
+        },
+    };
 }
 
 function selectReturnedContentTypes(options: {
@@ -550,10 +997,17 @@ export async function resolveWorkspaceTarget(
         targetLimit: 25,
     });
 
-    const rankedTargets = snapshot.targets[options.intent].map((target, index) => ({
-        ...target,
-        rank: index + 1,
-        contentType: snapshot.contentTypes.find((contentType) => contentType.id === target.id) ?? null,
+    const rankedTargets = await Promise.all(snapshot.targets[options.intent].map(async (target, index) => {
+        const contentType = snapshot.contentTypes.find((entry) => entry.id === target.id) ?? null;
+
+        return {
+            ...target,
+            rank: index + 1,
+            contentType,
+            workTarget: contentType
+                ? await resolveWorkTargetForContentType(currentActor, options.intent, contentType, target)
+                : null,
+        };
     }));
 
     return {
