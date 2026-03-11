@@ -141,6 +141,13 @@
       "when": 1773146400000,
       "tag": "0019_unified_actor_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1773256394394,
+      "tag": "0020_missing_cols",
+      "breakpoints": true
     }
   ]
 }

@@ -100,7 +100,7 @@ function stringifyPromptArgs(
         typeof value === 'string' ? value : JSON.stringify(value),
     ]);
 
-    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+    return entries.length > 0 ? Object.fromEntries(entries) : {};
 }
 
 function sanitizeProcessEnv(env: NodeJS.ProcessEnv): Record<string, string> {

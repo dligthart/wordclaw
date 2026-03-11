@@ -37,33 +37,29 @@ const API_URL = 'http://localhost:4000/api';
  * This connects the LLM securely to a Lightning node (mocked here but production
  * ready for Alby, Strike, or a local LND instance).
  */
-const lightningL402Provider = customActionProvider<{}>(() => {
-    return [
-        {
-            name: "pay_lightning_invoice",
-            description: "Pays a Lightning Network BOLT11 invoice and returns the cryptographic payment preimage. Call this when an API returns 402 Payment Required and gives you an invoice.",
-            schema: z.object({
-                invoice: z.string().describe("The BOLT11 invoice string starting with lnbc..."),
-            }),
-            invoke: async (args) => {
-                console.log(`\n===========================================`);
-                console.log(`[LightningActionProvider] Intercepted Request`);
-                console.log(`===========================================`);
-                console.log(`[+] Attempting to pay invoice: ${args.invoice.substring(0, 25)}...`);
+const lightningL402Provider = customActionProvider<any>({
+    name: "pay_lightning_invoice",
+    description: "Pays a Lightning Network BOLT11 invoice and returns the cryptographic payment preimage. Call this when an API returns 402 Payment Required and gives you an invoice.",
+    schema: z.object({
+        invoice: z.string().describe("The BOLT11 invoice string starting with lnbc..."),
+    }),
+    invoke: async (walletProvider: any, args: any) => {
+        console.log(`\n===========================================`);
+        console.log(`[LightningActionProvider] Intercepted Request`);
+        console.log(`===========================================`);
+        console.log(`[+] Attempting to pay invoice: ${args.invoice.substring(0, 25)}...`);
 
-                // Simulate network delay for paying via Lightning
-                await new Promise(r => setTimeout(r, 2000));
+        // Simulate network delay for paying via Lightning
+        await new Promise(r => setTimeout(r, 2000));
 
-                // In production, you would call your Lightning Node or API here.
-                // We mock the success by returning the environment parameter or the default mock.
-                const preimage = process.env.L402_MOCK_PREIMAGE || "mock_preimage_12345";
+        // In production, you would call your Lightning Node or API here.
+        // We mock the success by returning the environment parameter or the default mock.
+        const preimage = process.env.L402_MOCK_PREIMAGE || "mock_preimage_12345";
 
-                console.log(`[+] Payment successful! Lightning Preimage: ${preimage}`);
-                console.log(`===========================================\n`);
-                return preimage;
-            }
-        }
-    ];
+        console.log(`[+] Payment successful! Lightning Preimage: ${preimage}`);
+        console.log(`===========================================\n`);
+        return preimage;
+    }
 });
 
 /**

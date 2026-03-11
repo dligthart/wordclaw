@@ -44,9 +44,11 @@ const useWordClawData = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
+        const headers = { 'x-api-key': import.meta.env.VITE_WORDCLAW_API_KEY || '' };
+
         const [ctRes, authorsRes] = await Promise.all([
-          fetch(`${API_BASE}/content-types`).then(res => res.json()),
-          fetch(`${API_BASE}/content-items`).then(res => res.json()) // Temp fetch everything
+          fetch(`${API_BASE}/content-types`, { headers }).then(res => res.json()),
+          fetch(`${API_BASE}/content-items`, { headers }).then(res => res.json()) // Temp fetch everything
         ])
 
         const types = ctRes.data || [];
@@ -55,8 +57,8 @@ const useWordClawData = () => {
 
         if (authorType && postType) {
           const [fetchedAuthors, fetchedPosts] = await Promise.all([
-            fetch(`${API_BASE}/content-items?contentTypeId=${authorType.id}`).then(res => res.json()),
-            fetch(`${API_BASE}/content-items?contentTypeId=${postType.id}`).then(res => res.json())
+            fetch(`${API_BASE}/content-items?contentTypeId=${authorType.id}`, { headers }).then(res => res.json()),
+            fetch(`${API_BASE}/content-items?contentTypeId=${postType.id}`, { headers }).then(res => res.json())
           ])
           setAuthors(fetchedAuthors.data.map((item: any) => ({ ...item, data: JSON.parse(item.data) })))
           setPosts(fetchedPosts.data.map((item: any) => ({ ...item, data: JSON.parse(item.data) })))
