@@ -154,7 +154,7 @@ WordClaw APIs are natively self-describing. Instead of guessing API schemas from
 
 * **Deployment Discovery**: Use `GET /api/capabilities`, `GET /api/deployment-status`, or `mcp inspect`. The manifest reports live readiness, task-oriented routing hints, and actor profiles so agents can choose the correct credential and surface.
 * **Identity & Context**: After authentication, use `GET /api/identity`, `GET /api/workspace-context`, `system://current-actor`, or `node dist/cli/index.js workspace guide` to confirm the actor, active domain, and available content models before mutating state.
-* **Smart Targeting**: The workspace snapshot groups the best targets for authoring, workflow review, and paid consumption. Use `GET /api/workspace-target?intent=review` or `node dist/cli/index.js workspace resolve --intent review` to resolve the single best schema target for a task.
+* **Smart Targeting**: The workspace snapshot groups the best targets for authoring, workflow review, and paid consumption. Use `GET /api/workspace-target?intent=review` or `node dist/cli/index.js workspace resolve --intent review` to resolve the best schema target plus the next concrete work target for a task.
 * **Live CLI Guidance**: Ask the CLI for generated, actor-aware guidance sequences:
   * Workflow reviews: `node dist/cli/index.js workflow guide`
   * Audit provenance: `node dist/cli/index.js audit guide --entity-type content_item --entity-id 123`

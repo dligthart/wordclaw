@@ -646,9 +646,7 @@ async function resolveWorkTargetForContentType(
             const directOffers = directOfferPricesByItemId.get(item.id) ?? [];
             const allPrices = [...directOffers, ...typeOfferPrices];
             const activeOfferCount = directOffers.length + typeOfferPrices.length;
-            const offerScope: WorkspaceWorkTarget['paid'] extends infer Paid
-                ? Paid extends { offerScope: infer Scope } ? Scope : never
-                : never = directOffers.length > 0 && typeOfferPrices.length > 0
+            const offerScope: 'item' | 'type' | 'mixed' | 'none' = directOffers.length > 0 && typeOfferPrices.length > 0
                 ? 'mixed'
                 : directOffers.length > 0
                     ? 'item'

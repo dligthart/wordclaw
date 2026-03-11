@@ -2194,7 +2194,7 @@ server.tool(
 
 server.tool(
     'resolve_workspace_target',
-    'Resolve the single best schema target for a workspace intent such as authoring, review, workflow, or paid content',
+    'Resolve the best schema target and next concrete work target for a workspace intent such as authoring, review, workflow, or paid content',
     {
         intent: z.enum(['authoring', 'review', 'workflow', 'paid']).describe('Task intent to resolve against the active workspace'),
         search: z.string().optional().describe('Optional search string to narrow candidate schemas before resolving'),

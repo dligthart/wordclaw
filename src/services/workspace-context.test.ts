@@ -363,6 +363,56 @@ describe('getWorkspaceContextSnapshot', () => {
                 from: () => ({
                     where: vi.fn().mockResolvedValue([{ contentItemId: 100 }]),
                 }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 100,
+                            contentTypeId: 12,
+                            data: JSON.stringify({
+                                title: 'Editorial draft',
+                                slug: 'editorial-draft',
+                            }),
+                            status: 'in_review',
+                            version: 2,
+                            createdAt: new Date('2026-03-11T10:30:00Z'),
+                            updatedAt: new Date('2026-03-11T11:00:00Z'),
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 20,
+                        name: 'Editorial Flow',
+                        contentTypeId: 12,
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 40,
+                        workflowId: 20,
+                        fromState: 'draft',
+                        toState: 'in_review',
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 88,
+                        contentItemId: 100,
+                        workflowTransitionId: 40,
+                        status: 'pending',
+                        assignee: 'api_key:12',
+                        createdAt: new Date('2026-03-11T11:05:00Z'),
+                        updatedAt: new Date('2026-03-11T11:05:00Z'),
+                    }]),
+                }),
             }) as unknown as ReturnType<typeof db.select>);
 
         const resolution = await resolveWorkspaceTarget({
@@ -371,7 +421,7 @@ describe('getWorkspaceContextSnapshot', () => {
             actorSource: 'db',
             actorProfileId: 'api-key',
             domainId: 7,
-            scopes: ['content:read'],
+            scopes: ['content:read', 'content:write'],
             assignmentRefs: ['api_key:12', '12'],
         }, {
             intent: 'review',
@@ -388,6 +438,20 @@ describe('getWorkspaceContextSnapshot', () => {
             contentType: expect.objectContaining({
                 id: 12,
                 slug: 'editorial-article',
+            }),
+            workTarget: expect.objectContaining({
+                kind: 'review-task',
+                status: 'ready',
+                label: 'Editorial draft (draft → in_review)',
+                reviewTask: expect.objectContaining({
+                    id: 88,
+                    actionable: true,
+                }),
+                contentItem: expect.objectContaining({
+                    id: 100,
+                    label: 'Editorial draft',
+                    slug: 'editorial-draft',
+                }),
             }),
         }));
         expect(resolution.alternatives).toEqual([]);

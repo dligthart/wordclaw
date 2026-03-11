@@ -640,6 +640,51 @@ describe('API Route Contracts', () => {
                 from: () => ({
                     where: vi.fn().mockResolvedValue([{ contentItemId: 501 }]),
                 }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 501,
+                        contentTypeId: 8,
+                        data: '{"title":"Editorial Draft","slug":"editorial-draft"}',
+                        status: 'in_review',
+                        version: 3,
+                        createdAt: new Date('2026-03-10T09:00:00Z'),
+                        updatedAt: new Date('2026-03-10T10:00:00Z'),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 22,
+                        name: 'Editorial Flow',
+                        contentTypeId: 8,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 77,
+                        workflowId: 22,
+                        fromState: 'draft',
+                        toState: 'in_review',
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 91,
+                        contentItemId: 501,
+                        workflowTransitionId: 77,
+                        status: 'pending',
+                        assignee: 'env_key:remote-admin',
+                        createdAt: new Date('2026-03-10T10:05:00Z'),
+                        updatedAt: new Date('2026-03-10T10:05:00Z'),
+                    }]),
+                }),
             }));
 
         try {
@@ -768,6 +813,51 @@ describe('API Route Contracts', () => {
                 from: () => ({
                     where: vi.fn().mockResolvedValue([{ contentItemId: 501 }]),
                 }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 501,
+                        contentTypeId: 8,
+                        data: '{"title":"Editorial Draft","slug":"editorial-draft"}',
+                        status: 'in_review',
+                        version: 3,
+                        createdAt: new Date('2026-03-10T09:00:00Z'),
+                        updatedAt: new Date('2026-03-10T10:00:00Z'),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 22,
+                        name: 'Editorial Flow',
+                        contentTypeId: 8,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 77,
+                        workflowId: 22,
+                        fromState: 'draft',
+                        toState: 'in_review',
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 91,
+                        contentItemId: 501,
+                        workflowTransitionId: 77,
+                        status: 'pending',
+                        assignee: 'env_key:remote-admin',
+                        createdAt: new Date('2026-03-10T10:05:00Z'),
+                        updatedAt: new Date('2026-03-10T10:05:00Z'),
+                    }]),
+                }),
             }));
 
         try {
@@ -788,6 +878,18 @@ describe('API Route Contracts', () => {
                     target: {
                         id: number;
                         rank: number;
+                        workTarget: {
+                            kind: string;
+                            status: string;
+                            reviewTask: {
+                                id: number;
+                                actionable: boolean;
+                            } | null;
+                            contentItem: {
+                                label: string;
+                                slug: string | null;
+                            } | null;
+                        } | null;
                         contentType: {
                             slug: string;
                         } | null;
@@ -804,6 +906,18 @@ describe('API Route Contracts', () => {
                 rank: 1,
                 contentType: expect.objectContaining({
                     slug: 'editorial-blog-post',
+                }),
+                workTarget: expect.objectContaining({
+                    kind: 'review-task',
+                    status: 'ready',
+                    reviewTask: expect.objectContaining({
+                        id: 91,
+                        actionable: true,
+                    }),
+                    contentItem: expect.objectContaining({
+                        label: 'Editorial Draft',
+                        slug: 'editorial-draft',
+                    }),
                 }),
             }));
             expect(body.data.alternatives).toEqual([]);

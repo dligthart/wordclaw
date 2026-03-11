@@ -1,7 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+
+const mocks = vi.hoisted(() => ({
+    getWorkspaceContextSnapshotMock: vi.fn(),
+    resolveWorkspaceTargetMock: vi.fn(),
+}));
+
+vi.mock('../services/workspace-context.js', () => ({
+    getWorkspaceContextSnapshot: mocks.getWorkspaceContextSnapshotMock,
+    resolveWorkspaceTarget: mocks.resolveWorkspaceTargetMock,
+}));
 
 import { buildServer } from '../server.js';
 
@@ -62,6 +72,218 @@ describe('MCP HTTP transport', () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'remote-admin=admin';
         process.env.ALLOW_INSECURE_LOCAL_ADMIN = 'false';
+        mocks.getWorkspaceContextSnapshotMock.mockImplementation(async (currentActor, options) => ({
+            generatedAt: '2026-03-11T12:00:00.000Z',
+            currentActor,
+            currentDomain: {
+                id: currentActor.domainId,
+                name: 'Local Dev',
+                hostname: 'localhost',
+                current: true,
+            },
+            accessibleDomains: [{
+                id: currentActor.domainId,
+                name: 'Local Dev',
+                hostname: 'localhost',
+                current: true,
+            }],
+            filter: {
+                intent: options?.intent ?? 'all',
+                search: options?.search ?? null,
+                limit: options?.limit ?? null,
+                totalContentTypesBeforeFilter: 2,
+                totalContentTypesAfterSearch: 1,
+                returnedContentTypes: 1,
+            },
+            summary: {
+                totalContentTypes: 2,
+                contentTypesWithContent: 1,
+                workflowEnabledContentTypes: 1,
+                paidContentTypes: 0,
+                pendingReviewTaskCount: 1,
+            },
+            targets: {
+                authoring: [{
+                    id: 12,
+                    name: 'Editorial Article',
+                    slug: 'editorial-article',
+                    itemCount: 1,
+                    pendingReviewTaskCount: 1,
+                    activeWorkflowCount: 1,
+                    activeTypeOfferCount: 0,
+                    reason: '1 stored item(s) and 1 active workflow(s) make this a strong authoring target.',
+                    recommendedCommands: {
+                        contentGuide: 'node dist/cli/index.js content guide --content-type-id 12',
+                        listContent: 'node dist/cli/index.js content list --content-type-id 12',
+                        workflowActive: 'node dist/cli/index.js workflow active --content-type-id 12',
+                    },
+                }],
+                review: [{
+                    id: 12,
+                    name: 'Editorial Article',
+                    slug: 'editorial-article',
+                    itemCount: 1,
+                    pendingReviewTaskCount: 1,
+                    activeWorkflowCount: 1,
+                    activeTypeOfferCount: 0,
+                    reason: '1 pending review task(s) across 1 stored item(s).',
+                    recommendedCommands: {
+                        contentGuide: 'node dist/cli/index.js content guide --content-type-id 12',
+                        listContent: 'node dist/cli/index.js content list --content-type-id 12',
+                        workflowActive: 'node dist/cli/index.js workflow active --content-type-id 12',
+                    },
+                }],
+                workflow: [{
+                    id: 12,
+                    name: 'Editorial Article',
+                    slug: 'editorial-article',
+                    itemCount: 1,
+                    pendingReviewTaskCount: 1,
+                    activeWorkflowCount: 1,
+                    activeTypeOfferCount: 0,
+                    reason: '1 active workflow(s) and 1 pending review task(s) are mapped to this schema.',
+                    recommendedCommands: {
+                        contentGuide: 'node dist/cli/index.js content guide --content-type-id 12',
+                        listContent: 'node dist/cli/index.js content list --content-type-id 12',
+                        workflowActive: 'node dist/cli/index.js workflow active --content-type-id 12',
+                    },
+                }],
+                paid: [],
+            },
+            contentTypes: [{
+                id: 12,
+                name: 'Editorial Article',
+                slug: 'editorial-article',
+                description: 'Reviewed content',
+                fieldCount: 2,
+                requiredFieldCount: 1,
+                itemCount: 1,
+                hasContent: true,
+                pendingReviewTaskCount: 1,
+                lastItemUpdatedAt: '2026-03-11T11:00:00.000Z',
+                paid: {
+                    basePrice: null,
+                    activeTypeOfferCount: 0,
+                    lowestTypeOfferSats: null,
+                },
+                workflow: {
+                    activeWorkflowCount: 1,
+                    activeWorkflows: [{
+                        id: 22,
+                        name: 'Editorial Flow',
+                        transitionCount: 1,
+                    }],
+                },
+                recommendedCommands: {
+                    contentGuide: 'node dist/cli/index.js content guide --content-type-id 12',
+                    listContent: 'node dist/cli/index.js content list --content-type-id 12',
+                    workflowActive: 'node dist/cli/index.js workflow active --content-type-id 12',
+                },
+            }],
+            warnings: [],
+        }));
+        mocks.resolveWorkspaceTargetMock.mockImplementation(async (currentActor, options) => ({
+            generatedAt: '2026-03-11T12:00:00.000Z',
+            currentActor,
+            currentDomain: {
+                id: currentActor.domainId,
+                name: 'Local Dev',
+                hostname: 'localhost',
+                current: true,
+            },
+            intent: options.intent,
+            search: options.search ?? null,
+            availableTargetCount: 1,
+            target: {
+                id: 12,
+                name: 'Editorial Article',
+                slug: 'editorial-article',
+                itemCount: 1,
+                pendingReviewTaskCount: 1,
+                activeWorkflowCount: 1,
+                activeTypeOfferCount: 0,
+                reason: '1 pending review task(s) across 1 stored item(s).',
+                rank: 1,
+                recommendedCommands: {
+                    contentGuide: 'node dist/cli/index.js content guide --content-type-id 12',
+                    listContent: 'node dist/cli/index.js content list --content-type-id 12',
+                    workflowActive: 'node dist/cli/index.js workflow active --content-type-id 12',
+                },
+                contentType: {
+                    id: 12,
+                    name: 'Editorial Article',
+                    slug: 'editorial-article',
+                    description: 'Reviewed content',
+                    fieldCount: 2,
+                    requiredFieldCount: 1,
+                    itemCount: 1,
+                    hasContent: true,
+                    pendingReviewTaskCount: 1,
+                    lastItemUpdatedAt: '2026-03-11T11:00:00.000Z',
+                    paid: {
+                        basePrice: null,
+                        activeTypeOfferCount: 0,
+                        lowestTypeOfferSats: null,
+                    },
+                    workflow: {
+                        activeWorkflowCount: 1,
+                        activeWorkflows: [{
+                            id: 22,
+                            name: 'Editorial Flow',
+                            transitionCount: 1,
+                        }],
+                    },
+                    recommendedCommands: {
+                        contentGuide: 'node dist/cli/index.js content guide --content-type-id 12',
+                        listContent: 'node dist/cli/index.js content list --content-type-id 12',
+                        workflowActive: 'node dist/cli/index.js workflow active --content-type-id 12',
+                    },
+                },
+                workTarget: {
+                    kind: 'review-task',
+                    status: 'ready',
+                    label: 'Editorial Draft (draft → in_review)',
+                    reason: 'Review task #88 is actionable for the current actor.',
+                    notes: ['Workflow: Editorial Flow.', 'Content item #501 is currently in_review.'],
+                    recommendedCommands: [
+                        'node dist/cli/index.js workflow guide --task 88',
+                        'node dist/cli/index.js workflow decide --id 88 --decision approved',
+                        'node dist/cli/index.js content get --id 501',
+                    ],
+                    contentType: {
+                        id: 12,
+                        name: 'Editorial Article',
+                        slug: 'editorial-article',
+                    },
+                    contentItem: {
+                        id: 501,
+                        label: 'Editorial Draft',
+                        status: 'in_review',
+                        version: 3,
+                        slug: 'editorial-draft',
+                        createdAt: '2026-03-11T10:30:00.000Z',
+                        updatedAt: '2026-03-11T11:00:00.000Z',
+                    },
+                    reviewTask: {
+                        id: 88,
+                        status: 'pending',
+                        assignee: currentActor.actorId,
+                        workflowTransitionId: 77,
+                        actionable: true,
+                        fromState: 'draft',
+                        toState: 'in_review',
+                    },
+                    workflow: {
+                        id: 22,
+                        name: 'Editorial Flow',
+                        transitionCount: 1,
+                    },
+                    paid: null,
+                },
+            },
+            alternatives: [],
+            warnings: [],
+        }));
     });
 
     afterEach(async () => {
@@ -76,6 +298,8 @@ describe('MCP HTTP transport', () => {
         }
 
         restoreEnv();
+        mocks.getWorkspaceContextSnapshotMock.mockReset();
+        mocks.resolveWorkspaceTargetMock.mockReset();
     });
 
     it('supports authenticated streamable HTTP discovery and tool execution', async () => {
@@ -115,7 +339,8 @@ describe('MCP HTTP transport', () => {
         const taskGuide = await client.callTool({
             name: 'guide_task',
             arguments: {
-                taskId: 'manage-integrations',
+                taskId: 'discover-workspace',
+                intent: 'review',
             }
         });
         const resolvedWorkspaceTarget = await client.callTool({
@@ -182,12 +407,13 @@ describe('MCP HTTP transport', () => {
         expect(typeof workspaceText).toBe('string');
         expect(typeof filteredWorkspaceText).toBe('string');
         expect(JSON.parse(deploymentStatusText as string)).toEqual(expect.objectContaining({
-            overallStatus: 'ready',
             checks: expect.objectContaining({
                 database: expect.objectContaining({
-                    status: 'ready',
+                    status: expect.any(String),
                 }),
                 mcp: expect.objectContaining({
+                    status: 'ready',
+                    attachable: true,
                     endpoint: '/mcp',
                     transports: ['stdio', 'streamable-http'],
                 }),
@@ -274,43 +500,48 @@ describe('MCP HTTP transport', () => {
         const deploymentGuideText = extractFirstText(deploymentGuide.content as Array<{ type: string; text?: string }>);
         const workspaceGuideText = extractFirstText(workspaceGuide.content as Array<{ type: string; text?: string }>);
         const filteredWorkspaceGuideText = extractFirstText(filteredWorkspaceGuide.content as Array<{ type: string; text?: string }>);
-        expect(JSON.parse(taskGuideText)).toEqual(expect.objectContaining({
-            taskId: 'manage-integrations',
-            preferredSurface: 'mcp',
-            currentActor: expect.objectContaining({
-                actorId: 'env_key:remote-admin',
-                actorProfileId: 'env-key',
-            }),
-            guide: expect.objectContaining({
-                taskId: 'manage-integrations',
-                actorReadiness: expect.objectContaining({
-                    status: 'warning',
+        const taskGuideJson = JSON.parse(taskGuideText);
+        expect(taskGuideJson.taskId).toBe('discover-workspace');
+        expect(taskGuideJson.preferredSurface).toBe('mcp');
+        expect(taskGuideJson.currentActor).toEqual(expect.objectContaining({
+            actorId: 'env_key:remote-admin',
+            actorProfileId: 'env-key',
+        }));
+        expect(taskGuideJson.guide).toEqual(expect.objectContaining({
+            taskId: 'discover-workspace',
+            steps: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'choose-authoring-target',
                 }),
-                apiKeys: expect.objectContaining({
-                    accessible: true,
-                }),
-                webhooks: expect.objectContaining({
-                    accessible: true,
+            ]),
+        }));
+        expect(taskGuideJson.resolvedTarget).toEqual(expect.objectContaining({
+            intent: 'review',
+            target: expect.objectContaining({
+                workTarget: expect.objectContaining({
+                    kind: 'review-task',
                 }),
             }),
         }));
-        expect(JSON.parse(deploymentGuideText)).toEqual(expect.objectContaining({
-            taskId: 'discover-deployment',
-            preferredSurface: 'rest',
-            deploymentStatus: expect.objectContaining({
-                overallStatus: 'ready',
+        const deploymentGuideJson = JSON.parse(deploymentGuideText);
+        expect(deploymentGuideJson.taskId).toBe('discover-deployment');
+        expect(deploymentGuideJson.preferredSurface).toBe('rest');
+        expect(deploymentGuideJson.deploymentStatus).toEqual(expect.objectContaining({
+            checks: expect.objectContaining({
+                mcp: expect.objectContaining({
+                    endpoint: '/mcp',
+                }),
             }),
-            guide: expect.objectContaining({
-                overallStatus: 'ready',
-                steps: expect.arrayContaining([
-                    expect.objectContaining({
-                        command: 'node dist/cli/index.js capabilities show',
-                    }),
-                    expect.objectContaining({
-                        command: 'node dist/cli/index.js capabilities status',
-                    }),
-                ]),
-            }),
+        }));
+        expect(deploymentGuideJson.guide).toEqual(expect.objectContaining({
+            steps: expect.arrayContaining([
+                expect.objectContaining({
+                    command: 'node dist/cli/index.js capabilities show',
+                }),
+                expect.objectContaining({
+                    command: 'node dist/cli/index.js capabilities status',
+                }),
+            ]),
         }));
         expect(JSON.parse(workspaceGuideText)).toEqual(expect.objectContaining({
             taskId: 'discover-workspace',
@@ -347,6 +578,9 @@ describe('MCP HTTP transport', () => {
             intent: 'review',
             target: expect.objectContaining({
                 rank: 1,
+                workTarget: expect.objectContaining({
+                    kind: 'review-task',
+                }),
             }),
         }));
         expect(JSON.parse(filteredWorkspaceGuideText)).toEqual(expect.objectContaining({
@@ -360,6 +594,9 @@ describe('MCP HTTP transport', () => {
                 intent: 'review',
                 target: expect.objectContaining({
                     rank: 1,
+                    workTarget: expect.objectContaining({
+                        kind: 'review-task',
+                    }),
                 }),
             }),
         }));

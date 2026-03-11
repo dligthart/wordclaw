@@ -175,6 +175,8 @@ For remote MCP clients, the same deployment guidance is also available in-band:
 - `guide_task` with `{"taskId":"discover-workspace"}`
 - `resolve_workspace_target` with `{"intent":"review"}`
 
+`/api/workspace-target`, `system://workspace-target/<intent>`, and `workspace resolve --intent <intent>` now return both the best schema candidate and `workTarget`, which points at the next concrete unit of work inside that schema.
+
 ## Supervisor Web Interface
 
 WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, approvals, payments, L402 readiness, API keys, and audit review. Experimental pages remain available, but they stay hidden by default so the main operator workflow stays focused on supported control-plane surfaces.

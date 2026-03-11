@@ -167,13 +167,26 @@ The result tells you:
 - which grouped authoring, workflow, review, and paid-content targets are the best next candidates
 - how to narrow the workspace view by `intent`, `search`, and `limit` when the agent already knows the task class
 - which concrete `content guide`, `content list`, and `workflow active` commands to run next
+- which single resolved target includes the next concrete work target, such as a review task, workflow, authoring schema, or paid content item
 
-When the agent already knows the task class and only needs the best schema target, use:
+When the agent already knows the task class and only needs the resolved target for that intent, use:
 
 ```bash
 node dist/cli/index.js workspace resolve --intent review
 node dist/cli/index.js workspace resolve --intent authoring --search article
 ```
+
+`workspace resolve` now returns both:
+
+- the best schema target for the chosen intent
+- `workTarget`, which points at the next concrete unit of work inside that schema
+
+Depending on the intent, `workTarget.kind` can be:
+
+- `content-type`
+- `review-task`
+- `workflow`
+- `paid-content-item`
 
 ### Integration Guidance
 
