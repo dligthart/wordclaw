@@ -127,6 +127,12 @@ npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.jso
 npm run build
 node dist/cli/index.js mcp smoke
 node dist/cli/index.js l402 offers --item 123
+
+# Or install the compiled binary locally
+npm run build
+npm install -g .
+wordclaw --help
+wordclaw content guide --help
 ```
 
 The CLI is JSON-first so agents can script it reliably, and `--raw` is available when you want only the response body or MCP text. It supports:
@@ -147,6 +153,20 @@ Use environment variables for REST auth:
 export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
 ```
+
+You can also keep CLI defaults in `.wordclaw.json` in the current directory or `~/.wordclaw.json`:
+
+```json
+{
+  "baseUrl": "http://localhost:4000",
+  "apiKey": "writer",
+  "mcpTransport": "http",
+  "mcpUrl": "http://localhost:4000/mcp",
+  "raw": false
+}
+```
+
+Override the discovered config file with `--config /path/to/file.json` or `WORDCLAW_CONFIG=/path/to/file.json`.
 
 ### Agent Guidance & Workspaces
 

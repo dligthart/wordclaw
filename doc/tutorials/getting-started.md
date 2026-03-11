@@ -123,6 +123,25 @@ export WORDCLAW_API_KEY=writer
 
 Use `node dist/cli/index.js --help` (or `npx tsx src/cli/index.ts --help`) to see the available command groups for capability discovery, MCP, REST, audit/provenance, workflows, and L402. The CLI also supports shorthand aliases like `caps`, `ct ls`, and `content ls`, typo suggestions for unknown commands, and `--raw` output when you want only the response body or MCP text.
 
+After `npm run build`, you can also install the CLI as a local global binary:
+
+```bash
+npm install -g .
+wordclaw --help
+wordclaw content guide --help
+```
+
+To avoid repeating `--base-url`, `--api-key`, or MCP transport flags, create `.wordclaw.json` in the repo or `~/.wordclaw.json`:
+
+```json
+{
+  "baseUrl": "http://localhost:4000",
+  "apiKey": "writer",
+  "mcpTransport": "http",
+  "mcpUrl": "http://localhost:4000/mcp"
+}
+```
+
 For MCP commands, the CLI defaults to local `stdio` transport. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` when you want it to attach to the running remote MCP endpoint instead.
 
 Recommended agent preflight sequence:

@@ -22,6 +22,16 @@ npm run build
 node dist/cli/index.js --help
 ```
 
+Install the compiled binary for global use:
+
+```bash
+npm run build
+npm install -g .
+wordclaw --help
+wordclaw content guide --help
+wordclaw workspace resolve --help
+```
+
 ## Environment
 
 REST commands use these environment variables by default:
@@ -30,6 +40,28 @@ REST commands use these environment variables by default:
 export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=<your-api-key>
 ```
+
+## Config File
+
+The CLI loads defaults from:
+
+1. `--config <path>` or `WORDCLAW_CONFIG`
+2. `./.wordclaw.json`
+3. `~/.wordclaw.json`
+
+Example:
+
+```json
+{
+  "baseUrl": "http://localhost:4000",
+  "apiKey": "writer",
+  "mcpTransport": "http",
+  "mcpUrl": "http://localhost:4000/mcp",
+  "raw": false
+}
+```
+
+Flags still override config values.
 
 Use a domain-scoped API key for the tenant you want to operate against.
 
@@ -72,6 +104,16 @@ Plain output example:
 
 ```bash
 node dist/cli/index.js mcp prompt workflow-guidance --raw
+```
+
+Scoped help examples:
+
+```bash
+wordclaw --help
+wordclaw content --help
+wordclaw content guide --help
+wordclaw workspace resolve --help
+wordclaw --help-all
 ```
 
 ## Supported Command Groups

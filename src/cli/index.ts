@@ -16,6 +16,12 @@ import {
     resolveAlias,
 } from './lib/command-resolution.js';
 import {
+    loadWordClawCliConfig,
+    resolveCliBooleanOption,
+    resolveCliStringOption,
+} from './lib/config.js';
+import { buildUsage } from './lib/help.js';
+import {
     inspectCapabilities,
     resolveMcpHttpEndpoint,
     resolveRepoRoot,
@@ -37,6 +43,14 @@ import type { CurrentActorSnapshot } from '../services/actor-identity.js';
 import type { WorkspaceContextSnapshot } from '../services/workspace-context.js';
 
 type JsonMap = Record<string, unknown>;
+type CliRuntimeOptions = {
+    baseUrl?: string;
+    apiKey?: string;
+    mcpUrl?: string;
+    mcpTransport?: 'stdio' | 'http';
+    raw: boolean;
+    configPath: string | null;
+};
 
 const TOP_LEVEL_COMMANDS = [
     'mcp',
@@ -72,6 +86,7 @@ const CONTENT_TYPES_SUBCOMMAND_ALIASES: Record<string, string> = {
 const CONTENT_SUBCOMMAND_ALIASES: Record<string, string> = {
     ls: 'list',
 };
+let currentRuntimeOptions: CliRuntimeOptions | null = null;
 
 function printJson(value: unknown) {
     console.log(JSON.stringify(value, null, 2));
@@ -87,7 +102,7 @@ function printRaw(value: unknown) {
 }
 
 function wantsRawOutput(args: ParsedArgs) {
-    return hasFlag(args, 'raw');
+    return currentRuntimeOptions?.raw === true || hasFlag(args, 'raw');
 }
 
 function printStructured(args: ParsedArgs, structured: unknown, rawValue = structured) {
@@ -97,87 +112,6 @@ function printStructured(args: ParsedArgs, structured: unknown, rawValue = struc
     }
 
     printJson(structured);
-}
-
-function buildUsage() {
-    return `WordClaw CLI
-
-Usage:
-  node dist/cli/index.js <command> [subcommand] [options]
-  npx tsx src/cli/index.ts <command> [subcommand] [options]
-
-Commands:
-  mcp inspect
-  mcp whoami
-  mcp call <tool> [--json <object>|--file <path>]
-  mcp prompt <prompt> [--json <object>|--file <path>]
-  mcp resource <uri>
-  mcp smoke
-    MCP options: [--mcp-transport stdio|http] [--mcp-url <url>]
-
-  capabilities show
-  capabilities status
-  capabilities whoami
-
-  workspace guide [--intent all|authoring|review|workflow|paid] [--search <value>] [--limit <n>]
-  workspace resolve --intent authoring|review|workflow|paid [--search <value>]
-
-  audit list [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>] [--cursor <value>]
-  audit guide [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>]
-
-  rest request <method> <path> [--query-json <object>] [--body-json <object>|--body-file <path>]
-  integrations guide
-
-  content-types list [--limit <n>] [--offset <n>] [--include-stats]
-  content-types get --id <n>
-  content-types create --name <value> --slug <value> [--description <value>] [--schema-json <json>|--schema-file <path>] [--base-price <n>] [--dry-run]
-  content-types update --id <n> [--name <value>] [--slug <value>] [--description <value>] [--schema-json <json>|--schema-file <path>] [--base-price <n>] [--dry-run]
-  content-types delete --id <n> [--dry-run]
-
-  content list [--content-type-id <n>] [--status <value>] [--q <value>] [--created-after <iso>] [--created-before <iso>] [--sort-by updatedAt|createdAt|version] [--sort-dir asc|desc] [--limit <n>] [--offset <n>]
-  content guide --content-type-id <n>
-  content get --id <n>
-  content create --content-type-id <n> [--status <value>] [--data-json <json>|--data-file <path>] [--dry-run]
-  content update --id <n> [--content-type-id <n>] [--status <value>] [--data-json <json>|--data-file <path>] [--dry-run]
-  content versions --id <n>
-  content rollback --id <n> --version <n> [--dry-run]
-  content delete --id <n> [--dry-run]
-
-  workflow active --content-type-id <n>
-  workflow guide [--task <n>]
-  workflow submit --id <n> --transition <n> [--assignee <value>]
-  workflow tasks
-  workflow decide --id <n> --decision approved|rejected
-
-  l402 offers --item <n>
-  l402 guide --item <n> [--offer <n>]
-  l402 purchase --offer <n> [--payment-method lightning]
-  l402 confirm --offer <n> --macaroon <value> --preimage <value> [--payment-hash <hash>]
-  l402 entitlements
-  l402 entitlement --id <n>
-  l402 read --item <n> [--entitlement-id <n>]
-
-Aliases:
-  caps -> capabilities
-  ct -> content-types
-  wf -> workflow
-  content-types ls -> content-types list
-  content ls -> content list
-
-Global options:
-  --raw               Print plain body/text without the CLI envelope when possible
-  --help, -h          Show this help message
-  --base-url <url>    Override WORDCLAW_BASE_URL for REST commands
-  --api-key <key>     Override WORDCLAW_API_KEY for REST commands
-  --mcp-transport     MCP transport for mcp commands: stdio or http
-  --mcp-url <url>     Remote MCP endpoint. Defaults to <base-url>/mcp for HTTP mode
-
-Environment:
-  WORDCLAW_BASE_URL   Default: http://localhost:4000
-  WORDCLAW_API_KEY    API key used for REST requests
-  WORDCLAW_MCP_URL    Remote MCP endpoint for mcp commands
-  WORDCLAW_MCP_TRANSPORT  Default MCP transport override for mcp commands
-`;
 }
 
 function bodyFromResponse(response: RestCliResponse) {
@@ -297,29 +231,89 @@ function resolveSupportedSubcommand(
     return resolved;
 }
 
-async function handleMcp(repoRoot: string, args: ParsedArgs) {
+async function resolveCliRuntimeOptions(args: ParsedArgs): Promise<CliRuntimeOptions> {
+    const loadedConfig = await loadWordClawCliConfig(args);
+    const requestedTransport = resolveCliStringOption(
+        getStringFlag(args, 'mcp-transport'),
+        loadedConfig.config.mcpTransport,
+        process.env.WORDCLAW_MCP_TRANSPORT,
+    );
+    if (requestedTransport && requestedTransport !== 'stdio' && requestedTransport !== 'http') {
+        throw new Error('--mcp-transport must be "stdio" or "http".');
+    }
+
+    return {
+        baseUrl: resolveCliStringOption(
+            getStringFlag(args, 'base-url'),
+            loadedConfig.config.baseUrl,
+            process.env.WORDCLAW_BASE_URL,
+        ),
+        apiKey: resolveCliStringOption(
+            getStringFlag(args, 'api-key'),
+            loadedConfig.config.apiKey,
+            process.env.WORDCLAW_API_KEY,
+        ),
+        mcpUrl: resolveCliStringOption(
+            getStringFlag(args, 'mcp-url'),
+            loadedConfig.config.mcpUrl,
+            process.env.WORDCLAW_MCP_URL,
+        ),
+        mcpTransport: requestedTransport as 'stdio' | 'http' | undefined,
+        raw: resolveCliBooleanOption(hasFlag(args, 'raw'), loadedConfig.config.raw),
+        configPath: loadedConfig.path,
+    };
+}
+
+function resolveHelpScope(args: ParsedArgs) {
+    if (hasFlag(args, 'help-all')) {
+        return buildUsage();
+    }
+
+    const rawCommand = optionalPositional(args, 0);
+    if (!rawCommand) {
+        return buildUsage();
+    }
+
+    if (!hasFlag(args, 'help') && !hasFlag(args, 'h')) {
+        return null;
+    }
+
+    const command = resolveAlias(rawCommand, TOP_LEVEL_ALIASES) ?? rawCommand;
+    if (!(TOP_LEVEL_COMMANDS as readonly string[]).includes(command)) {
+        return buildUsage();
+    }
+
+    const rawSubcommand = optionalPositional(args, 1);
+    if (!rawSubcommand) {
+        return buildUsage({ command });
+    }
+
+    const subcommandAliases = command === 'content-types'
+        ? CONTENT_TYPES_SUBCOMMAND_ALIASES
+        : command === 'content'
+            ? CONTENT_SUBCOMMAND_ALIASES
+            : {};
+    const subcommand = resolveAlias(rawSubcommand, subcommandAliases) ?? rawSubcommand;
+    return buildUsage({ command, subcommand });
+}
+
+async function handleMcp(repoRoot: string, args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
     const action = resolveSupportedSubcommand(
         args,
         1,
         'mcp subcommand',
         MCP_SUBCOMMANDS,
     );
-    const baseUrl = getStringFlag(args, 'base-url') ?? process.env.WORDCLAW_BASE_URL;
-    const explicitEndpoint = getStringFlag(args, 'mcp-url') ?? process.env.WORDCLAW_MCP_URL;
-    const requestedTransport = getStringFlag(args, 'mcp-transport') ?? process.env.WORDCLAW_MCP_TRANSPORT;
-    if (requestedTransport && requestedTransport !== 'stdio' && requestedTransport !== 'http') {
-        throw new Error('--mcp-transport must be "stdio" or "http".');
-    }
-    const transport = requestedTransport === 'http' || explicitEndpoint
+    const transport = runtimeOptions.mcpTransport === 'http' || runtimeOptions.mcpUrl
         ? 'http'
         : 'stdio';
     const endpoint = transport === 'http'
-        ? resolveMcpHttpEndpoint(explicitEndpoint, baseUrl)
+        ? resolveMcpHttpEndpoint(runtimeOptions.mcpUrl, runtimeOptions.baseUrl)
         : undefined;
     const client = new WordClawMcpClient(repoRoot, {
         transport,
         endpoint,
-        apiKey: getStringFlag(args, 'api-key') ?? process.env.WORDCLAW_API_KEY,
+        apiKey: runtimeOptions.apiKey,
     });
 
     try {
@@ -1231,7 +1225,7 @@ async function handleWorkflow(client: RestCliClient, args: ParsedArgs) {
     printResponse(args, response);
 }
 
-async function handleL402(client: RestCliClient, args: ParsedArgs) {
+async function handleL402(client: RestCliClient, args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
     const action = resolveSupportedSubcommand(
         args,
         1,
@@ -1258,7 +1252,7 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
         if (itemId === undefined) {
             throw new Error('l402 guide requires --item.');
         }
-        const apiKeyConfigured = Boolean(getStringFlag(args, 'api-key') ?? process.env.WORDCLAW_API_KEY);
+        const apiKeyConfigured = Boolean(runtimeOptions.apiKey);
         const actorResult = await tryFetchCurrentActor(client);
         const currentActor = actorResult.currentActor;
         let offers: Array<{
@@ -1395,27 +1389,21 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
     }
 }
 
-async function main(args: ParsedArgs) {
-    const rawCommand = optionalPositional(args, 0);
-
-    if (!rawCommand || hasFlag(args, 'help') || hasFlag(args, 'h')) {
-        console.log(buildUsage());
-        return;
-    }
-
+async function main(args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
+    const rawCommand = requirePositional(args, 0, 'command');
     const command = resolveAlias(rawCommand, TOP_LEVEL_ALIASES) ?? rawCommand;
     if (!(TOP_LEVEL_COMMANDS as readonly string[]).includes(command)) {
         throw buildUnknownCommandError('command', rawCommand, TOP_LEVEL_COMMANDS);
     }
 
     if (command === 'mcp') {
-        await handleMcp(resolveRepoRoot(), args);
+        await handleMcp(resolveRepoRoot(), args, runtimeOptions);
         return;
     }
 
     const client = new RestCliClient({
-        baseUrl: getStringFlag(args, 'base-url'),
-        apiKey: getStringFlag(args, 'api-key'),
+        baseUrl: runtimeOptions.baseUrl,
+        apiKey: runtimeOptions.apiKey,
         domainId: getNumberFlag(args, 'domain-id'),
     });
 
@@ -1452,29 +1440,39 @@ async function main(args: ParsedArgs) {
         return;
     }
 
-    await handleL402(client, args);
+    await handleL402(client, args, runtimeOptions);
 }
 
 const parsedArgs = parseArgs(process.argv.slice(2));
+const helpOutput = resolveHelpScope(parsedArgs);
 
-main(parsedArgs).catch((error) => {
-    if (error instanceof RestCliError) {
-        if (wantsRawOutput(parsedArgs)) {
-            printRaw(error.response.body);
-        } else {
-            printJson({
-                error: error.message,
-                response: bodyFromResponse(error.response),
-            });
-        }
-        process.exit(1);
-    }
+if (helpOutput) {
+    console.log(helpOutput);
+} else {
+    resolveCliRuntimeOptions(parsedArgs)
+        .then(async (runtimeOptions) => {
+            currentRuntimeOptions = runtimeOptions;
+            await main(parsedArgs, runtimeOptions);
+        })
+        .catch((error) => {
+            if (error instanceof RestCliError) {
+                if (wantsRawOutput(parsedArgs)) {
+                    printRaw(error.response.body);
+                } else {
+                    printJson({
+                        error: error.message,
+                        response: bodyFromResponse(error.response),
+                    });
+                }
+                process.exit(1);
+            }
 
-    const message = error instanceof Error ? error.message : String(error);
-    if (wantsRawOutput(parsedArgs)) {
-        printRaw(message);
-    } else {
-        printJson({ error: message });
-    }
-    process.exit(1);
-});
+            const message = error instanceof Error ? error.message : String(error);
+            if (wantsRawOutput(parsedArgs)) {
+                printRaw(message);
+            } else {
+                printJson({ error: message });
+            }
+            process.exit(1);
+        });
+}

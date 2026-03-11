@@ -2,7 +2,10 @@
   "name": "wordclaw",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "bin": {
+    "wordclaw": "dist/cli/index.js"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "db:migrate": "tsx src/db/migrate.ts",
