@@ -50,7 +50,7 @@ jobs:
         cache: 'npm'
 
     - name: Install dependencies
-      run: npm ci
+      run: npm install
 
     - name: Apply DB Migrations
       run: npx tsx src/db/migrate.ts
