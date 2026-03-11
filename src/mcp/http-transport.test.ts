@@ -109,6 +109,12 @@ describe('MCP HTTP transport', () => {
                 taskId: 'author-content'
             }
         });
+        const taskGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'manage-integrations',
+            }
+        });
         const policyDecision = await client.callTool({
             name: 'evaluate_policy',
             arguments: {
@@ -118,6 +124,7 @@ describe('MCP HTTP transport', () => {
         });
 
         expect(tools.tools.some((tool) => tool.name === 'evaluate_policy')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'guide_task')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://agent-guidance')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://current-actor')).toBe(true);
@@ -179,6 +186,28 @@ describe('MCP HTTP transport', () => {
         expect(taskPromptText).toContain('Supported actor profiles: api-key, env-key, mcp-local, supervisor-session');
         expect(taskPromptText).toContain('Actor type: api_key');
         expect(taskPromptText).toContain('Domain context: implicit-from-key');
+
+        const taskGuideText = extractFirstText(taskGuide.content as Array<{ type: string; text?: string }>);
+        expect(JSON.parse(taskGuideText)).toEqual(expect.objectContaining({
+            taskId: 'manage-integrations',
+            preferredSurface: 'mcp',
+            currentActor: expect.objectContaining({
+                actorId: 'env_key:remote-admin',
+                actorProfileId: 'env-key',
+            }),
+            guide: expect.objectContaining({
+                taskId: 'manage-integrations',
+                actorReadiness: expect.objectContaining({
+                    status: 'warning',
+                }),
+                apiKeys: expect.objectContaining({
+                    accessible: true,
+                }),
+                webhooks: expect.objectContaining({
+                    accessible: true,
+                }),
+            }),
+        }));
 
         const decisionText = extractFirstText(policyDecision.content as Array<{ type: string; text?: string }>);
         expect(JSON.parse(decisionText)).toEqual(expect.objectContaining({

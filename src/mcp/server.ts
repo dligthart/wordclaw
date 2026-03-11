@@ -13,17 +13,31 @@ import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWe
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
+import { LicensingService } from '../services/licensing.js';
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
 import { buildCurrentActorSnapshot, buildMcpLocalPrincipal, type ActorPrincipal } from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
+import { buildContentGuide } from '../cli/lib/content-guide.js';
+import { buildWorkflowGuide } from '../cli/lib/workflow-guide.js';
+import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
+import { buildL402Guide } from '../cli/lib/l402-guide.js';
 
 type McpRequestExtra = {
     authInfo?: {
         extra?: Record<string, unknown>;
     };
 };
+
+const GUIDE_TASK_IDS = [
+    'author-content',
+    'review-workflow',
+    'manage-integrations',
+    'consume-paid-content',
+] as const;
+
+type GuideTaskId = typeof GUIDE_TASK_IDS[number];
 
 function resolveMcpPrincipal(extra?: McpRequestExtra): ActorPrincipal {
     const principal = extra?.authInfo?.extra?.wordclawPrincipal;
@@ -192,6 +206,71 @@ export function createServer() {
             return null;
         }
         return value.toISOString();
+    }
+
+    function toOptionalIsoString(value: Date | null | undefined): string | undefined {
+        if (!value) {
+            return undefined;
+        }
+
+        return value.toISOString();
+    }
+
+    function hasActorScope(actor: ReturnType<typeof buildCurrentActorSnapshot>, scope: string): boolean {
+        return actor.scopes.includes('admin') || actor.scopes.includes(scope);
+    }
+
+    function canInspectContent(actor: ReturnType<typeof buildCurrentActorSnapshot>): boolean {
+        return hasActorScope(actor, 'content:read') || hasActorScope(actor, 'content:write');
+    }
+
+    function canWriteContent(actor: ReturnType<typeof buildCurrentActorSnapshot>): boolean {
+        return hasActorScope(actor, 'content:write');
+    }
+
+    function canManageIntegrations(actor: ReturnType<typeof buildCurrentActorSnapshot>): boolean {
+        return hasActorScope(actor, 'content:write');
+    }
+
+    function serializeApiKeyForGuide(key: Awaited<ReturnType<typeof listApiKeys>>[number]) {
+        return {
+            id: key.id,
+            name: key.name,
+            keyPrefix: key.keyPrefix,
+            scopes: key.scopes.split('|').filter(Boolean),
+            createdBy: key.createdBy,
+            createdAt: toIsoString(key.createdAt) ?? new Date(0).toISOString(),
+            expiresAt: toIsoString(key.expiresAt),
+            revokedAt: toIsoString(key.revokedAt),
+            lastUsedAt: toIsoString(key.lastUsedAt),
+        };
+    }
+
+    function serializeWebhookForGuide(hook: Awaited<ReturnType<typeof listWebhooks>>[number]) {
+        return {
+            id: hook.id,
+            url: hook.url,
+            events: parseWebhookEvents(hook.events),
+            active: hook.active,
+            createdAt: toIsoString(hook.createdAt) ?? new Date(0).toISOString(),
+        };
+    }
+
+    function serializePendingReviewTaskForGuide(taskRow: Awaited<ReturnType<typeof WorkflowService.listPendingReviewTasks>>[number]) {
+        return {
+            task: {
+                ...taskRow.task,
+                createdAt: toOptionalIsoString(taskRow.task.createdAt),
+                updatedAt: toOptionalIsoString(taskRow.task.updatedAt),
+            },
+            transition: {
+                ...taskRow.transition,
+                requiredRoles: Array.isArray(taskRow.transition.requiredRoles) ? taskRow.transition.requiredRoles : [],
+            },
+            workflow: taskRow.workflow,
+            contentItem: taskRow.contentItem,
+            contentType: taskRow.contentType,
+        };
     }
 
     function serializeAgentRunDefinition(definition: {
@@ -2089,6 +2168,231 @@ server.tool(
             return err(`Error adding comment: ${(error as Error).message}`);
         }
     })
+);
+
+server.tool(
+    'guide_task',
+    'Build live, actor-aware guidance for a supported WordClaw agent task',
+    {
+        taskId: z.enum(GUIDE_TASK_IDS).describe('Supported task id, e.g. author-content or consume-paid-content'),
+        contentTypeId: z.number().optional().describe('Required for author-content guidance'),
+        reviewTaskId: z.number().optional().describe('Optional review task to prioritize for review-workflow guidance'),
+        contentItemId: z.number().optional().describe('Required for consume-paid-content guidance'),
+        offerId: z.number().optional().describe('Optional offer id to prioritize for consume-paid-content guidance'),
+    },
+    async ({ taskId, contentTypeId, reviewTaskId, contentItemId, offerId }, extra) => {
+        const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
+        const currentActor = buildCurrentActorSnapshot(principal);
+        const manifest = buildCapabilityManifest();
+        const recipe = manifest.agentGuidance.taskRecipes.find((task) => task.id === taskId);
+
+        if (!recipe) {
+            return err(`UNKNOWN_TASK: Unsupported task "${taskId}"`);
+        }
+
+        const domainId = principal.domainId;
+        const basePayload = {
+            taskId: recipe.id,
+            goal: recipe.goal,
+            preferredSurface: recipe.preferredSurface,
+            fallbackSurface: recipe.fallbackSurface,
+            recommendedAuth: recipe.recommendedAuth,
+            preferredActorProfile: recipe.preferredActorProfile,
+            supportedActorProfiles: recipe.supportedActorProfiles,
+            recommendedApiKeyScopes: recipe.recommendedApiKeyScopes,
+            requiredModules: recipe.requiredModules,
+            dryRunRecommended: recipe.dryRunRecommended,
+            currentActor,
+        };
+
+        if (taskId === 'author-content') {
+            if (contentTypeId === undefined) {
+                return err('MISSING_CONTENT_TYPE_ID: guide_task author-content requires contentTypeId.');
+            }
+
+            let contentType: {
+                id: number;
+                name: string;
+                slug: string;
+                description: string | null;
+                schema: string;
+                basePrice: number | null;
+                createdAt?: string;
+                updatedAt?: string;
+            } | null = null;
+            let workflow: {
+                id: number;
+                name: string;
+                contentTypeId: number;
+                active: boolean;
+                transitions: Array<{
+                    id: number;
+                    workflowId: number;
+                    fromState: string;
+                    toState: string;
+                    requiredRoles?: string[];
+                }>;
+            } | null = null;
+            const warnings: string[] = [];
+
+            if (canInspectContent(currentActor)) {
+                const [type] = await db.select().from(contentTypes).where(and(
+                    eq(contentTypes.id, contentTypeId),
+                    eq(contentTypes.domainId, domainId),
+                ));
+
+                if (!type) {
+                    return err(`CONTENT_TYPE_NOT_FOUND: Content type ${contentTypeId} was not found in the active domain.`);
+                }
+
+                contentType = {
+                    id: type.id,
+                    name: type.name,
+                    slug: type.slug,
+                    description: type.description,
+                    schema: type.schema,
+                    basePrice: type.basePrice,
+                    createdAt: toOptionalIsoString(type.createdAt),
+                    updatedAt: toOptionalIsoString(type.updatedAt),
+                };
+
+                const activeWorkflow = await WorkflowService.getActiveWorkflowWithTransitions(domainId, contentTypeId);
+                if (activeWorkflow) {
+                    workflow = {
+                        id: activeWorkflow.id,
+                        name: activeWorkflow.name,
+                        contentTypeId: activeWorkflow.contentTypeId,
+                        active: activeWorkflow.active,
+                        transitions: activeWorkflow.transitions.map((transition) => ({
+                            id: transition.id,
+                            workflowId: transition.workflowId,
+                            fromState: transition.fromState,
+                            toState: transition.toState,
+                            requiredRoles: Array.isArray(transition.requiredRoles) ? transition.requiredRoles : [],
+                        })),
+                    };
+                }
+            } else {
+                warnings.push('Schema inspection is unavailable until the current actor has content read access.');
+            }
+
+            const guide = buildContentGuide({
+                contentTypeId,
+                contentType,
+                workflow,
+                currentActor,
+            });
+            if (warnings.length > 0) {
+                guide.warnings = [...(guide.warnings ?? []), ...warnings];
+            }
+
+            return okJson({
+                ...basePayload,
+                guide,
+            });
+        }
+
+        if (taskId === 'review-workflow') {
+            let tasks: ReturnType<typeof serializePendingReviewTaskForGuide>[] = [];
+            const warnings: string[] = [];
+
+            if (canWriteContent(currentActor)) {
+                const pendingTasks = await WorkflowService.listPendingReviewTasks(domainId);
+                tasks = pendingTasks.map(serializePendingReviewTaskForGuide);
+            } else {
+                warnings.push('Pending review tasks are unavailable until the current actor has content write access.');
+            }
+
+            const guide = buildWorkflowGuide({
+                tasks,
+                currentActor,
+                preferredTaskId: reviewTaskId,
+            });
+            if (warnings.length > 0) {
+                guide.warnings = [...(guide.warnings ?? []), ...warnings];
+            }
+
+            return okJson({
+                ...basePayload,
+                guide,
+            });
+        }
+
+        if (taskId === 'manage-integrations') {
+            let apiKeys: ReturnType<typeof serializeApiKeyForGuide>[] | null = null;
+            let webhooks: ReturnType<typeof serializeWebhookForGuide>[] | null = null;
+            const warnings: string[] = [];
+
+            if (canManageIntegrations(currentActor)) {
+                apiKeys = (await listApiKeys(domainId)).map(serializeApiKeyForGuide);
+                webhooks = (await listWebhooks(domainId)).map(serializeWebhookForGuide);
+            } else {
+                warnings.push('Integration inventory is unavailable until the current actor has content write access.');
+            }
+
+            const guide = buildIntegrationGuide({
+                currentActor,
+                apiKeys,
+                webhooks,
+            });
+            if (warnings.length > 0) {
+                guide.warnings = [...(guide.warnings ?? []), ...warnings];
+            }
+
+            return okJson({
+                ...basePayload,
+                guide,
+            });
+        }
+
+        if (contentItemId === undefined) {
+            return err('MISSING_CONTENT_ITEM_ID: guide_task consume-paid-content requires contentItemId.');
+        }
+
+        let offers: Array<{
+            id: number;
+            slug: string;
+            name: string;
+            scopeType: string;
+            scopeRef: number | null;
+            priceSats: number;
+            active: boolean;
+        }> = [];
+        let apiKeyConfigured = false;
+        const warnings: string[] = [];
+
+        if (hasActorScope(currentActor, 'content:read')) {
+            const [item] = await db.select().from(contentItems).where(and(
+                eq(contentItems.id, contentItemId),
+                eq(contentItems.domainId, domainId),
+            ));
+
+            if (!item) {
+                return err(`CONTENT_ITEM_NOT_FOUND: Content item ${contentItemId} was not found in the active domain.`);
+            }
+
+            offers = await LicensingService.getActiveOffersForItemRead(domainId, contentItemId, item.contentTypeId);
+            apiKeyConfigured = currentActor.actorProfileId === 'api-key' || currentActor.actorProfileId === 'env-key';
+        } else {
+            warnings.push('Live paid-content offer discovery is unavailable until the current actor has content read access.');
+        }
+
+        const guide = buildL402Guide({
+            itemId: contentItemId,
+            offers,
+            apiKeyConfigured,
+            currentActor,
+            preferredOfferId: offerId,
+        });
+        if (warnings.length > 0) {
+            guide.warnings = [...(guide.warnings ?? []), ...warnings];
+        }
+
+        return okJson({
+            ...basePayload,
+            guide,
+        });
+    }
 );
 
 server.resource(

@@ -30,6 +30,11 @@ node dist/cli/index.js mcp resource system://agent-guidance \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
+
+node dist/cli/index.js mcp call guide_task '{"taskId":"manage-integrations"}' \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
 ```
 
 ## Starting the Local MCP Server
@@ -119,6 +124,12 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 |-------------------|--------------------------------|
 | `evaluate_policy` | Dry-run permission checks against the PolicyEngine |
 
+### Agent Guidance Tools
+
+| Tool         | Description                                                                |
+|--------------|----------------------------------------------------------------------------|
+| `guide_task` | Returns live, actor-aware task guidance for content authoring, review, integrations, or paid-content flows |
+
 ## Resources
 
 | Resource         | Description                           |
@@ -147,6 +158,13 @@ Current task ids exposed through `task-guidance`:
 - `review-workflow`
 - `manage-integrations`
 - `consume-paid-content`
+
+Current task ids exposed through `guide_task`:
+
+- `author-content` with `contentTypeId`
+- `review-workflow` with optional `reviewTaskId`
+- `manage-integrations`
+- `consume-paid-content` with `contentItemId` and optional `offerId`
 
 ## Response Format
 

@@ -143,7 +143,7 @@ export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
 ```
 
-For deployment discovery before acting, use `GET /api/capabilities` or `mcp inspect`. The manifest now includes task-oriented routing hints plus explicit actor/auth profiles so an agent can choose the right surface, credential, and domain-context path for discovery, content authoring, workflow review, integration setup, and paid-content consumption. To confirm the currently authenticated actor before mutating state, use `GET /api/identity`, `system://current-actor`, `node dist/cli/index.js capabilities whoami`, or `node dist/cli/index.js mcp whoami`. For review-task execution specifically, `node dist/cli/index.js workflow guide` now shows assignment refs plus per-task readiness for the current actor.
+For deployment discovery before acting, use `GET /api/capabilities` or `mcp inspect`. The manifest now includes task-oriented routing hints plus explicit actor/auth profiles so an agent can choose the right surface, credential, and domain-context path for discovery, content authoring, workflow review, integration setup, and paid-content consumption. To confirm the currently authenticated actor before mutating state, use `GET /api/identity`, `system://current-actor`, `node dist/cli/index.js capabilities whoami`, or `node dist/cli/index.js mcp whoami`. For review-task execution specifically, `node dist/cli/index.js workflow guide` now shows assignment refs plus per-task readiness for the current actor. MCP clients can also ask for live task guidance directly with `guide_task`, for example `node dist/cli/index.js mcp call guide_task '{"taskId":"manage-integrations"}'`.
 
 ## 🎮 Demos
 
@@ -196,7 +196,7 @@ For detailed guides on setting up the Supervisor UI, authentication, testing, an
 - [MCP Integration](doc/guides/mcp-integration.md) — Model Context Protocol implementation details.
 
 WordClaw MCP is available both as a local stdio server (`npm run mcp:start`) and as a remote Streamable HTTP endpoint at `/mcp` when the main HTTP server is running.
-The MCP surface now also exposes `system://agent-guidance` plus a `task-guidance` prompt so connected agents can ask for the recommended workflow for tasks like authoring, review, integration setup, and paid-content consumption without parsing the full manifest themselves.
+The MCP surface now also exposes `system://agent-guidance`, a `task-guidance` prompt, and a live `guide_task` tool so connected agents can ask for the recommended workflow for tasks like authoring, review, integration setup, and paid-content consumption without parsing the full manifest themselves.
 - [Feature Proposals (RFCs)](doc/rfc) — Methodology and history of proposed platform features.
 
 ### API Documentation

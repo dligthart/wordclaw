@@ -85,6 +85,7 @@ node dist/cli/index.js mcp inspect
 node dist/cli/index.js mcp call list_content_types --json '{"limit":5}'
 node dist/cli/index.js mcp prompt workflow-guidance
 node dist/cli/index.js mcp prompt task-guidance --json '{"taskId":"author-content"}'
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"manage-integrations"}'
 node dist/cli/index.js mcp resource content://types
 node dist/cli/index.js mcp resource system://agent-guidance
 node dist/cli/index.js mcp smoke
@@ -111,6 +112,7 @@ Important transport note:
 - when running in `stdio` mode, the CLI starts its own local MCP child process
 - when running in `http` mode, the CLI attaches directly to `/mcp`
 - `mcp inspect` now also includes the deployment manifest and current actor snapshot when the MCP server exposes `system://capabilities` and `system://current-actor`
+- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for authoring, review, integrations, and paid-content flows
 
 Usability details:
 
