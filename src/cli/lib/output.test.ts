@@ -29,4 +29,14 @@ describe('formatStructuredOutput', () => {
             'ok: true\nnested:\n  value: hello\nitems:\n  - 1\n  - 2\n',
         );
     });
+
+    it('formats arrays of objects without extra indentation noise', () => {
+        expect(formatStructuredOutput({
+            steps: [
+                { name: 'first', ok: true },
+            ],
+        }, 'yaml')).toBe(
+            'steps:\n  - name: first\n    ok: true\n',
+        );
+    });
 });

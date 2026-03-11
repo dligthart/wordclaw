@@ -34,6 +34,11 @@ function indent(text: string, level: number) {
         .join('\n');
 }
 
+function stripIndent(lines: string[], level: number) {
+    const prefix = '  '.repeat(level);
+    return lines.map((line) => line.startsWith(prefix) ? line.slice(prefix.length) : line);
+}
+
 function toYaml(value: unknown, level = 0): string {
     if (Array.isArray(value)) {
         if (value.length === 0) {
@@ -46,7 +51,7 @@ function toYaml(value: unknown, level = 0): string {
                 && typeof entry === 'object'
             ) {
                 const rendered = toYaml(entry, level + 1);
-                const lines = rendered.split('\n');
+                const lines = stripIndent(rendered.split('\n'), level + 1);
                 return `${'  '.repeat(level)}- ${lines[0]}\n${lines.slice(1).map((line) => `${'  '.repeat(level)}  ${line}`).join('\n')}`;
             }
 

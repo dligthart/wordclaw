@@ -106,6 +106,7 @@ npx tsx src/cli/index.ts integrations guide
 npx tsx src/cli/index.ts audit guide --entity-type content_item --entity-id 123
 npx tsx src/cli/index.ts workflow guide
 npx tsx src/cli/index.ts l402 guide --item 123
+npx tsx src/cli/index.ts repl
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 
@@ -141,6 +142,28 @@ To avoid repeating `--base-url`, `--api-key`, or MCP transport flags, create `.w
   "mcpUrl": "http://localhost:4000/mcp",
   "format": "yaml"
 }
+```
+
+For repeatable multi-step automation, you can also run a JSON script:
+
+```json
+{
+  "steps": [
+    { "args": ["capabilities", "show"] },
+    { "args": ["workspace", "guide", "--intent", "authoring"] },
+    { "args": ["content", "guide", "--content-type-id", "1"] }
+  ]
+}
+```
+
+```bash
+wordclaw script run --file workflow.json
+```
+
+For interactive exploration with the same config and auth flags, use:
+
+```bash
+wordclaw repl
 ```
 
 For MCP commands, the CLI defaults to local `stdio` transport. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` when you want it to attach to the running remote MCP endpoint instead.

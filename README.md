@@ -117,6 +117,8 @@ npx tsx src/cli/index.ts workflow guide
 npx tsx src/cli/index.ts content guide --content-type-id 1
 npx tsx src/cli/index.ts workspace guide
 npx tsx src/cli/index.ts workspace guide --intent review --limit 5
+npx tsx src/cli/index.ts repl
+npx tsx src/cli/index.ts script run --file workflow.json
 npx tsx src/cli/index.ts integrations guide
 npx tsx src/cli/index.ts audit guide --entity-type content_item --entity-id 123
 npx tsx src/cli/index.ts content-types list --limit 10
@@ -145,6 +147,8 @@ The CLI is JSON-first so agents can script it reliably, and `--raw` is available
 - actor-aware workflow review guidance for pending tasks
 - REST L402 consumption flows for offers, purchase confirmation, entitlements, and paid reads
 - structured output in `json` or `yaml` via `--format`
+- interactive exploration via `repl`
+- scriptable batch execution via `script run --file workflow.json`
 
 MCP commands default to local `stdio`. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` to attach the CLI directly to the running remote MCP endpoint instead.
 
@@ -169,6 +173,31 @@ You can also keep CLI defaults in `.wordclaw.json` in the current directory or `
 ```
 
 Override the discovered config file with `--config /path/to/file.json` or `WORDCLAW_CONFIG=/path/to/file.json`.
+
+For multi-step automation without writing a wrapper script, use a JSON command file:
+
+```json
+{
+  "continueOnError": false,
+  "steps": [
+    { "name": "discover", "args": ["capabilities", "show"] },
+    { "name": "whoami", "args": ["capabilities", "whoami"] },
+    { "name": "authoring-target", "args": ["workspace", "resolve", "--intent", "authoring"] }
+  ]
+}
+```
+
+Run it with:
+
+```bash
+wordclaw script run --file workflow.json
+```
+
+For iterative manual exploration without retyping your flags, use:
+
+```bash
+wordclaw repl
+```
 
 ### Agent Guidance & Workspaces
 

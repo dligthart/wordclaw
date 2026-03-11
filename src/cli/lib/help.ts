@@ -4,6 +4,8 @@ type HelpScope = {
 };
 
 const USAGE_LINES = [
+    'repl',
+    'script run --file <path> [--continue-on-error]',
     'mcp inspect',
     'mcp whoami',
     'mcp call <tool> [--json <object>|--file <path>]',
@@ -48,10 +50,18 @@ const USAGE_LINES = [
 
 const EXAMPLES: Record<string, string[]> = {
     root: [
+        'wordclaw repl',
         'wordclaw capabilities show',
         'wordclaw workspace guide --intent review --limit 5',
         'wordclaw content guide --content-type-id 12',
         'wordclaw mcp inspect --mcp-transport http --mcp-url http://localhost:4000/mcp --api-key writer',
+        'wordclaw script run --file workflow.json',
+    ],
+    'script': [
+        'wordclaw script run --file workflow.json',
+    ],
+    'repl': [
+        'wordclaw repl',
     ],
     'mcp': [
         'wordclaw mcp inspect',
@@ -80,6 +90,8 @@ const EXAMPLES: Record<string, string[]> = {
         'wordclaw workspace resolve --intent review',
     ],
 };
+
+const COMMANDS_WITHOUT_SUBCOMMANDS = new Set(['repl']);
 
 function matchesScope(line: string, scope: HelpScope) {
     if (!scope.command) {
@@ -119,11 +131,14 @@ export function buildUsage(scope: HelpScope = {}) {
             ? `wordclaw ${scope.command} ${scope.subcommand}`
             : `wordclaw ${scope.command}`
         : 'wordclaw';
+    const expectsSubcommand = scope.command
+        ? !scope.subcommand && !COMMANDS_WITHOUT_SUBCOMMANDS.has(scope.command)
+        : false;
 
     return `${titleForScope(scope)}
 
 Usage:
-  ${usagePrefix}${scope.command && !scope.subcommand ? ' <subcommand> [options]' : !scope.command ? ' <command> [subcommand] [options]' : ' [options]'}
+  ${usagePrefix}${expectsSubcommand ? ' <subcommand> [options]' : !scope.command ? ' <command> [subcommand] [options]' : ' [options]'}
 
 Commands:
 ${matchingLines.map((line) => `  ${line}`).join('\n')}
@@ -135,6 +150,7 @@ Aliases:
   caps -> capabilities
   ct -> content-types
   wf -> workflow
+  interactive -> repl
   content-types ls -> content-types list
   content ls -> content list
 
@@ -148,6 +164,7 @@ Global options:
   --api-key <key>     Override WORDCLAW_API_KEY for REST commands
   --mcp-transport     MCP transport for mcp commands: stdio or http
   --mcp-url <url>     Remote MCP endpoint. Defaults to <base-url>/mcp for HTTP mode
+  --file <path>       File path for script-run and JSON/file-driven commands
 
 Config:
   The CLI loads .wordclaw.json from the current working directory by default,

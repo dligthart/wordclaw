@@ -26,6 +26,8 @@ import {
     normalizeOutputFormat,
     type OutputFormat,
 } from './lib/output.js';
+import { runCliRepl } from './lib/repl.js';
+import { runCliScript } from './lib/script-runner.js';
 import {
     inspectCapabilities,
     resolveMcpHttpEndpoint,
@@ -59,6 +61,8 @@ type CliRuntimeOptions = {
 };
 
 const TOP_LEVEL_COMMANDS = [
+    'repl',
+    'script',
     'mcp',
     'capabilities',
     'workspace',
@@ -71,6 +75,7 @@ const TOP_LEVEL_COMMANDS = [
     'l402',
 ] as const;
 const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smoke'] as const;
+const SCRIPT_SUBCOMMANDS = ['run'] as const;
 const CAPABILITY_SUBCOMMANDS = ['show', 'status', 'whoami'] as const;
 const WORKSPACE_SUBCOMMANDS = ['guide', 'resolve'] as const;
 const AUDIT_SUBCOMMANDS = ['list', 'guide'] as const;
@@ -85,6 +90,7 @@ const TOP_LEVEL_ALIASES: Record<string, string> = {
     caps: 'capabilities',
     ct: 'content-types',
     wf: 'workflow',
+    interactive: 'repl',
 };
 const CONTENT_TYPES_SUBCOMMAND_ALIASES: Record<string, string> = {
     ls: 'list',
@@ -461,6 +467,84 @@ async function handleMcp(repoRoot: string, args: ParsedArgs, runtimeOptions: Cli
     } finally {
         await client.stop();
     }
+}
+
+async function handleScript(repoRoot: string, args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'script subcommand',
+        SCRIPT_SUBCOMMANDS,
+    );
+
+    if (action !== 'run') {
+        throw buildUnknownCommandError('script subcommand', action, SCRIPT_SUBCOMMANDS);
+    }
+
+    const scriptPath = requireStringFlag(args, 'file');
+    const inheritedFlags: string[] = [];
+    if (runtimeOptions.baseUrl) {
+        inheritedFlags.push('--base-url', runtimeOptions.baseUrl);
+    }
+    if (runtimeOptions.apiKey) {
+        inheritedFlags.push('--api-key', runtimeOptions.apiKey);
+    }
+    if (runtimeOptions.mcpTransport) {
+        inheritedFlags.push('--mcp-transport', runtimeOptions.mcpTransport);
+    }
+    if (runtimeOptions.mcpUrl) {
+        inheritedFlags.push('--mcp-url', runtimeOptions.mcpUrl);
+    }
+    inheritedFlags.push('--format', 'json');
+
+    const result = await runCliScript({
+        repoRoot,
+        scriptPath,
+        inheritedFlags,
+        continueOnErrorOverride: hasFlag(args, 'continue-on-error') ? true : undefined,
+    });
+
+    printStructured(
+        args,
+        {
+            transport: 'script',
+            action: 'run',
+            ...result,
+        },
+        result,
+    );
+
+    if (result.failedCount > 0) {
+        process.exitCode = 1;
+    }
+}
+
+async function handleRepl(repoRoot: string, runtimeOptions: CliRuntimeOptions) {
+    const inheritedFlags: string[] = [];
+    if (runtimeOptions.baseUrl) {
+        inheritedFlags.push('--base-url', runtimeOptions.baseUrl);
+    }
+    if (runtimeOptions.apiKey) {
+        inheritedFlags.push('--api-key', runtimeOptions.apiKey);
+    }
+    if (runtimeOptions.mcpTransport) {
+        inheritedFlags.push('--mcp-transport', runtimeOptions.mcpTransport);
+    }
+    if (runtimeOptions.mcpUrl) {
+        inheritedFlags.push('--mcp-url', runtimeOptions.mcpUrl);
+    }
+    if (runtimeOptions.configPath) {
+        inheritedFlags.push('--config', runtimeOptions.configPath);
+    }
+    inheritedFlags.push('--format', runtimeOptions.format);
+    if (runtimeOptions.raw) {
+        inheritedFlags.push('--raw');
+    }
+
+    await runCliRepl({
+        repoRoot,
+        inheritedFlags,
+    });
 }
 
 async function handleRest(client: RestCliClient, args: ParsedArgs) {
@@ -1445,6 +1529,14 @@ async function main(args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
 
     if (command === 'mcp') {
         await handleMcp(resolveRepoRoot(), args, runtimeOptions);
+        return;
+    }
+    if (command === 'repl') {
+        await handleRepl(resolveRepoRoot(), runtimeOptions);
+        return;
+    }
+    if (command === 'script') {
+        await handleScript(resolveRepoRoot(), args, runtimeOptions);
         return;
     }
 

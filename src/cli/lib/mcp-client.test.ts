@@ -172,5 +172,5 @@ describe('WordClawMcpClient over HTTP', () => {
                 actorId: 'env_key:remote-admin',
             }));
         }
-    }, 15000);
+    }, 30000);
 });

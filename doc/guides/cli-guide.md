@@ -116,7 +116,61 @@ wordclaw content --help
 wordclaw content guide --help
 wordclaw workspace resolve --help
 wordclaw --help-all
+wordclaw script run --help
+wordclaw repl --help
 ```
+
+## Interactive Mode
+
+Use the REPL when you want to explore the deployment without retyping shared flags like `--base-url`, `--api-key`, or `--mcp-transport`.
+
+```bash
+wordclaw repl
+```
+
+Inside the REPL:
+
+- enter normal CLI commands without the `wordclaw` prefix
+- use `help` to print the REPL command summary
+- use `context` to show the inherited runtime flags for the current session
+- use `exit` or `quit` to leave
+
+Examples:
+
+```text
+wordclaw> capabilities show
+wordclaw> workspace guide --intent review --limit 5
+wordclaw> mcp inspect --mcp-transport http --mcp-url http://localhost:4000/mcp
+wordclaw> exit
+```
+
+## Script Mode
+
+Use script mode when you want to run a repeatable sequence of CLI commands from one JSON file:
+
+```json
+{
+  "continueOnError": false,
+  "steps": [
+    { "name": "deployment", "args": ["capabilities", "show"] },
+    { "name": "identity", "args": ["capabilities", "whoami"] },
+    { "name": "review-target", "args": ["workspace", "resolve", "--intent", "review"] }
+  ]
+}
+```
+
+Run it with:
+
+```bash
+wordclaw script run --file workflow.json
+```
+
+Notes:
+
+- each step uses the same base URL, API key, config file, and MCP transport settings as the parent CLI invocation
+- each step is executed sequentially
+- the output is a single structured summary with per-step `stdout`, `stderr`, parsed JSON payloads, and exit codes
+- use `--continue-on-error` to keep running after a failed step
 
 ## Supported Command Groups
 
