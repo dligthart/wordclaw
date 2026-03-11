@@ -138,7 +138,8 @@ To avoid repeating `--base-url`, `--api-key`, or MCP transport flags, create `.w
   "baseUrl": "http://localhost:4000",
   "apiKey": "writer",
   "mcpTransport": "http",
-  "mcpUrl": "http://localhost:4000/mcp"
+  "mcpUrl": "http://localhost:4000/mcp",
+  "format": "yaml"
 }
 ```
 

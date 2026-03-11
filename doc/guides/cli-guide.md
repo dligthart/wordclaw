@@ -57,6 +57,7 @@ Example:
   "apiKey": "writer",
   "mcpTransport": "http",
   "mcpUrl": "http://localhost:4000/mcp",
+  "format": "yaml",
   "raw": false
 }
 ```
@@ -79,6 +80,7 @@ The CLI prints JSON by default so agents can consume it reliably.
 - Successful MCP commands return the discovered data or parsed tool output.
 - Failures return a JSON error object and exit with code `1`.
 - Use `--raw` when you want only the response body or MCP text without the CLI envelope.
+- Use `--format yaml` when you want structured output optimized for human reading.
 
 Example:
 

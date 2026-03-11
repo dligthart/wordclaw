@@ -16,7 +16,9 @@ export default withMermaid(defineConfig({
             {
                 text: 'Tutorials',
                 items: [
-                    { text: 'Getting Started', link: '/tutorials/getting-started' }
+                    { text: 'Getting Started', link: '/tutorials/getting-started' },
+                    { text: 'Build Governed Workflows', link: '/tutorials/build-governed-workflow' },
+                    { text: 'Monetize L402 APIs', link: '/tutorials/monetize-l402' }
                 ]
             },
             {
@@ -44,7 +46,10 @@ export default withMermaid(defineConfig({
                 items: [
                     { text: 'Features Outline', link: '/concepts/features' },
                     { text: 'L402 Protocol', link: '/concepts/l402-protocol' },
-                    { text: 'Product/Market Fit', link: '/concepts/product-market-fit-analysis' }
+                    { text: 'Product/Market Fit', link: '/concepts/product-market-fit-analysis' },
+                    { text: 'Contracts vs Schemas', link: '/concepts/contracts-vs-schemas' },
+                    { text: 'Actor Identity', link: '/concepts/actor-identity-propagation' },
+                    { text: 'Workspace Target Resolution', link: '/concepts/workspace-target-resolution' }
                 ]
             },
             {

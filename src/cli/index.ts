@@ -22,6 +22,11 @@ import {
 } from './lib/config.js';
 import { buildUsage } from './lib/help.js';
 import {
+    formatStructuredOutput,
+    normalizeOutputFormat,
+    type OutputFormat,
+} from './lib/output.js';
+import {
     inspectCapabilities,
     resolveMcpHttpEndpoint,
     resolveRepoRoot,
@@ -48,6 +53,7 @@ type CliRuntimeOptions = {
     apiKey?: string;
     mcpUrl?: string;
     mcpTransport?: 'stdio' | 'http';
+    format: OutputFormat;
     raw: boolean;
     configPath: string | null;
 };
@@ -88,8 +94,8 @@ const CONTENT_SUBCOMMAND_ALIASES: Record<string, string> = {
 };
 let currentRuntimeOptions: CliRuntimeOptions | null = null;
 
-function printJson(value: unknown) {
-    console.log(JSON.stringify(value, null, 2));
+function printStructuredValue(value: unknown) {
+    process.stdout.write(formatStructuredOutput(value, currentRuntimeOptions?.format ?? 'json'));
 }
 
 function printRaw(value: unknown) {
@@ -98,7 +104,7 @@ function printRaw(value: unknown) {
         return;
     }
 
-    printJson(value);
+    printStructuredValue(value);
 }
 
 function wantsRawOutput(args: ParsedArgs) {
@@ -111,7 +117,7 @@ function printStructured(args: ParsedArgs, structured: unknown, rawValue = struc
         return;
     }
 
-    printJson(structured);
+    printStructuredValue(structured);
 }
 
 function bodyFromResponse(response: RestCliResponse) {
@@ -242,6 +248,14 @@ async function resolveCliRuntimeOptions(args: ParsedArgs): Promise<CliRuntimeOpt
         throw new Error('--mcp-transport must be "stdio" or "http".');
     }
 
+    const outputFormat = normalizeOutputFormat(
+        resolveCliStringOption(
+            getStringFlag(args, 'format'),
+            loadedConfig.config.format,
+            undefined,
+        ),
+    ) ?? 'json';
+
     return {
         baseUrl: resolveCliStringOption(
             getStringFlag(args, 'base-url'),
@@ -259,9 +273,42 @@ async function resolveCliRuntimeOptions(args: ParsedArgs): Promise<CliRuntimeOpt
             process.env.WORDCLAW_MCP_URL,
         ),
         mcpTransport: requestedTransport as 'stdio' | 'http' | undefined,
+        format: outputFormat,
         raw: resolveCliBooleanOption(hasFlag(args, 'raw'), loadedConfig.config.raw),
         configPath: loadedConfig.path,
     };
+}
+
+function buildErrorSuggestions(error: unknown, runtimeOptions: CliRuntimeOptions | null) {
+    const suggestions: string[] = [];
+
+    if (error instanceof RestCliError) {
+        const code = extractErrorCode(error);
+        if (code === 'AUTH_MISSING_API_KEY' || code === 'API_KEY_REQUIRED') {
+            suggestions.push('Configure an API key with --api-key, WORDCLAW_API_KEY, or .wordclaw.json before running authenticated REST commands.');
+            suggestions.push('Use `wordclaw capabilities whoami` or `wordclaw capabilities show` to confirm which actor and auth mode the deployment expects.');
+        } else if (code === 'AUTH_INSUFFICIENT_SCOPE') {
+            suggestions.push('Use `wordclaw capabilities whoami` to inspect the current actor profile and scopes.');
+            suggestions.push('Use a key with the recommended scope set for this task, or switch to a supervisor session when the manifest recommends it.');
+        } else if (code === 'INVALID_DOMAIN_CONTEXT') {
+            suggestions.push('Use a domain-scoped API key or a supervisor session with x-wordclaw-domain rather than trying to override tenant context manually.');
+        } else if (code) {
+            const body = error.response.body;
+            if (
+                body
+                && typeof body === 'object'
+                && 'remediation' in (body as Record<string, unknown>)
+                && typeof (body as Record<string, unknown>).remediation === 'string'
+            ) {
+                suggestions.push(String((body as Record<string, unknown>).remediation));
+            }
+        }
+    } else if (error instanceof Error && error.message.includes('fetch failed')) {
+        suggestions.push('Check that the WordClaw server is reachable and the base URL is correct.');
+        suggestions.push(`Try \`wordclaw capabilities status${runtimeOptions?.baseUrl ? ` --base-url ${runtimeOptions.baseUrl}` : ''}\` once the server is up.`);
+    }
+
+    return Array.from(new Set(suggestions));
 }
 
 function resolveHelpScope(args: ParsedArgs) {
@@ -1455,13 +1502,21 @@ if (helpOutput) {
             await main(parsedArgs, runtimeOptions);
         })
         .catch((error) => {
+            const suggestions = buildErrorSuggestions(error, currentRuntimeOptions);
             if (error instanceof RestCliError) {
                 if (wantsRawOutput(parsedArgs)) {
-                    printRaw(error.response.body);
+                    if (suggestions.length === 0) {
+                        printRaw(error.response.body);
+                    } else {
+                        const body = error.response.body;
+                        const baseText = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+                        console.log(`${baseText}\n\nSuggestions:\n${suggestions.map((suggestion) => `- ${suggestion}`).join('\n')}`);
+                    }
                 } else {
-                    printJson({
+                    printStructuredValue({
                         error: error.message,
                         response: bodyFromResponse(error.response),
+                        suggestions,
                     });
                 }
                 process.exit(1);
@@ -1469,9 +1524,16 @@ if (helpOutput) {
 
             const message = error instanceof Error ? error.message : String(error);
             if (wantsRawOutput(parsedArgs)) {
-                printRaw(message);
+                if (suggestions.length === 0) {
+                    printRaw(message);
+                } else {
+                    console.log(`${message}\n\nSuggestions:\n${suggestions.map((suggestion) => `- ${suggestion}`).join('\n')}`);
+                }
             } else {
-                printJson({ error: message });
+                printStructuredValue({
+                    error: message,
+                    suggestions,
+                });
             }
             process.exit(1);
         });

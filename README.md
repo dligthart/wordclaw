@@ -144,6 +144,7 @@ The CLI is JSON-first so agents can script it reliably, and `--raw` is available
 - REST workflow submission and approval decisions
 - actor-aware workflow review guidance for pending tasks
 - REST L402 consumption flows for offers, purchase confirmation, entitlements, and paid reads
+- structured output in `json` or `yaml` via `--format`
 
 MCP commands default to local `stdio`. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` to attach the CLI directly to the running remote MCP endpoint instead.
 
@@ -162,6 +163,7 @@ You can also keep CLI defaults in `.wordclaw.json` in the current directory or `
   "apiKey": "writer",
   "mcpTransport": "http",
   "mcpUrl": "http://localhost:4000/mcp",
+  "format": "yaml",
   "raw": false
 }
 ```

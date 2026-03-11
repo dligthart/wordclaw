@@ -3,12 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { getStringFlag, type ParsedArgs } from './args.js';
+import type { OutputFormat } from './output.js';
 
 export type WordClawCliConfig = {
     baseUrl?: string;
     apiKey?: string;
     mcpUrl?: string;
     mcpTransport?: 'stdio' | 'http';
+    format?: OutputFormat;
     raw?: boolean;
 };
 
@@ -67,16 +69,22 @@ function readOptionalBoolean(
 function parseWordClawCliConfig(raw: unknown): WordClawCliConfig {
     const parsed = requireObject(raw, 'WordClaw CLI config');
     const rawTransport = readOptionalString(parsed.mcpTransport, 'mcpTransport');
+    const rawFormat = readOptionalString(parsed.format, 'format');
     if (rawTransport && rawTransport !== 'stdio' && rawTransport !== 'http') {
         throw new Error('CLI config field "mcpTransport" must be "stdio" or "http".');
     }
+    if (rawFormat && rawFormat !== 'json' && rawFormat !== 'yaml') {
+        throw new Error('CLI config field "format" must be "json" or "yaml".');
+    }
     const mcpTransport = rawTransport as 'stdio' | 'http' | undefined;
+    const format = rawFormat as OutputFormat | undefined;
 
     return {
         baseUrl: readOptionalString(parsed.baseUrl, 'baseUrl'),
         apiKey: readOptionalString(parsed.apiKey, 'apiKey'),
         mcpUrl: readOptionalString(parsed.mcpUrl, 'mcpUrl'),
         mcpTransport,
+        format,
         raw: readOptionalBoolean(parsed.raw, 'raw'),
     };
 }

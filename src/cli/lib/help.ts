@@ -143,6 +143,7 @@ Global options:
   --help, -h          Show help for the current command or subcommand
   --help-all          Show the full command reference
   --config <path>     Load CLI defaults from a JSON config file
+  --format <type>     Structured output format: json or yaml
   --base-url <url>    Override WORDCLAW_BASE_URL for REST commands
   --api-key <key>     Override WORDCLAW_API_KEY for REST commands
   --mcp-transport     MCP transport for mcp commands: stdio or http

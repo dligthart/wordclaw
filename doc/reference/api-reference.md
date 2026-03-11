@@ -26,4 +26,97 @@ The fastest task-oriented preflight sequence is:
    - `audit guide --entity-type <type> --entity-id <id>`
    - `l402 guide --item <id>`
 
+## Common Examples
+
+### 1. Fetching Workspace Context
+
+Determine available domains and schema targets for authoring or review based on the authenticated actor.
+
+**Request:**
+```bash
+curl -H "x-api-key: writer" "http://localhost:4000/api/workspace-context?intent=authoring"
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "currentDomainId": "tenant-A",
+    "selectableDomains": ["tenant-A"],
+    "contentModelInventory": {
+      "schemas": { "15": "agent-skill" },
+      "activeWorkflows": { "15": 1 },
+      "pendingReviewTasks": {},
+      "activeOffers": { "15": 7 }
+    },
+    "targets": {
+      "authoringCandidates": [{ "kind": "content-type", "id": 15, "score": 100 }],
+      "reviewCandidates": [],
+      "workflowCandidates": [],
+      "paidCandidates": []
+    }
+  }
+}
+```
+
+### 2. Creating Content (Authoring)
+
+Author a new draft into an existing schema (`id: 15`).
+
+**Request:**
+```bash
+curl -X POST http://localhost:4000/api/content-items \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contentTypeId": 15,
+    "status": "draft",
+    "data": {
+      "title": "React Generator",
+      "prompt_template": "Write React code..."
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "id": 88,
+    "contentTypeId": 15,
+    "version": 1,
+    "status": "draft",
+    "data": {
+      "title": "React Generator",
+      "prompt_template": "Write React code..."
+    },
+    "createdAt": "2024-03-24T12:00:00Z"
+  }
+}
+```
+
+### 3. Paying an L402 Invoice
+
+Confirming a purchase locally with a simulated payment backend.
+
+**Request:**
+```bash
+curl -X POST http://localhost:4000/api/offers/7/purchase/confirm \
+  -H "x-api-key: buyer-key" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: L402 <macaroon>:mock_preimage_12345"
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "status": "paid",
+    "paymentDetails": {
+      "preimage": "mock_preimage_12345"
+    }
+  }
+}
+```
+
 <SwaggerUI />

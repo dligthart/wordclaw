@@ -22,6 +22,7 @@ describe('loadWordClawCliConfig', () => {
             baseUrl: 'http://localhost:4100',
             apiKey: 'writer',
             mcpTransport: 'http',
+            format: 'yaml',
             raw: true,
         }), 'utf8');
 
@@ -35,6 +36,7 @@ describe('loadWordClawCliConfig', () => {
             baseUrl: 'http://localhost:4100',
             apiKey: 'writer',
             mcpTransport: 'http',
+            format: 'yaml',
             raw: true,
         });
     });
@@ -96,6 +98,21 @@ describe('loadWordClawCliConfig', () => {
             cwd,
             homeDir: path.join(tempRoot, 'home'),
         })).rejects.toThrow('CLI config field "mcpTransport" must be "stdio" or "http"');
+    });
+
+    it('throws for invalid format values', async () => {
+        const fs = await import('node:fs/promises');
+        const cwd = path.join(tempRoot, 'project');
+        await fs.mkdir(cwd, { recursive: true });
+        const configPath = path.join(cwd, '.wordclaw.json');
+        await fs.writeFile(configPath, JSON.stringify({
+            format: 'table',
+        }), 'utf8');
+
+        await expect(loadWordClawCliConfig(parseArgs([]), {
+            cwd,
+            homeDir: path.join(tempRoot, 'home'),
+        })).rejects.toThrow('CLI config field "format" must be "json" or "yaml"');
     });
 });
 
