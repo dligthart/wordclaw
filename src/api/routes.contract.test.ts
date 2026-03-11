@@ -217,6 +217,11 @@ describe('API Route Contracts', () => {
                         preferredSurface: 'mcp',
                         preferredActorProfile: 'api-key',
                     }),
+                    expect.objectContaining({
+                        intent: 'verify-provenance',
+                        preferredSurface: 'mcp',
+                        preferredActorProfile: 'api-key',
+                    }),
                 ]),
             );
             expect(body.data.agentGuidance.actorProfiles).toEqual(
@@ -253,6 +258,12 @@ describe('API Route Contracts', () => {
                         preferredActorProfile: 'api-key',
                         supportedActorProfiles: ['api-key', 'env-key'],
                         recommendedApiKeyScopes: ['content:read'],
+                    }),
+                    expect.objectContaining({
+                        id: 'verify-provenance',
+                        preferredSurface: 'mcp',
+                        preferredActorProfile: 'api-key',
+                        recommendedApiKeyScopes: ['audit:read'],
                     }),
                 ]),
             );
@@ -970,7 +981,7 @@ describe('API Route Contracts', () => {
         try {
             const response = await app.inject({
                 method: 'GET',
-                url: '/api/audit-logs?limit=10'
+                url: '/api/audit-logs?limit=10&actorId=supervisor%3A7&actorType=supervisor'
             });
 
             expect(response.statusCode).toBe(200);

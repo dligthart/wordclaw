@@ -42,7 +42,7 @@ export function buildCapabilityManifest() {
             authMode: 'api-key',
             availableSurfaces: ['rest', 'mcp-http'],
             actorIdExamples: ['api_key:12'],
-            recommendedFor: ['author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content'],
+            recommendedFor: ['author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content', 'verify-provenance'],
             domainContext: {
                 required: true,
                 strategy: 'implicit-from-key',
@@ -60,7 +60,7 @@ export function buildCapabilityManifest() {
             authMode: 'api-key',
             availableSurfaces: ['rest', 'mcp-http'],
             actorIdExamples: ['env_key:remote-admin'],
-            recommendedFor: ['author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content'],
+            recommendedFor: ['author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content', 'verify-provenance'],
             domainContext: {
                 required: true,
                 strategy: 'server-configured-default',
@@ -78,7 +78,7 @@ export function buildCapabilityManifest() {
             authMode: 'supervisor-session',
             availableSurfaces: ['rest', 'mcp-http'],
             actorIdExamples: ['supervisor:1'],
-            recommendedFor: ['review-workflow', 'manage-integrations'],
+            recommendedFor: ['review-workflow', 'manage-integrations', 'verify-provenance'],
             domainContext: {
                 required: true,
                 strategy: 'header',
@@ -97,7 +97,7 @@ export function buildCapabilityManifest() {
             authMode: 'local-stdio',
             availableSurfaces: ['mcp-stdio'],
             actorIdExamples: ['mcp-local'],
-            recommendedFor: ['discover-deployment', 'author-content', 'review-workflow', 'manage-integrations'],
+            recommendedFor: ['discover-deployment', 'author-content', 'review-workflow', 'manage-integrations', 'verify-provenance'],
             domainContext: {
                 required: true,
                 strategy: 'environment',
@@ -164,6 +164,13 @@ export function buildCapabilityManifest() {
                 preferredActorProfile: 'api-key',
                 fallbackSurface: null,
                 rationale: 'L402 settlement and entitlement-backed reads remain REST-first even though discovery is available elsewhere.',
+            },
+            {
+                intent: 'verify-provenance',
+                preferredSurface: 'mcp',
+                preferredActorProfile: 'api-key',
+                fallbackSurface: 'rest',
+                rationale: 'Audit verification works well over MCP, while REST remains a direct fallback for filtered trail inspection.',
             },
         ],
         actorProfiles,
@@ -346,6 +353,39 @@ export function buildCapabilityManifest() {
                     },
                 ],
             },
+            {
+                id: 'verify-provenance',
+                goal: 'Verify which actor performed a recent action and inspect the corresponding audit trail.',
+                preferredSurface: 'mcp',
+                fallbackSurface: 'rest',
+                recommendedAuth: 'api-key-or-supervisor',
+                preferredActorProfile: 'api-key',
+                supportedActorProfiles: ['api-key', 'env-key', 'supervisor-session', 'mcp-local'],
+                recommendedApiKeyScopes: ['audit:read'],
+                requiredModules: ['audit-trail'],
+                dryRunRecommended: false,
+                steps: [
+                    {
+                        title: 'Confirm the current actor snapshot',
+                        surface: 'mcp',
+                        operation: 'read system://current-actor',
+                        purpose: 'Verify which canonical actor id and domain the current session is using.',
+                    },
+                    {
+                        title: 'Inspect recent actor-attributed events',
+                        surface: 'mcp',
+                        operation: 'get_audit_logs or guide_task',
+                        purpose: 'Review the most recent audit events tied to the current actor or a target entity.',
+                    },
+                    {
+                        title: 'Fallback to filtered REST audit queries when needed',
+                        surface: 'rest',
+                        operation: 'GET /api/audit-logs?actorId=<actorId>&entityType=<type>&entityId=<id>',
+                        purpose: 'Use the REST audit trail if a client needs cursor pagination or explicit URL-based queries.',
+                        optional: true,
+                    },
+                ],
+            },
         ],
     };
 
@@ -421,6 +461,12 @@ export function buildCapabilityManifest() {
                 tier: 'core',
                 enabled: true,
                 description: 'Paid content, offers, payments, and entitlement-backed reads.',
+            },
+            {
+                id: 'audit-trail',
+                tier: 'core',
+                enabled: true,
+                description: 'Canonical actor-attributed audit history for verification and post-action provenance checks.',
             },
             {
                 id: 'revenue-reporting',

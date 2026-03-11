@@ -81,6 +81,8 @@ type AuditLogQuery = {
     entityType?: string;
     entityId?: number;
     action?: string;
+    actorId?: string;
+    actorType?: string;
     limit?: number;
     cursor?: string;
 };
@@ -3906,6 +3908,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                 entityType: Type.Optional(Type.String()),
                 entityId: Type.Optional(Type.Number()),
                 action: Type.Optional(Type.String()),
+                actorId: Type.Optional(Type.String()),
+                actorType: Type.Optional(Type.String()),
                 limit: Type.Optional(Type.Number({ default: 50, minimum: 1, maximum: 500 })),
                 cursor: Type.Optional(Type.String())
             }),
@@ -3926,7 +3930,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
     }, async (request, reply) => {
-        const { entityType, entityId, action, limit: rawLimit, cursor } = request.query as AuditLogQuery;
+        const { entityType, entityId, action, actorId, actorType, limit: rawLimit, cursor } = request.query as AuditLogQuery;
         const limit = clampLimit(rawLimit);
         const decodedCursor = cursor ? decodeCursor(cursor) : null;
         if (cursor && !decodedCursor) {
@@ -3942,6 +3946,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             entityType ? eq(auditLogs.entityType, entityType) : undefined,
             entityId !== undefined ? eq(auditLogs.entityId, entityId) : undefined,
             action ? eq(auditLogs.action, action) : undefined,
+            actorId ? eq(auditLogs.actorId, actorId) : undefined,
+            actorType ? eq(auditLogs.actorType, actorType) : undefined,
         ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
         const cursorCondition = decodedCursor

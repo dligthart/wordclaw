@@ -23,6 +23,7 @@ import { buildContentGuide } from '../cli/lib/content-guide.js';
 import { buildWorkflowGuide } from '../cli/lib/workflow-guide.js';
 import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
 import { buildL402Guide } from '../cli/lib/l402-guide.js';
+import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 
 type McpRequestExtra = {
     authInfo?: {
@@ -35,6 +36,7 @@ const GUIDE_TASK_IDS = [
     'review-workflow',
     'manage-integrations',
     'consume-paid-content',
+    'verify-provenance',
 ] as const;
 
 type GuideTaskId = typeof GUIDE_TASK_IDS[number];
@@ -1663,9 +1665,11 @@ server.tool(
         entityType: z.string().optional(),
         entityId: z.number().optional(),
         action: z.string().optional(),
+        actorId: z.string().optional(),
+        actorType: z.string().optional(),
         cursor: z.string().optional().describe('Opaque cursor from previous call')
     },
-    withMCPPolicy('audit.read', () => ({ type: 'system' }), async ({ limit: rawLimit, entityType, entityId, action, cursor }, extra, domainId) => {
+    withMCPPolicy('audit.read', () => ({ type: 'system' }), async ({ limit: rawLimit, entityType, entityId, action, actorId, actorType, cursor }, extra, domainId) => {
         try {
             const limit = clampLimit(rawLimit);
             const decodedCursor = cursor ? decodeCursor(cursor) : null;
@@ -1678,6 +1682,8 @@ server.tool(
                 entityType ? eq(auditLogs.entityType, entityType) : undefined,
                 entityId !== undefined ? eq(auditLogs.entityId, entityId) : undefined,
                 action ? eq(auditLogs.action, action) : undefined,
+                actorId ? eq(auditLogs.actorId, actorId) : undefined,
+                actorType ? eq(auditLogs.actorType, actorType) : undefined,
             ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
             const cursorCondition = decodedCursor
@@ -1704,6 +1710,9 @@ server.tool(
                 action: auditLogs.action,
                 entityType: auditLogs.entityType,
                 entityId: auditLogs.entityId,
+                actorId: auditLogs.actorId,
+                actorType: auditLogs.actorType,
+                actorSource: auditLogs.actorSource,
                 details: auditLogs.details,
                 createdAt: auditLogs.createdAt
             })
@@ -2179,8 +2188,14 @@ server.tool(
         reviewTaskId: z.number().optional().describe('Optional review task to prioritize for review-workflow guidance'),
         contentItemId: z.number().optional().describe('Required for consume-paid-content guidance'),
         offerId: z.number().optional().describe('Optional offer id to prioritize for consume-paid-content guidance'),
+        actorId: z.string().optional().describe('Optional actor id filter for verify-provenance guidance'),
+        actorType: z.string().optional().describe('Optional actor type filter for verify-provenance guidance'),
+        entityType: z.string().optional().describe('Optional entity type filter for verify-provenance guidance'),
+        entityId: z.number().optional().describe('Optional entity id filter for verify-provenance guidance'),
+        action: z.string().optional().describe('Optional action filter for verify-provenance guidance'),
+        limit: z.number().optional().describe('Optional audit page size for verify-provenance guidance'),
     },
-    async ({ taskId, contentTypeId, reviewTaskId, contentItemId, offerId }, extra) => {
+    async ({ taskId, contentTypeId, reviewTaskId, contentItemId, offerId, actorId, actorType, entityType, entityId, action, limit }, extra) => {
         const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
         const currentActor = buildCurrentActorSnapshot(principal);
         const manifest = buildCapabilityManifest();
@@ -2334,6 +2349,74 @@ server.tool(
                 currentActor,
                 apiKeys,
                 webhooks,
+            });
+            if (warnings.length > 0) {
+                guide.warnings = [...(guide.warnings ?? []), ...warnings];
+            }
+
+            return okJson({
+                ...basePayload,
+                guide,
+            });
+        }
+
+        if (taskId === 'verify-provenance') {
+            let entries: Array<{
+                id: number;
+                action: string;
+                entityType: string;
+                entityId: number;
+                actorId: string | null;
+                actorType: string | null;
+                actorSource: string | null;
+                details: string | null;
+                createdAt: string;
+            }> = [];
+            const warnings: string[] = [];
+            const auditLimit = clampLimit(limit, 20, 100);
+
+            if (hasActorScope(currentActor, 'audit:read')) {
+                const filters = [
+                    eq(auditLogs.domainId, domainId),
+                    actorId ? eq(auditLogs.actorId, actorId) : undefined,
+                    actorType ? eq(auditLogs.actorType, actorType) : undefined,
+                    entityType ? eq(auditLogs.entityType, entityType) : undefined,
+                    entityId !== undefined ? eq(auditLogs.entityId, entityId) : undefined,
+                    action ? eq(auditLogs.action, action) : undefined,
+                ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+                entries = (await db.select({
+                    id: auditLogs.id,
+                    action: auditLogs.action,
+                    entityType: auditLogs.entityType,
+                    entityId: auditLogs.entityId,
+                    actorId: auditLogs.actorId,
+                    actorType: auditLogs.actorType,
+                    actorSource: auditLogs.actorSource,
+                    details: auditLogs.details,
+                    createdAt: auditLogs.createdAt,
+                })
+                    .from(auditLogs)
+                    .where(and(...filters))
+                    .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+                    .limit(auditLimit))
+                    .map((entry) => ({
+                        ...entry,
+                        createdAt: entry.createdAt.toISOString(),
+                    }));
+            } else {
+                warnings.push('Audit events are unavailable until the current actor has audit read access.');
+            }
+
+            const guide = buildAuditGuide({
+                currentActor,
+                entries,
+                actorId,
+                actorType,
+                entityType,
+                entityId,
+                action,
+                limit: auditLimit,
             });
             if (warnings.length > 0) {
                 guide.warnings = [...(guide.warnings ?? []), ...warnings];

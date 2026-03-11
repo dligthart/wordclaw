@@ -11,7 +11,7 @@ WordClaw now exposes MCP in two ways:
 - **Local stdio** for embedded or developer-run MCP sessions
 - **Streamable HTTP** at `/mcp` for attachable remote clients
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as authoring, review, integration setup, and paid-content consumption. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as authoring, review, integration setup, provenance verification, and paid-content consumption. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
 
 Recommended remote MCP preflight:
 
@@ -32,6 +32,11 @@ node dist/cli/index.js mcp resource system://agent-guidance \
   --api-key writer
 
 node dist/cli/index.js mcp call guide_task '{"taskId":"manage-integrations"}' \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
+node dist/cli/index.js mcp call guide_task '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
@@ -128,7 +133,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 
 | Tool         | Description                                                                |
 |--------------|----------------------------------------------------------------------------|
-| `guide_task` | Returns live, actor-aware task guidance for content authoring, review, integrations, or paid-content flows |
+| `guide_task` | Returns live, actor-aware task guidance for content authoring, review, integrations, provenance checks, or paid-content flows |
 
 ## Resources
 
@@ -164,6 +169,7 @@ Current task ids exposed through `guide_task`:
 - `author-content` with `contentTypeId`
 - `review-workflow` with optional `reviewTaskId`
 - `manage-integrations`
+- `verify-provenance` with optional `actorId`, `actorType`, `entityType`, `entityId`, `action`, and `limit`
 - `consume-paid-content` with `contentItemId` and optional `offerId`
 
 ## Response Format

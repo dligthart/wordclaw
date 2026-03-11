@@ -115,6 +115,7 @@ npx tsx src/cli/index.ts l402 guide --item 123
 npx tsx src/cli/index.ts workflow guide
 npx tsx src/cli/index.ts content guide --content-type-id 1
 npx tsx src/cli/index.ts integrations guide
+npx tsx src/cli/index.ts audit guide --entity-type content_item --entity-id 123
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
@@ -130,6 +131,7 @@ The CLI is JSON-first so agents can script it reliably, and `--raw` is available
 - REST content type and content item CRUD
 - actor-aware content authoring guidance for a target schema
 - actor-aware integration guidance for API keys and webhooks
+- actor-aware provenance guidance for audit-trail inspection
 - REST workflow submission and approval decisions
 - actor-aware workflow review guidance for pending tasks
 - REST L402 consumption flows for offers, purchase confirmation, entitlements, and paid reads
@@ -143,7 +145,7 @@ export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
 ```
 
-For deployment discovery before acting, use `GET /api/capabilities` or `mcp inspect`. The manifest now includes task-oriented routing hints plus explicit actor/auth profiles so an agent can choose the right surface, credential, and domain-context path for discovery, content authoring, workflow review, integration setup, and paid-content consumption. To confirm the currently authenticated actor before mutating state, use `GET /api/identity`, `system://current-actor`, `node dist/cli/index.js capabilities whoami`, or `node dist/cli/index.js mcp whoami`. For review-task execution specifically, `node dist/cli/index.js workflow guide` now shows assignment refs plus per-task readiness for the current actor. MCP clients can also ask for live task guidance directly with `guide_task`, for example `node dist/cli/index.js mcp call guide_task '{"taskId":"manage-integrations"}'`.
+For deployment discovery before acting, use `GET /api/capabilities` or `mcp inspect`. The manifest now includes task-oriented routing hints plus explicit actor/auth profiles so an agent can choose the right surface, credential, and domain-context path for discovery, content authoring, workflow review, integration setup, provenance verification, and paid-content consumption. To confirm the currently authenticated actor before mutating state, use `GET /api/identity`, `system://current-actor`, `node dist/cli/index.js capabilities whoami`, or `node dist/cli/index.js mcp whoami`. For review-task execution specifically, `node dist/cli/index.js workflow guide` now shows assignment refs plus per-task readiness for the current actor. For audit-trail investigation, `node dist/cli/index.js audit guide --entity-type content_item --entity-id 123` builds an actor-aware provenance plan. MCP clients can also ask for live task guidance directly with `guide_task`, for example `node dist/cli/index.js mcp call guide_task '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}'`.
 
 ## 🎮 Demos
 
@@ -196,7 +198,7 @@ For detailed guides on setting up the Supervisor UI, authentication, testing, an
 - [MCP Integration](doc/guides/mcp-integration.md) — Model Context Protocol implementation details.
 
 WordClaw MCP is available both as a local stdio server (`npm run mcp:start`) and as a remote Streamable HTTP endpoint at `/mcp` when the main HTTP server is running.
-The MCP surface now also exposes `system://agent-guidance`, a `task-guidance` prompt, and a live `guide_task` tool so connected agents can ask for the recommended workflow for tasks like authoring, review, integration setup, and paid-content consumption without parsing the full manifest themselves.
+The MCP surface now also exposes `system://agent-guidance`, a `task-guidance` prompt, and a live `guide_task` tool so connected agents can ask for the recommended workflow for tasks like authoring, review, integration setup, provenance verification, and paid-content consumption without parsing the full manifest themselves.
 - [Feature Proposals (RFCs)](doc/rfc) — Methodology and history of proposed platform features.
 
 ### API Documentation

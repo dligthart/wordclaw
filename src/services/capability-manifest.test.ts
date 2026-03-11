@@ -70,6 +70,11 @@ describe('buildCapabilityManifest', () => {
                     preferredSurface: 'rest',
                     preferredActorProfile: 'api-key',
                 }),
+                expect.objectContaining({
+                    intent: 'verify-provenance',
+                    preferredSurface: 'mcp',
+                    preferredActorProfile: 'api-key',
+                }),
             ]),
         );
         expect(manifest.agentGuidance.actorProfiles).toEqual(
@@ -112,6 +117,12 @@ describe('buildCapabilityManifest', () => {
                     id: 'author-content',
                     dryRunRecommended: true,
                     recommendedApiKeyScopes: ['content:write'],
+                }),
+                expect.objectContaining({
+                    id: 'verify-provenance',
+                    preferredSurface: 'mcp',
+                    preferredActorProfile: 'api-key',
+                    recommendedApiKeyScopes: ['audit:read'],
                 }),
             ]),
         );

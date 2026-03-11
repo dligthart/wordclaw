@@ -86,6 +86,7 @@ node dist/cli/index.js mcp call list_content_types --json '{"limit":5}'
 node dist/cli/index.js mcp prompt workflow-guidance
 node dist/cli/index.js mcp prompt task-guidance --json '{"taskId":"author-content"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"manage-integrations"}'
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}'
 node dist/cli/index.js mcp resource content://types
 node dist/cli/index.js mcp resource system://agent-guidance
 node dist/cli/index.js mcp smoke
@@ -112,7 +113,7 @@ Important transport note:
 - when running in `stdio` mode, the CLI starts its own local MCP child process
 - when running in `http` mode, the CLI attaches directly to `/mcp`
 - `mcp inspect` now also includes the deployment manifest and current actor snapshot when the MCP server exposes `system://capabilities` and `system://current-actor`
-- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for authoring, review, integrations, and paid-content flows
+- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for authoring, review, integrations, provenance checks, and paid-content flows
 
 Usability details:
 
@@ -157,6 +158,29 @@ The result tells you:
 - how many active/inactive webhooks are registered
 - which concrete REST commands to run next for key creation, rotation, and webhook registration
 
+### Audit and Provenance Guidance
+
+Use the audit guide when an agent needs to prove who changed something, inspect recent actions by a specific actor, or trace a content/workflow mutation back through the audit trail:
+
+```bash
+node dist/cli/index.js audit list --entity-type content_item --entity-id 345 --limit 10
+node dist/cli/index.js audit guide --entity-type content_item --entity-id 345
+node dist/cli/index.js audit guide --actor-id api_key:12 --actor-type api_key --limit 20
+```
+
+The guide combines:
+
+- the current actor snapshot from `/api/identity`
+- the filtered audit trail from `/api/audit-logs`
+
+The result tells you:
+
+- whether the current actor can inspect audit records
+- which actor profile and scopes are expected for provenance work
+- which filters are currently applied
+- which recent audit records already match those filters
+- which concrete CLI commands to run next
+
 ### Capability Manifest
 
 Use the deployment manifest when an agent needs to discover what this WordClaw instance actually supports before choosing a protocol or auth path:
@@ -176,6 +200,7 @@ The manifest reports:
 - enabled core and experimental modules
 - the current core capability matrix and dry-run support
 - task-oriented routing hints and recommended recipes for common agent jobs
+- a dedicated provenance-verification recipe with audit-scope expectations
 
 When you need to confirm the active credential before a mutation, use:
 

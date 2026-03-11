@@ -31,6 +31,7 @@ import { buildContentGuide } from './lib/content-guide.js';
 import { buildIntegrationGuide } from './lib/integration-guide.js';
 import { buildL402Guide } from './lib/l402-guide.js';
 import { buildWorkflowGuide } from './lib/workflow-guide.js';
+import { buildAuditGuide } from './lib/audit-guide.js';
 import type { CurrentActorSnapshot } from '../services/actor-identity.js';
 
 type JsonMap = Record<string, unknown>;
@@ -38,6 +39,7 @@ type JsonMap = Record<string, unknown>;
 const TOP_LEVEL_COMMANDS = [
     'mcp',
     'capabilities',
+    'audit',
     'rest',
     'integrations',
     'content-types',
@@ -47,6 +49,7 @@ const TOP_LEVEL_COMMANDS = [
 ] as const;
 const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smoke'] as const;
 const CAPABILITY_SUBCOMMANDS = ['show', 'whoami'] as const;
+const AUDIT_SUBCOMMANDS = ['list', 'guide'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
@@ -110,6 +113,9 @@ Commands:
 
   capabilities show
   capabilities whoami
+
+  audit list [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>] [--cursor <value>]
+  audit guide [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>]
 
   rest request <method> <path> [--query-json <object>] [--body-json <object>|--body-file <path>]
   integrations guide
@@ -186,10 +192,9 @@ function maybeNumber(value: number | undefined): number | undefined {
     return value === undefined ? undefined : value;
 }
 
-function omitUndefined<T extends JsonMap>(value: T): JsonMap {
-    return Object.fromEntries(
-        Object.entries(value).filter(([, entry]) => entry !== undefined),
-    );
+function omitUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
+    const filteredEntries = Object.entries(value).filter(([, entry]) => entry !== undefined);
+    return Object.fromEntries(filteredEntries) as Partial<T>;
 }
 
 function requireJsonMap(value: unknown, context: string): JsonMap {
@@ -548,6 +553,101 @@ async function handleCapabilities(client: RestCliClient, args: ParsedArgs) {
     }
 
     throw buildUnknownCommandError('capabilities subcommand', action, CAPABILITY_SUBCOMMANDS);
+}
+
+async function handleAudit(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'audit subcommand',
+        AUDIT_SUBCOMMANDS,
+    );
+
+    if (action === 'list') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/audit-logs',
+            query: omitUndefined({
+                actorId: getStringFlag(args, 'actor-id'),
+                actorType: getStringFlag(args, 'actor-type'),
+                entityType: getStringFlag(args, 'entity-type'),
+                entityId: maybeNumber(getNumberFlag(args, 'entity-id')),
+                action: getStringFlag(args, 'action'),
+                limit: maybeNumber(getNumberFlag(args, 'limit')),
+                cursor: getStringFlag(args, 'cursor'),
+            }),
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    const actorResult = await tryFetchCurrentActor(client);
+    const actorId = getStringFlag(args, 'actor-id') ?? actorResult.currentActor?.actorId ?? undefined;
+    const actorType = getStringFlag(args, 'actor-type') ?? actorResult.currentActor?.actorType ?? undefined;
+    const entityType = getStringFlag(args, 'entity-type') ?? undefined;
+    const entityId = getNumberFlag(args, 'entity-id');
+    const auditAction = getStringFlag(args, 'action') ?? undefined;
+    const limit = getNumberFlag(args, 'limit') ?? 20;
+    const warnings = [...actorResult.warnings];
+    let entries: Array<{
+        id: number;
+        action: string;
+        entityType: string;
+        entityId: number;
+        actorId: string | null;
+        actorType: string | null;
+        actorSource?: string | null;
+        details?: string | null;
+        createdAt: string;
+    }> = [];
+
+    try {
+        const response = await client.request({
+            method: 'GET',
+            path: '/audit-logs',
+            query: omitUndefined({
+                actorId,
+                actorType,
+                entityType,
+                entityId: maybeNumber(entityId),
+                action: auditAction,
+                limit,
+            }),
+        });
+        const body = requireJsonMap(response.body, 'Audit guide response');
+        entries = Array.isArray(body.data) ? body.data as typeof entries : [];
+    } catch (error) {
+        const code = extractErrorCode(error);
+        if (isMissingActorErrorCode(code)) {
+            warnings.push('Audit trail inspection is unavailable until an authenticated actor with audit access is configured.');
+        } else {
+            throw error;
+        }
+    }
+
+    const guide = buildAuditGuide({
+        currentActor: actorResult.currentActor,
+        entries,
+        actorId,
+        actorType,
+        entityType,
+        entityId,
+        action: auditAction,
+        limit,
+    });
+    if (warnings.length > 0) {
+        guide.warnings = [...(guide.warnings ?? []), ...warnings];
+    }
+
+    printStructured(
+        args,
+        {
+            transport: 'rest',
+            action: 'guide',
+            guide,
+        },
+        guide,
+    );
 }
 
 async function handleContentTypes(client: RestCliClient, args: ParsedArgs) {
@@ -1233,6 +1333,10 @@ async function main(args: ParsedArgs) {
     }
     if (command === 'capabilities') {
         await handleCapabilities(client, args);
+        return;
+    }
+    if (command === 'audit') {
+        await handleAudit(client, args);
         return;
     }
     if (command === 'content-types') {

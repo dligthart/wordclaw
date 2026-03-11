@@ -16,6 +16,7 @@ The fastest task-oriented preflight sequence is:
    - `content guide --content-type-id <id>`
    - `workflow guide`
    - `integrations guide`
+   - `audit guide --entity-type <type> --entity-id <id>`
    - `l402 guide --item <id>`
 
 <SwaggerUI />

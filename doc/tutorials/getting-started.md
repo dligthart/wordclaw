@@ -101,6 +101,7 @@ npx tsx src/cli/index.ts capabilities show
 npx tsx src/cli/index.ts capabilities whoami
 npx tsx src/cli/index.ts content guide --content-type-id 1
 npx tsx src/cli/index.ts integrations guide
+npx tsx src/cli/index.ts audit guide --entity-type content_item --entity-id 123
 npx tsx src/cli/index.ts workflow guide
 npx tsx src/cli/index.ts l402 guide --item 123
 npx tsx src/cli/index.ts content-types list --limit 10
@@ -118,7 +119,7 @@ export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
 ```
 
-Use `node dist/cli/index.js --help` (or `npx tsx src/cli/index.ts --help`) to see the available command groups for capability discovery, MCP, REST, workflows, and L402. The CLI also supports shorthand aliases like `caps`, `ct ls`, and `content ls`, typo suggestions for unknown commands, and `--raw` output when you want only the response body or MCP text.
+Use `node dist/cli/index.js --help` (or `npx tsx src/cli/index.ts --help`) to see the available command groups for capability discovery, MCP, REST, audit/provenance, workflows, and L402. The CLI also supports shorthand aliases like `caps`, `ct ls`, and `content ls`, typo suggestions for unknown commands, and `--raw` output when you want only the response body or MCP text.
 
 For MCP commands, the CLI defaults to local `stdio` transport. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` when you want it to attach to the running remote MCP endpoint instead.
 
@@ -133,6 +134,7 @@ node dist/cli/index.js capabilities whoami
 
 # 3. Ask for task-specific guidance
 node dist/cli/index.js content guide --content-type-id 1
+node dist/cli/index.js audit guide --entity-type content_item --entity-id 123
 node dist/cli/index.js workflow guide
 node dist/cli/index.js integrations guide
 node dist/cli/index.js l402 guide --item 123
