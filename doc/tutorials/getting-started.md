@@ -98,6 +98,7 @@ The repo also ships with a JSON-first CLI for MCP and REST automation:
 npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts capabilities show
+npx tsx src/cli/index.ts capabilities status
 npx tsx src/cli/index.ts capabilities whoami
 npx tsx src/cli/index.ts content guide --content-type-id 1
 npx tsx src/cli/index.ts integrations guide
@@ -129,10 +130,14 @@ Recommended agent preflight sequence:
 # 1. Discover the deployment contract
 curl http://localhost:4000/api/capabilities
 
-# 2. Confirm the current actor before mutating state
+# 2. Confirm the deployment is healthy enough to use
+curl http://localhost:4000/api/deployment-status
+node dist/cli/index.js capabilities status
+
+# 3. Confirm the current actor before mutating state
 node dist/cli/index.js capabilities whoami
 
-# 3. Ask for task-specific guidance
+# 4. Ask for task-specific guidance
 node dist/cli/index.js content guide --content-type-id 1
 node dist/cli/index.js audit guide --entity-type content_item --entity-id 123
 node dist/cli/index.js workflow guide
@@ -151,9 +156,11 @@ For a full walkthrough of the command groups, payload formats, agent usage patte
 For remote MCP clients, the same deployment guidance is also available in-band:
 
 - `system://capabilities`
+- `system://deployment-status`
 - `system://current-actor`
 - `system://agent-guidance`
 - `task-guidance`
+- `guide_task` with `{"taskId":"discover-deployment"}`
 
 ## Supervisor Web Interface
 

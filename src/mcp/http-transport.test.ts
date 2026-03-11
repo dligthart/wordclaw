@@ -101,6 +101,7 @@ describe('MCP HTTP transport', () => {
         const resources = await client.listResources();
         const prompts = await client.listPrompts();
         const capabilityResource = await client.readResource({ uri: 'system://capabilities' });
+        const deploymentStatusResource = await client.readResource({ uri: 'system://deployment-status' });
         const guidanceResource = await client.readResource({ uri: 'system://agent-guidance' });
         const actorResource = await client.readResource({ uri: 'system://current-actor' });
         const taskPrompt = await client.getPrompt({
@@ -115,6 +116,12 @@ describe('MCP HTTP transport', () => {
                 taskId: 'manage-integrations',
             }
         });
+        const deploymentGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'discover-deployment',
+            }
+        });
         const policyDecision = await client.callTool({
             name: 'evaluate_policy',
             arguments: {
@@ -126,6 +133,7 @@ describe('MCP HTTP transport', () => {
         expect(tools.tools.some((tool) => tool.name === 'evaluate_policy')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'guide_task')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
+        expect(resources.resources.some((resource) => resource.uri === 'system://deployment-status')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://agent-guidance')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://current-actor')).toBe(true);
         expect(prompts.prompts.some((prompt) => prompt.name === 'task-guidance')).toBe(true);
@@ -142,7 +150,21 @@ describe('MCP HTTP transport', () => {
             })
         }));
         const guidanceText = guidanceResource.contents.find((entry) => 'text' in entry)?.text;
+        const deploymentStatusText = deploymentStatusResource.contents.find((entry) => 'text' in entry)?.text;
         expect(typeof guidanceText).toBe('string');
+        expect(typeof deploymentStatusText).toBe('string');
+        expect(JSON.parse(deploymentStatusText as string)).toEqual(expect.objectContaining({
+            overallStatus: 'ready',
+            checks: expect.objectContaining({
+                database: expect.objectContaining({
+                    status: 'ready',
+                }),
+                mcp: expect.objectContaining({
+                    endpoint: '/mcp',
+                    transports: ['stdio', 'streamable-http'],
+                }),
+            }),
+        }));
         expect(JSON.parse(guidanceText as string)).toEqual(expect.objectContaining({
             routingHints: expect.arrayContaining([
                 expect.objectContaining({
@@ -188,6 +210,7 @@ describe('MCP HTTP transport', () => {
         expect(taskPromptText).toContain('Domain context: implicit-from-key');
 
         const taskGuideText = extractFirstText(taskGuide.content as Array<{ type: string; text?: string }>);
+        const deploymentGuideText = extractFirstText(deploymentGuide.content as Array<{ type: string; text?: string }>);
         expect(JSON.parse(taskGuideText)).toEqual(expect.objectContaining({
             taskId: 'manage-integrations',
             preferredSurface: 'mcp',
@@ -206,6 +229,24 @@ describe('MCP HTTP transport', () => {
                 webhooks: expect.objectContaining({
                     accessible: true,
                 }),
+            }),
+        }));
+        expect(JSON.parse(deploymentGuideText)).toEqual(expect.objectContaining({
+            taskId: 'discover-deployment',
+            preferredSurface: 'rest',
+            deploymentStatus: expect.objectContaining({
+                overallStatus: 'ready',
+            }),
+            guide: expect.objectContaining({
+                overallStatus: 'ready',
+                steps: expect.arrayContaining([
+                    expect.objectContaining({
+                        command: 'node dist/cli/index.js capabilities show',
+                    }),
+                    expect.objectContaining({
+                        command: 'node dist/cli/index.js capabilities status',
+                    }),
+                ]),
             }),
         }));
 

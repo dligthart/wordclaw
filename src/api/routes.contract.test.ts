@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => {
     const dbMock = {
         select: vi.fn(),
+        execute: vi.fn(),
         insert: vi.fn(),
         update: vi.fn(),
         delete: vi.fn(),
@@ -55,6 +56,7 @@ async function buildServer(): Promise<FastifyInstance> {
 
 function resetMocks() {
     mocks.dbMock.select.mockReset();
+    mocks.dbMock.execute.mockReset();
     mocks.dbMock.insert.mockReset();
     mocks.dbMock.update.mockReset();
     mocks.dbMock.delete.mockReset();
@@ -62,6 +64,7 @@ function resetMocks() {
     mocks.logAuditMock.mockReset();
     mocks.isSafeWebhookUrlMock.mockReset();
     mocks.isSafeWebhookUrlMock.mockImplementation(async () => true);
+    mocks.dbMock.execute.mockResolvedValue([{ '?column?': 1 }]);
 }
 
 const originalAuthRequired = process.env.AUTH_REQUIRED;
@@ -141,9 +144,12 @@ describe('API Route Contracts', () => {
                 data: {
                     discovery: {
                         restManifestPath: string;
+                        restStatusPath: string;
                         restIdentityPath: string;
                         mcpResourceUri: string;
+                        mcpStatusResourceUri: string;
                         mcpActorResourceUri: string;
+                        cliStatusCommand: string;
                         cliWhoAmICommand: string;
                     };
                     protocolSurfaces: {
@@ -190,9 +196,12 @@ describe('API Route Contracts', () => {
             };
 
             expect(body.data.discovery.restManifestPath).toBe('/api/capabilities');
+            expect(body.data.discovery.restStatusPath).toBe('/api/deployment-status');
             expect(body.data.discovery.restIdentityPath).toBe('/api/identity');
             expect(body.data.discovery.mcpResourceUri).toBe('system://capabilities');
+            expect(body.data.discovery.mcpStatusResourceUri).toBe('system://deployment-status');
             expect(body.data.discovery.mcpActorResourceUri).toBe('system://current-actor');
+            expect(body.data.discovery.cliStatusCommand).toBe('node dist/cli/index.js capabilities status');
             expect(body.data.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
             expect(body.data.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
             expect(body.data.protocolSurfaces.mcp.endpoint).toBe('/mcp');
@@ -267,6 +276,53 @@ describe('API Route Contracts', () => {
                     }),
                 ]),
             );
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('exposes a public deployment status snapshot without requiring auth', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/deployment-status',
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    overallStatus: string;
+                    checks: {
+                        database: { status: string };
+                        restApi: { status: string; basePath: string };
+                        mcp: { status: string; endpoint: string; transports: string[]; attachable: boolean };
+                        agentRuns: { status: string; enabled: boolean };
+                    };
+                    warnings: string[];
+                };
+            };
+
+            expect(body.data.overallStatus).toBe('ready');
+            expect(body.data.checks.database.status).toBe('ready');
+            expect(body.data.checks.restApi).toEqual(expect.objectContaining({
+                status: 'ready',
+                basePath: '/api',
+            }));
+            expect(body.data.checks.mcp).toEqual(expect.objectContaining({
+                status: 'ready',
+                endpoint: '/mcp',
+                transports: ['stdio', 'streamable-http'],
+                attachable: true,
+            }));
+            expect(body.data.checks.agentRuns).toEqual(expect.objectContaining({
+                status: 'disabled',
+                enabled: false,
+            }));
+            expect(body.data.warnings).toEqual([]);
         } finally {
             await app.close();
         }

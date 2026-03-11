@@ -1270,24 +1270,94 @@ paths:
                     type: object
                     required:
                       - restManifestPath
+                      - restStatusPath
                       - restIdentityPath
                       - mcpResourceUri
+                      - mcpStatusResourceUri
                       - mcpActorResourceUri
                       - cliCommand
+                      - cliStatusCommand
                       - cliWhoAmICommand
                     properties:
                       restManifestPath:
+                        type: string
+                      restStatusPath:
                         type: string
                       restIdentityPath:
                         type: string
                       mcpResourceUri:
                         type: string
+                      mcpStatusResourceUri:
+                        type: string
                       mcpActorResourceUri:
                         type: string
                       cliCommand:
                         type: string
+                      cliStatusCommand:
+                        type: string
                       cliWhoAmICommand:
                         type: string
+  /api/deployment-status:
+    get:
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - generatedAt
+                  - overallStatus
+                  - checks
+                  - warnings
+                properties:
+                  generatedAt:
+                    type: string
+                  overallStatus:
+                    type: string
+                  checks:
+                    type: object
+                    additionalProperties: true
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+              meta:
+                $ref: '#/components/schemas/AIMeta'
+        "503":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - generatedAt
+                  - overallStatus
+                  - checks
+                  - warnings
+                properties:
+                  generatedAt:
+                    type: string
+                  overallStatus:
+                    type: string
+                  checks:
+                    type: object
+                    additionalProperties: true
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+              meta:
+                $ref: '#/components/schemas/AIMeta'
                   protocolSurfaces:
                     type: object
                     additionalProperties: true

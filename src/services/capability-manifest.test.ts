@@ -46,9 +46,12 @@ describe('buildCapabilityManifest', () => {
         const manifest = buildCapabilityManifest();
 
         expect(manifest.discovery.restManifestPath).toBe('/api/capabilities');
+        expect(manifest.discovery.restStatusPath).toBe('/api/deployment-status');
         expect(manifest.discovery.restIdentityPath).toBe('/api/identity');
         expect(manifest.discovery.mcpResourceUri).toBe('system://capabilities');
+        expect(manifest.discovery.mcpStatusResourceUri).toBe('system://deployment-status');
         expect(manifest.discovery.mcpActorResourceUri).toBe('system://current-actor');
+        expect(manifest.discovery.cliStatusCommand).toBe('node dist/cli/index.js capabilities status');
         expect(manifest.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
         expect(manifest.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
         expect(manifest.protocolSurfaces.mcp.endpoint).toBe('/mcp');
@@ -60,6 +63,11 @@ describe('buildCapabilityManifest', () => {
         expect(manifest.paidContent.purchaseFlowSurface).toBe('rest');
         expect(manifest.agentGuidance.routingHints).toEqual(
             expect.arrayContaining([
+                expect.objectContaining({
+                    intent: 'discover-deployment',
+                    preferredSurface: 'rest',
+                    preferredActorProfile: 'public-discovery',
+                }),
                 expect.objectContaining({
                     intent: 'author-content',
                     preferredSurface: 'mcp',
@@ -112,6 +120,14 @@ describe('buildCapabilityManifest', () => {
                     recommendedAuth: 'none',
                     preferredActorProfile: 'public-discovery',
                     supportedActorProfiles: expect.arrayContaining(['public-discovery', 'api-key', 'env-key']),
+                    steps: expect.arrayContaining([
+                        expect.objectContaining({
+                            operation: 'GET /api/deployment-status',
+                        }),
+                        expect.objectContaining({
+                            operation: 'read system://deployment-status',
+                        }),
+                    ]),
                 }),
                 expect.objectContaining({
                     id: 'author-content',

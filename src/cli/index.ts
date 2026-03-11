@@ -48,7 +48,7 @@ const TOP_LEVEL_COMMANDS = [
     'l402',
 ] as const;
 const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smoke'] as const;
-const CAPABILITY_SUBCOMMANDS = ['show', 'whoami'] as const;
+const CAPABILITY_SUBCOMMANDS = ['show', 'status', 'whoami'] as const;
 const AUDIT_SUBCOMMANDS = ['list', 'guide'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
@@ -112,6 +112,7 @@ Commands:
     MCP options: [--mcp-transport stdio|http] [--mcp-url <url>]
 
   capabilities show
+  capabilities status
   capabilities whoami
 
   audit list [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>] [--cursor <value>]
@@ -547,6 +548,16 @@ async function handleCapabilities(client: RestCliClient, args: ParsedArgs) {
         const response = await client.request({
             method: 'GET',
             path: '/identity',
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'status') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/deployment-status',
+            acceptStatuses: [503],
         });
         printResponse(args, response);
         return;

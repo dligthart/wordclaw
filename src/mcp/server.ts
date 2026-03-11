@@ -19,6 +19,7 @@ import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
 import { buildCurrentActorSnapshot, buildMcpLocalPrincipal, type ActorPrincipal } from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
+import { getDeploymentStatusSnapshot } from '../services/deployment-status.js';
 import { buildContentGuide } from '../cli/lib/content-guide.js';
 import { buildWorkflowGuide } from '../cli/lib/workflow-guide.js';
 import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
@@ -32,6 +33,7 @@ type McpRequestExtra = {
 };
 
 const GUIDE_TASK_IDS = [
+    'discover-deployment',
     'author-content',
     'review-workflow',
     'manage-integrations',
@@ -2220,6 +2222,47 @@ server.tool(
             currentActor,
         };
 
+        if (taskId === 'discover-deployment') {
+            const deploymentStatus = await getDeploymentStatusSnapshot();
+            const guide = {
+                taskId: 'discover-deployment',
+                overallStatus: deploymentStatus.overallStatus,
+                checks: deploymentStatus.checks,
+                warnings: deploymentStatus.warnings,
+                steps: [
+                    {
+                        id: 'read-manifest',
+                        title: 'Read the deployment manifest',
+                        status: 'ready',
+                        command: 'node dist/cli/index.js capabilities show',
+                        purpose: 'Inspect enabled modules, actor profiles, transport options, and task routing hints.',
+                    },
+                    {
+                        id: 'read-status',
+                        title: 'Read the live deployment status',
+                        status: deploymentStatus.overallStatus === 'ready' ? 'ready' : 'warning',
+                        command: 'node dist/cli/index.js capabilities status',
+                        purpose: 'Confirm database connectivity and live transport/worker readiness before mutating runtime state.',
+                    },
+                    {
+                        id: 'confirm-actor',
+                        title: 'Confirm the current actor after authenticating',
+                        status: currentActor.actorProfileId === 'public-discovery' ? 'optional' : 'ready',
+                        command: currentActor.actorProfileId === 'mcp-local'
+                            ? 'node dist/cli/index.js mcp whoami'
+                            : 'node dist/cli/index.js capabilities whoami',
+                        purpose: 'Verify the credential, domain, and scope set that will execute subsequent actions.',
+                    },
+                ],
+            };
+
+            return okJson({
+                ...basePayload,
+                deploymentStatus,
+                guide,
+            });
+        }
+
         if (taskId === 'author-content') {
             if (contentTypeId === undefined) {
                 return err('MISSING_CONTENT_TYPE_ID: guide_task author-content requires contentTypeId.');
@@ -2512,6 +2555,19 @@ server.resource(
             contents: [{
                 uri: uri.href,
                 text: JSON.stringify(buildCurrentActorSnapshot(resolveMcpPrincipal(extra as McpRequestExtra | undefined)), null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
+    'deployment-status',
+    'system://deployment-status',
+    async (uri) => {
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(await getDeploymentStatusSnapshot(), null, 2)
             }]
         };
     }

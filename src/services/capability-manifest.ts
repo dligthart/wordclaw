@@ -194,10 +194,23 @@ export function buildCapabilityManifest() {
                         purpose: 'Inspect enabled modules, auth expectations, protocol roles, and dry-run support.',
                     },
                     {
+                        title: 'Read the live deployment status',
+                        surface: 'rest',
+                        operation: 'GET /api/deployment-status',
+                        purpose: 'Confirm database connectivity, MCP transport health, and any enabled worker readiness before acting.',
+                    },
+                    {
                         title: 'Mirror the manifest inside an MCP session',
                         surface: 'mcp',
                         operation: 'read system://capabilities',
                         purpose: 'Confirm the same contract after connecting as an MCP client.',
+                        optional: true,
+                    },
+                    {
+                        title: 'Check the in-band MCP deployment status',
+                        surface: 'mcp',
+                        operation: 'read system://deployment-status',
+                        purpose: 'Verify the live readiness snapshot without leaving the MCP session.',
                         optional: true,
                     },
                 ],
@@ -397,10 +410,13 @@ export function buildCapabilityManifest() {
         },
         discovery: {
             restManifestPath: '/api/capabilities',
+            restStatusPath: '/api/deployment-status',
             restIdentityPath: '/api/identity',
             mcpResourceUri: 'system://capabilities',
+            mcpStatusResourceUri: 'system://deployment-status',
             mcpActorResourceUri: 'system://current-actor',
             cliCommand: 'node dist/cli/index.js capabilities show',
+            cliStatusCommand: 'node dist/cli/index.js capabilities status',
             cliWhoAmICommand: 'node dist/cli/index.js capabilities whoami',
         },
         protocolSurfaces: {

@@ -125,6 +125,7 @@ describe('WordClawMcpClient over HTTP', () => {
 
         expect(capabilities.tools.some((tool) => tool.name === 'evaluate_policy')).toBe(true);
         expect(capabilities.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
+        expect(capabilities.resources.some((resource) => resource.uri === 'system://deployment-status')).toBe(true);
         expect(capabilities.resources.some((resource) => resource.uri === 'system://current-actor')).toBe(true);
         expect(capabilities.manifest).toEqual(expect.objectContaining({
             protocolSurfaces: expect.objectContaining({
@@ -141,6 +142,14 @@ describe('WordClawMcpClient over HTTP', () => {
             actorProfileId: 'env-key',
             domainId: 1,
             assignmentRefs: ['env_key:remote-admin', 'remote-admin'],
+        }));
+        expect(capabilities.deploymentStatus).toEqual(expect.objectContaining({
+            overallStatus: 'ready',
+            checks: expect.objectContaining({
+                database: expect.objectContaining({
+                    status: 'ready',
+                }),
+            }),
         }));
     });
 });

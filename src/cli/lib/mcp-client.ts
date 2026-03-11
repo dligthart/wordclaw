@@ -333,6 +333,7 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         client.listPrompts(),
     ]);
     let manifest: unknown = null;
+    let deploymentStatus: unknown = null;
     let currentActor: unknown = null;
 
     try {
@@ -349,6 +350,13 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         currentActor = null;
     }
 
+    try {
+        const deploymentStatusText = await client.readResource('system://deployment-status');
+        deploymentStatus = maybeParseJson(deploymentStatusText);
+    } catch {
+        deploymentStatus = null;
+    }
+
     return {
         toolCount: tools.length,
         resourceCount: resources.length,
@@ -357,6 +365,7 @@ export async function inspectCapabilities(client: WordClawMcpClient) {
         resources,
         prompts,
         manifest,
+        deploymentStatus,
         currentActor,
     };
 }

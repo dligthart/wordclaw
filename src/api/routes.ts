@@ -37,6 +37,7 @@ import {
     type AuditActor,
 } from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
+import { getDeploymentStatusSnapshot } from '../services/deployment-status.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -526,7 +527,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return undefined;
         }
 
-        if (path === '/api/capabilities') {
+        if (path === '/api/capabilities' || path === '/api/deployment-status') {
             return undefined;
         }
 
@@ -570,10 +571,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                     }),
                     discovery: Type.Object({
                         restManifestPath: Type.String(),
+                        restStatusPath: Type.String(),
                         restIdentityPath: Type.String(),
                         mcpResourceUri: Type.String(),
+                        mcpStatusResourceUri: Type.String(),
                         mcpActorResourceUri: Type.String(),
                         cliCommand: Type.String(),
+                        cliStatusCommand: Type.String(),
                         cliWhoAmICommand: Type.String()
                     }),
                     protocolSurfaces: Type.Object({
@@ -705,6 +709,94 @@ export default async function apiRoutes(server: FastifyInstance) {
                 1
             )
         };
+    });
+
+    server.get('/deployment-status', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Object({
+                    generatedAt: Type.String(),
+                    overallStatus: Type.String(),
+                    checks: Type.Object({
+                        database: Type.Object({
+                            status: Type.String(),
+                            note: Type.String(),
+                        }),
+                        restApi: Type.Object({
+                            status: Type.String(),
+                            basePath: Type.String(),
+                            note: Type.String(),
+                        }),
+                        mcp: Type.Object({
+                            status: Type.String(),
+                            endpoint: Type.String(),
+                            transports: Type.Array(Type.String()),
+                            attachable: Type.Boolean(),
+                            note: Type.String(),
+                        }),
+                        agentRuns: Type.Object({
+                            status: Type.String(),
+                            enabled: Type.Boolean(),
+                            workerStarted: Type.Boolean(),
+                            sweepInProgress: Type.Boolean(),
+                            lastSweepCompletedAt: Type.Union([Type.String(), Type.Null()]),
+                            lastErrorMessage: Type.Union([Type.String(), Type.Null()]),
+                            note: Type.String(),
+                        }),
+                    }),
+                    warnings: Type.Array(Type.String()),
+                })),
+                503: createAIResponse(Type.Object({
+                    generatedAt: Type.String(),
+                    overallStatus: Type.String(),
+                    checks: Type.Object({
+                        database: Type.Object({
+                            status: Type.String(),
+                            note: Type.String(),
+                        }),
+                        restApi: Type.Object({
+                            status: Type.String(),
+                            basePath: Type.String(),
+                            note: Type.String(),
+                        }),
+                        mcp: Type.Object({
+                            status: Type.String(),
+                            endpoint: Type.String(),
+                            transports: Type.Array(Type.String()),
+                            attachable: Type.Boolean(),
+                            note: Type.String(),
+                        }),
+                        agentRuns: Type.Object({
+                            status: Type.String(),
+                            enabled: Type.Boolean(),
+                            workerStarted: Type.Boolean(),
+                            sweepInProgress: Type.Boolean(),
+                            lastSweepCompletedAt: Type.Union([Type.String(), Type.Null()]),
+                            lastErrorMessage: Type.Union([Type.String(), Type.Null()]),
+                            note: Type.String(),
+                        }),
+                    }),
+                    warnings: Type.Array(Type.String()),
+                })),
+            }
+        }
+    }, async (_request, reply) => {
+        const status = await getDeploymentStatusSnapshot();
+        const payload = {
+            data: status,
+            meta: buildMeta(
+                'Use the live deployment status to confirm the instance is healthy enough for agent actions.',
+                ['GET /api/deployment-status'],
+                'low',
+                1,
+            )
+        };
+
+        if (status.overallStatus === 'degraded') {
+            return reply.status(503).send(payload);
+        }
+
+        return payload;
     });
 
     server.get('/identity', {

@@ -85,9 +85,11 @@ node dist/cli/index.js mcp inspect
 node dist/cli/index.js mcp call list_content_types --json '{"limit":5}'
 node dist/cli/index.js mcp prompt workflow-guidance
 node dist/cli/index.js mcp prompt task-guidance --json '{"taskId":"author-content"}'
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-deployment"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"manage-integrations"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}'
 node dist/cli/index.js mcp resource content://types
+node dist/cli/index.js mcp resource system://deployment-status
 node dist/cli/index.js mcp resource system://agent-guidance
 node dist/cli/index.js mcp smoke
 
@@ -112,8 +114,8 @@ Important transport note:
 - the CLI defaults to local `stdio` transport unless you pass `--mcp-transport http` or `--mcp-url`
 - when running in `stdio` mode, the CLI starts its own local MCP child process
 - when running in `http` mode, the CLI attaches directly to `/mcp`
-- `mcp inspect` now also includes the deployment manifest and current actor snapshot when the MCP server exposes `system://capabilities` and `system://current-actor`
-- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for authoring, review, integrations, provenance checks, and paid-content flows
+- `mcp inspect` now also includes the deployment manifest, deployment status, and current actor snapshot when the MCP server exposes `system://capabilities`, `system://deployment-status`, and `system://current-actor`
+- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, authoring, review, integrations, provenance checks, and paid-content flows
 
 Usability details:
 
@@ -187,6 +189,7 @@ Use the deployment manifest when an agent needs to discover what this WordClaw i
 
 ```bash
 node dist/cli/index.js capabilities show
+node dist/cli/index.js capabilities status
 node dist/cli/index.js caps show --raw
 node dist/cli/index.js capabilities whoami
 ```
@@ -194,6 +197,7 @@ node dist/cli/index.js capabilities whoami
 The manifest reports:
 
 - required vs compatibility protocol surfaces
+- live deployment readiness across database, REST, MCP, and enabled background workers
 - MCP transport behavior
 - auth and domain-context expectations
 - reusable actor profiles for API keys, supervisor sessions, local MCP, and public discovery
@@ -207,6 +211,12 @@ When you need to confirm the active credential before a mutation, use:
 ```bash
 node dist/cli/index.js capabilities whoami
 node dist/cli/index.js mcp whoami
+```
+
+When you need to confirm the deployment is healthy enough to act against, use:
+
+```bash
+node dist/cli/index.js capabilities status
 ```
 
 ### Content Types
