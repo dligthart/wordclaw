@@ -98,6 +98,10 @@ The repo also ships with a JSON-first CLI for MCP and REST automation:
 npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts capabilities show
+npx tsx src/cli/index.ts capabilities whoami
+npx tsx src/cli/index.ts content guide --content-type-id 1
+npx tsx src/cli/index.ts integrations guide
+npx tsx src/cli/index.ts workflow guide
 npx tsx src/cli/index.ts l402 guide --item 123
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
@@ -118,6 +122,22 @@ Use `node dist/cli/index.js --help` (or `npx tsx src/cli/index.ts --help`) to se
 
 For MCP commands, the CLI defaults to local `stdio` transport. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` when you want it to attach to the running remote MCP endpoint instead.
 
+Recommended agent preflight sequence:
+
+```bash
+# 1. Discover the deployment contract
+curl http://localhost:4000/api/capabilities
+
+# 2. Confirm the current actor before mutating state
+node dist/cli/index.js capabilities whoami
+
+# 3. Ask for task-specific guidance
+node dist/cli/index.js content guide --content-type-id 1
+node dist/cli/index.js workflow guide
+node dist/cli/index.js integrations guide
+node dist/cli/index.js l402 guide --item 123
+```
+
 Before writing a custom client, you can inspect the deployment contract directly:
 
 ```bash
@@ -125,6 +145,13 @@ curl http://localhost:4000/api/capabilities
 ```
 
 For a full walkthrough of the command groups, payload formats, agent usage patterns, and current limitations, see the [CLI Guide](../guides/cli-guide.md).
+
+For remote MCP clients, the same deployment guidance is also available in-band:
+
+- `system://capabilities`
+- `system://current-actor`
+- `system://agent-guidance`
+- `task-guidance`
 
 ## Supervisor Web Interface
 

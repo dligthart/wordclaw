@@ -13,6 +13,25 @@ WordClaw now exposes MCP in two ways:
 
 For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as authoring, review, integration setup, and paid-content consumption. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
 
+Recommended remote MCP preflight:
+
+```bash
+node dist/cli/index.js mcp inspect \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
+node dist/cli/index.js mcp whoami \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
+node dist/cli/index.js mcp resource system://agent-guidance \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+```
+
 ## Starting the Local MCP Server
 
 ```bash
@@ -120,6 +139,14 @@ Resources give agents read-only context about the system state.
 | `task-guidance`                 | Returns the preferred surface and step recipe for a specific task id |
 
 Prompts are templates that help agents follow best practices when interacting with the CMS.
+
+Current task ids exposed through `task-guidance`:
+
+- `discover-deployment`
+- `author-content`
+- `review-workflow`
+- `manage-integrations`
+- `consume-paid-content`
 
 ## Response Format
 

@@ -50,8 +50,9 @@
                             Agents</span></h1>
                     <p class="hero-subtitle fade-in-up delay-2">
                         Designed for governed automation. WordClaw combines structured content contracts, dry-run
-                        safety, workflow approvals, auditability, and agent-native REST/MCP access in one runtime,
-                        with built-in Lightning-gated payments and optional semantic search when you need it.
+                        safety, workflow approvals, auditability, and agent-native REST/MCP access in one runtime.
+                        Agents can discover the live deployment contract first, confirm their current actor, then
+                        follow task-specific guidance for content, review, integrations, and paid-content flows.
                     </p>
                     <div class="hero-actions fade-in-up delay-3">
                         <a href="/wordclaw/docs/" class="btn btn-primary">Read Documentation</a>
@@ -67,19 +68,15 @@
                             <span class="dot green"></span>
                         </div>
                         <div class="window-body">
-                            <pre><code><span class="keyword">const</span> <span class="variable">session</span> = <span class="keyword">await</span> <span class="function">WordClaw</span>.<span class="property">connect</span>({
-  <span class="property">surface</span>: <span class="string">'mcp'</span>,
-  <span class="property">dryRun</span>: <span class="boolean">true</span>,
-  <span class="property">domain</span>: <span class="string">'docs'</span>
-});
+                            <pre><code><span class="comment">// Discover the live contract before acting</span>
+<span class="keyword">const</span> <span class="variable">manifest</span> = <span class="keyword">await</span> <span class="function">fetch</span>(<span class="string">'/api/capabilities'</span>).<span class="function">then</span>(<span class="variable">r</span> =&gt; <span class="variable">r</span>.<span class="function">json</span>());
 
-<span class="comment">// Draft via MCP, then route through approval-aware workflow</span>
-<span class="keyword">const</span> <span class="variable">draft</span> = <span class="keyword">await</span> <span class="variable">session</span>.<span class="function">callTool</span>(<span class="string">'create_content_item'</span>, {
-  <span class="property">contentTypeId</span>: <span class="number">7</span>,
-  <span class="property">data</span>: { <span class="property">title</span>: <span class="string">'Explain L402'</span> },
-  <span class="property">status</span>: <span class="string">'draft'</span>,
-  <span class="property">dryRun</span>: <span class="boolean">true</span>
-});</code></pre>
+<span class="comment">// Confirm the current actor and ask for a task recipe</span>
+<span class="keyword">const</span> <span class="variable">actor</span> = <span class="keyword">await</span> <span class="function">fetch</span>(<span class="string">'/api/identity'</span>, {
+  <span class="property">headers</span>: { <span class="string">'x-api-key'</span>: <span class="string">'writer'</span> }
+}).<span class="function">then</span>(<span class="variable">r</span> =&gt; <span class="variable">r</span>.<span class="function">json</span>());
+
+<span class="keyword">const</span> <span class="variable">guide</span> = <span class="keyword">await</span> <span class="function">exec</span>(<span class="string">'node dist/cli/index.js content guide --content-type-id 7'</span>);</code></pre>
                         </div>
                     </div>
                 </div>
@@ -98,21 +95,21 @@
                         <div class="feature-icon">🔌</div>
                         <h3>REST + MCP Surfaces</h3>
                         <p>Expose the core runtime through primary agent-facing surfaces with deterministic guidance,
-                            simulation hooks, and policy-aware mutations.</p>
+                            simulation hooks, remote MCP attachment, and policy-aware mutations.</p>
                     </div>
 
                     <div class="feature-card fade-in-up delay-1">
+                        <div class="feature-icon">🧭</div>
+                        <h3>Capability Manifest</h3>
+                        <p>Let agents inspect transports, actor profiles, enabled modules, and task recipes before
+                            they choose a surface or mutate state.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up delay-2">
                         <div class="feature-icon">⚡</div>
                         <h3>Built-in L402 Payments</h3>
                         <p>Run Lightning-gated offers, entitlement purchases, and paid reads as part of the core
                             runtime contract.</p>
-                    </div>
-
-                    <div class="feature-card fade-in-up delay-2">
-                        <div class="feature-icon">🧠</div>
-                        <h3>Native Vector RAG</h3>
-                        <p>Built-in pgvector support. Upload documents and WordClaw automatically chunks, embeds, and
-                            serves them for rapid semantic retrieval by downstream agents.</p>
                     </div>
 
                     <div class="feature-card fade-in-up">
@@ -123,17 +120,24 @@
                     </div>
 
                     <div class="feature-card fade-in-up delay-1">
+                        <div class="feature-icon">🧠</div>
+                        <h3>Native Vector RAG</h3>
+                        <p>Built-in pgvector support. Upload documents and WordClaw automatically chunks, embeds, and
+                            serves them for rapid semantic retrieval by downstream agents.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up delay-2">
                         <div class="feature-icon">🌐</div>
                         <h3>Multi-Tenant Governance</h3>
                         <p>Host multiple projects or organizations on one instance with domain-scoped content,
                             credentials, and workflow boundaries.</p>
                     </div>
 
-                    <div class="feature-card fade-in-up delay-2">
+                    <div class="feature-card fade-in-up">
                         <div class="feature-icon">📝</div>
                         <h3>Supervisor Control Plane</h3>
-                        <p>A focused oversight UI for approvals, audits, schemas, content inspection, and API key
-                            management.</p>
+                        <p>A focused oversight UI for approvals, audits, schemas, content inspection, payments, and
+                            API key management.</p>
                     </div>
                 </div>
             </div>

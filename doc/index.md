@@ -13,9 +13,11 @@ hero:
       link: https://github.com/dligthart/wordclaw
 features:
   - title: REST + MCP First
-    details: Primary agent surfaces with remediation metadata, dry-run support, and policy-aware mutations.
+    details: Primary agent surfaces with remote MCP attachment, dry-run support, and policy-aware mutations.
+  - title: Capability Manifest
+    details: Discover enabled modules, actor profiles, transports, and task recipes before an agent starts mutating state.
   - title: Governed Content Ops
     details: Structured content, approval workflows, audit trails, idempotency, and tenant isolation in one runtime.
-  - title: Optional Search + L402
-    details: Add semantic retrieval and Lightning-gated access without turning the core product into a marketplace suite.
+  - title: Guided Agent Workflows
+    details: Use CLI and MCP guidance paths for content authoring, workflow review, integration setup, and paid-content access.
 ---
