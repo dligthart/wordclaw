@@ -113,6 +113,7 @@ npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts l402 guide --item 123
 npx tsx src/cli/index.ts workflow guide
+npx tsx src/cli/index.ts content guide --content-type-id 1
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
@@ -126,6 +127,7 @@ node dist/cli/index.js l402 offers --item 123
 The CLI is JSON-first so agents can script it reliably, and `--raw` is available when you want only the response body or MCP text. It supports:
 - MCP discovery, direct tool calls, prompt reads, resource reads, and smoke testing
 - REST content type and content item CRUD
+- actor-aware content authoring guidance for a target schema
 - REST workflow submission and approval decisions
 - actor-aware workflow review guidance for pending tasks
 - REST L402 consumption flows for offers, purchase confirmation, entitlements, and paid reads

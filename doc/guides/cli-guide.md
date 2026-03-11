@@ -189,6 +189,7 @@ Supported features:
 
 ```bash
 node dist/cli/index.js content list --content-type-id 12 --status draft --limit 20
+node dist/cli/index.js content guide --content-type-id 12
 node dist/cli/index.js content ls --status draft --raw
 node dist/cli/index.js content get --id 345
 node dist/cli/index.js content create --content-type-id 12 --data-file item.json
@@ -200,6 +201,7 @@ node dist/cli/index.js content delete --id 345
 
 Supported features:
 
+- actor-aware authoring guidance for a target content schema
 - filtered list views
 - item reads
 - create and update mutations
@@ -207,6 +209,20 @@ Supported features:
 - rollback
 - delete
 - dry-run mode where the REST API supports it
+
+`content guide` is the quickest way for an agent to prepare a write. It combines:
+
+- the current actor snapshot from `/api/identity`
+- the selected content type schema from `/api/content-types/:id`
+- the active workflow, if any, from `/api/content-types/:id/workflows/active`
+
+The guide tells you:
+
+- whether the current actor can write against this schema
+- which top-level fields are required
+- an example draft payload shape
+- whether an active review workflow exists
+- the recommended dry-run, create, and submit-for-review commands
 
 ### Workflow and Review
 

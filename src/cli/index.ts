@@ -27,6 +27,7 @@ import {
     RestCliError,
     type RestCliResponse,
 } from './lib/rest-client.js';
+import { buildContentGuide } from './lib/content-guide.js';
 import { buildL402Guide } from './lib/l402-guide.js';
 import { buildWorkflowGuide } from './lib/workflow-guide.js';
 import type { CurrentActorSnapshot } from '../services/actor-identity.js';
@@ -46,7 +47,7 @@ const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smo
 const CAPABILITY_SUBCOMMANDS = ['show', 'whoami'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
-const CONTENT_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
+const CONTENT_SUBCOMMANDS = ['list', 'guide', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
 const WORKFLOW_SUBCOMMANDS = ['active', 'guide', 'submit', 'tasks', 'decide'] as const;
 const L402_SUBCOMMANDS = ['offers', 'guide', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
 
@@ -116,6 +117,7 @@ Commands:
   content-types delete --id <n> [--dry-run]
 
   content list [--content-type-id <n>] [--status <value>] [--q <value>] [--created-after <iso>] [--created-before <iso>] [--sort-by updatedAt|createdAt|version] [--sort-dir asc|desc] [--limit <n>] [--offset <n>]
+  content guide --content-type-id <n>
   content get --id <n>
   content create --content-type-id <n> [--status <value>] [--data-json <json>|--data-file <path>] [--dry-run]
   content update --id <n> [--content-type-id <n>] [--status <value>] [--data-json <json>|--data-file <path>] [--dry-run]
@@ -192,6 +194,25 @@ function requireJsonMap(value: unknown, context: string): JsonMap {
     }
 
     return value as JsonMap;
+}
+
+function extractErrorCode(error: unknown): string | null {
+    if (
+        error instanceof RestCliError
+        && error.response.body
+        && typeof error.response.body === 'object'
+        && 'code' in (error.response.body as Record<string, unknown>)
+    ) {
+        return String((error.response.body as Record<string, unknown>).code);
+    }
+
+    return null;
+}
+
+function isMissingActorErrorCode(code: string | null): boolean {
+    return code === 'AUTH_MISSING_API_KEY'
+        || code === 'AUTH_INSUFFICIENT_SCOPE'
+        || code === 'API_KEY_REQUIRED';
 }
 
 async function tryFetchCurrentActor(client: RestCliClient): Promise<{
@@ -575,6 +596,105 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
         return;
     }
 
+    if (action === 'guide') {
+        const contentTypeId = getNumberFlag(args, 'content-type-id');
+        if (contentTypeId === undefined) {
+            throw new Error('content guide requires --content-type-id.');
+        }
+
+        const actorResult = await tryFetchCurrentActor(client);
+        const currentActor = actorResult.currentActor;
+        const warnings = [...actorResult.warnings];
+        type ContentGuideContentType = {
+            id: number;
+            name: string;
+            slug: string;
+            description?: string;
+            schema: string;
+            basePrice?: number;
+            createdAt: string;
+            updatedAt: string;
+        };
+        type ContentGuideWorkflow = {
+            id: number;
+            name: string;
+            contentTypeId: number;
+            active: boolean;
+            transitions: Array<{
+                id: number;
+                workflowId: number;
+                fromState: string;
+                toState: string;
+                requiredRoles?: string[];
+            }>;
+        };
+        let contentType: ContentGuideContentType | null = null;
+        let workflow: ContentGuideWorkflow | null | undefined = undefined;
+
+        try {
+            const response = await client.request({
+                method: 'GET',
+                path: `/content-types/${contentTypeId}`,
+            });
+            const body = requireJsonMap(response.body, 'Content guide response');
+            const data = body.data;
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                contentType = data as ContentGuideContentType;
+            }
+        } catch (error) {
+            const code = extractErrorCode(error);
+            if (isMissingActorErrorCode(code)) {
+                warnings.push('Schema inspection is unavailable until an authenticated actor with content access is configured.');
+            } else {
+                throw error;
+            }
+        }
+
+        if (contentType) {
+            try {
+                const response = await client.request({
+                    method: 'GET',
+                    path: `/content-types/${contentTypeId}/workflows/active`,
+                });
+                const body = requireJsonMap(response.body, 'Content guide workflow response');
+                const data = body.data;
+                if (data && typeof data === 'object' && !Array.isArray(data)) {
+                    workflow = data as ContentGuideWorkflow;
+                }
+            } catch (error) {
+                const code = extractErrorCode(error);
+                if (code === 'WORKFLOW_NOT_FOUND') {
+                    workflow = null;
+                } else if (isMissingActorErrorCode(code)) {
+                    warnings.push('Active workflow inspection is unavailable until an authenticated actor with content access is configured.');
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        const guide = buildContentGuide({
+            contentTypeId,
+            contentType,
+            workflow,
+            currentActor,
+        });
+        if (warnings.length > 0) {
+            guide.warnings = [...(guide.warnings ?? []), ...warnings];
+        }
+
+        printStructured(
+            args,
+            {
+                transport: 'rest',
+                action: 'guide',
+                guide,
+            },
+            guide,
+        );
+        return;
+    }
+
     if (action === 'get') {
         const id = getNumberFlag(args, 'id');
         if (id === undefined) {
@@ -756,18 +876,9 @@ async function handleWorkflow(client: RestCliClient, args: ParsedArgs) {
             const body = requireJsonMap(response.body, 'Workflow guide response');
             tasks = Array.isArray(body.data) ? body.data as typeof tasks : [];
         } catch (error) {
-            if (
-                error instanceof RestCliError
-                && error.response.body
-                && typeof error.response.body === 'object'
-                && 'code' in (error.response.body as Record<string, unknown>)
-            ) {
-                const code = String((error.response.body as Record<string, unknown>).code);
-                if (code === 'AUTH_MISSING_API_KEY' || code === 'AUTH_INSUFFICIENT_SCOPE' || code === 'API_KEY_REQUIRED') {
-                    taskWarnings.push('Pending review tasks are unavailable until an authenticated actor with review access is configured.');
-                } else {
-                    throw error;
-                }
+            const code = extractErrorCode(error);
+            if (isMissingActorErrorCode(code)) {
+                taskWarnings.push('Pending review tasks are unavailable until an authenticated actor with review access is configured.');
             } else {
                 throw error;
             }
@@ -888,18 +999,9 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
             const body = requireJsonMap(response.body, 'L402 guide response');
             offers = Array.isArray(body.data) ? body.data as typeof offers : [];
         } catch (error) {
-            if (
-                error instanceof RestCliError
-                && error.response.body
-                && typeof error.response.body === 'object'
-                && 'code' in (error.response.body as Record<string, unknown>)
-            ) {
-                const code = String((error.response.body as Record<string, unknown>).code);
-                if (code === 'AUTH_MISSING_API_KEY' || code === 'AUTH_INSUFFICIENT_SCOPE' || code === 'API_KEY_REQUIRED') {
-                    warnings = ['Live offer discovery is unavailable until an API key is configured. Showing the generic paid-content task plan instead.'];
-                } else {
-                    throw error;
-                }
+            const code = extractErrorCode(error);
+            if (isMissingActorErrorCode(code)) {
+                warnings = ['Live offer discovery is unavailable until an API key is configured. Showing the generic paid-content task plan instead.'];
             } else {
                 throw error;
             }
