@@ -1760,6 +1760,77 @@ paths:
               meta:
                 type: object
                 additionalProperties: true
+  /api/workspace-target:
+    get:
+      parameters:
+        - in: query
+          name: intent
+          required: true
+          schema:
+            type: string
+            enum:
+              - authoring
+              - review
+              - workflow
+              - paid
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Authenticated best-target resolution for a workspace intent
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: object
+                required:
+                  - generatedAt
+                  - currentActor
+                  - currentDomain
+                  - intent
+                  - search
+                  - availableTargetCount
+                  - target
+                  - alternatives
+                  - warnings
+                properties:
+                  generatedAt:
+                    type: string
+                  currentActor:
+                    type: object
+                    additionalProperties: true
+                  currentDomain:
+                    type: object
+                    additionalProperties: true
+                  intent:
+                    type: string
+                  search:
+                    type: string
+                    nullable: true
+                  availableTargetCount:
+                    type: integer
+                  target:
+                    anyOf:
+                      - type: object
+                        additionalProperties: true
+                      - type: "null"
+                  alternatives:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+              meta:
+                type: object
+                additionalProperties: true
                     description: List of all possible actions from this state
                     type: array
                     items:

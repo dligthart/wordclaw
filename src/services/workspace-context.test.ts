@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '../db/index.js';
-import { getWorkspaceContextSnapshot } from './workspace-context.js';
+import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from './workspace-context.js';
 
 describe('getWorkspaceContextSnapshot', () => {
     afterEach(() => {
@@ -277,5 +277,119 @@ describe('getWorkspaceContextSnapshot', () => {
         expect(snapshot.targets.review[0]).toEqual(expect.objectContaining({
             id: 12,
         }));
+    });
+
+    it('resolves the single best target for a task intent', async () => {
+        vi.spyOn(db, 'select')
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        name: 'Docs',
+                        hostname: 'docs.example.com',
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 11,
+                            domainId: 7,
+                            name: 'Author Profile',
+                            slug: 'author-profile',
+                            description: null,
+                            schema: JSON.stringify({ type: 'object', properties: { name: { type: 'string' } }, required: ['name'] }),
+                            basePrice: null,
+                        },
+                        {
+                            id: 12,
+                            domainId: 7,
+                            name: 'Editorial Article',
+                            slug: 'editorial-article',
+                            description: 'Reviewed content',
+                            schema: JSON.stringify({ type: 'object', properties: { title: { type: 'string' } }, required: ['title'] }),
+                            basePrice: null,
+                        },
+                        {
+                            id: 13,
+                            domainId: 7,
+                            name: 'Premium Brief',
+                            slug: 'premium-brief',
+                            description: 'Paid content',
+                            schema: JSON.stringify({ type: 'object', properties: { title: { type: 'string' } }, required: ['title'] }),
+                            basePrice: 250,
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 100,
+                            contentTypeId: 12,
+                            status: 'in_review',
+                            updatedAt: new Date('2026-03-11T11:00:00Z'),
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 20,
+                        domainId: 7,
+                        name: 'Editorial Flow',
+                        contentTypeId: 12,
+                        active: true,
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ workflowId: 20 }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        scopeRef: 13,
+                        priceSats: 250,
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ contentItemId: 100 }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>);
+
+        const resolution = await resolveWorkspaceTarget({
+            actorId: 'api_key:12',
+            actorType: 'api_key',
+            actorSource: 'db',
+            actorProfileId: 'api-key',
+            domainId: 7,
+            scopes: ['content:read'],
+            assignmentRefs: ['api_key:12', '12'],
+        }, {
+            intent: 'review',
+            search: 'editorial',
+        });
+
+        expect(resolution.intent).toBe('review');
+        expect(resolution.search).toBe('editorial');
+        expect(resolution.availableTargetCount).toBe(1);
+        expect(resolution.target).toEqual(expect.objectContaining({
+            id: 12,
+            rank: 1,
+            reason: '1 pending review task(s) across 1 stored item(s).',
+            contentType: expect.objectContaining({
+                id: 12,
+                slug: 'editorial-article',
+            }),
+        }));
+        expect(resolution.alternatives).toEqual([]);
     });
 });

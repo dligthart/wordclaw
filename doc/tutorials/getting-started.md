@@ -141,8 +141,10 @@ node dist/cli/index.js capabilities whoami
 # 4. Inspect the authenticated workspace before choosing a target schema
 curl -H "x-api-key: <key>" http://localhost:4000/api/workspace-context
 curl -H "x-api-key: <key>" "http://localhost:4000/api/workspace-context?intent=review&limit=5"
+curl -H "x-api-key: <key>" "http://localhost:4000/api/workspace-target?intent=review"
 node dist/cli/index.js workspace guide
 node dist/cli/index.js workspace guide --intent authoring --search article
+node dist/cli/index.js workspace resolve --intent review
 
 # 5. Ask for task-specific guidance
 node dist/cli/index.js content guide --content-type-id 1
@@ -166,10 +168,12 @@ For remote MCP clients, the same deployment guidance is also available in-band:
 - `system://deployment-status`
 - `system://current-actor`
 - `system://workspace-context`
+- `system://workspace-target/review`
 - `system://agent-guidance`
 - `task-guidance`
 - `guide_task` with `{"taskId":"discover-deployment"}`
 - `guide_task` with `{"taskId":"discover-workspace"}`
+- `resolve_workspace_target` with `{"intent":"review"}`
 
 ## Supervisor Web Interface
 

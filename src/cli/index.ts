@@ -52,7 +52,7 @@ const TOP_LEVEL_COMMANDS = [
 ] as const;
 const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smoke'] as const;
 const CAPABILITY_SUBCOMMANDS = ['show', 'status', 'whoami'] as const;
-const WORKSPACE_SUBCOMMANDS = ['guide'] as const;
+const WORKSPACE_SUBCOMMANDS = ['guide', 'resolve'] as const;
 const AUDIT_SUBCOMMANDS = ['list', 'guide'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
@@ -120,6 +120,7 @@ Commands:
   capabilities whoami
 
   workspace guide [--intent all|authoring|review|workflow|paid] [--search <value>] [--limit <n>]
+  workspace resolve --intent authoring|review|workflow|paid [--search <value>]
 
   audit list [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>] [--cursor <value>]
   audit guide [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>]
@@ -626,6 +627,24 @@ async function handleWorkspace(client: RestCliClient, args: ParsedArgs) {
             },
             guide,
         );
+        return;
+    }
+
+    if (action === 'resolve') {
+        const intent = getStringFlag(args, 'intent');
+        if (intent !== 'authoring' && intent !== 'review' && intent !== 'workflow' && intent !== 'paid') {
+            throw new Error('workspace resolve requires --intent authoring|review|workflow|paid');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: '/workspace-target',
+            query: omitUndefined({
+                intent,
+                search: getStringFlag(args, 'search'),
+            }),
+        });
+        printResponse(args, response);
         return;
     }
 

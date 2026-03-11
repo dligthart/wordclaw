@@ -67,11 +67,13 @@ type WorkspaceTargetSummary = {
 };
 
 export type WorkspaceDiscoveryIntent = 'all' | 'authoring' | 'review' | 'workflow' | 'paid';
+export type WorkspaceTargetIntent = Exclude<WorkspaceDiscoveryIntent, 'all'>;
 
 export type WorkspaceContextOptions = {
     intent?: WorkspaceDiscoveryIntent;
     search?: string | null;
     limit?: number | null;
+    targetLimit?: number | null;
 };
 
 export type WorkspaceContextSnapshot = {
@@ -101,6 +103,23 @@ export type WorkspaceContextSnapshot = {
         paid: WorkspaceTargetSummary[];
     };
     contentTypes: WorkspaceContentTypeSummary[];
+    warnings: string[];
+};
+
+export type ResolvedWorkspaceTarget = WorkspaceTargetSummary & {
+    rank: number;
+    contentType: WorkspaceContentTypeSummary | null;
+};
+
+export type WorkspaceTargetResolution = {
+    generatedAt: string;
+    currentActor: CurrentActorSnapshot;
+    currentDomain: WorkspaceDomainSummary;
+    intent: WorkspaceTargetIntent;
+    search: string | null;
+    availableTargetCount: number;
+    target: ResolvedWorkspaceTarget | null;
+    alternatives: ResolvedWorkspaceTarget[];
     warnings: string[];
 };
 
@@ -295,6 +314,9 @@ export async function getWorkspaceContextSnapshot(
     const limit = typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0
         ? Math.floor(options.limit)
         : null;
+    const targetLimit = typeof options.targetLimit === 'number' && Number.isFinite(options.targetLimit) && options.targetLimit > 0
+        ? Math.floor(options.targetLimit)
+        : limit;
 
     const [currentDomainRow] = await db.select().from(domains).where(eq(domains.id, domainId));
     const currentDomain = currentDomainRow
@@ -476,7 +498,7 @@ export async function getWorkspaceContextSnapshot(
         .sort(compareByNameThenId);
 
     const searchedSummaries = summaries.filter((summary) => matchesSearch(summary, normalizedSearch));
-    const targets = buildWorkspaceTargets(searchedSummaries, limit);
+    const targets = buildWorkspaceTargets(searchedSummaries, targetLimit);
     const returnedContentTypes = selectReturnedContentTypes({
         intent,
         summaries: searchedSummaries,
@@ -512,5 +534,37 @@ export async function getWorkspaceContextSnapshot(
         },
         contentTypes: returnedContentTypes,
         warnings,
+    };
+}
+
+export async function resolveWorkspaceTarget(
+    currentActor: CurrentActorSnapshot,
+    options: {
+        intent: WorkspaceTargetIntent;
+        search?: string | null;
+    },
+): Promise<WorkspaceTargetResolution> {
+    const snapshot = await getWorkspaceContextSnapshot(currentActor, {
+        intent: options.intent,
+        search: options.search,
+        targetLimit: 25,
+    });
+
+    const rankedTargets = snapshot.targets[options.intent].map((target, index) => ({
+        ...target,
+        rank: index + 1,
+        contentType: snapshot.contentTypes.find((contentType) => contentType.id === target.id) ?? null,
+    }));
+
+    return {
+        generatedAt: new Date().toISOString(),
+        currentActor: snapshot.currentActor,
+        currentDomain: snapshot.currentDomain,
+        intent: options.intent,
+        search: snapshot.filter.search,
+        availableTargetCount: rankedTargets.length,
+        target: rankedTargets[0] ?? null,
+        alternatives: rankedTargets.slice(1, 4),
+        warnings: snapshot.warnings,
     };
 }

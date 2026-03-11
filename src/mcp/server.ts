@@ -26,7 +26,7 @@ import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
 import { buildL402Guide } from '../cli/lib/l402-guide.js';
 import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
-import { getWorkspaceContextSnapshot } from '../services/workspace-context.js';
+import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 
 type McpRequestExtra = {
     authInfo?: {
@@ -2193,6 +2193,25 @@ server.tool(
 );
 
 server.tool(
+    'resolve_workspace_target',
+    'Resolve the single best schema target for a workspace intent such as authoring, review, workflow, or paid content',
+    {
+        intent: z.enum(['authoring', 'review', 'workflow', 'paid']).describe('Task intent to resolve against the active workspace'),
+        search: z.string().optional().describe('Optional search string to narrow candidate schemas before resolving'),
+    },
+    async ({ intent, search }, extra) => {
+        const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
+        const currentActor = buildCurrentActorSnapshot(principal);
+        const resolution = await resolveWorkspaceTarget(currentActor, {
+            intent,
+            search,
+        });
+
+        return okJson(resolution);
+    }
+);
+
+server.tool(
     'guide_task',
     'Build live, actor-aware guidance for a supported WordClaw agent task',
     {
@@ -2283,6 +2302,12 @@ server.tool(
                 search,
                 limit: workspaceLimit,
             });
+            const resolvedTarget = intent && intent !== 'all'
+                ? await resolveWorkspaceTarget(currentActor, {
+                    intent,
+                    search,
+                })
+                : null;
             const guide = buildWorkspaceGuide({
                 currentActor,
                 workspace: workspaceContext,
@@ -2291,6 +2316,7 @@ server.tool(
             return okJson({
                 ...basePayload,
                 workspaceContext,
+                resolvedTarget,
                 guide,
             });
         }
@@ -2619,6 +2645,25 @@ server.resource(
                     intent: intent === 'all' || intent === 'authoring' || intent === 'review' || intent === 'workflow' || intent === 'paid'
                         ? intent
                         : undefined,
+                }), null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
+    'workspace-target-by-intent',
+    new ResourceTemplate('system://workspace-target/{intent}', { list: undefined }),
+    async (uri, variables, extra) => {
+        const currentActor = buildCurrentActorSnapshot(resolveMcpPrincipal(extra as McpRequestExtra | undefined));
+        const intent = readResourceTemplateValue(variables.intent);
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(await resolveWorkspaceTarget(currentActor, {
+                    intent: intent === 'authoring' || intent === 'review' || intent === 'workflow' || intent === 'paid'
+                        ? intent
+                        : 'authoring',
                 }), null, 2)
             }]
         };

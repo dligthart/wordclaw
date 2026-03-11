@@ -147,13 +147,16 @@ describe('API Route Contracts', () => {
                         restStatusPath: string;
                         restIdentityPath: string;
                         restWorkspacePath: string;
+                        restWorkspaceTargetPath: string;
                         mcpResourceUri: string;
                         mcpStatusResourceUri: string;
                         mcpActorResourceUri: string;
                         mcpWorkspaceResourceUri: string;
+                        mcpWorkspaceTargetToolName: string;
                         cliStatusCommand: string;
                         cliWhoAmICommand: string;
                         cliWorkspaceCommand: string;
+                        cliWorkspaceResolveCommand: string;
                     };
                     protocolSurfaces: {
                         mcp: {
@@ -202,13 +205,16 @@ describe('API Route Contracts', () => {
             expect(body.data.discovery.restStatusPath).toBe('/api/deployment-status');
             expect(body.data.discovery.restIdentityPath).toBe('/api/identity');
             expect(body.data.discovery.restWorkspacePath).toBe('/api/workspace-context');
+            expect(body.data.discovery.restWorkspaceTargetPath).toBe('/api/workspace-target');
             expect(body.data.discovery.mcpResourceUri).toBe('system://capabilities');
             expect(body.data.discovery.mcpStatusResourceUri).toBe('system://deployment-status');
             expect(body.data.discovery.mcpActorResourceUri).toBe('system://current-actor');
             expect(body.data.discovery.mcpWorkspaceResourceUri).toBe('system://workspace-context');
+            expect(body.data.discovery.mcpWorkspaceTargetToolName).toBe('resolve_workspace_target');
             expect(body.data.discovery.cliStatusCommand).toBe('node dist/cli/index.js capabilities status');
             expect(body.data.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
             expect(body.data.discovery.cliWorkspaceCommand).toBe('node dist/cli/index.js workspace guide');
+            expect(body.data.discovery.cliWorkspaceResolveCommand).toBe('node dist/cli/index.js workspace resolve --intent authoring');
             expect(body.data.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
             expect(body.data.protocolSurfaces.mcp.endpoint).toBe('/mcp');
             expect(body.data.protocolSurfaces.mcp.attachable).toBe(true);
@@ -682,6 +688,125 @@ describe('API Route Contracts', () => {
             expect(body.data.targets.review).toEqual([expect.objectContaining({
                 id: 8,
             })]);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('resolves the best workspace target for authenticated callers', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        const app = await buildServer();
+        const selectSpy = vi.spyOn(mocks.dbMock, 'select');
+
+        selectSpy
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        name: 'Local Dev',
+                        hostname: 'localhost',
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 7,
+                            domainId: 1,
+                            name: 'Author Profile',
+                            slug: 'author-profile',
+                            description: null,
+                            schema: '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}',
+                            basePrice: null,
+                        },
+                        {
+                            id: 8,
+                            domainId: 1,
+                            name: 'Editorial Blog Post',
+                            slug: 'editorial-blog-post',
+                            description: 'Reviewed content',
+                            schema: '{"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}',
+                            basePrice: null,
+                        },
+                    ]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 501,
+                        contentTypeId: 8,
+                        status: 'in_review',
+                        updatedAt: new Date('2026-03-10T10:00:00Z'),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 22,
+                        domainId: 1,
+                        name: 'Editorial Flow',
+                        contentTypeId: 8,
+                        active: true,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ workflowId: 22 }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ contentItemId: 501 }]),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/workspace-target?intent=review&search=editorial',
+                headers: {
+                    'x-api-key': 'remote-admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    intent: string;
+                    search: string | null;
+                    availableTargetCount: number;
+                    target: {
+                        id: number;
+                        rank: number;
+                        contentType: {
+                            slug: string;
+                        } | null;
+                    } | null;
+                    alternatives: Array<unknown>;
+                };
+            };
+
+            expect(body.data.intent).toBe('review');
+            expect(body.data.search).toBe('editorial');
+            expect(body.data.availableTargetCount).toBe(1);
+            expect(body.data.target).toEqual(expect.objectContaining({
+                id: 8,
+                rank: 1,
+                contentType: expect.objectContaining({
+                    slug: 'editorial-blog-post',
+                }),
+            }));
+            expect(body.data.alternatives).toEqual([]);
         } finally {
             await app.close();
         }

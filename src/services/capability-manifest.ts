@@ -253,6 +253,13 @@ export function buildCapabilityManifest() {
                         purpose: 'Inspect the same workspace inventory without leaving the MCP session.',
                         optional: true,
                     },
+                    {
+                        title: 'Resolve the best target for the current task',
+                        surface: 'mcp',
+                        operation: 'resolve_workspace_target or read system://workspace-target/<intent>',
+                        purpose: 'Skip manual ranking when the agent already knows it wants an authoring, review, workflow, or paid-content target.',
+                        optional: true,
+                    },
                 ],
             },
             {
@@ -453,14 +460,17 @@ export function buildCapabilityManifest() {
             restStatusPath: '/api/deployment-status',
             restIdentityPath: '/api/identity',
             restWorkspacePath: '/api/workspace-context',
+            restWorkspaceTargetPath: '/api/workspace-target',
             mcpResourceUri: 'system://capabilities',
             mcpStatusResourceUri: 'system://deployment-status',
             mcpActorResourceUri: 'system://current-actor',
             mcpWorkspaceResourceUri: 'system://workspace-context',
+            mcpWorkspaceTargetToolName: 'resolve_workspace_target',
             cliCommand: 'node dist/cli/index.js capabilities show',
             cliStatusCommand: 'node dist/cli/index.js capabilities status',
             cliWhoAmICommand: 'node dist/cli/index.js capabilities whoami',
             cliWorkspaceCommand: 'node dist/cli/index.js workspace guide',
+            cliWorkspaceResolveCommand: 'node dist/cli/index.js workspace resolve --intent authoring',
         },
         protocolSurfaces: {
             rest: {

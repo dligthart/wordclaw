@@ -118,6 +118,12 @@ describe('MCP HTTP transport', () => {
                 taskId: 'manage-integrations',
             }
         });
+        const resolvedWorkspaceTarget = await client.callTool({
+            name: 'resolve_workspace_target',
+            arguments: {
+                intent: 'review',
+            }
+        });
         const deploymentGuide = await client.callTool({
             name: 'guide_task',
             arguments: {
@@ -148,6 +154,7 @@ describe('MCP HTTP transport', () => {
 
         expect(tools.tools.some((tool) => tool.name === 'evaluate_policy')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'guide_task')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'resolve_workspace_target')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://deployment-status')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://workspace-context')).toBe(true);
@@ -263,6 +270,7 @@ describe('MCP HTTP transport', () => {
         expect(taskPromptText).toContain('Domain context: implicit-from-key');
 
         const taskGuideText = extractFirstText(taskGuide.content as Array<{ type: string; text?: string }>);
+        const resolvedWorkspaceTargetText = extractFirstText(resolvedWorkspaceTarget.content as Array<{ type: string; text?: string }>);
         const deploymentGuideText = extractFirstText(deploymentGuide.content as Array<{ type: string; text?: string }>);
         const workspaceGuideText = extractFirstText(workspaceGuide.content as Array<{ type: string; text?: string }>);
         const filteredWorkspaceGuideText = extractFirstText(filteredWorkspaceGuide.content as Array<{ type: string; text?: string }>);
@@ -335,11 +343,23 @@ describe('MCP HTTP transport', () => {
                 }),
             }),
         }));
+        expect(JSON.parse(resolvedWorkspaceTargetText)).toEqual(expect.objectContaining({
+            intent: 'review',
+            target: expect.objectContaining({
+                rank: 1,
+            }),
+        }));
         expect(JSON.parse(filteredWorkspaceGuideText)).toEqual(expect.objectContaining({
             workspaceContext: expect.objectContaining({
                 filter: expect.objectContaining({
                     intent: 'review',
                     limit: 1,
+                }),
+            }),
+            resolvedTarget: expect.objectContaining({
+                intent: 'review',
+                target: expect.objectContaining({
+                    rank: 1,
                 }),
             }),
         }));
