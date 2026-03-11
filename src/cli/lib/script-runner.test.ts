@@ -63,12 +63,27 @@ describe('resolveCliInvocation', () => {
         });
     });
 
-    it('resolves the dist invocation when the current entry is in dist', () => {
-        const resolved = resolveCliInvocation(process.cwd(), path.join(process.cwd(), 'dist', 'cli', 'index.js'));
+    it('falls back to the tsx source invocation when the dist entry is requested before build output exists', () => {
+        const tempRoot = path.join(os.tmpdir(), `wordclaw-cli-resolve-${Date.now()}`);
+        const resolved = resolveCliInvocation(tempRoot, path.join(tempRoot, 'dist', 'cli', 'index.js'));
+        expect(resolved).toEqual({
+            command: 'npx',
+            args: ['tsx', path.join(tempRoot, 'src', 'cli', 'index.ts')],
+        });
+    });
+
+    it('resolves the dist invocation when the current entry is in dist and build output exists', async () => {
+        const tempRoot = path.join(os.tmpdir(), `wordclaw-cli-resolve-${Date.now()}`);
+        await fs.mkdir(path.join(tempRoot, 'dist', 'cli'), { recursive: true });
+        await fs.writeFile(path.join(tempRoot, 'dist', 'cli', 'index.js'), '', 'utf8');
+
+        const resolved = resolveCliInvocation(tempRoot, path.join(tempRoot, 'dist', 'cli', 'index.js'));
         expect(resolved).toEqual({
             command: 'node',
-            args: [path.join(process.cwd(), 'dist', 'cli', 'index.js')],
+            args: [path.join(tempRoot, 'dist', 'cli', 'index.js')],
         });
+
+        await fs.rm(tempRoot, { recursive: true, force: true });
     });
 });
 
