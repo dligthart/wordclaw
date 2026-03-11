@@ -4,6 +4,8 @@ import { motion } from 'framer-motion'
 import { LayoutDashboard, ArrowLeft, Clock, User, ChevronRight } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 // Types
 interface Author {
@@ -259,18 +261,11 @@ const PostDetail = () => {
         <img src={post.data.coverImage} className="w-full h-full object-cover" alt="Cover" />
       </div>
 
-      <div
-        className="prose prose-lg dark:prose-invert prose-brand max-w-none prose-headings:font-bold prose-a:text-brand-500 hover:prose-a:text-brand-600 prose-img:rounded-xl"
-        dangerouslySetInnerHTML={{
-          // Replaces basic markdown # syntax with minimal HTML just for the demo
-          __html: post.data.content
-            .replace(/### (.*)/g, '<h3>$1</h3>')
-            .replace(/## (.*)/g, '<h2>$1</h2>')
-            .replace(/- (.*)/g, '<li>$1</li>')
-            .replace(/> "(.*)" - (.*)/g, '<blockquote className="border-l-4 border-brand-500 pl-4 italic my-6 bg-brand-50 dark:bg-brand-500/5 p-4 rounded-r-lg"><p>"$1"</p><footer className="mt-2 font-semibold text-sm text-brand-600">— $2</footer></blockquote>')
-            .replace(/\n\n/g, '<br/>')
-        }}
-      />
+      <div className="prose prose-lg dark:prose-invert prose-brand max-w-none prose-headings:font-bold prose-a:text-brand-500 hover:prose-a:text-brand-600 prose-img:rounded-xl prose-pre:bg-[#121214] prose-pre:text-gray-100 prose-blockquote:border-l-4 prose-blockquote:border-brand-500 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:bg-brand-50 dark:prose-blockquote:bg-brand-500/5 prose-blockquote:py-1 prose-blockquote:rounded-r-lg">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {post.data.content}
+        </ReactMarkdown>
+      </div>
 
       <div className="mt-16 pt-8 border-t border-[var(--border)]">
         <h3 className="font-semibold text-lg mb-4">Tags</h3>

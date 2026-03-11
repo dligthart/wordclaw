@@ -154,6 +154,22 @@ async function setupBlogDemo() {
                     authorId: bob.id,
                     readTimeMinutes: 4
                 })
+            },
+            {
+                domainId: blogDomain.id,
+                contentTypeId: postSchemaId,
+                status: 'published',
+                data: JSON.stringify({
+                    title: "Building Autonomous Agentic Workflows",
+                    slug: "building-autonomous-agentic-workflows",
+                    excerpt: "A comprehensive guide to leveraging WordClaw's MCP integration to create robust, self-healing, agent-driven content cycles.",
+                    content: "## Introduction to Autonomous Workflows\n\nThe future of content creation is a collaborative cycle between human editors and autonomous agents. WordClaw embraces this by treating AI as a first-class citizen in the editorial workflow.\n\n### Why Traditional CMSs Fail Agents\n\nMost CMS platforms provide simple CRUD APIs intended for human-driven frontends. When an *Agent* attempts to write an article, it faces several hurdles:\n\n1. It doesn't know the **JSON Schema** of the content type.\n2. It lacks the ability to reliably retrieve the constraints of the editorial policy.\n3. Making a mistake means corrupting production data.\n\n> \"Agents need metadata and semantic intent, not just raw REST endpoints.\" - WordClaw Philosophy\n\n### The Model Context Protocol (MCP) Solution\n\nWordClaw integrates the unified **Model Context Protocol** directly into its API layer. This means an AI agent can natively discover tools, prompts, and resources.\n\nTake a look at how an agent might discover capabilities via the MCP endpoint:\n\n```json\n{\n  \"action\": \"list_tools\",\n  \"response\": {\n    \"tools\": [\n      { \"name\": \"create_content_item\" },\n      { \"name\": \"submit_review_task\" }\n    ]\n  }\n}\n```\n\n### Step-by-Step Implementation\n\nHere's how you can bootstrap your own workflow:\n\n* **Define the Schema**: Clearly articulate the required fields.\n* **Establish the Review Policy**: Require manual \"Publisher\" review.\n* **Unleash the Agent**: Let the agent use `?mode=dry_run` to test its drafts before committing.\n\n#### Security and Sandboxing\n\nWordClaw guarantees safety via transaction isolation. If an agent tries to modify a field it shouldn't, the API instantly rejects the schema mismatch and returns a clear, actionable `400 Bad Request` that the agent can read and self-correct against.\n\nConclusion: Building agentic loops is easy when the CMS understands intent.",
+                    coverImage: "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=2670&auto=format&fit=crop",
+                    category: "Tutorials",
+                    tags: ["Agents", "MCP", "Workflows", "TypeScript"],
+                    authorId: alice.id,
+                    readTimeMinutes: 12
+                })
             }
         ]);
 
