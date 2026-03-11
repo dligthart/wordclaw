@@ -14,6 +14,7 @@ The fastest task-oriented preflight sequence is:
 2. `GET /api/deployment-status`
 3. `GET /api/identity`
 4. `GET /api/workspace-context`
+   - supports `intent`, `search`, and `limit` when the agent already knows whether it wants authoring, review, workflow, or paid-content targets
 5. Use the matching CLI helper:
    - `workspace guide`
    - `content guide --content-type-id <id>`

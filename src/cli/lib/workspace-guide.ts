@@ -69,6 +69,9 @@ export function buildWorkspaceGuide(options: {
                     ? [
                         `${workspace.summary.totalContentTypes} content type(s), ${workspace.summary.contentTypesWithContent} with stored content.`,
                         `${workspace.summary.workflowEnabledContentTypes} model(s) have active workflows and ${workspace.summary.pendingReviewTaskCount} pending review task(s) are mapped into this domain.`,
+                        ...(workspace.filter.intent !== 'all' || workspace.filter.search
+                            ? [`Filter: intent=${workspace.filter.intent}${workspace.filter.search ? `, search="${workspace.filter.search}"` : ''}. ${workspace.filter.returnedContentTypes} returned from ${workspace.filter.totalContentTypesBeforeFilter} total model(s).`]
+                            : []),
                     ]
                     : ['Workspace context is unavailable until an authenticated actor can read the active domain.'],
             },

@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -33,6 +33,14 @@ type McpRequestExtra = {
         extra?: Record<string, unknown>;
     };
 };
+
+function readResourceTemplateValue(value: string | string[] | undefined) {
+    if (Array.isArray(value)) {
+        return value[0];
+    }
+
+    return value;
+}
 
 const GUIDE_TASK_IDS = [
     'discover-deployment',
@@ -2189,6 +2197,9 @@ server.tool(
     'Build live, actor-aware guidance for a supported WordClaw agent task',
     {
         taskId: z.enum(GUIDE_TASK_IDS).describe('Supported task id, e.g. author-content or consume-paid-content'),
+        intent: z.enum(['all', 'authoring', 'review', 'workflow', 'paid']).optional().describe('Optional workspace intent for discover-workspace guidance'),
+        search: z.string().optional().describe('Optional workspace search string for discover-workspace guidance'),
+        workspaceLimit: z.number().optional().describe('Optional workspace result limit for discover-workspace guidance'),
         contentTypeId: z.number().optional().describe('Required for author-content guidance'),
         reviewTaskId: z.number().optional().describe('Optional review task to prioritize for review-workflow guidance'),
         contentItemId: z.number().optional().describe('Required for consume-paid-content guidance'),
@@ -2200,7 +2211,7 @@ server.tool(
         action: z.string().optional().describe('Optional action filter for verify-provenance guidance'),
         limit: z.number().optional().describe('Optional audit page size for verify-provenance guidance'),
     },
-    async ({ taskId, contentTypeId, reviewTaskId, contentItemId, offerId, actorId, actorType, entityType, entityId, action, limit }, extra) => {
+    async ({ taskId, intent, search, workspaceLimit, contentTypeId, reviewTaskId, contentItemId, offerId, actorId, actorType, entityType, entityId, action, limit }, extra) => {
         const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
         const currentActor = buildCurrentActorSnapshot(principal);
         const manifest = buildCapabilityManifest();
@@ -2267,7 +2278,11 @@ server.tool(
         }
 
         if (taskId === 'discover-workspace') {
-            const workspaceContext = await getWorkspaceContextSnapshot(currentActor);
+            const workspaceContext = await getWorkspaceContextSnapshot(currentActor, {
+                intent,
+                search,
+                limit: workspaceLimit,
+            });
             const guide = buildWorkspaceGuide({
                 currentActor,
                 workspace: workspaceContext,
@@ -2586,6 +2601,47 @@ server.resource(
             contents: [{
                 uri: uri.href,
                 text: JSON.stringify(await getWorkspaceContextSnapshot(currentActor), null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
+    'workspace-context-by-intent',
+    new ResourceTemplate('system://workspace-context/{intent}', { list: undefined }),
+    async (uri, variables, extra) => {
+        const currentActor = buildCurrentActorSnapshot(resolveMcpPrincipal(extra as McpRequestExtra | undefined));
+        const intent = readResourceTemplateValue(variables.intent);
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(await getWorkspaceContextSnapshot(currentActor, {
+                    intent: intent === 'all' || intent === 'authoring' || intent === 'review' || intent === 'workflow' || intent === 'paid'
+                        ? intent
+                        : undefined,
+                }), null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
+    'workspace-context-by-intent-and-limit',
+    new ResourceTemplate('system://workspace-context/{intent}/{limit}', { list: undefined }),
+    async (uri, variables, extra) => {
+        const currentActor = buildCurrentActorSnapshot(resolveMcpPrincipal(extra as McpRequestExtra | undefined));
+        const intent = readResourceTemplateValue(variables.intent);
+        const limitValue = readResourceTemplateValue(variables.limit);
+        const limit = limitValue ? Number.parseInt(limitValue, 10) : undefined;
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(await getWorkspaceContextSnapshot(currentActor, {
+                    intent: intent === 'all' || intent === 'authoring' || intent === 'review' || intent === 'workflow' || intent === 'paid'
+                        ? intent
+                        : undefined,
+                    limit: Number.isFinite(limit) ? limit : undefined,
+                }), null, 2)
             }]
         };
     }

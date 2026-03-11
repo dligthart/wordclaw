@@ -1637,6 +1637,27 @@ paths:
                   availableActions:
   /api/workspace-context:
     get:
+      parameters:
+        - in: query
+          name: intent
+          schema:
+            type: string
+            enum:
+              - all
+              - authoring
+              - review
+              - workflow
+              - paid
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
       responses:
         "200":
           description: Authenticated workspace context snapshot
@@ -1653,6 +1674,7 @@ paths:
                   - currentActor
                   - currentDomain
                   - accessibleDomains
+                  - filter
                   - summary
                   - targets
                   - contentTypes
@@ -1671,6 +1693,30 @@ paths:
                     items:
                       type: object
                       additionalProperties: true
+                  filter:
+                    type: object
+                    required:
+                      - intent
+                      - search
+                      - limit
+                      - totalContentTypesBeforeFilter
+                      - totalContentTypesAfterSearch
+                      - returnedContentTypes
+                    properties:
+                      intent:
+                        type: string
+                      search:
+                        type: string
+                        nullable: true
+                      limit:
+                        type: integer
+                        nullable: true
+                      totalContentTypesBeforeFilter:
+                        type: integer
+                      totalContentTypesAfterSearch:
+                        type: integer
+                      returnedContentTypes:
+                        type: integer
                   summary:
                     type: object
                     additionalProperties: true

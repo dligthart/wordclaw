@@ -103,6 +103,7 @@ describe('MCP HTTP transport', () => {
         const capabilityResource = await client.readResource({ uri: 'system://capabilities' });
         const deploymentStatusResource = await client.readResource({ uri: 'system://deployment-status' });
         const workspaceResource = await client.readResource({ uri: 'system://workspace-context' });
+        const filteredWorkspaceResource = await client.readResource({ uri: 'system://workspace-context/review/1' });
         const guidanceResource = await client.readResource({ uri: 'system://agent-guidance' });
         const actorResource = await client.readResource({ uri: 'system://current-actor' });
         const taskPrompt = await client.getPrompt({
@@ -127,6 +128,14 @@ describe('MCP HTTP transport', () => {
             name: 'guide_task',
             arguments: {
                 taskId: 'discover-workspace',
+            }
+        });
+        const filteredWorkspaceGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'discover-workspace',
+                intent: 'review',
+                workspaceLimit: 1,
             }
         });
         const policyDecision = await client.callTool({
@@ -160,9 +169,11 @@ describe('MCP HTTP transport', () => {
         const guidanceText = guidanceResource.contents.find((entry) => 'text' in entry)?.text;
         const deploymentStatusText = deploymentStatusResource.contents.find((entry) => 'text' in entry)?.text;
         const workspaceText = workspaceResource.contents.find((entry) => 'text' in entry)?.text;
+        const filteredWorkspaceText = filteredWorkspaceResource.contents.find((entry) => 'text' in entry)?.text;
         expect(typeof guidanceText).toBe('string');
         expect(typeof deploymentStatusText).toBe('string');
         expect(typeof workspaceText).toBe('string');
+        expect(typeof filteredWorkspaceText).toBe('string');
         expect(JSON.parse(deploymentStatusText as string)).toEqual(expect.objectContaining({
             overallStatus: 'ready',
             checks: expect.objectContaining({
@@ -229,6 +240,14 @@ describe('MCP HTTP transport', () => {
                 paid: expect.any(Array),
             }),
         }));
+        expect(JSON.parse(filteredWorkspaceText as string)).toEqual(expect.objectContaining({
+            filter: expect.objectContaining({
+                intent: 'review',
+                limit: 1,
+                returnedContentTypes: expect.any(Number),
+            }),
+            contentTypes: expect.any(Array),
+        }));
         expect(JSON.parse(actorText as string)).toEqual(expect.objectContaining({
             actorId: 'env_key:remote-admin',
             actorType: 'env_key',
@@ -246,6 +265,7 @@ describe('MCP HTTP transport', () => {
         const taskGuideText = extractFirstText(taskGuide.content as Array<{ type: string; text?: string }>);
         const deploymentGuideText = extractFirstText(deploymentGuide.content as Array<{ type: string; text?: string }>);
         const workspaceGuideText = extractFirstText(workspaceGuide.content as Array<{ type: string; text?: string }>);
+        const filteredWorkspaceGuideText = extractFirstText(filteredWorkspaceGuide.content as Array<{ type: string; text?: string }>);
         expect(JSON.parse(taskGuideText)).toEqual(expect.objectContaining({
             taskId: 'manage-integrations',
             preferredSurface: 'mcp',
@@ -312,6 +332,14 @@ describe('MCP HTTP transport', () => {
             workspaceContext: expect.objectContaining({
                 targets: expect.objectContaining({
                     authoring: expect.any(Array),
+                }),
+            }),
+        }));
+        expect(JSON.parse(filteredWorkspaceGuideText)).toEqual(expect.objectContaining({
+            workspaceContext: expect.objectContaining({
+                filter: expect.objectContaining({
+                    intent: 'review',
+                    limit: 1,
                 }),
             }),
         }));

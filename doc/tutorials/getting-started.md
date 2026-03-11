@@ -140,7 +140,9 @@ node dist/cli/index.js capabilities whoami
 
 # 4. Inspect the authenticated workspace before choosing a target schema
 curl -H "x-api-key: <key>" http://localhost:4000/api/workspace-context
+curl -H "x-api-key: <key>" "http://localhost:4000/api/workspace-context?intent=review&limit=5"
 node dist/cli/index.js workspace guide
+node dist/cli/index.js workspace guide --intent authoring --search article
 
 # 5. Ask for task-specific guidance
 node dist/cli/index.js content guide --content-type-id 1

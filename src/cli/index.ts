@@ -119,7 +119,7 @@ Commands:
   capabilities status
   capabilities whoami
 
-  workspace guide
+  workspace guide [--intent all|authoring|review|workflow|paid] [--search <value>] [--limit <n>]
 
   audit list [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>] [--cursor <value>]
   audit guide [--actor-id <value>] [--actor-type <value>] [--entity-type <value>] [--entity-id <n>] [--action <value>] [--limit <n>]
@@ -589,6 +589,11 @@ async function handleWorkspace(client: RestCliClient, args: ParsedArgs) {
             const response = await client.request({
                 method: 'GET',
                 path: '/workspace-context',
+                query: omitUndefined({
+                    intent: getStringFlag(args, 'intent'),
+                    search: getStringFlag(args, 'search'),
+                    limit: maybeNumber(getNumberFlag(args, 'limit')),
+                }),
             });
             const body = requireJsonMap(response.body, 'Workspace guide response');
             const data = body.data;

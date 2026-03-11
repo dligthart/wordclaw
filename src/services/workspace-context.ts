@@ -66,11 +66,27 @@ type WorkspaceTargetSummary = {
     };
 };
 
+export type WorkspaceDiscoveryIntent = 'all' | 'authoring' | 'review' | 'workflow' | 'paid';
+
+export type WorkspaceContextOptions = {
+    intent?: WorkspaceDiscoveryIntent;
+    search?: string | null;
+    limit?: number | null;
+};
+
 export type WorkspaceContextSnapshot = {
     generatedAt: string;
     currentActor: CurrentActorSnapshot;
     currentDomain: WorkspaceDomainSummary;
     accessibleDomains: WorkspaceDomainSummary[];
+    filter: {
+        intent: WorkspaceDiscoveryIntent;
+        search: string | null;
+        limit: number | null;
+        totalContentTypesBeforeFilter: number;
+        totalContentTypesAfterSearch: number;
+        returnedContentTypes: number;
+    };
     summary: {
         totalContentTypes: number;
         contentTypesWithContent: number;
@@ -188,9 +204,97 @@ function toTargetSummary(type: WorkspaceContentTypeSummary, mode: 'authoring' | 
     };
 }
 
-export async function getWorkspaceContextSnapshot(currentActor: CurrentActorSnapshot): Promise<WorkspaceContextSnapshot> {
+function matchesSearch(type: WorkspaceContentTypeSummary, search: string | null) {
+    if (!search) {
+        return true;
+    }
+
+    const query = search.toLowerCase();
+    return [
+        type.name,
+        type.slug,
+        type.description ?? '',
+    ].some((value) => value.toLowerCase().includes(query));
+}
+
+function buildWorkspaceTargets(summaries: WorkspaceContentTypeSummary[], limit: number | null) {
+    const targetLimit = limit ?? 8;
+    const authoring = [...summaries]
+        .sort((left, right) => (
+            Number(right.hasContent) - Number(left.hasContent)
+            || right.workflow.activeWorkflowCount - left.workflow.activeWorkflowCount
+            || right.itemCount - left.itemCount
+            || compareByNameThenId(left, right)
+        ))
+        .slice(0, targetLimit)
+        .map((summary) => toTargetSummary(summary, 'authoring'));
+
+    const review = summaries
+        .filter((summary) => summary.pendingReviewTaskCount > 0)
+        .sort((left, right) => (
+            right.pendingReviewTaskCount - left.pendingReviewTaskCount
+            || right.workflow.activeWorkflowCount - left.workflow.activeWorkflowCount
+            || right.itemCount - left.itemCount
+            || compareByNameThenId(left, right)
+        ))
+        .slice(0, targetLimit)
+        .map((summary) => toTargetSummary(summary, 'review'));
+
+    const workflow = summaries
+        .filter((summary) => summary.workflow.activeWorkflowCount > 0)
+        .sort((left, right) => (
+            right.workflow.activeWorkflowCount - left.workflow.activeWorkflowCount
+            || right.pendingReviewTaskCount - left.pendingReviewTaskCount
+            || right.itemCount - left.itemCount
+            || compareByNameThenId(left, right)
+        ))
+        .slice(0, targetLimit)
+        .map((summary) => toTargetSummary(summary, 'workflow'));
+
+    const paid = summaries
+        .filter((summary) => summary.paid.activeTypeOfferCount > 0 || summary.paid.basePrice !== null)
+        .sort((left, right) => (
+            right.paid.activeTypeOfferCount - left.paid.activeTypeOfferCount
+            || compareNullableNumberAsc(left.paid.lowestTypeOfferSats, right.paid.lowestTypeOfferSats)
+            || right.itemCount - left.itemCount
+            || compareByNameThenId(left, right)
+        ))
+        .slice(0, targetLimit)
+        .map((summary) => toTargetSummary(summary, 'paid'));
+
+    return { authoring, review, workflow, paid };
+}
+
+function selectReturnedContentTypes(options: {
+    intent: WorkspaceDiscoveryIntent;
+    summaries: WorkspaceContentTypeSummary[];
+    targets: ReturnType<typeof buildWorkspaceTargets>;
+    limit: number | null;
+}) {
+    const { intent, summaries, targets, limit } = options;
+    if (intent === 'all') {
+        return limit === null ? summaries : summaries.slice(0, limit);
+    }
+
+    const ids = new Set(targets[intent].map((target) => target.id));
+    const ordered = targets[intent]
+        .map((target) => summaries.find((summary) => summary.id === target.id))
+        .filter((summary): summary is WorkspaceContentTypeSummary => Boolean(summary));
+
+    return limit === null ? ordered : ordered.filter((summary) => ids.has(summary.id)).slice(0, limit);
+}
+
+export async function getWorkspaceContextSnapshot(
+    currentActor: CurrentActorSnapshot,
+    options: WorkspaceContextOptions = {},
+): Promise<WorkspaceContextSnapshot> {
     const warnings: string[] = [];
     const domainId = currentActor.domainId;
+    const intent = options.intent ?? 'all';
+    const normalizedSearch = options.search?.trim() ? options.search.trim() : null;
+    const limit = typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0
+        ? Math.floor(options.limit)
+        : null;
 
     const [currentDomainRow] = await db.select().from(domains).where(eq(domains.id, domainId));
     const currentDomain = currentDomainRow
@@ -371,68 +475,42 @@ export async function getWorkspaceContextSnapshot(currentActor: CurrentActorSnap
         })
         .sort(compareByNameThenId);
 
-    const authoringTargets = [...summaries]
-        .sort((left, right) => (
-            Number(right.hasContent) - Number(left.hasContent)
-            || right.workflow.activeWorkflowCount - left.workflow.activeWorkflowCount
-            || right.itemCount - left.itemCount
-            || compareByNameThenId(left, right)
-        ))
-        .slice(0, 8)
-        .map((summary) => toTargetSummary(summary, 'authoring'));
-
-    const reviewTargets = summaries
-        .filter((summary) => summary.pendingReviewTaskCount > 0)
-        .sort((left, right) => (
-            right.pendingReviewTaskCount - left.pendingReviewTaskCount
-            || right.workflow.activeWorkflowCount - left.workflow.activeWorkflowCount
-            || right.itemCount - left.itemCount
-            || compareByNameThenId(left, right)
-        ))
-        .slice(0, 8)
-        .map((summary) => toTargetSummary(summary, 'review'));
-
-    const workflowTargets = summaries
-        .filter((summary) => summary.workflow.activeWorkflowCount > 0)
-        .sort((left, right) => (
-            right.workflow.activeWorkflowCount - left.workflow.activeWorkflowCount
-            || right.pendingReviewTaskCount - left.pendingReviewTaskCount
-            || right.itemCount - left.itemCount
-            || compareByNameThenId(left, right)
-        ))
-        .slice(0, 8)
-        .map((summary) => toTargetSummary(summary, 'workflow'));
-
-    const paidTargets = summaries
-        .filter((summary) => summary.paid.activeTypeOfferCount > 0 || summary.paid.basePrice !== null)
-        .sort((left, right) => (
-            right.paid.activeTypeOfferCount - left.paid.activeTypeOfferCount
-            || compareNullableNumberAsc(left.paid.lowestTypeOfferSats, right.paid.lowestTypeOfferSats)
-            || right.itemCount - left.itemCount
-            || compareByNameThenId(left, right)
-        ))
-        .slice(0, 8)
-        .map((summary) => toTargetSummary(summary, 'paid'));
+    const searchedSummaries = summaries.filter((summary) => matchesSearch(summary, normalizedSearch));
+    const targets = buildWorkspaceTargets(searchedSummaries, limit);
+    const returnedContentTypes = selectReturnedContentTypes({
+        intent,
+        summaries: searchedSummaries,
+        targets,
+        limit,
+    });
 
     return {
         generatedAt: new Date().toISOString(),
         currentActor,
         currentDomain,
         accessibleDomains,
+        filter: {
+            intent,
+            search: normalizedSearch,
+            limit,
+            totalContentTypesBeforeFilter: summaries.length,
+            totalContentTypesAfterSearch: searchedSummaries.length,
+            returnedContentTypes: returnedContentTypes.length,
+        },
         summary: {
-            totalContentTypes: summaries.length,
-            contentTypesWithContent: summaries.filter((summary) => summary.hasContent).length,
-            workflowEnabledContentTypes: summaries.filter((summary) => summary.workflow.activeWorkflowCount > 0).length,
-            paidContentTypes: summaries.filter((summary) => summary.paid.activeTypeOfferCount > 0 || summary.paid.basePrice !== null).length,
-            pendingReviewTaskCount: summaries.reduce((total, summary) => total + summary.pendingReviewTaskCount, 0),
+            totalContentTypes: returnedContentTypes.length,
+            contentTypesWithContent: returnedContentTypes.filter((summary) => summary.hasContent).length,
+            workflowEnabledContentTypes: returnedContentTypes.filter((summary) => summary.workflow.activeWorkflowCount > 0).length,
+            paidContentTypes: returnedContentTypes.filter((summary) => summary.paid.activeTypeOfferCount > 0 || summary.paid.basePrice !== null).length,
+            pendingReviewTaskCount: returnedContentTypes.reduce((total, summary) => total + summary.pendingReviewTaskCount, 0),
         },
         targets: {
-            authoring: authoringTargets,
-            review: reviewTargets,
-            workflow: workflowTargets,
-            paid: paidTargets,
+            authoring: targets.authoring,
+            review: targets.review,
+            workflow: targets.workflow,
+            paid: targets.paid,
         },
-        contentTypes: summaries,
+        contentTypes: returnedContentTypes,
         warnings,
     };
 }

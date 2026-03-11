@@ -37,6 +37,14 @@ describe('buildWorkspaceGuide', () => {
                     hostname: 'docs.example.com',
                     current: true,
                 }],
+                filter: {
+                    intent: 'all',
+                    search: null,
+                    limit: null,
+                    totalContentTypesBeforeFilter: 2,
+                    totalContentTypesAfterSearch: 2,
+                    returnedContentTypes: 2,
+                },
                 summary: {
                     totalContentTypes: 2,
                     contentTypesWithContent: 1,

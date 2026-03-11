@@ -36,6 +36,11 @@ node dist/cli/index.js mcp resource system://workspace-context \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
+node dist/cli/index.js mcp resource system://workspace-context/review/5 \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
 node dist/cli/index.js mcp resource system://agent-guidance \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
@@ -46,7 +51,7 @@ node dist/cli/index.js mcp call guide_task '{"taskId":"discover-deployment"}' \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
-node dist/cli/index.js mcp call guide_task '{"taskId":"discover-workspace"}' \
+node dist/cli/index.js mcp call guide_task '{"taskId":"discover-workspace","intent":"authoring","workspaceLimit":5}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer

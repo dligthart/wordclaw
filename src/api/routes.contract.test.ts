@@ -433,6 +433,14 @@ describe('API Route Contracts', () => {
                     currentActor: { actorId: string; actorProfileId: string; domainId: number };
                     currentDomain: { id: number; name: string; hostname: string; current: boolean };
                     accessibleDomains: Array<{ id: number; current: boolean }>;
+                    filter: {
+                        intent: string;
+                        search: string | null;
+                        limit: number | null;
+                        totalContentTypesBeforeFilter: number;
+                        totalContentTypesAfterSearch: number;
+                        returnedContentTypes: number;
+                    };
                     summary: {
                         totalContentTypes: number;
                         contentTypesWithContent: number;
@@ -489,6 +497,14 @@ describe('API Route Contracts', () => {
                 hostname: 'localhost',
                 current: true,
             }]);
+            expect(body.data.filter).toEqual({
+                intent: 'all',
+                search: null,
+                limit: null,
+                totalContentTypesBeforeFilter: 1,
+                totalContentTypesAfterSearch: 1,
+                returnedContentTypes: 1,
+            });
             expect(body.data.summary).toEqual({
                 totalContentTypes: 1,
                 contentTypesWithContent: 1,
@@ -538,6 +554,134 @@ describe('API Route Contracts', () => {
                 }),
             }));
             expect(body.data.warnings).toEqual([]);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('supports filtered workspace context queries for authenticated callers', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        const app = await buildServer();
+        const selectSpy = vi.spyOn(mocks.dbMock, 'select');
+
+        selectSpy
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        name: 'Local Dev',
+                        hostname: 'localhost',
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 7,
+                            domainId: 1,
+                            name: 'Author Profile',
+                            slug: 'author-profile',
+                            description: null,
+                            schema: '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}',
+                            basePrice: null,
+                        },
+                        {
+                            id: 8,
+                            domainId: 1,
+                            name: 'Editorial Blog Post',
+                            slug: 'editorial-blog-post',
+                            description: 'Reviewed content',
+                            schema: '{"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}',
+                            basePrice: null,
+                        },
+                    ]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 501,
+                        contentTypeId: 8,
+                        status: 'in_review',
+                        updatedAt: new Date('2026-03-10T10:00:00Z'),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 22,
+                        domainId: 1,
+                        name: 'Editorial Flow',
+                        contentTypeId: 8,
+                        active: true,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ workflowId: 22 }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ contentItemId: 501 }]),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/workspace-context?intent=review&search=editorial&limit=1',
+                headers: {
+                    'x-api-key': 'remote-admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    filter: {
+                        intent: string;
+                        search: string | null;
+                        limit: number | null;
+                        totalContentTypesBeforeFilter: number;
+                        totalContentTypesAfterSearch: number;
+                        returnedContentTypes: number;
+                    };
+                    summary: {
+                        totalContentTypes: number;
+                    };
+                    contentTypes: Array<{ id: number; slug: string }>;
+                    targets: {
+                        review: Array<{ id: number }>;
+                    };
+                };
+            };
+
+            expect(body.data.filter).toEqual({
+                intent: 'review',
+                search: 'editorial',
+                limit: 1,
+                totalContentTypesBeforeFilter: 2,
+                totalContentTypesAfterSearch: 1,
+                returnedContentTypes: 1,
+            });
+            expect(body.data.summary.totalContentTypes).toBe(1);
+            expect(body.data.contentTypes).toEqual([expect.objectContaining({
+                id: 8,
+                slug: 'editorial-blog-post',
+            })]);
+            expect(body.data.targets.review).toEqual([expect.objectContaining({
+                id: 8,
+            })]);
         } finally {
             await app.close();
         }

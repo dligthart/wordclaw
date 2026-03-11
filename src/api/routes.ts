@@ -859,6 +859,17 @@ export default async function apiRoutes(server: FastifyInstance) {
 
     server.get('/workspace-context', {
         schema: {
+            querystring: Type.Object({
+                intent: Type.Optional(Type.Union([
+                    Type.Literal('all'),
+                    Type.Literal('authoring'),
+                    Type.Literal('review'),
+                    Type.Literal('workflow'),
+                    Type.Literal('paid'),
+                ])),
+                search: Type.Optional(Type.String()),
+                limit: Type.Optional(Type.Number({ minimum: 1, maximum: 50 })),
+            }),
             response: {
                 200: createAIResponse(Type.Object({
                     generatedAt: Type.String(),
@@ -883,6 +894,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                         hostname: Type.String(),
                         current: Type.Boolean(),
                     })),
+                    filter: Type.Object({
+                        intent: Type.String(),
+                        search: Type.Union([Type.String(), Type.Null()]),
+                        limit: Type.Union([Type.Number(), Type.Null()]),
+                        totalContentTypesBeforeFilter: Type.Number(),
+                        totalContentTypesAfterSearch: Type.Number(),
+                        returnedContentTypes: Type.Number(),
+                    }),
                     summary: Type.Object({
                         totalContentTypes: Type.Number(),
                         contentTypesWithContent: Type.Number(),
@@ -994,12 +1013,21 @@ export default async function apiRoutes(server: FastifyInstance) {
             throw new Error('AUTH_PRINCIPAL_UNAVAILABLE');
         }
 
-        const snapshot = await getWorkspaceContextSnapshot(buildCurrentActorSnapshot(principal));
+        const query = request.query as {
+            intent?: 'all' | 'authoring' | 'review' | 'workflow' | 'paid';
+            search?: string;
+            limit?: number;
+        };
+        const snapshot = await getWorkspaceContextSnapshot(buildCurrentActorSnapshot(principal), {
+            intent: query.intent,
+            search: query.search,
+            limit: query.limit,
+        });
 
         return {
             data: snapshot,
             meta: buildMeta(
-                'Use the workspace context to choose a domain-aware content model before authoring, review, or paid-content actions.',
+                'Use the workspace context to choose a domain-aware content model before authoring, review, workflow, or paid-content actions.',
                 [
                     'GET /api/identity',
                     'GET /api/content-types',

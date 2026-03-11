@@ -147,6 +147,8 @@ Use the workspace guide when an agent needs to discover which schemas are actual
 
 ```bash
 node dist/cli/index.js workspace guide
+node dist/cli/index.js workspace guide --intent review --limit 5
+node dist/cli/index.js workspace guide --intent authoring --search article
 ```
 
 The guide combines:
@@ -161,6 +163,7 @@ The result tells you:
 - which content models exist in the current domain
 - which models already have content, active workflows, pending review tasks, or active type-level paid offers
 - which grouped authoring, workflow, review, and paid-content targets are the best next candidates
+- how to narrow the workspace view by `intent`, `search`, and `limit` when the agent already knows the task class
 - which concrete `content guide`, `content list`, and `workflow active` commands to run next
 
 ### Integration Guidance
