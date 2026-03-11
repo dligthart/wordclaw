@@ -212,6 +212,8 @@ Supported features:
 
 ```bash
 node dist/cli/index.js workflow active --content-type-id 12
+node dist/cli/index.js workflow guide
+node dist/cli/index.js workflow guide --task 88
 node dist/cli/index.js workflow submit --id 345 --transition 9 --assignee editor-1
 node dist/cli/index.js workflow tasks
 node dist/cli/index.js workflow decide --id 88 --decision approved
@@ -220,9 +222,12 @@ node dist/cli/index.js workflow decide --id 88 --decision approved
 Supported features:
 
 - inspect the active workflow for a content type
+- generate an actor-aware guide for pending review tasks
 - submit a content item for review
 - list pending review tasks
 - approve or reject review tasks
+
+`workflow guide` includes the current actor snapshot, supported review actor profiles, required scopes, assignment refs, and per-task decision readiness. Prefer canonical actor IDs from `capabilities whoami` or `mcp whoami` when setting `--assignee`; the runtime now accepts both canonical actor IDs and legacy key-id strings for review decisions.
 
 ### L402 and Paid Content
 

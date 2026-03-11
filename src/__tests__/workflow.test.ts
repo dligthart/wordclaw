@@ -111,6 +111,40 @@ describe('Workflow & Review System (Domain 1)', () => {
         expect(finalItem.status).toBe('published'); // transition execution successful
     });
 
+    it('should allow canonical actor ids to satisfy review-task assignee checks', async () => {
+        const [item] = await db.insert(contentItems).values({
+            domainId,
+            contentTypeId,
+            status: 'draft',
+            data: JSON.stringify({ title: 'Canonical Assignee Item' })
+        }).returning();
+
+        const task = await WorkflowService.submitForReview({
+            domainId,
+            contentItemId: item.id,
+            workflowTransitionId: transition1Id,
+            assignee: 'api_key:77',
+            authPrincipal: { scopes: new Set(['author']), domainId }
+        });
+
+        const decisionResult = await WorkflowService.decideReviewTask(
+            domainId,
+            task.id,
+            'approved',
+            {
+                keyId: 77,
+                actorId: 'api_key:77',
+                scopes: new Set(['content:write']),
+                domainId
+            }
+        );
+
+        expect(decisionResult.status).toBe('approved');
+
+        const [finalItem] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
+        expect(finalItem.status).toBe('in_review');
+    });
+
     it('should allow adding and listing comments on an item', async () => {
         const [item] = await db.insert(contentItems).values({
             domainId,

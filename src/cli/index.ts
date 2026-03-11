@@ -28,6 +28,7 @@ import {
     type RestCliResponse,
 } from './lib/rest-client.js';
 import { buildL402Guide } from './lib/l402-guide.js';
+import { buildWorkflowGuide } from './lib/workflow-guide.js';
 import type { CurrentActorSnapshot } from '../services/actor-identity.js';
 
 type JsonMap = Record<string, unknown>;
@@ -46,7 +47,7 @@ const CAPABILITY_SUBCOMMANDS = ['show', 'whoami'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
 const CONTENT_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
-const WORKFLOW_SUBCOMMANDS = ['active', 'submit', 'tasks', 'decide'] as const;
+const WORKFLOW_SUBCOMMANDS = ['active', 'guide', 'submit', 'tasks', 'decide'] as const;
 const L402_SUBCOMMANDS = ['offers', 'guide', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
 
 const TOP_LEVEL_ALIASES: Record<string, string> = {
@@ -123,6 +124,7 @@ Commands:
   content delete --id <n> [--dry-run]
 
   workflow active --content-type-id <n>
+  workflow guide [--task <n>]
   workflow submit --id <n> --transition <n> [--assignee <value>]
   workflow tasks
   workflow decide --id <n> --decision approved|rejected
@@ -190,6 +192,48 @@ function requireJsonMap(value: unknown, context: string): JsonMap {
     }
 
     return value as JsonMap;
+}
+
+async function tryFetchCurrentActor(client: RestCliClient): Promise<{
+    currentActor: CurrentActorSnapshot | null;
+    warnings: string[];
+}> {
+    try {
+        const identityResponse = await client.request({
+            method: 'GET',
+            path: '/identity',
+        });
+        const identityBody = requireJsonMap(identityResponse.body, 'Current actor identity response');
+        const data = identityBody.data;
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+            return {
+                currentActor: data as CurrentActorSnapshot,
+                warnings: [],
+            };
+        }
+
+        return {
+            currentActor: null,
+            warnings: ['Current actor identity response did not include a valid actor snapshot.'],
+        };
+    } catch (error) {
+        if (
+            error instanceof RestCliError
+            && error.response.body
+            && typeof error.response.body === 'object'
+            && 'code' in (error.response.body as Record<string, unknown>)
+        ) {
+            const code = String((error.response.body as Record<string, unknown>).code);
+            if (code === 'AUTH_MISSING_API_KEY' || code === 'AUTH_INSUFFICIENT_SCOPE' || code === 'API_KEY_REQUIRED') {
+                return {
+                    currentActor: null,
+                    warnings: ['Current actor identity is unavailable until an API key is configured.'],
+                };
+            }
+        }
+
+        throw error;
+    }
 }
 
 function assertHasUpdateFields(body: JsonMap, context: string) {
@@ -669,6 +713,87 @@ async function handleWorkflow(client: RestCliClient, args: ParsedArgs) {
         return;
     }
 
+    if (action === 'guide') {
+        const { currentActor, warnings } = await tryFetchCurrentActor(client);
+        let tasks: Array<{
+            task: {
+                id: number;
+                contentItemId: number;
+                workflowTransitionId: number;
+                status: string;
+                assignee: string | null;
+                createdAt?: string;
+                updatedAt?: string;
+            };
+            transition: {
+                id: number;
+                fromState: string;
+                toState: string;
+                requiredRoles?: string[];
+            };
+            workflow: {
+                id: number;
+                name: string;
+            };
+            contentItem: {
+                id: number;
+                status?: string;
+                version?: number;
+            };
+            contentType: {
+                id: number;
+                name: string;
+                slug: string;
+            };
+        }> = [];
+        let taskWarnings = [...warnings];
+
+        try {
+            const response = await client.request({
+                method: 'GET',
+                path: '/review-tasks',
+            });
+            const body = requireJsonMap(response.body, 'Workflow guide response');
+            tasks = Array.isArray(body.data) ? body.data as typeof tasks : [];
+        } catch (error) {
+            if (
+                error instanceof RestCliError
+                && error.response.body
+                && typeof error.response.body === 'object'
+                && 'code' in (error.response.body as Record<string, unknown>)
+            ) {
+                const code = String((error.response.body as Record<string, unknown>).code);
+                if (code === 'AUTH_MISSING_API_KEY' || code === 'AUTH_INSUFFICIENT_SCOPE' || code === 'API_KEY_REQUIRED') {
+                    taskWarnings.push('Pending review tasks are unavailable until an authenticated actor with review access is configured.');
+                } else {
+                    throw error;
+                }
+            } else {
+                throw error;
+            }
+        }
+
+        const guide = buildWorkflowGuide({
+            tasks,
+            currentActor,
+            preferredTaskId: getNumberFlag(args, 'task'),
+        });
+        if (taskWarnings.length > 0) {
+            guide.warnings = taskWarnings;
+        }
+
+        printStructured(
+            args,
+            {
+                transport: 'rest',
+                action: 'guide',
+                guide,
+            },
+            guide,
+        );
+        return;
+    }
+
     if (action === 'submit') {
         const id = getNumberFlag(args, 'id');
         const transition = getNumberFlag(args, 'transition');
@@ -740,7 +865,8 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
             throw new Error('l402 guide requires --item.');
         }
         const apiKeyConfigured = Boolean(getStringFlag(args, 'api-key') ?? process.env.WORDCLAW_API_KEY);
-        let currentActor: CurrentActorSnapshot | null = null;
+        const actorResult = await tryFetchCurrentActor(client);
+        const currentActor = actorResult.currentActor;
         let offers: Array<{
             id: number;
             slug: string;
@@ -750,35 +876,9 @@ async function handleL402(client: RestCliClient, args: ParsedArgs) {
             priceSats: number;
             active: boolean;
         }> = [];
-        let warnings: string[] = [];
-
-        try {
-            const identityResponse = await client.request({
-                method: 'GET',
-                path: '/identity',
-            });
-            const identityBody = requireJsonMap(identityResponse.body, 'Current actor identity response');
-            const data = identityBody.data;
-            if (data && typeof data === 'object' && !Array.isArray(data)) {
-                currentActor = data as CurrentActorSnapshot;
-            }
-        } catch (error) {
-            if (
-                error instanceof RestCliError
-                && error.response.body
-                && typeof error.response.body === 'object'
-                && 'code' in (error.response.body as Record<string, unknown>)
-            ) {
-                const code = String((error.response.body as Record<string, unknown>).code);
-                if (code === 'AUTH_MISSING_API_KEY' || code === 'AUTH_INSUFFICIENT_SCOPE' || code === 'API_KEY_REQUIRED') {
-                    warnings.push('Current actor identity is unavailable until an API key is configured. The guide is showing a blocked paid-content path.');
-                } else {
-                    throw error;
-                }
-            } else {
-                throw error;
-            }
-        }
+        let warnings: string[] = actorResult.warnings.length > 0
+            ? ['Current actor identity is unavailable until an API key is configured. The guide is showing a blocked paid-content path.']
+            : [];
 
         try {
             const response = await client.request({

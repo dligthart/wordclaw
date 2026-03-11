@@ -28,6 +28,7 @@ export type CurrentActorSnapshot = ActorIdentity & {
     actorProfileId: ActorProfileId;
     domainId: number;
     scopes: string[];
+    assignmentRefs: string[];
 };
 
 export function buildApiKeyPrincipal(keyId: number, domainId: number, scopes: Set<string>): ActorPrincipal {
@@ -206,6 +207,39 @@ export function resolveActorProfileId(principal: PrincipalLike | null | undefine
     }
 }
 
+export function buildActorAssignmentRefs(principal: {
+    keyId?: number | string;
+    actorId?: string;
+    assignmentRefs?: string[];
+} | null | undefined): string[] {
+    const refs = new Set<string>();
+
+    if (!principal) {
+        return [];
+    }
+
+    if (Array.isArray(principal.assignmentRefs)) {
+        for (const ref of principal.assignmentRefs) {
+            if (typeof ref === 'string' && ref.trim().length > 0) {
+                refs.add(ref.trim());
+            }
+        }
+    }
+
+    if (typeof principal.actorId === 'string' && principal.actorId.trim().length > 0) {
+        refs.add(principal.actorId.trim());
+    }
+
+    if (principal.keyId !== undefined && principal.keyId !== null) {
+        const keyRef = String(principal.keyId).trim();
+        if (keyRef.length > 0) {
+            refs.add(keyRef);
+        }
+    }
+
+    return Array.from(refs);
+}
+
 export function buildCurrentActorSnapshot(principal: ActorPrincipal): CurrentActorSnapshot {
     return {
         actorId: principal.actorId,
@@ -214,5 +248,6 @@ export function buildCurrentActorSnapshot(principal: ActorPrincipal): CurrentAct
         actorProfileId: resolveActorProfileId(principal),
         domainId: principal.domainId,
         scopes: Array.from(principal.scopes).sort(),
+        assignmentRefs: buildActorAssignmentRefs(principal),
     };
 }

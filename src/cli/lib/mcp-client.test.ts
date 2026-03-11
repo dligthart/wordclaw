@@ -140,6 +140,7 @@ describe('WordClawMcpClient over HTTP', () => {
             actorType: 'env_key',
             actorProfileId: 'env-key',
             domainId: 1,
+            assignmentRefs: ['env_key:remote-admin', 'remote-admin'],
         }));
     });
 });

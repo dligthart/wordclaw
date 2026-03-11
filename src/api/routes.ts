@@ -715,6 +715,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     actorProfileId: Type.String(),
                     domainId: Type.Number(),
                     scopes: Type.Array(Type.String()),
+                    assignmentRefs: Type.Array(Type.String()),
                     profile: Type.Union([
                         Type.Object({
                             id: Type.String(),

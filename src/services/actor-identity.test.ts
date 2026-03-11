@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    buildActorAssignmentRefs,
     buildCurrentActorSnapshot,
     buildEnvKeyPrincipal,
     buildApiKeyPrincipal,
@@ -66,6 +67,19 @@ describe('actor identity helpers', () => {
             actorProfileId: 'env-key',
             domainId: 1,
             scopes: ['content:write'],
+            assignmentRefs: ['env_key:writer', 'writer'],
         });
+    });
+
+    it('builds assignment refs with both canonical actor ids and legacy key ids where needed', () => {
+        expect(buildActorAssignmentRefs({
+            actorId: 'api_key:12',
+            keyId: 12,
+        })).toEqual(['api_key:12', '12']);
+
+        expect(buildActorAssignmentRefs({
+            actorId: 'supervisor:4',
+            keyId: 'supervisor:4',
+        })).toEqual(['supervisor:4']);
     });
 });

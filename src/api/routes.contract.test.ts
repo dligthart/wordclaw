@@ -284,6 +284,7 @@ describe('API Route Contracts', () => {
                     actorProfileId: string;
                     domainId: number;
                     scopes: string[];
+                    assignmentRefs: string[];
                     profile: {
                         id: string;
                         authMode: string;
@@ -298,6 +299,7 @@ describe('API Route Contracts', () => {
                 actorProfileId: 'env-key',
                 domainId: 1,
                 scopes: ['admin'],
+                assignmentRefs: ['env_key:remote-admin', 'remote-admin'],
                 profile: expect.objectContaining({
                     id: 'env-key',
                     authMode: 'api-key',

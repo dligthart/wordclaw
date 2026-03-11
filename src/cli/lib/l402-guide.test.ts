@@ -36,6 +36,7 @@ describe('buildL402Guide', () => {
                 actorProfileId: 'api-key',
                 domainId: 2,
                 scopes: ['content:read'],
+                assignmentRefs: ['api_key:11', '11'],
             },
         });
 
@@ -107,6 +108,7 @@ describe('buildL402Guide', () => {
                 actorProfileId: 'supervisor-session',
                 domainId: 1,
                 scopes: ['admin'],
+                assignmentRefs: ['supervisor:1'],
             },
         });
 
@@ -136,6 +138,7 @@ describe('buildL402Guide', () => {
                 actorProfileId: 'env-key',
                 domainId: 1,
                 scopes: ['admin'],
+                assignmentRefs: ['env_key:remote-admin', 'remote-admin'],
             },
         });
 

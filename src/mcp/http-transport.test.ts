@@ -171,6 +171,7 @@ describe('MCP HTTP transport', () => {
             actorType: 'env_key',
             actorProfileId: 'env-key',
             domainId: 1,
+            assignmentRefs: ['env_key:remote-admin', 'remote-admin'],
         }));
         expect(taskPromptText).toContain('Task: author-content');
         expect(taskPromptText).toContain('Preferred surface: mcp');

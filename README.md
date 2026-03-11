@@ -112,6 +112,7 @@ WordClaw now includes a repo-native CLI for MCP and REST workflows:
 npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts l402 guide --item 123
+npx tsx src/cli/index.ts workflow guide
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
@@ -126,6 +127,7 @@ The CLI is JSON-first so agents can script it reliably, and `--raw` is available
 - MCP discovery, direct tool calls, prompt reads, resource reads, and smoke testing
 - REST content type and content item CRUD
 - REST workflow submission and approval decisions
+- actor-aware workflow review guidance for pending tasks
 - REST L402 consumption flows for offers, purchase confirmation, entitlements, and paid reads
 
 MCP commands default to local `stdio`. Use `--mcp-transport http` or `--mcp-url http://localhost:4000/mcp` to attach the CLI directly to the running remote MCP endpoint instead.
@@ -137,7 +139,7 @@ export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
 ```
 
-For deployment discovery before acting, use `GET /api/capabilities` or `mcp inspect`. The manifest now includes task-oriented routing hints plus explicit actor/auth profiles so an agent can choose the right surface, credential, and domain-context path for discovery, content authoring, workflow review, integration setup, and paid-content consumption. To confirm the currently authenticated actor before mutating state, use `GET /api/identity`, `system://current-actor`, `node dist/cli/index.js capabilities whoami`, or `node dist/cli/index.js mcp whoami`.
+For deployment discovery before acting, use `GET /api/capabilities` or `mcp inspect`. The manifest now includes task-oriented routing hints plus explicit actor/auth profiles so an agent can choose the right surface, credential, and domain-context path for discovery, content authoring, workflow review, integration setup, and paid-content consumption. To confirm the currently authenticated actor before mutating state, use `GET /api/identity`, `system://current-actor`, `node dist/cli/index.js capabilities whoami`, or `node dist/cli/index.js mcp whoami`. For review-task execution specifically, `node dist/cli/index.js workflow guide` now shows assignment refs plus per-task readiness for the current actor.
 
 ## 🎮 Demos
 

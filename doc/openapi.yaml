@@ -1527,6 +1527,7 @@ paths:
                   - actorProfileId
                   - domainId
                   - scopes
+                  - assignmentRefs
                 properties:
                   actorId:
                     type: string
@@ -1539,6 +1540,10 @@ paths:
                   domainId:
                     type: integer
                   scopes:
+                    type: array
+                    items:
+                      type: string
+                  assignmentRefs:
                     type: array
                     items:
                       type: string

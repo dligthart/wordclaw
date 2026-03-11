@@ -9,6 +9,7 @@ import {
 } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { EmbeddingService } from './embedding.js';
+import { buildActorAssignmentRefs } from './actor-identity.js';
 
 export interface WorkflowTransitionContext {
     domainId: number;
@@ -150,7 +151,17 @@ export class WorkflowService {
         return newTask;
     }
 
-    static async decideReviewTask(domainId: number, taskId: number, decision: 'approved' | 'rejected', authPrincipal: { scopes: Set<string>, domainId: number, keyId?: number | string }) {
+    static async decideReviewTask(
+        domainId: number,
+        taskId: number,
+        decision: 'approved' | 'rejected',
+        authPrincipal: {
+            scopes: Set<string>;
+            domainId: number;
+            keyId?: number | string;
+            actorId?: string;
+        },
+    ) {
         const results = await db.select()
             .from(reviewTasks)
             .where(and(eq(reviewTasks.id, taskId), eq(reviewTasks.domainId, domainId)));
@@ -163,7 +174,8 @@ export class WorkflowService {
         }
 
         const isAdmin = authPrincipal.scopes.has('admin');
-        const isAssignee = task.assignee ? task.assignee === authPrincipal?.keyId?.toString() : false;
+        const assignmentRefs = buildActorAssignmentRefs(authPrincipal);
+        const isAssignee = task.assignee ? assignmentRefs.includes(task.assignee) : false;
 
         if (!isAdmin && !isAssignee) {
             throw new Error('UNAUTHORIZED_REVIEW_DECISION: Must be an assignee or admin to decide.');
