@@ -19,5 +19,5 @@ features:
   - title: Governed Content Ops
     details: Structured content, approval workflows, audit trails, idempotency, and tenant isolation in one runtime.
   - title: Guided Agent Workflows
-    details: Use CLI and MCP guidance paths for content authoring, workflow review, integration setup, and paid-content access.
+    details: Use CLI and MCP guidance paths for content authoring, workflow review, integration setup, provenance verification, and paid-content consumption.
 ---

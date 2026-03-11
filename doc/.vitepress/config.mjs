@@ -88,7 +88,8 @@ export default withMermaid(defineConfig({
                             { text: '0008 Cross-Protocol Policy Parity Framework', link: '/rfc/implemented/0008-cross-protocol-policy-parity-framework' },
                             { text: '0011 Multi-Domain Tenant Support', link: '/rfc/implemented/0011-multi-domain-tenant-support' },
                             { text: '0012 Native Vector RAG Endpoints', link: '/rfc/implemented/0012-native-vector-rag-endpoints' },
-                            { text: '0014 L402 Production Readiness Operator Runbook', link: '/rfc/implemented/0014-l402-production-readiness-operator-runbook' }
+                            { text: '0014 L402 Production Readiness Operator Runbook', link: '/rfc/implemented/0014-l402-production-readiness-operator-runbook' },
+                            { text: '0018 Integration Testing in GitHub Actions', link: '/rfc/implemented/0018-integration-testing-github-actions' }
                         ]
                     },
                     {
