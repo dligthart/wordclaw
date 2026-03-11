@@ -28,6 +28,7 @@ import {
     type RestCliResponse,
 } from './lib/rest-client.js';
 import { buildContentGuide } from './lib/content-guide.js';
+import { buildIntegrationGuide } from './lib/integration-guide.js';
 import { buildL402Guide } from './lib/l402-guide.js';
 import { buildWorkflowGuide } from './lib/workflow-guide.js';
 import type { CurrentActorSnapshot } from '../services/actor-identity.js';
@@ -38,6 +39,7 @@ const TOP_LEVEL_COMMANDS = [
     'mcp',
     'capabilities',
     'rest',
+    'integrations',
     'content-types',
     'content',
     'workflow',
@@ -46,6 +48,7 @@ const TOP_LEVEL_COMMANDS = [
 const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smoke'] as const;
 const CAPABILITY_SUBCOMMANDS = ['show', 'whoami'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
+const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
 const CONTENT_SUBCOMMANDS = ['list', 'guide', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
 const WORKFLOW_SUBCOMMANDS = ['active', 'guide', 'submit', 'tasks', 'decide'] as const;
@@ -109,6 +112,7 @@ Commands:
   capabilities whoami
 
   rest request <method> <path> [--query-json <object>] [--body-json <object>|--body-file <path>]
+  integrations guide
 
   content-types list [--limit <n>] [--offset <n>] [--include-stats]
   content-types get --id <n>
@@ -432,6 +436,89 @@ async function handleRest(client: RestCliClient, args: ParsedArgs) {
         body,
     });
     printResponse(args, response);
+}
+
+async function handleIntegrations(client: RestCliClient, args: ParsedArgs) {
+    resolveSupportedSubcommand(
+        args,
+        1,
+        'integrations subcommand',
+        INTEGRATIONS_SUBCOMMANDS,
+    );
+
+    const actorResult = await tryFetchCurrentActor(client);
+    const warnings = [...actorResult.warnings];
+    type IntegrationGuideApiKey = {
+        id: number;
+        name: string;
+        keyPrefix: string;
+        scopes: string[];
+        createdBy: number | null;
+        createdAt: string;
+        expiresAt: string | null;
+        revokedAt: string | null;
+        lastUsedAt: string | null;
+    };
+    type IntegrationGuideWebhook = {
+        id: number;
+        url: string;
+        events: string[];
+        active: boolean;
+        createdAt: string;
+    };
+    let apiKeys: IntegrationGuideApiKey[] | null = null;
+    let webhooks: IntegrationGuideWebhook[] | null = null;
+
+    try {
+        const response = await client.request({
+            method: 'GET',
+            path: '/auth/keys',
+        });
+        const body = requireJsonMap(response.body, 'Integrations guide API key response');
+        apiKeys = Array.isArray(body.data) ? body.data as IntegrationGuideApiKey[] : [];
+    } catch (error) {
+        const code = extractErrorCode(error);
+        if (isMissingActorErrorCode(code)) {
+            warnings.push('API key inventory is unavailable until an authenticated actor with integration access is configured.');
+        } else {
+            throw error;
+        }
+    }
+
+    try {
+        const response = await client.request({
+            method: 'GET',
+            path: '/webhooks',
+        });
+        const body = requireJsonMap(response.body, 'Integrations guide webhook response');
+        webhooks = Array.isArray(body.data) ? body.data as IntegrationGuideWebhook[] : [];
+    } catch (error) {
+        const code = extractErrorCode(error);
+        if (isMissingActorErrorCode(code)) {
+            warnings.push('Webhook inventory is unavailable until an authenticated actor with integration access is configured.');
+        } else {
+            throw error;
+        }
+    }
+
+    const guide = buildIntegrationGuide({
+        currentActor: actorResult.currentActor,
+        apiKeys,
+        webhooks,
+    });
+    if (warnings.length > 0) {
+        guide.warnings = warnings;
+    }
+
+    printStructured(
+        args,
+        {
+            transport: 'rest',
+            action: 'guide',
+            guide,
+        },
+        guide,
+    );
 }
 
 async function handleCapabilities(client: RestCliClient, args: ParsedArgs) {
@@ -1138,6 +1225,10 @@ async function main(args: ParsedArgs) {
 
     if (command === 'rest') {
         await handleRest(client, args);
+        return;
+    }
+    if (command === 'integrations') {
+        await handleIntegrations(client, args);
         return;
     }
     if (command === 'capabilities') {

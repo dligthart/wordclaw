@@ -134,6 +134,27 @@ Supported flags:
 - `--query-json` or `--query-file`
 - `--body-json` or `--body-file`
 
+### Integration Guidance
+
+Use the integrations guide when an agent needs to manage API keys or outbound webhooks without manually discovering the relevant REST endpoints:
+
+```bash
+node dist/cli/index.js integrations guide
+```
+
+The guide combines:
+
+- the current actor snapshot from `/api/identity`
+- current API key inventory from `/api/auth/keys`
+- current webhook inventory from `/api/webhooks`
+
+The result tells you:
+
+- whether the current actor can manage integration resources
+- how many active/revoked API keys already exist
+- how many active/inactive webhooks are registered
+- which concrete REST commands to run next for key creation, rotation, and webhook registration
+
 ### Capability Manifest
 
 Use the deployment manifest when an agent needs to discover what this WordClaw instance actually supports before choosing a protocol or auth path:
