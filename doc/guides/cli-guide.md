@@ -181,6 +181,8 @@ node dist/cli/index.js workspace resolve --intent authoring --search article
 - the best schema target for the chosen intent
 - `workTarget`, which points at the next concrete unit of work inside that schema
 
+The resolver now prioritizes the strongest actionable candidate across the active workspace. For example, an actionable review task in one schema outranks a busier schema if that busier backlog is blocked for the current actor.
+
 Depending on the intent, `workTarget.kind` can be:
 
 - `content-type`

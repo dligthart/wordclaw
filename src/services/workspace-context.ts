@@ -168,6 +168,10 @@ export type WorkspaceTargetResolution = {
     warnings: string[];
 };
 
+type RankedResolvedWorkspaceTarget = ResolvedWorkspaceTarget & {
+    initialRank: number;
+};
+
 function summarizeSchema(rawSchema: string): {
     fieldCount: number;
     requiredFieldCount: number;
@@ -228,6 +232,19 @@ function compareNullableNumberAsc(left: number | null, right: number | null) {
 
 function toIso(value: Date): string {
     return value.toISOString();
+}
+
+function workspaceWorkTargetStatusRank(status: WorkspaceWorkTargetStatus | null | undefined): number {
+    if (status === 'ready') {
+        return 0;
+    }
+    if (status === 'warning') {
+        return 1;
+    }
+    if (status === 'blocked') {
+        return 2;
+    }
+    return 3;
 }
 
 function extractStringField(record: Record<string, unknown>, field: string): string | null {
@@ -729,6 +746,67 @@ async function resolveWorkTargetForContentType(
     };
 }
 
+function compareResolvedWorkspaceTargets(
+    intent: WorkspaceTargetIntent,
+    left: RankedResolvedWorkspaceTarget,
+    right: RankedResolvedWorkspaceTarget,
+) {
+    const leftWorkTarget = left.workTarget;
+    const rightWorkTarget = right.workTarget;
+
+    const byStatus = workspaceWorkTargetStatusRank(leftWorkTarget?.status)
+        - workspaceWorkTargetStatusRank(rightWorkTarget?.status);
+    if (byStatus !== 0) {
+        return byStatus;
+    }
+
+    if (intent === 'review' || intent === 'workflow') {
+        const leftReviewPriority = leftWorkTarget?.kind === 'review-task' ? 0 : 1;
+        const rightReviewPriority = rightWorkTarget?.kind === 'review-task' ? 0 : 1;
+        if (leftReviewPriority !== rightReviewPriority) {
+            return leftReviewPriority - rightReviewPriority;
+        }
+    }
+
+    if (intent === 'paid') {
+        const leftPaid = leftWorkTarget?.paid;
+        const rightPaid = rightWorkTarget?.paid;
+        const byOfferCount = (rightPaid?.activeOfferCount ?? 0) - (leftPaid?.activeOfferCount ?? 0);
+        if (byOfferCount !== 0) {
+            return byOfferCount;
+        }
+
+        const byPrice = compareNullableNumberAsc(leftPaid?.lowestOfferSats ?? null, rightPaid?.lowestOfferSats ?? null);
+        if (byPrice !== 0) {
+            return byPrice;
+        }
+    }
+
+    if (intent === 'authoring') {
+        const byWorkflowCount = right.activeWorkflowCount - left.activeWorkflowCount;
+        if (byWorkflowCount !== 0) {
+            return byWorkflowCount;
+        }
+    }
+
+    const byPendingReview = right.pendingReviewTaskCount - left.pendingReviewTaskCount;
+    if (byPendingReview !== 0) {
+        return byPendingReview;
+    }
+
+    const byWorkflowCount = right.activeWorkflowCount - left.activeWorkflowCount;
+    if (byWorkflowCount !== 0) {
+        return byWorkflowCount;
+    }
+
+    const byItemCount = right.itemCount - left.itemCount;
+    if (byItemCount !== 0) {
+        return byItemCount;
+    }
+
+    return left.initialRank - right.initialRank;
+}
+
 function selectReturnedContentTypes(options: {
     intent: WorkspaceDiscoveryIntent;
     summaries: WorkspaceContentTypeSummary[];
@@ -995,18 +1073,27 @@ export async function resolveWorkspaceTarget(
         targetLimit: 25,
     });
 
-    const rankedTargets = await Promise.all(snapshot.targets[options.intent].map(async (target, index) => {
+    const rankedTargets: RankedResolvedWorkspaceTarget[] = [];
+    for (const [index, target] of snapshot.targets[options.intent].entries()) {
         const contentType = snapshot.contentTypes.find((entry) => entry.id === target.id) ?? null;
 
-        return {
+        rankedTargets.push({
             ...target,
             rank: index + 1,
+            initialRank: index + 1,
             contentType,
             workTarget: contentType
                 ? await resolveWorkTargetForContentType(currentActor, options.intent, contentType, target)
                 : null,
-        };
-    }));
+        });
+    }
+
+    const resolvedTargets = [...rankedTargets]
+        .sort((left, right) => compareResolvedWorkspaceTargets(options.intent, left, right))
+        .map(({ initialRank: _initialRank, ...target }, index) => ({
+            ...target,
+            rank: index + 1,
+        }));
 
     return {
         generatedAt: new Date().toISOString(),
@@ -1014,9 +1101,9 @@ export async function resolveWorkspaceTarget(
         currentDomain: snapshot.currentDomain,
         intent: options.intent,
         search: snapshot.filter.search,
-        availableTargetCount: rankedTargets.length,
-        target: rankedTargets[0] ?? null,
-        alternatives: rankedTargets.slice(1, 4),
+        availableTargetCount: resolvedTargets.length,
+        target: resolvedTargets[0] ?? null,
+        alternatives: resolvedTargets.slice(1, 4),
         warnings: snapshot.warnings,
     };
 }

@@ -1217,7 +1217,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         return {
             data: resolution,
             meta: buildMeta(
-                'Resolve the best schema target and next concrete work target for the requested workspace task without scanning the full model inventory.',
+                'Resolve the strongest schema-plus-work-target candidate for the requested workspace task without scanning the full model inventory.',
                 ['GET /api/workspace-context', 'GET /api/identity'],
                 'low',
                 1,

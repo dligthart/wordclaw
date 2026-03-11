@@ -456,4 +456,263 @@ describe('getWorkspaceContextSnapshot', () => {
         }));
         expect(resolution.alternatives).toEqual([]);
     });
+
+    it('prioritizes the best actionable work target across the workspace, not just the busiest schema', async () => {
+        vi.spyOn(db, 'select')
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        name: 'Docs',
+                        hostname: 'docs.example.com',
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 12,
+                            domainId: 7,
+                            name: 'Editorial Article',
+                            slug: 'editorial-article',
+                            description: 'Reviewed content',
+                            schema: JSON.stringify({ type: 'object', properties: { title: { type: 'string' } }, required: ['title'] }),
+                            basePrice: null,
+                        },
+                        {
+                            id: 13,
+                            domainId: 7,
+                            name: 'News Brief',
+                            slug: 'news-brief',
+                            description: 'Faster review lane',
+                            schema: JSON.stringify({ type: 'object', properties: { title: { type: 'string' } }, required: ['title'] }),
+                            basePrice: null,
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 100,
+                            contentTypeId: 12,
+                            status: 'in_review',
+                            updatedAt: new Date('2026-03-11T11:00:00Z'),
+                        },
+                        {
+                            id: 101,
+                            contentTypeId: 12,
+                            status: 'in_review',
+                            updatedAt: new Date('2026-03-11T10:00:00Z'),
+                        },
+                        {
+                            id: 200,
+                            contentTypeId: 13,
+                            status: 'in_review',
+                            updatedAt: new Date('2026-03-11T12:00:00Z'),
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 20,
+                            domainId: 7,
+                            name: 'Editorial Flow',
+                            contentTypeId: 12,
+                            active: true,
+                        },
+                        {
+                            id: 21,
+                            domainId: 7,
+                            name: 'Brief Flow',
+                            contentTypeId: 13,
+                            active: true,
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        { workflowId: 20 },
+                        { workflowId: 21 },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        { contentItemId: 100 },
+                        { contentItemId: 101 },
+                        { contentItemId: 200 },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 100,
+                            contentTypeId: 12,
+                            data: JSON.stringify({ title: 'Blocked editorial review', slug: 'blocked-editorial-review' }),
+                            status: 'in_review',
+                            version: 3,
+                            createdAt: new Date('2026-03-11T09:30:00Z'),
+                            updatedAt: new Date('2026-03-11T11:00:00Z'),
+                        },
+                        {
+                            id: 101,
+                            contentTypeId: 12,
+                            data: JSON.stringify({ title: 'Second blocked review', slug: 'second-blocked-review' }),
+                            status: 'in_review',
+                            version: 2,
+                            createdAt: new Date('2026-03-11T09:00:00Z'),
+                            updatedAt: new Date('2026-03-11T10:00:00Z'),
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 20,
+                        name: 'Editorial Flow',
+                        contentTypeId: 12,
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 40,
+                        workflowId: 20,
+                        fromState: 'draft',
+                        toState: 'in_review',
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 88,
+                            contentItemId: 100,
+                            workflowTransitionId: 40,
+                            status: 'pending',
+                            assignee: 'api_key:99',
+                            createdAt: new Date('2026-03-11T11:05:00Z'),
+                            updatedAt: new Date('2026-03-11T11:05:00Z'),
+                        },
+                        {
+                            id: 89,
+                            contentItemId: 101,
+                            workflowTransitionId: 40,
+                            status: 'pending',
+                            assignee: 'api_key:99',
+                            createdAt: new Date('2026-03-11T11:10:00Z'),
+                            updatedAt: new Date('2026-03-11T11:10:00Z'),
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([
+                        {
+                            id: 200,
+                            contentTypeId: 13,
+                            data: JSON.stringify({ title: 'Actionable brief review', slug: 'actionable-brief-review' }),
+                            status: 'in_review',
+                            version: 1,
+                            createdAt: new Date('2026-03-11T11:30:00Z'),
+                            updatedAt: new Date('2026-03-11T12:00:00Z'),
+                        },
+                    ]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 21,
+                        name: 'Brief Flow',
+                        contentTypeId: 13,
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 41,
+                        workflowId: 21,
+                        fromState: 'draft',
+                        toState: 'in_review',
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 90,
+                        contentItemId: 200,
+                        workflowTransitionId: 41,
+                        status: 'pending',
+                        assignee: 'api_key:12',
+                        createdAt: new Date('2026-03-11T12:05:00Z'),
+                        updatedAt: new Date('2026-03-11T12:05:00Z'),
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>);
+
+        const resolution = await resolveWorkspaceTarget({
+            actorId: 'api_key:12',
+            actorType: 'api_key',
+            actorSource: 'db',
+            actorProfileId: 'api-key',
+            domainId: 7,
+            scopes: ['content:read', 'content:write'],
+            assignmentRefs: ['api_key:12', '12'],
+        }, {
+            intent: 'review',
+        });
+
+        expect(resolution.availableTargetCount).toBe(2);
+        expect(resolution.target).toEqual(expect.objectContaining({
+            id: 13,
+            rank: 1,
+            workTarget: expect.objectContaining({
+                kind: 'review-task',
+                status: 'ready',
+                reviewTask: expect.objectContaining({
+                    id: 90,
+                    actionable: true,
+                }),
+                contentItem: expect.objectContaining({
+                    label: 'Actionable brief review',
+                    slug: 'actionable-brief-review',
+                }),
+            }),
+        }));
+        expect(resolution.alternatives[0]).toEqual(expect.objectContaining({
+            id: 12,
+            rank: 2,
+            workTarget: expect.objectContaining({
+                kind: 'review-task',
+                status: 'blocked',
+                reviewTask: expect.objectContaining({
+                    id: 88,
+                    actionable: false,
+                }),
+            }),
+        }));
+    });
 });
