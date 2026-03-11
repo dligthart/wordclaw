@@ -18,14 +18,13 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # Optional local API runtime with environment pass-through.
+  # Optional local API runtime using the production Docker image.
   # Start with: docker compose --profile app up --build
   app:
-    image: node:20
+    build:
+      context: .
+    image: wordclaw:local
     profiles: ["app"]
-    working_dir: /workspace
-    volumes:
-      - ./:/workspace
     environment:
       PORT: "4000"
       DATABASE_URL: "postgres://postgres:postgres@db:5432/wordclaw"
@@ -37,12 +36,12 @@ services:
       OPENAI_EMBEDDING_DAILY_BUDGET: "${OPENAI_EMBEDDING_DAILY_BUDGET:-2000}"
       OPENAI_EMBEDDING_RETRIES: "${OPENAI_EMBEDDING_RETRIES:-3}"
       OPENAI_EMBEDDING_RETRY_BASE_MS: "${OPENAI_EMBEDDING_RETRY_BASE_MS:-500}"
+      RUN_DB_MIGRATIONS: "${RUN_DB_MIGRATIONS:-true}"
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "4000:4000"
-    command: sh -lc "npm install && npm run dev"
 
 volumes:
   postgres_data:

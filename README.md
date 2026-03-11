@@ -87,9 +87,42 @@ WordClaw uses Docker for the database and Drizzle ORM for schema management.
 
 2.  **Apply Migrations**:
     Push the schema to the database:
-    ```bash
-    npx drizzle-kit migrate
-    ```
+   ```bash
+   npx drizzle-kit migrate
+   ```
+
+## 🐳 Container Deployment
+
+WordClaw now ships with a production Docker image definition and a GHCR publish workflow.
+
+### Run locally with Docker Compose
+
+Start PostgreSQL and the API runtime together:
+
+```bash
+docker compose --profile app up --build
+```
+
+The `app` service now builds the production image, runs database migrations on startup by default, and serves the API on `http://localhost:4000`.
+
+### Run the published GHCR image
+
+The `Publish Container Image` workflow publishes:
+- `ghcr.io/dligthart/wordclaw:main` on pushes to `main`
+- `ghcr.io/dligthart/wordclaw:vX.Y.Z` on version tags
+- `ghcr.io/dligthart/wordclaw:latest` from the default branch
+
+Example:
+
+```bash
+docker run --rm -p 4000:4000 \
+  -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/wordclaw \
+  -e AUTH_REQUIRED=true \
+  -e API_KEYS=writer=content:read|content:write|audit:read \
+  ghcr.io/dligthart/wordclaw:main
+```
+
+Set `RUN_DB_MIGRATIONS=false` if you want to handle schema changes separately.
 
 ## 🏃‍♂️ Usage
 

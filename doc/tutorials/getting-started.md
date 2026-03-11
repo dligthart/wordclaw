@@ -75,6 +75,28 @@
    curl http://localhost:4000/health
    ```
 
+## Container Setup
+
+If you want a one-command runtime instead of a source checkout, use the production Docker image:
+
+```bash
+docker compose --profile app up --build
+```
+
+This now builds the app image locally, runs migrations on startup by default, and serves WordClaw on `http://localhost:4000`.
+
+Once the `Publish Container Image` workflow has run on GitHub, you can also pull the published image directly:
+
+```bash
+docker run --rm -p 4000:4000 \
+  -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/wordclaw \
+  -e AUTH_REQUIRED=true \
+  -e API_KEYS=writer=content:read|content:write|audit:read \
+  ghcr.io/dligthart/wordclaw:main
+```
+
+Set `RUN_DB_MIGRATIONS=false` if you need to manage migrations separately from the container startup.
+
 ## Start the Local MCP Server
 
 For AI agent integration over local stdio:
