@@ -2,6 +2,7 @@
 
 This demo shows the current supported WordClaw paid-content flow:
 
+- **Smart Workspace Targeting**: instead of hardcoding content type IDs, the frontend asks the runtime (`GET /api/workspace-target?intent=paid`) to auto-resolve the best capability payload schema
 - published content items as capability payloads
 - attached offers and license policies
 - L402 purchase challenges

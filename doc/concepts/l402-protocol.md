@@ -52,6 +52,8 @@ sequenceDiagram
 
 For paid content purchases, L402 is the currently enabled settlement rail in the RFC 0015 flow:
 
+0. `GET /api/workspace-target?intent=paid` allows an agent to discover which schema in the current domain is configured for paid content, without needing to manually inspect all content types.
+
 1. `POST /api/offers/:id/purchase` creates:
 - `payments` in `pending`
 - `entitlements` in `pending_payment`
