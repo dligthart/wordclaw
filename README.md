@@ -148,7 +148,20 @@ export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
 ```
 
-For deployment discovery before acting, use `GET /api/capabilities`, `GET /api/deployment-status`, or `mcp inspect`. The manifest now includes task-oriented routing hints plus explicit actor/auth profiles so an agent can choose the right surface, credential, and domain-context path for discovery, workspace selection, content authoring, workflow review, integration setup, provenance verification, and paid-content consumption. The status snapshot adds live readiness for the database, REST API, MCP transports, and any enabled agent-run worker. After authentication, use `GET /api/identity`, `GET /api/workspace-context`, `GET /api/workspace-target?intent=review`, `system://current-actor`, `system://workspace-context`, `node dist/cli/index.js capabilities whoami`, `node dist/cli/index.js workspace guide`, or `node dist/cli/index.js workspace resolve --intent review` to confirm the actor, active domain, and available content models before mutating state. The workspace snapshot now also groups the best authoring, workflow, review, and paid-content targets so an agent does not have to infer the next schema from a flat model list, and the target resolver returns the single best schema for a given task class. The workspace surfaces support `intent`, `search`, and `limit` narrowing when the agent already knows the task class. For intent-scoped MCP reads, use resources like `system://workspace-context/review/5`; for direct target resolution over MCP, use `resolve_workspace_target` or `system://workspace-target/review`. For review-task execution specifically, `node dist/cli/index.js workflow guide` now shows assignment refs plus per-task readiness for the current actor. For audit-trail investigation, `node dist/cli/index.js audit guide --entity-type content_item --entity-id 123` builds an actor-aware provenance plan. MCP clients can also ask for live task guidance directly with `guide_task`, for example `node dist/cli/index.js mcp call guide_task '{"taskId":"discover-deployment"}'`, `node dist/cli/index.js mcp call guide_task '{"taskId":"discover-workspace","intent":"review","workspaceLimit":5}'`, or `node dist/cli/index.js mcp call guide_task '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}'`.
+### Agent Guidance & Workspaces
+
+WordClaw APIs are natively self-describing. Instead of guessing API schemas from a flat list, agents can ask the runtime for guidance:
+
+* **Deployment Discovery**: Use `GET /api/capabilities`, `GET /api/deployment-status`, or `mcp inspect`. The manifest reports live readiness, task-oriented routing hints, and actor profiles so agents can choose the correct credential and surface.
+* **Identity & Context**: After authentication, use `GET /api/identity`, `GET /api/workspace-context`, `system://current-actor`, or `node dist/cli/index.js workspace guide` to confirm the actor, active domain, and available content models before mutating state.
+* **Smart Targeting**: The workspace snapshot groups the best targets for authoring, workflow review, and paid consumption. Use `GET /api/workspace-target?intent=review` or `node dist/cli/index.js workspace resolve --intent review` to resolve the single best schema target for a task.
+* **Live CLI Guidance**: Ask the CLI for generated, actor-aware guidance sequences:
+  * Workflow reviews: `node dist/cli/index.js workflow guide`
+  * Audit provenance: `node dist/cli/index.js audit guide --entity-type content_item --entity-id 123`
+* **Live MCP Guidance**: Use MCP tools and resources for targeted recommendations natively within your LLM context:
+  * `system://workspace-context/review/5` (Resources)
+  * `resolve_workspace_target` (Tools)
+  * `guide_task` (Tools): e.g., `{"taskId":"discover-workspace","intent":"review"}`
 
 ## 🎮 Demos
 
@@ -201,7 +214,10 @@ For detailed guides on setting up the Supervisor UI, authentication, testing, an
 - [MCP Integration](doc/guides/mcp-integration.md) — Model Context Protocol implementation details.
 
 WordClaw MCP is available both as a local stdio server (`npm run mcp:start`) and as a remote Streamable HTTP endpoint at `/mcp` when the main HTTP server is running.
-The MCP surface now also exposes `system://agent-guidance`, `system://deployment-status`, `system://workspace-context`, `system://workspace-target/<intent>`, a `task-guidance` prompt, and live `guide_task` plus `resolve_workspace_target` tools so connected agents can ask for the recommended workflow or single best schema target for tasks like deployment discovery, workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption without parsing the full manifest themselves.
+The MCP surface exposes rich guidance paths so connected agents can discover operations without parsing massive manifests:
+* **Resources:** `system://agent-guidance`, `system://deployment-status`, `system://workspace-context`, `system://workspace-target/<intent>`
+* **Prompts:** `task-guidance`
+* **Tools:** `guide_task`, `resolve_workspace_target`
 - [Feature Proposals (RFCs)](doc/rfc) — Methodology and history of proposed platform features.
 
 ### API Documentation
