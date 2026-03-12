@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, ArrowLeft, Clock, User, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, ArrowLeft, Clock } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import ReactMarkdown from 'react-markdown'
@@ -35,7 +35,22 @@ interface BlogPost {
   createdAt: string;
 }
 
-const API_BASE = 'http://localhost:4000/api'
+interface ContentTypeRecord {
+  id: number;
+  slug: string;
+}
+
+interface ContentItemRecord {
+  id: number;
+  data: string;
+  createdAt: string;
+  contentTypeId?: number;
+  status?: string;
+  version?: number;
+  updatedAt?: string;
+}
+
+const API_BASE = (import.meta.env.VITE_WORDCLAW_URL || 'http://localhost:4000/api').replace(/\/$/, '')
 
 // Fetch Helpers
 const useWordClawData = () => {
@@ -48,22 +63,29 @@ const useWordClawData = () => {
       try {
         const headers = { 'x-api-key': import.meta.env.VITE_WORDCLAW_API_KEY || '' };
 
-        const [ctRes, authorsRes] = await Promise.all([
-          fetch(`${API_BASE}/content-types`, { headers }).then(res => res.json()),
-          fetch(`${API_BASE}/content-items`, { headers }).then(res => res.json()) // Temp fetch everything
-        ])
+        const ctRes = await fetch(`${API_BASE}/content-types`, { headers }).then(res => res.json())
 
-        const types = ctRes.data || [];
-        const authorType = types.find((t: any) => t.slug === 'demo-author');
-        const postType = types.find((t: any) => t.slug === 'demo-blog-post');
+        const types = (ctRes.data || []) as ContentTypeRecord[];
+        const authorType = types.find((t) => t.slug === 'demo-author');
+        const postType = types.find((t) => t.slug === 'demo-blog-post');
 
         if (authorType && postType) {
           const [fetchedAuthors, fetchedPosts] = await Promise.all([
             fetch(`${API_BASE}/content-items?contentTypeId=${authorType.id}`, { headers }).then(res => res.json()),
             fetch(`${API_BASE}/content-items?contentTypeId=${postType.id}`, { headers }).then(res => res.json())
           ])
-          setAuthors(fetchedAuthors.data.map((item: any) => ({ ...item, data: JSON.parse(item.data) })))
-          setPosts(fetchedPosts.data.map((item: any) => ({ ...item, data: JSON.parse(item.data) })))
+          setAuthors(
+            ((fetchedAuthors.data || []) as ContentItemRecord[]).map((item) => ({
+              ...item,
+              data: JSON.parse(item.data),
+            }) as Author)
+          )
+          setPosts(
+            ((fetchedPosts.data || []) as ContentItemRecord[]).map((item) => ({
+              ...item,
+              data: JSON.parse(item.data),
+            }) as BlogPost)
+          )
         }
       } catch (err) {
         console.error("Failed to fetch data from WordClaw", err)

@@ -1,73 +1,52 @@
-# React + TypeScript + Vite
+# Demo Blog
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This demo shows a schema-driven blog frontend backed by WordClaw content models.
 
-Currently, two official plugins are available:
+It reads two content schemas from WordClaw:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- `demo-author`
+- `demo-blog-post`
 
-## React Compiler
+The blog then renders:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- the post index
+- author-linked post detail pages
+- a `Get Started` page that explains the human and agent integration paths
 
-## Expanding the ESLint configuration
+## Run It
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. Start the WordClaw backend:
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+   ```bash
+   npm run dev
+   ```
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+2. Seed demo blog content if you have not already:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+   Use the schema manager or existing setup flow to create:
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+   - a `demo-author` content model
+   - a `demo-blog-post` content model
+   - at least one author item and one blog post item
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+3. Create a local `.env` in this folder:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+   ```bash
+   VITE_WORDCLAW_URL=http://localhost:4000/api
+   VITE_WORDCLAW_API_KEY=<paste-api-key-here>
+   ```
+
+4. Install dependencies and start the demo:
+
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+5. Open the local Vite URL.
+
+## Notes
+
+- `VITE_WORDCLAW_URL` should point to the WordClaw API base, typically `http://localhost:4000/api`
+- the demo expects WordClaw to return blog and author item payloads in the `data` field
+- this demo is read-only; publishing and editorial workflow actions stay in the main WordClaw supervisor/runtime
