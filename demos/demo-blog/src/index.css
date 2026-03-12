@@ -18,13 +18,18 @@
 
 @layer base {
   :root {
-    --background: #f5f7fb;
+    --background: #f6f8fc;
     --foreground: #111322;
     --card: #ffffff;
     --card-foreground: #111322;
-    --border: #dde3ef;
+    --border: #d7deeb;
     --ring: #517de0;
-    --muted-foreground: #667085;
+    --muted-foreground: #475467;
+    --article-foreground: #2f3a4f;
+    --selection-background: #2e4cb8;
+    --selection-foreground: #f8fbff;
+    --inline-chip-background: #dbe7ff;
+    --inline-chip-foreground: #2441a8;
     --surface-shadow: 0 20px 48px -32px rgba(15, 23, 42, 0.22);
   }
 
@@ -35,6 +40,11 @@
     --card-foreground: #fafafa;
     --border: #27272a;
     --ring: #759ce4;
+    --article-foreground: #d6deef;
+    --selection-background: #8aa7ff;
+    --selection-foreground: #08111f;
+    --inline-chip-background: #18284c;
+    --inline-chip-foreground: #c7d7ff;
   }
 
   * {
@@ -43,7 +53,7 @@
 
   body {
     background:
-      radial-gradient(circle at top, rgba(81, 125, 224, 0.08), transparent 28%),
+      radial-gradient(circle at top, rgba(81, 125, 224, 0.09), transparent 30%),
       var(--background);
     @apply min-h-screen text-[var(--foreground)] antialiased transition-colors duration-300;
   }
@@ -52,11 +62,33 @@
     display: block;
     max-width: 100%;
   }
+
+  ::selection {
+    background: var(--selection-background);
+    color: var(--selection-foreground);
+    text-shadow: none;
+  }
+
+  ::-moz-selection {
+    background: var(--selection-background);
+    color: var(--selection-foreground);
+    text-shadow: none;
+  }
 }
 
 @layer components {
   .article-link {
-    @apply font-semibold text-brand-600 underline decoration-brand-300/70 underline-offset-4 transition-colors hover:text-brand-500 dark:text-brand-300 dark:decoration-brand-400/40 dark:hover:text-brand-200;
+    @apply font-semibold underline decoration-brand-300/80 underline-offset-4 transition-colors hover:text-brand-500 dark:decoration-brand-400/50 dark:hover:text-brand-200;
+    color: #3359d4;
+  }
+
+  .article-link::selection,
+  .article-link::-moz-selection,
+  .article-body *::selection,
+  .article-body *::-moz-selection {
+    background: var(--selection-background);
+    color: var(--selection-foreground);
+    -webkit-text-fill-color: var(--selection-foreground);
   }
 
   .demo-surface {
@@ -65,7 +97,8 @@
   }
 
   .article-body {
-    @apply text-[1.02rem] leading-8 text-[var(--muted-foreground)];
+    @apply text-[1.02rem] leading-8;
+    color: var(--article-foreground);
   }
 
   .article-body > * + * {
@@ -91,7 +124,8 @@
   }
 
   .article-body p {
-    @apply text-pretty leading-8 text-[var(--muted-foreground)];
+    @apply text-pretty leading-8;
+    color: var(--article-foreground);
   }
 
   .article-body strong {
@@ -103,7 +137,8 @@
   }
 
   .article-body blockquote {
-    @apply rounded-r-3xl border-l-4 border-brand-400/70 bg-brand-50/70 px-6 py-4 text-lg font-medium italic text-[var(--muted-foreground)] dark:border-brand-400/40 dark:bg-[var(--card)] dark:text-gray-300;
+    @apply rounded-r-3xl border-l-4 border-brand-400/70 bg-brand-50/70 px-6 py-4 text-lg font-medium italic dark:border-brand-400/40 dark:bg-[var(--card)];
+    color: var(--article-foreground);
   }
 
   .article-body ul,
@@ -132,7 +167,9 @@
   }
 
   .article-body :not(pre) > code {
-    @apply rounded-md bg-brand-50 px-1.5 py-0.5 text-[0.92em] font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300;
+    @apply rounded-md px-1.5 py-0.5 text-[0.92em] font-semibold;
+    background: var(--inline-chip-background);
+    color: var(--inline-chip-foreground);
   }
 
   .article-body pre {
@@ -152,6 +189,14 @@
   .article-body th,
   .article-body td {
     @apply border-b border-[var(--border)] px-4 py-3 align-top;
+  }
+
+  .article-body th {
+    @apply font-semibold text-[var(--foreground)];
+  }
+
+  .article-body td {
+    color: var(--article-foreground);
   }
 
   .article-body tbody tr:last-child td {
