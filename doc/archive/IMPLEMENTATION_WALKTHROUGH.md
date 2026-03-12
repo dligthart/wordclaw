@@ -254,7 +254,7 @@ The Fastify server starts successfully and listens on port 4000.
 
 ### API & Documentation
 - **API Prefix**: `/api`
-- **Swagger UI**: Available at [http://localhost:4000/documentation](http://localhost:4000/documentation)
+- **Swagger UI**: Available at `http://localhost:4000/documentation`
 - **Health Check**: `GET /health` returns status ok.
 
 ### Verification Scripts

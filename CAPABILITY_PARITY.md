@@ -38,6 +38,7 @@ Contract tiers:
 | List item versions | `GET /api/content-items/:id/versions` | `contentItemVersions` | `get_content_item_versions` | N/A |
 | Rollback content item | `POST /api/content-items/:id/rollback` | `rollbackContentItem` | `rollback_content_item` | Yes |
 | List audit logs | `GET /api/audit-logs` (`cursor`, `limit`) | `auditLogs(cursor, limit)` | `get_audit_logs(cursor, limit)` | N/A |
+| Semantic search | `GET /api/search/semantic` (`query`) | N/A | `semantic_search` | N/A |
 
 ## Enforcement Rule
 

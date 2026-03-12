@@ -28,6 +28,7 @@ export default withMermaid(defineConfig({
                     { text: 'CI Migrations and Tests Troubleshooting', link: '/guides/ci-migrations-troubleshooting' },
                     { text: 'Blog Integration', link: '/guides/blog-integration-guide' },
                     { text: 'CLI Guide', link: '/guides/cli-guide' },
+                    { text: 'LangGraph MCP Starter', link: '/guides/langgraph-mcp-starter' },
                     { text: 'MCP Integration', link: '/guides/mcp-integration' }
                 ]
             },

@@ -21,3 +21,38 @@ features:
   - title: Guided Agent Workflows
     details: Use CLI and MCP guidance paths for content authoring, workflow review, integration setup, provenance verification, and paid-content consumption.
 ---
+
+## Quick Paths
+
+- [Run WordClaw locally](/tutorials/getting-started) to start the API, database, supervisor UI, and MCP surface.
+- [Connect an external agent with MCP](/guides/mcp-integration) to inspect tools, resources, prompts, actor identity, and workspace context.
+- [Start with the LangGraph MCP starter](/guides/langgraph-mcp-starter) to attach a LangGraph agent without writing a custom SDK.
+
+## Adoption Paths
+
+### Deploy the runtime
+
+Use the local Docker path when you want the fastest trial loop:
+
+```bash
+docker compose --profile app up --build
+```
+
+That gives you:
+
+- REST API on `http://localhost:4000/api`
+- Swagger docs on `http://localhost:4000/documentation`
+- MCP endpoint on `http://localhost:4000/mcp`
+
+### Explore from the CLI
+
+```bash
+npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
+npx tsx src/cli/index.ts workspace guide
+```
+
+### Explore from LangGraph
+
+```bash
+npx tsx demos/langgraph-mcp-starter/index.ts inspect --transport http --mcp-url http://localhost:4000/mcp --api-key writer
+```

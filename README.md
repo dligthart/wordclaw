@@ -277,13 +277,20 @@ WordClaw includes core demos plus a clearly separated experimental sandbox in `d
    - Run the smoke suite: `npx tsx demos/mcp-demo-agent.ts smoke`
    - Call one tool directly: `npx tsx demos/mcp-demo-agent.ts call list_content_types '{"limit":5}'`
 
-5. **Paid Capability Library (`demos/agent-skills-marketplace`)**  
+5. **LangGraph MCP Starter (`demos/langgraph-mcp-starter`)**  
+   Core adoption demo.
+   A minimal LangGraph agent that connects to WordClaw through MCP, inspects the runtime first, and then acts through generic wrapper tools instead of a custom SDK.
+   - Inspect over stdio: `npx tsx demos/langgraph-mcp-starter/index.ts inspect`
+   - Inspect a running MCP endpoint: `npx tsx demos/langgraph-mcp-starter/index.ts inspect --transport http --mcp-url http://localhost:4000/mcp --api-key writer`
+   - Run a LangGraph walkthrough: `OPENAI_API_KEY=sk-... npx tsx demos/langgraph-mcp-starter/index.ts demo workspace --transport http --mcp-url http://localhost:4000/mcp --api-key writer`
+
+6. **Paid Capability Library (`demos/agent-skills-marketplace`)**  
    Experimental demo aligned to current runtime behavior.
    A frontend showcase for the supported paid-content flow: published capability items, offers, entitlement activation, L402 confirmation, and local execution after unlock. It remains a demo surface, not the main product story.
    - Run the setup script: `npx tsx scripts/setup-skills-marketplace.ts`
    - Start the demo: `cd demos/agent-skills-marketplace && npm run dev`
 
-6. **Coinbase AgentKit L402 Demo (`demos/agentkit-l402-client.ts`)**  
+7. **Coinbase AgentKit L402 Demo (`demos/agentkit-l402-client.ts`)**  
    Core payments demo.
    An autonomous LangChain agent running via Coinbase AgentKit. Features a custom `ActionProvider` that bridges the LLM to Lightning to autonomously pay an L402 invoice upon receiving a `402 Payment Required` response.
    - **Note:** This demo does *not* require a Coinbase Developer Platform (CDP) API key because we supply a custom ActionProvider in place of the default CDP EVM wallets. It also uses WordClaw's local mocked Lightning preimage.
@@ -297,6 +304,7 @@ For detailed guides on setting up the Supervisor UI, authentication, testing, an
 - [Drizzle Migrations Guide](doc/reference/drizzle-migrations.md) — How to generate/apply/push schema migrations safely.
 - [Architecture Overview](doc/reference/architecture.md) — System layer breakdown and data models.
 - [Features Outline](doc/concepts/features.md) — Content API and Human Supervisor Web Interface capabilities.
+- [LangGraph MCP Starter](doc/guides/langgraph-mcp-starter.md) — Fastest path to attach a LangGraph agent to WordClaw through MCP.
 - [MCP Integration](doc/guides/mcp-integration.md) — Model Context Protocol implementation details.
 
 WordClaw MCP is available both as a local stdio server (`npm run mcp:start`) and as a remote Streamable HTTP endpoint at `/mcp` when the main HTTP server is running.

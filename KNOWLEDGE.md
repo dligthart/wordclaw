@@ -19,7 +19,7 @@ WordClaw is an AI-first Headless CMS designed for agentic interaction, combining
 
 ### Stack
 *   **Backend Interface:** Node.js (TypeScript), Fastify (REST), Mercurius (GraphQL), Model Context Protocol (MCP).
-*   **Persistence Layer:** Drizzle ORM (currently modeling SQLite schemas).
+*   **Persistence Layer:** Drizzle ORM modeling PostgreSQL schemas, utilizing `pgvector` natively for high-dimensional embedding storage and semantic search inversion.
 *   **Frontend UI:** SvelteKit 5, utilizing global `$state` runes for reactive properties.
 
 ### Architectural Pillars
