@@ -23,6 +23,8 @@ import {
   BookOpenText,
   Clock,
   LayoutDashboard,
+  Loader2,
+  Search,
   Shapes,
   Tag,
   Users,
@@ -1403,12 +1405,17 @@ function Layout({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          <Link
-            className="inline-flex h-10 items-center justify-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-600"
-            to="/get-started"
-          >
-            Get Started
-          </Link>
+          <div className="flex items-center gap-4">
+            <div className="hidden lg:block">
+              <SemanticSearch />
+            </div>
+            <Link
+              className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-600"
+              to="/get-started"
+            >
+              Get Started
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -1527,6 +1534,95 @@ function ScrollToTop() {
   }, [pathname])
 
   return null
+}
+
+function SemanticSearch() {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<{ chunkId: string, contentItemId: number, text: string, distance: number }[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
+  const { posts } = useDemoData()
+
+  useEffect(() => {
+    const handler = setTimeout(async () => {
+      if (!query.trim()) {
+        setResults([])
+        return
+      }
+
+      setIsLoading(true)
+      try {
+        const apiKey = import.meta.env.VITE_WORDCLAW_API_KEY || ''
+        const res = await fetch(`${API_BASE}/search/semantic?query=${encodeURIComponent(query)}`, {
+          headers: { 'x-api-key': apiKey }
+        })
+        const payload = await res.json()
+        if (res.ok && payload.data) {
+          setResults(payload.data)
+        } else {
+          setResults([])
+        }
+      } catch (err) {
+        setResults([])
+      } finally {
+        setIsLoading(false)
+      }
+    }, 500)
+
+    return () => clearTimeout(handler)
+  }, [query])
+
+  return (
+    <div className="relative w-full xl:w-72">
+      <div className="relative flex items-center">
+        <Search className="absolute left-3 text-[var(--muted-foreground)]" size={16} />
+        <input
+          className="h-9 w-full rounded-full border border-[var(--border)] bg-[var(--background)]/50 pl-10 pr-4 text-sm text-[var(--foreground)] outline-none transition-all focus:border-brand-500 focus:bg-[var(--background)] focus:shadow-sm"
+          onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setIsOpen(true)
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder="Semantic search..."
+          value={query}
+        />
+        {isLoading && (
+          <Loader2 className="absolute right-3 animate-spin text-[var(--muted-foreground)]" size={16} />
+        )}
+      </div>
+
+      {isOpen && query.trim() && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-[calc(100vw-2rem)] shrink-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-xl sm:w-[28rem]">
+          <div className="max-h-[24rem] overflow-y-auto p-2">
+            {results.length === 0 && !isLoading ? (
+              <p className="p-4 text-center text-sm text-[var(--muted-foreground)]">No relevant content found.</p>
+            ) : (
+              results.map((result) => {
+                const post = posts.find((p) => p.id === result.contentItemId)
+                if (!post) return null
+                return (
+                  <Link
+                    className="block rounded-xl p-3 transition-colors hover:bg-[var(--background)]"
+                    key={result.chunkId}
+                    to={`/post/${post.data.slug}`}
+                  >
+                    <p className="text-sm font-semibold text-[var(--foreground)]">{post.data.title}</p>
+                    <p className="mt-1 line-clamp-2 border-l-2 border-brand-500 pl-2 text-xs text-[var(--muted-foreground)] opacity-80">
+                      {result.text}
+                    </p>
+                    <p className="mt-2 text-[10px] font-medium text-brand-500">
+                      Relevance Score: {((1 - result.distance) * 100).toFixed(1)}%
+                    </p>
+                  </Link>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function App() {
