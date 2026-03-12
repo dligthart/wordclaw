@@ -300,6 +300,28 @@
             return await res.json();
         }
 
+        async function fetchAllContentItems(contentTypeId, apiKey) {
+            const items = [];
+            let cursor = null;
+
+            do {
+                const params = new URLSearchParams({
+                    contentTypeId: String(contentTypeId),
+                    limit: '50',
+                });
+
+                if (cursor) {
+                    params.set('cursor', cursor);
+                }
+
+                const response = await fetchAPI(`/content-items?${params.toString()}`, apiKey);
+                items.push(...(response.data || []));
+                cursor = response.meta?.nextCursor ?? null;
+            } while (cursor);
+
+            return items;
+        }
+
         async function loadContent() {
             const grid = document.getElementById('grid');
             const loader = document.getElementById('loader');
@@ -327,8 +349,7 @@
                 }
 
                 // Fetch Content Items
-                const itemsRes = await fetchAPI(`/content-items?contentTypeId=${productCt.id}`, tenant.key);
-                const items = itemsRes.data;
+                const items = await fetchAllContentItems(productCt.id, tenant.key);
 
                 // Render
                 grid.innerHTML = '';

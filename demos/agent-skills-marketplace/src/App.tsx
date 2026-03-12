@@ -84,7 +84,10 @@ type AccessState = 'idle' | 'loading' | 'challenge' | 'confirming' | 'ready';
 
 type ApiEnvelope<T> = {
   data: T;
-  meta?: Record<string, unknown>;
+  meta?: {
+    nextCursor?: string | null;
+    hasMore?: boolean;
+  };
 };
 
 function getErrorMessage(payload: unknown, fallback: string) {
@@ -227,36 +230,61 @@ export default function App() {
           );
         }
 
-        const contentItemsResponse = await fetch(
-          `${API_URL}/content-items?contentTypeId=${capabilityType.id}`,
-          {
-            headers: { 'x-api-key': API_KEY },
-          },
-        );
-        const contentItemsPayload = (await contentItemsResponse.json()) as ApiEnvelope<
-          Array<{
-            id: number;
-            contentTypeId: number;
-            status: string;
-            version: number;
-            createdAt: string;
-            updatedAt: string;
-            data: string | CapabilityData;
-          }>
-        >;
+        const contentItems: Array<{
+          id: number;
+          contentTypeId: number;
+          status: string;
+          version: number;
+          createdAt: string;
+          updatedAt: string;
+          data: string | CapabilityData;
+        }> = []
+        let cursor: string | null | undefined = undefined
 
-        if (!contentItemsResponse.ok) {
-          throw new Error(
-            getErrorMessage(
-              contentItemsPayload,
-              'Failed to load capability content items.',
-            ),
+        do {
+          const query = new URLSearchParams({
+            contentTypeId: String(capabilityType.id),
+            status: 'published',
+            limit: '50',
+          })
+
+          if (cursor) {
+            query.set('cursor', cursor)
+          }
+
+          const contentItemsResponse = await fetch(
+            `${API_URL}/content-items?${query.toString()}`,
+            {
+              headers: { 'x-api-key': API_KEY },
+            },
           );
-        }
+          const contentItemsPayload = (await contentItemsResponse.json()) as ApiEnvelope<
+            Array<{
+              id: number;
+              contentTypeId: number;
+              status: string;
+              version: number;
+              createdAt: string;
+              updatedAt: string;
+              data: string | CapabilityData;
+            }>
+          >;
 
-        const nextCapabilities = contentItemsPayload.data
+          if (!contentItemsResponse.ok) {
+            throw new Error(
+              getErrorMessage(
+                contentItemsPayload,
+                'Failed to load capability content items.',
+              ),
+            );
+          }
+
+          contentItems.push(...contentItemsPayload.data)
+          cursor = contentItemsPayload.meta?.nextCursor ?? null
+        } while (cursor)
+
+        const nextCapabilities = contentItems
           .map(parseCapability)
-          .filter((capability) => capability.status === 'published')
           .sort(
             (left, right) =>
               new Date(right.updatedAt).getTime() -

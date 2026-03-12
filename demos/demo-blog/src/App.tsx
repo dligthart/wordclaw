@@ -69,8 +69,17 @@ interface ContentTypeRecord {
 interface ContentItemRecord {
   id: number
   data: string | Record<string, unknown>
+  status?: string
   createdAt: string
   updatedAt?: string
+}
+
+interface ApiEnvelope<T> {
+  data: T
+  meta?: {
+    nextCursor?: string | null
+    hasMore?: boolean
+  }
 }
 
 type DemoLoadResult = {
@@ -143,7 +152,7 @@ function useWordClawDataSource(): DemoLoadResult {
 
         const headers = { 'x-api-key': apiKey }
 
-        const fetchEnvelope = async <T,>(path: string): Promise<T> => {
+        const fetchEnvelope = async <T,>(path: string): Promise<ApiEnvelope<T>> => {
           const res = await fetch(`${API_BASE}${path}`, { headers })
           const payload = await res.json().catch(() => ({}))
 
@@ -159,7 +168,39 @@ function useWordClawDataSource(): DemoLoadResult {
             throw new Error(`${errorMessage}.${remediation}`.trim())
           }
 
-          return (payload.data || []) as T
+          return {
+            data: (payload.data || []) as T,
+            meta: payload.meta,
+          }
+        }
+
+        const fetchContentItemCollection = async (
+          contentTypeId: number,
+          pageSize = 50,
+        ): Promise<ContentItemRecord[]> => {
+          const records: ContentItemRecord[] = []
+          let cursor: string | null | undefined = undefined
+
+          do {
+            const query = new URLSearchParams({
+              contentTypeId: String(contentTypeId),
+              status: 'published',
+              limit: String(pageSize),
+            })
+
+            if (cursor) {
+              query.set('cursor', cursor)
+            }
+
+            const payload = await fetchEnvelope<ContentItemRecord[]>(
+              `/content-items?${query.toString()}`,
+            )
+
+            records.push(...payload.data)
+            cursor = payload.meta?.nextCursor ?? null
+          } while (cursor)
+
+          return records
         }
 
         const parseItemData = <T,>(item: ContentItemRecord): T =>
@@ -167,9 +208,10 @@ function useWordClawDataSource(): DemoLoadResult {
           ? (JSON.parse(item.data) as T)
           : (item.data as T))
 
-        const types = await fetchEnvelope<ContentTypeRecord[]>(
+        const typesResponse = await fetchEnvelope<ContentTypeRecord[]>(
           '/content-types?limit=500',
         )
+        const types = typesResponse.data
 
         const authorType = types.find((entry) => entry.slug === 'demo-author')
         const postType = types.find((entry) => entry.slug === 'demo-blog-post')
@@ -187,12 +229,8 @@ function useWordClawDataSource(): DemoLoadResult {
         }
 
         const [fetchedAuthors, fetchedPosts] = await Promise.all([
-          fetchEnvelope<ContentItemRecord[]>(
-            `/content-items?contentTypeId=${authorType.id}&limit=100`,
-          ),
-          fetchEnvelope<ContentItemRecord[]>(
-            `/content-items?contentTypeId=${postType.id}&limit=100`,
-          ),
+          fetchContentItemCollection(authorType.id),
+          fetchContentItemCollection(postType.id),
         ])
 
         const authors = fetchedAuthors.map(
