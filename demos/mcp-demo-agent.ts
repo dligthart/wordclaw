@@ -9,6 +9,7 @@
  *   npx tsx demos/mcp-demo-agent.ts resource system://capabilities
  *   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin --once
  *   npx tsx demos/mcp-demo-agent.ts watch api_key.create --transport http --api-key remote-admin --once
+ *   npx tsx demos/mcp-demo-agent.ts watch --recipe integration-admin --transport http --api-key remote-admin --once
  *
  * By default the demo agent starts a local stdio MCP session. Use --transport http
  * plus --api-key (or WORDCLAW_API_KEY) when you want a persistent remote session
@@ -39,6 +40,7 @@ type DemoAgentOptions = {
     endpoint?: string;
     apiKey?: string;
     baseUrl?: string;
+    recipeId?: string;
     filters?: Record<string, unknown>;
     once: boolean;
 };
@@ -78,7 +80,7 @@ Usage:
   npx tsx demos/mcp-demo-agent.ts call <toolName> [jsonArgs] [options]
   npx tsx demos/mcp-demo-agent.ts prompt <promptName> [jsonArgs] [options]
   npx tsx demos/mcp-demo-agent.ts resource <uri> [options]
-  npx tsx demos/mcp-demo-agent.ts watch <topic> [options]
+  npx tsx demos/mcp-demo-agent.ts watch [topic] [options]
 
 Examples:
   npx tsx demos/mcp-demo-agent.ts inspect
@@ -89,12 +91,14 @@ Examples:
   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin
   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin --filters '{"contentTypeId":12}'
   npx tsx demos/mcp-demo-agent.ts watch api_key.create --transport http --api-key remote-admin --once
+  npx tsx demos/mcp-demo-agent.ts watch --recipe integration-admin --transport http --api-key remote-admin --once
 
 Options:
   --transport <stdio|http>  Choose stdio (default) or remote HTTP MCP transport
   --endpoint <url>          Explicit MCP endpoint (defaults to /mcp on WORDCLAW_BASE_URL)
   --base-url <url>          Base URL used to derive /mcp and optional REST follow-up reads
   --api-key <key>           API key for remote HTTP MCP sessions and REST follow-up reads
+  --recipe <id>             Optional reactive recipe id, e.g. integration-admin
   --filters <json>          Optional reactive event filters, e.g. {"contentTypeId":12}
   --once                    Exit after the first matching reactive notification
 
@@ -158,6 +162,7 @@ function parseCommandArgs(rawArgs: string[]): ParsedCommandArgs {
         endpoint: process.env.WORDCLAW_MCP_URL,
         apiKey: process.env.WORDCLAW_API_KEY,
         baseUrl: process.env.WORDCLAW_BASE_URL,
+        recipeId: undefined,
         filters: undefined,
         once: false,
     };
@@ -191,6 +196,8 @@ function parseCommandArgs(rawArgs: string[]): ParsedCommandArgs {
             defaults.apiKey = nextValue;
         } else if (value === '--base-url') {
             defaults.baseUrl = nextValue;
+        } else if (value === '--recipe') {
+            defaults.recipeId = nextValue;
         } else if (value === '--filters') {
             const parsed = parseJsonValue(nextValue, 'reactive filters');
             if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -283,8 +290,8 @@ function normalizeContentFields(value: Record<string, unknown> | string | undefi
     return value;
 }
 
-function printReactiveSummary(topic: string, notification: ReactiveNotification) {
-    console.log(`\n=== Reactive Event: ${topic} ===`);
+function printReactiveSummary(selection: string, notification: ReactiveNotification) {
+    console.log(`\n=== Reactive Event: ${selection} ===`);
     console.log(`Matched topics: ${notification.params.matchedTopics.join(', ')}`);
     console.log(`Matched subscriptions: ${JSON.stringify(notification.params.matchedSubscriptions)}`);
     console.log(`Entity: ${notification.params.event.entityType} #${notification.params.event.entityId}`);
@@ -293,13 +300,18 @@ function printReactiveSummary(topic: string, notification: ReactiveNotification)
     console.log(`Created at: ${notification.params.event.createdAt}`);
 }
 
-async function watchReactiveTopic(options: DemoAgentOptions, topic: string) {
+async function watchReactiveTopic(options: DemoAgentOptions, topic?: string) {
     if (options.transport !== 'http') {
         throw new Error('watch requires --transport http because reactive subscriptions only exist on remote session-backed /mcp.');
     }
 
+    if (!topic && !options.recipeId) {
+        throw new Error('watch requires either a topic positional argument or --recipe <id>.');
+    }
+
     const endpoint = resolveRemoteMcpEndpoint(options);
     const baseUrl = options.baseUrl ?? deriveBaseUrl(endpoint);
+    const selection = options.recipeId ? `recipe:${options.recipeId}` : (topic as string);
     const client = new Client({
         name: 'wordclaw-mcp-demo-agent',
         version: '1.0.0',
@@ -319,7 +331,7 @@ async function watchReactiveTopic(options: DemoAgentOptions, topic: string) {
             return;
         }
 
-        printReactiveSummary(topic, parsed.data);
+        printReactiveSummary(selection, parsed.data);
 
         if (parsed.data.params.event.entityType === 'content_item') {
             try {
@@ -392,7 +404,8 @@ async function watchReactiveTopic(options: DemoAgentOptions, topic: string) {
             await client.callTool({
                 name: 'subscribe_events',
                 arguments: {
-                    topics: [topic],
+                    ...(topic ? { topics: [topic] } : {}),
+                    ...(options.recipeId ? { recipeId: options.recipeId } : {}),
                     replaceExisting: true,
                     ...(options.filters ? { filters: options.filters } : {}),
                 },
@@ -401,7 +414,7 @@ async function watchReactiveTopic(options: DemoAgentOptions, topic: string) {
         );
         const subscription = JSON.parse(subscriptionText) as SubscribeResult;
 
-        if (!subscription.subscribedTopics?.includes(topic)) {
+        if (!subscription.subscribedTopics || subscription.subscribedTopics.length === 0) {
             throw new Error(`Subscription failed: ${subscriptionText}`);
         }
 
@@ -446,8 +459,8 @@ async function main() {
 
     if (command === 'watch') {
         const topic = parsed.positionals[0];
-        if (!topic) {
-            throw new Error('Missing topic for watch command.');
+        if (!topic && !parsed.options.recipeId) {
+            throw new Error('Missing topic or --recipe for watch command.');
         }
 
         await watchReactiveTopic(parsed.options, topic);

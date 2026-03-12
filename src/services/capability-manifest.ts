@@ -12,6 +12,7 @@ import {
 import {
     SUPPORTED_REACTIVE_FILTER_FIELDS,
     SUPPORTED_REACTIVE_EVENT_TOPICS,
+    SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES,
     WORDCLAW_EVENT_NOTIFICATION_METHOD,
 } from '../mcp/reactive-events.js';
 
@@ -498,6 +499,13 @@ export function buildCapabilityManifest() {
                     notificationMethod: WORDCLAW_EVENT_NOTIFICATION_METHOD,
                     supportedTopics: [...SUPPORTED_REACTIVE_EVENT_TOPICS],
                     supportedFilterFields: [...SUPPORTED_REACTIVE_FILTER_FIELDS],
+                    subscriptionRecipes: SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES.map((recipe) => ({
+                        id: recipe.id,
+                        title: recipe.title,
+                        description: recipe.description,
+                        topics: [...recipe.topics],
+                        requiredScopes: [...recipe.requiredScopes],
+                    })),
                 },
             },
             graphql: {

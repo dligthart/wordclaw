@@ -57,6 +57,61 @@ export const SUPPORTED_REACTIVE_FILTER_FIELDS = [
     'reviewTaskId',
 ] as const;
 
+export const SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES = [
+    {
+        id: 'content-publication',
+        title: 'Content publication',
+        description: 'Watch published content items as they become visible to downstream consumers.',
+        topics: ['content_item.published'],
+        requiredScopes: ['content:read', 'content:write', 'admin'],
+    },
+    {
+        id: 'review-decisions',
+        title: 'Review decisions',
+        description: 'Watch review approval and rejection outcomes for supervisor workflows.',
+        topics: ['workflow.review.approved', 'workflow.review.rejected'],
+        requiredScopes: ['content:read', 'content:write', 'admin'],
+    },
+    {
+        id: 'content-lifecycle',
+        title: 'Content lifecycle',
+        description: 'Watch content item creation, updates, rollback, and publication in one subscription set.',
+        topics: [
+            'content_item.create',
+            'content_item.update',
+            'content_item.delete',
+            'content_item.rollback',
+            'content_item.published',
+        ],
+        requiredScopes: ['content:read', 'content:write', 'admin'],
+    },
+    {
+        id: 'schema-governance',
+        title: 'Schema governance',
+        description: 'Watch content model creation, updates, and deletion events.',
+        topics: ['content_type.create', 'content_type.update', 'content_type.delete'],
+        requiredScopes: ['content:read', 'content:write', 'admin'],
+    },
+    {
+        id: 'integration-admin',
+        title: 'Integration administration',
+        description: 'Watch API key and webhook changes for outbound integration setup.',
+        topics: [
+            'api_key.create',
+            'api_key.update',
+            'api_key.delete',
+            'webhook.create',
+            'webhook.update',
+            'webhook.delete',
+        ],
+        requiredScopes: ['admin'],
+    },
+] as const;
+
+export const REACTIVE_SUBSCRIPTION_RECIPE_IDS = SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES.map(
+    (recipe) => recipe.id,
+) as [string, ...string[]];
+
 export const ReactiveEventFiltersSchema = z.object({
     entityType: z.string().optional(),
     entityId: z.number().int().positive().optional(),
@@ -70,6 +125,7 @@ export const ReactiveEventFiltersSchema = z.object({
 });
 
 export type ReactiveEventFilters = z.infer<typeof ReactiveEventFiltersSchema>;
+export type ReactiveSubscriptionRecipe = typeof SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES[number];
 
 export type ReactiveSubscription = {
     topic: string;
@@ -182,6 +238,10 @@ export function isSameReactiveSubscription(
 
 export function isReactiveTopicSupported(topic: string): topic is ReactiveEventTopic {
     return (SUPPORTED_REACTIVE_EVENT_TOPICS as readonly string[]).includes(topic);
+}
+
+export function getReactiveSubscriptionRecipe(recipeId: string): ReactiveSubscriptionRecipe | null {
+    return SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES.find((recipe) => recipe.id === recipeId) ?? null;
 }
 
 export function canSubscribeToReactiveTopic(principal: ActorPrincipal, topic: string): boolean {

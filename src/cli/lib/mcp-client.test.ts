@@ -139,6 +139,16 @@ describe('WordClawMcpClient over HTTP', () => {
                         transport: 'streamable-http',
                         subscriptionTool: 'subscribe_events',
                         notificationMethod: 'notifications/wordclaw/event',
+                        subscriptionRecipes: expect.arrayContaining([
+                            expect.objectContaining({
+                                id: 'content-publication',
+                                topics: ['content_item.published'],
+                            }),
+                            expect.objectContaining({
+                                id: 'integration-admin',
+                                requiredScopes: ['admin'],
+                            }),
+                        ]),
                         supportedFilterFields: expect.arrayContaining(['contentTypeId', 'entityId']),
                     }),
                 }),

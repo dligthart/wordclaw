@@ -31,6 +31,7 @@ export type DeploymentStatusSnapshot = {
                 subscriptionTool: string;
                 notificationMethod: string;
                 supportedTopicCount: number;
+                supportedRecipeCount: number;
                 supportedFilterFields: string[];
             };
             note: string;
@@ -125,6 +126,7 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                     subscriptionTool: manifest.protocolSurfaces.mcp.reactive.subscriptionTool,
                     notificationMethod: manifest.protocolSurfaces.mcp.reactive.notificationMethod,
                     supportedTopicCount: manifest.protocolSurfaces.mcp.reactive.supportedTopics.length,
+                    supportedRecipeCount: manifest.protocolSurfaces.mcp.reactive.subscriptionRecipes.length,
                     supportedFilterFields: [...manifest.protocolSurfaces.mcp.reactive.supportedFilterFields],
                 },
                 note: manifest.protocolSurfaces.mcp.attachable

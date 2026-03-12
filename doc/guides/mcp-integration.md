@@ -114,6 +114,12 @@ Reactive event delivery currently ships as an MCP session feature on the remote 
 
 - Tool: `subscribe_events`
 - Notification method: `notifications/wordclaw/event`
+- Optional `recipeId` for curated subscriptions:
+  - `content-publication`
+  - `review-decisions`
+  - `content-lifecycle`
+  - `schema-governance`
+  - `integration-admin`
 - Optional filter fields:
   - `entityType`, `entityId`, `action`
   - `contentTypeId`, `status`, `decision`
@@ -139,6 +145,8 @@ Scope expectations for those families are intentionally conservative:
 - `api_key.*` and `webhook.*` require `admin`
 - `*` remains admin-only
 
+Use `recipeId` when you want a higher-level workflow subscription without enumerating every raw topic yourself. You can still combine a recipe with explicit `topics` and optional filters in the same `subscribe_events` call.
+
 The CLI is intentionally short-lived, so `wordclaw mcp call subscribe_events ...` is useful for contract inspection but not for staying attached long enough to receive pushed notifications. Use a persistent MCP client or the verification script below when you want to observe live events.
 
 ```bash
@@ -160,6 +168,13 @@ npx tsx demos/mcp-demo-agent.ts watch api_key.create \
   --base-url http://localhost:4000 \
   --api-key remote-admin \
   --once
+
+npx tsx demos/mcp-demo-agent.ts watch \
+  --recipe integration-admin \
+  --transport http \
+  --base-url http://localhost:4000 \
+  --api-key remote-admin \
+  --once
 ```
 
 The verification script:
@@ -174,7 +189,7 @@ The demo agent `watch` mode is better for iterative testing:
 
 - keeps the MCP session open until you press `Ctrl+C`
 - prints the discovered reactive contract from `system://capabilities`
-- subscribes to the requested topic through `subscribe_events`, optionally with a filter object
+- subscribes to the requested topic or recipe through `subscribe_events`, optionally with a filter object
 - reacts to matching `notifications/wordclaw/event` payloads
 - fetches the latest REST snapshot for `content_item` events so you can see the post-notification follow-up
 

@@ -173,6 +173,13 @@ describe('API Route Contracts', () => {
                                 subscriptionTool: string;
                                 notificationMethod: string;
                                 supportedTopics: string[];
+                                subscriptionRecipes: Array<{
+                                    id: string;
+                                    title: string;
+                                    description: string;
+                                    topics: string[];
+                                    requiredScopes: string[];
+                                }>;
                                 supportedFilterFields: string[];
                             };
                         };
@@ -239,6 +246,16 @@ describe('API Route Contracts', () => {
                 standaloneSsePath: '/mcp',
                 subscriptionTool: 'subscribe_events',
                 notificationMethod: 'notifications/wordclaw/event',
+                subscriptionRecipes: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'content-publication',
+                        topics: ['content_item.published'],
+                    }),
+                    expect.objectContaining({
+                        id: 'integration-admin',
+                        requiredScopes: ['admin'],
+                    }),
+                ]),
             }));
             expect(body.data.protocolSurfaces.mcp.reactive.supportedTopics).toEqual(
                 expect.arrayContaining([
@@ -367,6 +384,7 @@ describe('API Route Contracts', () => {
                                 subscriptionTool: string;
                                 notificationMethod: string;
                                 supportedTopicCount: number;
+                                supportedRecipeCount: number;
                                 supportedFilterFields: string[];
                             };
                         };
@@ -392,6 +410,7 @@ describe('API Route Contracts', () => {
                     transport: 'streamable-http',
                     subscriptionTool: 'subscribe_events',
                     notificationMethod: 'notifications/wordclaw/event',
+                    supportedRecipeCount: 5,
                     supportedFilterFields: expect.arrayContaining(['contentTypeId', 'entityId']),
                 }),
             }));

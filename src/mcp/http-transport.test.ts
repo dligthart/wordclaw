@@ -897,7 +897,7 @@ describe('MCP HTTP transport', () => {
         }));
     });
 
-    it('delivers api key creation events to admin-only reactive subscribers', async () => {
+    it('delivers api key creation events through integration-admin recipe subscriptions', async () => {
         app = await buildServer();
         const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
         const notifications: Array<Record<string, any>> = [];
@@ -937,14 +937,20 @@ describe('MCP HTTP transport', () => {
         const subscription = await client.callTool({
             name: 'subscribe_events',
             arguments: {
-                topics: ['api_key.create'],
+                recipeId: 'integration-admin',
                 replaceExisting: true
             }
         });
         const subscriptionText = extractFirstText(subscription.content as Array<{ type: string; text?: string }>);
         expect(JSON.parse(subscriptionText)).toEqual(expect.objectContaining({
-            subscribedTopics: ['api_key.create'],
-            newlyAddedTopics: ['api_key.create'],
+            recipe: expect.objectContaining({
+                id: 'integration-admin',
+                topics: expect.arrayContaining(['api_key.create', 'webhook.create']),
+                requiredScopes: ['admin'],
+            }),
+            resolvedTopics: expect.arrayContaining(['api_key.create', 'webhook.create']),
+            subscribedTopics: expect.arrayContaining(['api_key.create', 'webhook.create']),
+            newlyAddedTopics: expect.arrayContaining(['api_key.create', 'webhook.create']),
             blockedTopics: [],
         }));
 
@@ -1003,7 +1009,7 @@ describe('MCP HTTP transport', () => {
         }));
     });
 
-    it('blocks api key reactive subscriptions for non-admin actors', async () => {
+    it('blocks integration-admin reactive subscriptions for non-admin actors', async () => {
         process.env.API_KEYS = 'remote-admin=admin,writer=content:write';
         app = await buildServer();
         const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -1026,22 +1032,60 @@ describe('MCP HTTP transport', () => {
         const subscription = await client.callTool({
             name: 'subscribe_events',
             arguments: {
-                topics: ['api_key.create'],
+                recipeId: 'integration-admin',
                 replaceExisting: true
             }
         });
         const subscriptionText = extractFirstText(subscription.content as Array<{ type: string; text?: string }>);
 
         expect(JSON.parse(subscriptionText)).toEqual(expect.objectContaining({
+            recipe: expect.objectContaining({
+                id: 'integration-admin',
+            }),
             subscribedTopics: [],
             newlyAddedTopics: [],
-            blockedTopics: [
+            blockedTopics: expect.arrayContaining([
                 {
                     topic: 'api_key.create',
                     reason: 'Current actor is missing the scope required for this event topic.',
                 },
-            ],
+                {
+                    topic: 'webhook.create',
+                    reason: 'Current actor is missing the scope required for this event topic.',
+                },
+            ]),
             unsupportedTopics: [],
         }));
+    });
+
+    it('rejects reactive subscriptions without topics or a recipe', async () => {
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-reactive-missing-selection-test',
+            version: '1.0.0'
+        });
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'remote-admin'
+                }
+            }
+        });
+
+        await client.connect(transport);
+
+        const subscription = await client.callTool({
+            name: 'subscribe_events',
+            arguments: {
+                replaceExisting: true
+            }
+        });
+        const subscriptionText = extractFirstText(subscription.content as Array<{ type: string; text?: string }>);
+
+        expect(subscription.isError).toBe(true);
+        expect(subscriptionText).toContain('MISSING_REACTIVE_SELECTION');
     });
 });

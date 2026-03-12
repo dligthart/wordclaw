@@ -71,6 +71,16 @@ describe('buildCapabilityManifest', () => {
             standaloneSsePath: '/mcp',
             subscriptionTool: 'subscribe_events',
             notificationMethod: 'notifications/wordclaw/event',
+            subscriptionRecipes: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'content-publication',
+                    topics: ['content_item.published'],
+                }),
+                expect.objectContaining({
+                    id: 'integration-admin',
+                    requiredScopes: ['admin'],
+                }),
+            ]),
         }));
         expect(manifest.protocolSurfaces.mcp.reactive.supportedTopics).toEqual(
             expect.arrayContaining([

@@ -29,9 +29,12 @@ import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import {
+    getReactiveSubscriptionRecipe,
+    REACTIVE_SUBSCRIPTION_RECIPE_IDS,
     ReactiveEventFiltersSchema,
     SUPPORTED_REACTIVE_FILTER_FIELDS,
     SUPPORTED_REACTIVE_EVENT_TOPICS,
+    SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES,
     type ReactiveEventBindings,
 } from './reactive-events.js';
 
@@ -2068,13 +2071,14 @@ server.tool(
     'subscribe_events',
     'Subscribe the active MCP session to WordClaw reactive runtime events such as content publication or workflow approval.',
     {
-        topics: z.array(z.string()).min(1).describe('Event topics to subscribe to, e.g. content_item.published'),
+        topics: z.array(z.string()).min(1).optional().describe('Optional explicit event topics to subscribe to, e.g. content_item.published'),
+        recipeId: z.enum(REACTIVE_SUBSCRIPTION_RECIPE_IDS).optional().describe('Optional recipe that expands into a curated set of reactive topics'),
         replaceExisting: z.boolean().optional().default(false).describe('If true, replace the current topic set instead of appending to it'),
         filters: ReactiveEventFiltersSchema.optional().describe(
             `Optional event filters. Supported fields: ${SUPPORTED_REACTIVE_FILTER_FIELDS.join(', ')}.`,
         ),
     },
-    async ({ topics, replaceExisting, filters }, extra) => {
+    async ({ topics, recipeId, replaceExisting, filters }, extra) => {
         const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
 
         if (!options.reactiveEvents) {
@@ -2083,12 +2087,41 @@ server.tool(
             );
         }
 
-        const subscription = options.reactiveEvents.subscribe(topics, replaceExisting, filters);
+        const recipe = recipeId ? getReactiveSubscriptionRecipe(recipeId) : null;
+        const resolvedTopics = Array.from(new Set([
+            ...(recipe?.topics ?? []),
+            ...((topics ?? []).map((topic) => topic.trim()).filter(Boolean)),
+        ]));
+
+        if (resolvedTopics.length === 0) {
+            return err(
+                'MISSING_REACTIVE_SELECTION: Provide topics, recipeId, or both when subscribing to reactive events.'
+            );
+        }
+
+        const subscription = options.reactiveEvents.subscribe(resolvedTopics, replaceExisting, filters);
 
         return okJson({
             ...subscription,
-            requestedTopics: topics,
+            requestedTopics: topics ?? [],
+            recipe: recipe
+                ? {
+                    id: recipe.id,
+                    title: recipe.title,
+                    description: recipe.description,
+                    topics: [...recipe.topics],
+                    requiredScopes: [...recipe.requiredScopes],
+                }
+                : null,
+            resolvedTopics,
             supportedTopics: SUPPORTED_REACTIVE_EVENT_TOPICS,
+            supportedRecipes: SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES.map((entry) => ({
+                id: entry.id,
+                title: entry.title,
+                description: entry.description,
+                topics: [...entry.topics],
+                requiredScopes: [...entry.requiredScopes],
+            })),
             supportedFilterFields: SUPPORTED_REACTIVE_FILTER_FIELDS,
             currentActor: buildCurrentActorSnapshot(principal),
         });
