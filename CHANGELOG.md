@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/dligthart/wordclaw/compare/v1.3.0...v1.4.0) (2026-03-12)
+
+
+### Features
+
+* Interactive Adventure Game demo web UI and Gamification ([fcd02aa](https://github.com/dligthart/wordclaw/commit/fcd02aac77be190df1ee8776c992e8ef19e2374d))
+
 # [1.3.0](https://github.com/dligthart/wordclaw/compare/v1.2.0...v1.3.0) (2026-03-12)
 
 
