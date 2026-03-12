@@ -456,7 +456,7 @@ function PageShell({
   className?: string
 }) {
   return (
-    <div className={`w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-14 ${className}`}>
+    <div className={`mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-14 ${className}`}>
       {children}
     </div>
   )
@@ -490,8 +490,8 @@ function Pagination({
         <Link
           aria-disabled={currentPage === 1}
           className={`inline-flex h-10 items-center justify-center rounded-full border px-4 text-sm font-medium transition-colors ${currentPage === 1
-              ? 'cursor-not-allowed border-[var(--border)] text-gray-400'
-              : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
+            ? 'cursor-not-allowed border-[var(--border)] text-gray-400'
+            : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
             }`}
           to={currentPage === 1 ? '#' : buildHref(currentPage - 1)}
         >
@@ -501,8 +501,8 @@ function Pagination({
         {pageWindow.map((page) => (
           <Link
             className={`inline-flex h-10 min-w-10 items-center justify-center rounded-full border px-3 text-sm font-semibold transition-colors ${page === currentPage
-                ? 'border-brand-500 bg-brand-500 text-white'
-                : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
+              ? 'border-brand-500 bg-brand-500 text-white'
+              : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
               }`}
             key={page}
             to={buildHref(page)}
@@ -514,8 +514,8 @@ function Pagination({
         <Link
           aria-disabled={currentPage === totalPages}
           className={`inline-flex h-10 items-center justify-center rounded-full border px-4 text-sm font-medium transition-colors ${currentPage === totalPages
-              ? 'cursor-not-allowed border-[var(--border)] text-gray-400'
-              : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
+            ? 'cursor-not-allowed border-[var(--border)] text-gray-400'
+            : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
             }`}
           to={currentPage === totalPages ? '#' : buildHref(currentPage + 1)}
         >
