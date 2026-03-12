@@ -52,85 +52,95 @@ const demoAuthors: SeedAuthor[] = [
         avatarUrl: 'https://i.pravatar.cc/150?u=clara',
         socialLinks: ['https://example.com/reviewers/clara'],
     },
+    {
+        name: 'Dana Publisher',
+        slug: 'dana-publisher',
+        bio: 'Publisher focused on release cadence, launch checklists, and keeping content operations calm under pressure.',
+        avatarUrl: 'https://i.pravatar.cc/150?u=dana',
+        socialLinks: ['https://example.com/publishers/dana'],
+    },
+    {
+        name: 'Evan Integrator',
+        slug: 'evan-integrator',
+        bio: 'Integration engineer working on webhooks, deployment handoffs, and framework interoperability.',
+        avatarUrl: 'https://i.pravatar.cc/150?u=evan',
+        socialLinks: ['https://example.com/integrators/evan'],
+    },
 ];
 
 const demoPosts: SeedPost[] = [
     {
-        title: 'Building Autonomous Agentic Workflows',
-        slug: 'building-autonomous-agentic-workflows',
-        excerpt: 'A practical walkthrough of schema-aware authoring, review loops, and MCP-driven discovery inside WordClaw.',
-        content: `# Start with intent, not endpoints
+        title: 'Native MCP Integration for AI Agents',
+        slug: 'native-mcp-integration-for-ai-agents',
+        excerpt: 'WordClaw ships a native Model Context Protocol server. Learn how LLMs can discover schemas and mutate content without writing raw HTTP requests.',
+        content: `# Model Context Protocol in WordClaw
 
-WordClaw works best when the editorial workflow is explicit. An *agent* should not guess which schema to write to or which review lane is active. It should discover that context from the runtime.
+WordClaw natively implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) as a primary product surface, acting alongside the REST API.
 
-> "Agents need metadata and semantic intent, not just raw REST endpoints."
+## Transports and Tooling
 
-## Why generic CRUD breaks down
+WordClaw exposes MCP in two distinct ways:
+- **Local stdio**: For embedded integration and CLI sessions (run \`npm run mcp:start\`).
+- **Streamable HTTP**: Hosted alongside the core API at \`/mcp\` for attachable remote agents.
 
-Most headless systems tell an agent where to send a request, but not **what the request should mean**.
+> "To make content management agentic, the system must teach the agent its capabilities at runtime."
 
-1. The agent has to discover the correct content schema.
-2. It needs a safe way to validate a draft before mutating state.
-3. It should know whether that content must enter human review.
+When an agent connects, it can instantly discover its operational boundaries via resources like \`system://capabilities\`, \`system://deployment-status\`, and \`system://workspace-context\`. 
 
-### A safer write path
+### Recommended Discovery Loop
 
-In WordClaw the recommended loop is simple:
+Rather than guessing how to start, an agent can securely inspect the stack over the CLI:
 
-- resolve the best workspace target
-- inspect the schema and actor guidance
-- run a dry run first
-- create content only after validation passes
-
-See the [Get Started guide](/get-started) if you want the human operator version, or browse the [MCP tag page](/tag/mcp) for more agent-focused articles.
-
-\`\`\`json
-{
-  "taskId": "author-content",
-  "preferredSurface": "mcp",
-  "recommendedCommand": "wordclaw content guide --content-type-id 12"
-}
+\`\`\`bash
+node dist/cli/index.js mcp inspect \\
+  --mcp-transport http \\
+  --mcp-url http://localhost:4000/mcp \\
+  --api-key writer
 \`\`\`
 
-## Human review is part of the feature
+Need to verify the active actor? Use the \`system://current-actor\` resource or fire \`mcp whoami\`. 
 
-Workflow lanes are not an afterthought. They are what makes autonomous output publishable.
-
-When a schema has an attached workflow, the authoring step and the review step become distinct parts of the same system instead of informal conventions.
+If an agent needs to know what step comes next in a workflow, tools like \`guide_task\` offer step-by-step recipes for deployment discovery, content authoring, review queues, and paid-content integrations.
 `,
         coverImage: 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=2670&auto=format&fit=crop',
-        category: 'Tutorials',
-        tags: ['Agents', 'MCP', 'Workflows', 'Schemas'],
+        category: 'Engineering',
+        tags: ['Agents', 'MCP', 'LLMs', 'API'],
         authorSlug: 'alice-builder',
-        readTimeMinutes: 9,
+        readTimeMinutes: 5,
     },
     {
-        title: 'Connecting Agents to the Multi-Tenant CMS',
-        slug: 'connecting-agents-multi-tenant',
-        excerpt: 'Why schema resolution and workspace targeting matter more than flat content-type lists in tenant-aware systems.',
-        content: `# Context before mutation
+        title: 'Heuristic Workspace Target Resolution',
+        slug: 'heuristic-workspace-target-resolution',
+        excerpt: 'Why flat API schema discovery breaks down for agents, and how intent-driven workspace targeting fixes it.',
+        content: `# Context Before Mutation
 
-In a multi-tenant CMS, the real question is not "what schemas exist?" but "which schema is the best target **for this actor in this domain right now**?"
+In a multi-tenant CMS like WordClaw, asking a REST API "what schemas exist?" is the wrong question for an AI agent. The right question is: **"Which schema is the best target for this actor right now?"**
 
-## Resolve the best target first
+## The Threat of Flat APIs
 
-WordClaw can narrow the active workspace before an agent attempts a write.
+Traditional headless CMS layouts expose endpoints like \`/api/content-types\`. An agent downloads 50 schemas, scans for keywords like "article", and mutates a payload blindly. This breaks if the schema is archived, locked, or restricted.
 
-| Question | WordClaw answer |
+WordClaw replaces this with \`Workspace Target Resolution\`.
+
+| Agent Intent | What WordClaw Resolves |
 | --- | --- |
-| Which domain am I in? | actor and workspace preflight |
-| Which schema should I use? | workspace target resolution |
-| What can I act on next? | actionable work target |
+| \`authoring\` | The most active, non-archived schema in the domain. |
+| \`review\` | The schema carrying the highest density of unresolved review tasks. |
+| \`workflow\`| Schemas with deeply nested policy configurations. |
+| \`paid\` | Content or schemas carrying active \`Offers\` requiring an L402 payment. |
 
-### Why this matters
+### Smart Targeting in Action
 
-Without target resolution, a model might pick the noisiest schema instead of the one with the best current workflow fit.
+When you execute \`workspace resolve --intent review\`, WordClaw doesn't just guess. It counts active review tasks matching the intent, filters out items the current API Key cannot approve, and returns a concrete \`workTarget\` object pointing precisely at the clogged unit of work.
 
-Read more from [Alice Builder](/author/alice-builder) or jump to the [Engineering category](/category/engineering).
+\`\`\`bash
+node dist/cli/index.js mcp call resolve_workspace_target \\
+  '{"intent":"review"}' \\
+  --mcp-transport http \\
+  --mcp-url http://localhost:4000/mcp
+\`\`\`
 
-## Practical rule
-
-Always let the runtime answer "what should I do next?" before you decide on a payload.
+Always let the runtime answer "what should I do next?" before formulating payloads.
 `,
         coverImage: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2672&auto=format&fit=crop',
         category: 'Engineering',
@@ -139,39 +149,35 @@ Always let the runtime answer "what should I do next?" before you decide on a pa
         readTimeMinutes: 6,
     },
     {
-        title: 'Safely Monetizing AI Outputs',
-        slug: 'safely-monetizing-ai-outputs',
-        excerpt: 'How L402 turns paid content consumption into an explicit, actor-aware workflow for agents and operators.',
-        content: `# Paid content without guesswork
+        title: 'Defending Paid API Routes with L402 Macaroons',
+        slug: 'defending-paid-api-routes-with-l402-macaroons',
+        excerpt: 'Charging for AI content is an execution-path problem. Learn how exactly WordClaw implements Lightning invoices to gate premium endpoints.',
+        content: `# Unifying Authorization and Settlement
 
-Charging for AI-delivered content is not just a billing problem. It is an **execution-path problem**.
+The L402 integration acts as WordClaw's built-in Lightning-gated access layer for paid routes and offer flows. It brings monetization directly into the protocol via \`402 Payment Required\`.
 
-## Why L402 matters
+## The Handshake
 
-L402 makes the payment requirement part of the protocol instead of an after-the-fact business rule.
+WordClaw seamlessly merges **Macaroons** (for authorization cryptography) with **Lightning Invoices** (for settlement).
 
-> Payment should be explicit in the response path, not hidden in product copy.
+1. **Unauthenticated Request:** An AI agent hits a paid REST or MCP endpoint.
+2. **The Challenge:** WordClaw responds with HTTP \`402\`, generating a Lightning invoice and an unsigned Macaroon token tied to the request hash.
+3. **The Settlement:** The agent pays the invoice through a Lightning wallet (like *LNbits*), securing the cryptographic preimage.
+4. **The Authenticated Read:** The agent retries the call carrying the \`Authorization: L402 <macaroon>:<preimage>\` header. The middleware verifies the signature, and access is permanently granted to the generated content item.
 
-### Recommended sequence
+### Offer Flows vs. Legacy Pricing
 
-- discover the deployment and current actor
-- fetch content or offers
-- follow the purchase and confirm path
-- retry the protected read with the entitlement in place
+WordClaw allows you to gate entire \`Schemas\` or specific \`Content Items\` via \`Offers\`. 
 
-If you want a quick operator overview, visit the [Monetization category](/category/monetization). If you want the protocol background, start with the [Model Context Protocol site](https://modelcontextprotocol.io).
+An agent can discover paid endpoints rapidly using the MCP \`workspace-target\` tool passing the \`paid\` intent. This avoids scraping thousands of items to figure out where paid value is housed.
 
-\`\`\`bash
-wordclaw l402 guide --item 123
-\`\`\`
-
-The result is simpler for both humans and agents: a blocked read becomes a readable plan.
+Whether using LND, LNbits, or bridging LangChain via custom Coinbase AgentKit providers, L402 brings programmatic billing natively into the headless CMS stack.
 `,
         coverImage: 'https://images.unsplash.com/photo-1639762681485-074b7f4fc651?q=80&w=2832&auto=format&fit=crop',
         category: 'Monetization',
-        tags: ['L402', 'Payments', 'Agents', 'Monetization'],
+        tags: ['L402', 'Payments', 'Lightning', 'Monetization'],
         authorSlug: 'bob-operator',
-        readTimeMinutes: 5,
+        readTimeMinutes: 7,
     },
     {
         title: 'Editorial Review Loops That Humans Actually Trust',
@@ -284,6 +290,222 @@ For a wider operator view, inspect the [Editorial category](/category/editorial)
         tags: ['Automation', 'Workflow', 'Editorial', 'Approvals'],
         authorSlug: 'bob-operator',
         readTimeMinutes: 6,
+    },
+    {
+        title: 'Why Actor Identity Matters in Content Operations',
+        slug: 'why-actor-identity-matters-in-content-operations',
+        excerpt: 'A look at provenance, assignment, and why canonical actor IDs make review queues safer for humans and agents.',
+        content: `# Identity is part of the workflow
+
+If a system cannot answer *who acted*, it cannot support serious editorial review.
+
+## What breaks without canonical identity
+
+- comments become hard to trust
+- assignments become ambiguous
+- audit trails lose their value
+
+### WordClaw's direction
+
+The runtime is moving toward one canonical actor identity across auth, workflow, audit, and payments.
+
+> Provenance is not extra metadata. It is how you keep an autonomous system governable.
+
+See the [archive](/archive) for related operational posts or jump to the [Approvals tag](/tag/approvals).
+`,
+        coverImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=2870&auto=format&fit=crop',
+        category: 'Editorial',
+        tags: ['Audit', 'Approvals', 'Workflow', 'Identity'],
+        authorSlug: 'clara-reviewer',
+        readTimeMinutes: 5,
+    },
+    {
+        title: 'Webhook Handoffs After Publish',
+        slug: 'webhook-handoffs-after-publish',
+        excerpt: 'How to trigger downstream systems only after content leaves workflow review and becomes genuinely publishable.',
+        content: `# Publish is the integration boundary
+
+The cleanest webhook is the one that fires *after* the content model and workflow state agree that content is live.
+
+## Typical downstream tasks
+
+1. trigger a frontend rebuild
+2. invalidate search caches
+3. notify subscribers
+
+### Example event payload
+
+\`\`\`json
+{
+  "event": "content.published",
+  "entityType": "content_item",
+  "slug": "webhook-handoffs-after-publish"
+}
+\`\`\`
+
+For more integration examples, browse the [Tags page](/tags) and look for *Frameworks* or *Automation*.
+`,
+        coverImage: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?q=80&w=2874&auto=format&fit=crop',
+        category: 'Integrations',
+        tags: ['Webhooks', 'Automation', 'Integrations', 'Deployments'],
+        authorSlug: 'evan-integrator',
+        readTimeMinutes: 5,
+    },
+    {
+        title: 'Starter Template for a LangGraph Editorial Agent',
+        slug: 'starter-template-for-a-langgraph-editorial-agent',
+        excerpt: 'A practical starting point for an agent that discovers workspace targets, drafts content, and submits work for review.',
+        content: `# Template first, polish second
+
+The fastest path to useful adoption is a small starter that already knows how to:
+
+- discover the current actor
+- resolve the best workspace target
+- generate a draft payload
+- submit to review
+
+## Recommended loop
+
+1. \`capabilities whoami\`
+2. \`workspace resolve --intent authoring\`
+3. \`content guide --content-type-id ...\`
+4. \`workflow guide --task ...\`
+
+Read the [Get Started page](/get-started) if you want the human operator equivalent.
+`,
+        coverImage: 'https://images.unsplash.com/photo-1555949963-aa79dcee981c?q=80&w=2832&auto=format&fit=crop',
+        category: 'Engineering',
+        tags: ['LangGraph', 'Agents', 'MCP', 'Templates'],
+        authorSlug: 'alice-builder',
+        readTimeMinutes: 7,
+    },
+    {
+        title: 'Shipping a Paid Newsletter Without Splitting the Stack',
+        slug: 'shipping-a-paid-newsletter-without-splitting-the-stack',
+        excerpt: 'Why keeping schema, payment requirements, and editorial review inside one runtime simplifies paid publishing.',
+        content: `# One runtime beats stitched workflows
+
+Paid newsletters often fracture into separate systems for drafts, approvals, billing, and delivery.
+
+## A more coherent path
+
+Keep the schema, the workflow, and the payment requirement in one place.
+
+- draft the post
+- review the post
+- attach the paid-content expectation
+- publish once the entitlement path is ready
+
+> Operational simplicity compounds. Every split system adds another place where content and billing can drift apart.
+`,
+        coverImage: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2874&auto=format&fit=crop',
+        category: 'Monetization',
+        tags: ['Newsletter', 'Payments', 'L402', 'Publishing'],
+        authorSlug: 'dana-publisher',
+        readTimeMinutes: 6,
+    },
+    {
+        title: 'A Practical Schema Review Checklist',
+        slug: 'a-practical-schema-review-checklist',
+        excerpt: 'What to verify before you let a new content model become part of a supervised publishing workflow.',
+        content: `# Good schemas make calm systems
+
+Schema review should be boring in the best possible way.
+
+## Before you approve a model
+
+1. confirm required fields are truly required
+2. make sure editorial intent is reflected in field names
+3. decide whether the model needs a workflow
+4. test the payload in dry-run mode
+
+### The real goal
+
+The point is not to maximize flexibility. The point is to give authors and agents a shape they can trust.
+`,
+        coverImage: 'https://images.unsplash.com/photo-1516321165247-4aa89a48be28?q=80&w=2874&auto=format&fit=crop',
+        category: 'Editorial',
+        tags: ['Schemas', 'Review', 'Editorial', 'Validation'],
+        authorSlug: 'clara-reviewer',
+        readTimeMinutes: 4,
+    },
+    {
+        title: 'What a Healthy Approval Queue Looks Like',
+        slug: 'what-a-healthy-approval-queue-looks-like',
+        excerpt: 'A quiet approval queue is not empty; it is understandable, actionable, and free of mystery work.',
+        content: `# Calm over clever
+
+The best approval queue is readable at a glance.
+
+## Signals that matter
+
+- what changed
+- where the task sits in workflow
+- whether the current actor can decide now
+- what happens next if approved
+
+### Avoid these failure modes
+
+- giant payload-first layouts
+- unclear assignee identity
+- blocked decisions with no remediation
+
+Browse the [Editorial category](/category/editorial) for more review-oriented posts.
+`,
+        coverImage: 'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?q=80&w=2874&auto=format&fit=crop',
+        category: 'Product',
+        tags: ['Approvals', 'Review', 'Workflow', 'UX'],
+        authorSlug: 'dana-publisher',
+        readTimeMinutes: 5,
+    },
+    {
+        title: 'Integrating OpenAI-Compatible Tool Schemas',
+        slug: 'integrating-openai-compatible-tool-schemas',
+        excerpt: 'A practical bridge between MCP-native discovery and the tool schemas expected by popular LLM runtimes.',
+        content: `# Meet agents where they already are
+
+Even if MCP is the cleanest discovery surface, many agent runtimes still expect OpenAI-style tool declarations.
+
+## A pragmatic bridge
+
+- keep MCP as the semantic source of truth
+- expose a compatibility layer for tool schemas
+- document which tasks should still prefer REST
+
+### Why it helps
+
+Adoption improves when agents do not have to learn a custom adapter before they can do useful work.
+`,
+        coverImage: 'https://images.unsplash.com/photo-1558346490-a72e53ae2d4f?q=80&w=2940&auto=format&fit=crop',
+        category: 'Integrations',
+        tags: ['OpenAI', 'MCP', 'Integrations', 'Tooling'],
+        authorSlug: 'evan-integrator',
+        readTimeMinutes: 6,
+    },
+    {
+        title: 'Operating Content Workspaces Across Environments',
+        slug: 'operating-content-workspaces-across-environments',
+        excerpt: 'Why deployment status, workspace context, and actor preflight matter before you let automation touch production.',
+        content: `# Environment awareness prevents dumb mistakes
+
+An agent should know whether it is in local development, staging, or production *before* it writes anything.
+
+## Useful preflight checks
+
+- deployment status
+- current actor and scopes
+- workspace target resolution
+- workflow readiness
+
+### Good habits
+
+Run discovery first, act second.
+`,
+        coverImage: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?q=80&w=2815&auto=format&fit=crop',
+        category: 'Engineering',
+        tags: ['Workspace', 'Deployment', 'Agents', 'Operations'],
+        authorSlug: 'bob-operator',
+        readTimeMinutes: 5,
     },
 ];
 
