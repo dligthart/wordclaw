@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/dligthart/wordclaw/compare/v1.2.0...v1.3.0) (2026-03-12)
+
+
+### Features
+
+* **mcp:** add reactive stream subscriptions ([b82c905](https://github.com/dligthart/wordclaw/commit/b82c905260b5058e49754eafb2d7fe08f64d8d3f))
+
 # [1.2.0](https://github.com/dligthart/wordclaw/compare/v1.1.0...v1.2.0) (2026-03-12)
 
 
