@@ -18,12 +18,14 @@
 
 @layer base {
   :root {
-    --background: #fcfcfc;
-    --foreground: #09090b;
+    --background: #f5f7fb;
+    --foreground: #111322;
     --card: #ffffff;
-    --card-foreground: #09090b;
-    --border: #e4e4e7;
+    --card-foreground: #111322;
+    --border: #dde3ef;
     --ring: #517de0;
+    --muted-foreground: #667085;
+    --surface-shadow: 0 20px 48px -32px rgba(15, 23, 42, 0.22);
   }
 
   .dark {
@@ -40,7 +42,10 @@
   }
 
   body {
-    @apply bg-[var(--background)] text-[var(--foreground)] antialiased transition-colors duration-300;
+    background:
+      radial-gradient(circle at top, rgba(81, 125, 224, 0.08), transparent 28%),
+      var(--background);
+    @apply min-h-screen text-[var(--foreground)] antialiased transition-colors duration-300;
   }
 
   img {
@@ -54,8 +59,13 @@
     @apply font-semibold text-brand-600 underline decoration-brand-300/70 underline-offset-4 transition-colors hover:text-brand-500 dark:text-brand-300 dark:decoration-brand-400/40 dark:hover:text-brand-200;
   }
 
+  .demo-surface {
+    @apply border border-[var(--border)] bg-[var(--card)];
+    box-shadow: var(--surface-shadow);
+  }
+
   .article-body {
-    @apply text-[1.02rem] leading-8 text-gray-700 dark:text-gray-300;
+    @apply text-[1.02rem] leading-8 text-[var(--muted-foreground)];
   }
 
   .article-body > * + * {
@@ -81,7 +91,7 @@
   }
 
   .article-body p {
-    @apply text-pretty leading-8 text-gray-700 dark:text-gray-300;
+    @apply text-pretty leading-8 text-[var(--muted-foreground)];
   }
 
   .article-body strong {
@@ -89,11 +99,11 @@
   }
 
   .article-body em {
-    @apply italic text-gray-800 dark:text-gray-200;
+    @apply italic text-[var(--foreground)];
   }
 
   .article-body blockquote {
-    @apply rounded-r-3xl border-l-4 border-brand-400/70 bg-brand-50/70 px-6 py-4 text-lg font-medium italic text-gray-700 dark:border-brand-400/40 dark:bg-brand-500/10 dark:text-gray-200;
+    @apply rounded-r-3xl border-l-4 border-brand-400/70 bg-brand-50/70 px-6 py-4 text-lg font-medium italic text-[var(--muted-foreground)] dark:border-brand-400/40 dark:bg-[var(--card)] dark:text-gray-300;
   }
 
   .article-body ul,
