@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { db } from '../src/db/index.js';
 import { apiKeys, contentItems, contentTypes, domains } from '../src/db/schema.js';
 import { createApiKey } from '../src/services/api-key.js';
+import { EmbeddingService } from '../src/services/embedding.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -759,7 +760,7 @@ async function setupBlogDemo() {
             createdAuthors.map((authorRecord, index) => [demoAuthors[index].slug, authorRecord.id]),
         );
 
-        await db.insert(contentItems).values(
+        const insertedPosts = await db.insert(contentItems).values(
             demoPosts.map((post) => {
                 const authorId = authorsBySlug.get(post.authorSlug);
                 if (!authorId) {
@@ -783,7 +784,7 @@ async function setupBlogDemo() {
                     }),
                 };
             }),
-        );
+        ).returning();
 
         const envPath = path.join(__dirname, '../demos/demo-blog/.env');
         fs.writeFileSync(
@@ -794,6 +795,15 @@ async function setupBlogDemo() {
         console.log('\n✅ Demo seeded successfully!');
         console.log(`Blog API Key: ${apiKeyResult.plaintext}`);
         console.log(`Seeded ${demoAuthors.length} authors and ${demoPosts.length} posts.`);
+
+        if (process.env.OPENAI_API_KEY) {
+            console.log('🧠 OPENAI_API_KEY detected! Generating pgvector embeddings for demo content...');
+            for (const post of insertedPosts) {
+                await EmbeddingService.syncItemEmbeddings(blogDomain.id, post.id).catch(console.error);
+            }
+            console.log('✅ Semantic embeddings generated.');
+        }
+
         console.log('\nThe React app has been automatically configured. You can now start it:');
         console.log('cd demos/demo-blog && npm run dev');
 
