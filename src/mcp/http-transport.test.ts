@@ -717,6 +717,12 @@ describe('MCP HTTP transport', () => {
             params: expect.objectContaining({
                 topic: 'content_item.published',
                 matchedTopics: ['content_item.published'],
+                matchedSubscriptions: [
+                    {
+                        topic: 'content_item.published',
+                        filters: {},
+                    },
+                ],
                 event: expect.objectContaining({
                     source: 'audit',
                     domainId: 1,
@@ -725,6 +731,169 @@ describe('MCP HTTP transport', () => {
                     name: 'content_item.published',
                 })
             })
+        }));
+    });
+
+    it('applies content-type filters to reactive subscriptions', async () => {
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+        const notifications: Array<Record<string, any>> = [];
+
+        client = new Client({
+            name: 'wordclaw-reactive-filter-test',
+            version: '1.0.0'
+        });
+        client.fallbackNotificationHandler = async (notification) => {
+            notifications.push(notification as Record<string, any>);
+        };
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'remote-admin'
+                }
+            }
+        });
+
+        await client.connect(transport);
+        expect(transport.sessionId).toBeTruthy();
+
+        await vi.waitFor(async () => {
+            const probe = await fetch(new URL('/mcp', `${baseUrl}/`), {
+                method: 'GET',
+                headers: {
+                    accept: 'text/event-stream',
+                    'mcp-session-id': transport.sessionId as string,
+                    'x-api-key': 'remote-admin'
+                }
+            });
+
+            expect(probe.status).toBe(409);
+        });
+
+        const createContentType = async (name: string, slug: string) => {
+            const response = await fetch(new URL('/api/content-types', `${baseUrl}/`), {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    'x-api-key': 'remote-admin'
+                },
+                body: JSON.stringify({
+                    name,
+                    slug,
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            title: { type: 'string' }
+                        },
+                        required: ['title']
+                    }
+                })
+            });
+
+            expect(response.status).toBe(201);
+            const payload = await response.json() as {
+                data: { id: number };
+            };
+            return payload.data.id;
+        };
+
+        const filteredContentTypeId = await createContentType(
+            'Filtered Reactive Article',
+            `filtered-reactive-article-${Date.now()}`,
+        );
+        const otherContentTypeId = await createContentType(
+            'Other Reactive Article',
+            `other-reactive-article-${Date.now()}`,
+        );
+
+        const subscription = await client.callTool({
+            name: 'subscribe_events',
+            arguments: {
+                topics: ['content_item.published'],
+                replaceExisting: true,
+                filters: {
+                    contentTypeId: filteredContentTypeId,
+                },
+            }
+        });
+        const subscriptionText = extractFirstText(subscription.content as Array<{ type: string; text?: string }>);
+        expect(JSON.parse(subscriptionText)).toEqual(expect.objectContaining({
+            subscribedTopics: ['content_item.published'],
+            subscriptions: [
+                {
+                    topic: 'content_item.published',
+                    filters: {
+                        contentTypeId: filteredContentTypeId,
+                    },
+                },
+            ],
+        }));
+
+        const createPublishedItem = async (contentTypeId: number, title: string) => {
+            const response = await fetch(new URL('/api/content-items', `${baseUrl}/`), {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    'x-api-key': 'remote-admin'
+                },
+                body: JSON.stringify({
+                    contentTypeId,
+                    data: {
+                        title,
+                    },
+                    status: 'published'
+                })
+            });
+
+            expect(response.status).toBe(201);
+            const payload = await response.json() as {
+                data: { id: number };
+            };
+            return payload.data.id;
+        };
+
+        const unrelatedItemId = await createPublishedItem(otherContentTypeId, 'Unrelated reactive event');
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        expect(
+            notifications.some((notification) => (
+                notification.method === 'notifications/wordclaw/event'
+                && notification.params?.event?.entityId === unrelatedItemId
+            ))
+        ).toBe(false);
+
+        const filteredItemId = await createPublishedItem(filteredContentTypeId, 'Filtered reactive event');
+
+        await vi.waitFor(() => {
+            expect(
+                notifications.some((notification) => (
+                    notification.method === 'notifications/wordclaw/event'
+                    && notification.params?.event?.entityId === filteredItemId
+                ))
+            ).toBe(true);
+        }, { timeout: 5000 });
+
+        const eventNotification = notifications.find((notification) => (
+            notification.method === 'notifications/wordclaw/event'
+            && notification.params?.event?.entityId === filteredItemId
+        ));
+
+        expect(eventNotification).toEqual(expect.objectContaining({
+            params: expect.objectContaining({
+                topic: 'content_item.published',
+                matchedTopics: ['content_item.published'],
+                matchedSubscriptions: [
+                    {
+                        topic: 'content_item.published',
+                        filters: {
+                            contentTypeId: filteredContentTypeId,
+                        },
+                    },
+                ],
+                event: expect.objectContaining({
+                    entityId: filteredItemId,
+                }),
+            }),
         }));
     });
 });

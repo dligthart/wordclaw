@@ -10,6 +10,7 @@ import {
     isExperimentalRevenueEnabled,
 } from '../config/runtime-features.js';
 import {
+    SUPPORTED_REACTIVE_FILTER_FIELDS,
     SUPPORTED_REACTIVE_EVENT_TOPICS,
     WORDCLAW_EVENT_NOTIFICATION_METHOD,
 } from '../mcp/reactive-events.js';
@@ -496,6 +497,7 @@ export function buildCapabilityManifest() {
                     subscriptionTool: 'subscribe_events',
                     notificationMethod: WORDCLAW_EVENT_NOTIFICATION_METHOD,
                     supportedTopics: [...SUPPORTED_REACTIVE_EVENT_TOPICS],
+                    supportedFilterFields: [...SUPPORTED_REACTIVE_FILTER_FIELDS],
                 },
             },
             graphql: {

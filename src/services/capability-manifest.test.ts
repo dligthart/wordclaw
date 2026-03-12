@@ -79,6 +79,9 @@ describe('buildCapabilityManifest', () => {
                 'workflow.review.approved',
             ]),
         );
+        expect(manifest.protocolSurfaces.mcp.reactive.supportedFilterFields).toEqual(
+            expect.arrayContaining(['contentTypeId', 'entityId', 'status', 'decision']),
+        );
         expect(manifest.auth.mcp.endpoint).toBe('/mcp');
         expect(manifest.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
         expect(manifest.protocolContract.required).toEqual(['rest', 'mcp']);

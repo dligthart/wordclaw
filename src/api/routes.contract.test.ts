@@ -173,6 +173,7 @@ describe('API Route Contracts', () => {
                                 subscriptionTool: string;
                                 notificationMethod: string;
                                 supportedTopics: string[];
+                                supportedFilterFields: string[];
                             };
                         };
                     };
@@ -241,6 +242,9 @@ describe('API Route Contracts', () => {
             }));
             expect(body.data.protocolSurfaces.mcp.reactive.supportedTopics).toEqual(
                 expect.arrayContaining(['content_item.published', 'workflow.review.approved']),
+            );
+            expect(body.data.protocolSurfaces.mcp.reactive.supportedFilterFields).toEqual(
+                expect.arrayContaining(['contentTypeId', 'entityId', 'status', 'decision']),
             );
             expect(body.data.auth.mcp.endpoint).toBe('/mcp');
             expect(body.data.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
@@ -357,6 +361,7 @@ describe('API Route Contracts', () => {
                                 subscriptionTool: string;
                                 notificationMethod: string;
                                 supportedTopicCount: number;
+                                supportedFilterFields: string[];
                             };
                         };
                         agentRuns: { status: string; enabled: boolean };
@@ -381,6 +386,7 @@ describe('API Route Contracts', () => {
                     transport: 'streamable-http',
                     subscriptionTool: 'subscribe_events',
                     notificationMethod: 'notifications/wordclaw/event',
+                    supportedFilterFields: expect.arrayContaining(['contentTypeId', 'entityId']),
                 }),
             }));
             expect(body.data.checks.agentRuns).toEqual(expect.objectContaining({

@@ -617,6 +617,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 subscriptionTool: Type.String(),
                                 notificationMethod: Type.String(),
                                 supportedTopics: Type.Array(Type.String()),
+                                supportedFilterFields: Type.Array(Type.String()),
                             })
                         }),
                         graphql: Type.Object({
@@ -766,6 +767,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 subscriptionTool: Type.String(),
                                 notificationMethod: Type.String(),
                                 supportedTopicCount: Type.Number(),
+                                supportedFilterFields: Type.Array(Type.String()),
                             }),
                             note: Type.String(),
                         }),
@@ -805,6 +807,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 subscriptionTool: Type.String(),
                                 notificationMethod: Type.String(),
                                 supportedTopicCount: Type.Number(),
+                                supportedFilterFields: Type.Array(Type.String()),
                             }),
                             note: Type.String(),
                         }),

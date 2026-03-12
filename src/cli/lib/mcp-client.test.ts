@@ -139,6 +139,7 @@ describe('WordClawMcpClient over HTTP', () => {
                         transport: 'streamable-http',
                         subscriptionTool: 'subscribe_events',
                         notificationMethod: 'notifications/wordclaw/event',
+                        supportedFilterFields: expect.arrayContaining(['contentTypeId', 'entityId']),
                     }),
                 }),
             }),

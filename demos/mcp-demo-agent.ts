@@ -38,6 +38,7 @@ type DemoAgentOptions = {
     endpoint?: string;
     apiKey?: string;
     baseUrl?: string;
+    filters?: Record<string, unknown>;
     once: boolean;
 };
 
@@ -85,12 +86,14 @@ Examples:
   npx tsx demos/mcp-demo-agent.ts prompt content-generation-template '{"contentTypeId":"12","topic":"AI governance"}'
   npx tsx demos/mcp-demo-agent.ts resource system://capabilities
   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin
+  npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin --filters '{"contentTypeId":12}'
 
 Options:
   --transport <stdio|http>  Choose stdio (default) or remote HTTP MCP transport
   --endpoint <url>          Explicit MCP endpoint (defaults to /mcp on WORDCLAW_BASE_URL)
   --base-url <url>          Base URL used to derive /mcp and optional REST follow-up reads
   --api-key <key>           API key for remote HTTP MCP sessions and REST follow-up reads
+  --filters <json>          Optional reactive event filters, e.g. {"contentTypeId":12}
   --once                    Exit after the first matching reactive notification
 
 Environment:
@@ -153,6 +156,7 @@ function parseCommandArgs(rawArgs: string[]): ParsedCommandArgs {
         endpoint: process.env.WORDCLAW_MCP_URL,
         apiKey: process.env.WORDCLAW_API_KEY,
         baseUrl: process.env.WORDCLAW_BASE_URL,
+        filters: undefined,
         once: false,
     };
 
@@ -185,6 +189,12 @@ function parseCommandArgs(rawArgs: string[]): ParsedCommandArgs {
             defaults.apiKey = nextValue;
         } else if (value === '--base-url') {
             defaults.baseUrl = nextValue;
+        } else if (value === '--filters') {
+            const parsed = parseJsonValue(nextValue, 'reactive filters');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('Expected --filters to be a JSON object.');
+            }
+            defaults.filters = parsed as Record<string, unknown>;
         } else {
             throw new Error(`Unknown option: ${value}`);
         }
@@ -274,6 +284,7 @@ function normalizeContentFields(value: Record<string, unknown> | string | undefi
 function printReactiveSummary(topic: string, notification: ReactiveNotification) {
     console.log(`\n=== Reactive Event: ${topic} ===`);
     console.log(`Matched topics: ${notification.params.matchedTopics.join(', ')}`);
+    console.log(`Matched subscriptions: ${JSON.stringify(notification.params.matchedSubscriptions)}`);
     console.log(`Entity: ${notification.params.event.entityType} #${notification.params.event.entityId}`);
     console.log(`Domain: ${notification.params.event.domainId}`);
     console.log(`Actor: ${notification.params.event.actorId ?? 'unknown'} (${notification.params.event.actorType ?? 'unknown'})`);
@@ -381,6 +392,7 @@ async function watchReactiveTopic(options: DemoAgentOptions, topic: string) {
                 arguments: {
                     topics: [topic],
                     replaceExisting: true,
+                    ...(options.filters ? { filters: options.filters } : {}),
                 },
             }),
             'subscribe_events',

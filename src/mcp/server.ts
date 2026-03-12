@@ -28,7 +28,12 @@ import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
-import { SUPPORTED_REACTIVE_EVENT_TOPICS, type ReactiveEventBindings } from './reactive-events.js';
+import {
+    ReactiveEventFiltersSchema,
+    SUPPORTED_REACTIVE_FILTER_FIELDS,
+    SUPPORTED_REACTIVE_EVENT_TOPICS,
+    type ReactiveEventBindings,
+} from './reactive-events.js';
 
 type McpRequestExtra = {
     authInfo?: {
@@ -2065,8 +2070,11 @@ server.tool(
     {
         topics: z.array(z.string()).min(1).describe('Event topics to subscribe to, e.g. content_item.published'),
         replaceExisting: z.boolean().optional().default(false).describe('If true, replace the current topic set instead of appending to it'),
+        filters: ReactiveEventFiltersSchema.optional().describe(
+            `Optional event filters. Supported fields: ${SUPPORTED_REACTIVE_FILTER_FIELDS.join(', ')}.`,
+        ),
     },
-    async ({ topics, replaceExisting }, extra) => {
+    async ({ topics, replaceExisting, filters }, extra) => {
         const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
 
         if (!options.reactiveEvents) {
@@ -2075,12 +2083,13 @@ server.tool(
             );
         }
 
-        const subscription = options.reactiveEvents.subscribe(topics, replaceExisting);
+        const subscription = options.reactiveEvents.subscribe(topics, replaceExisting, filters);
 
         return okJson({
             ...subscription,
             requestedTopics: topics,
             supportedTopics: SUPPORTED_REACTIVE_EVENT_TOPICS,
+            supportedFilterFields: SUPPORTED_REACTIVE_FILTER_FIELDS,
             currentActor: buildCurrentActorSnapshot(principal),
         });
     }

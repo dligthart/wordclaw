@@ -12,7 +12,12 @@ import {
     canSubscribeToReactiveTopic,
     deriveReactiveTopics,
     isReactiveTopicSupported,
+    isSameReactiveSubscription,
+    matchesReactiveSubscription,
+    normalizeReactiveFilters,
     type ReactiveEventBindings,
+    type ReactiveEventFilters,
+    type ReactiveSubscription,
     type SubscribeEventsResult,
 } from './reactive-events.js';
 
@@ -26,7 +31,7 @@ type NodeMcpRequest = IncomingMessage & {
 };
 
 export class McpHttpSession {
-    private readonly subscribedTopics = new Set<string>();
+    private readonly subscriptions: ReactiveSubscription[] = [];
     private readonly transport: StreamableHTTPServerTransport;
     private readonly mcpServer: ReturnType<typeof createMcpServer>;
     private readonly ready: Promise<void>;
@@ -37,7 +42,7 @@ export class McpHttpSession {
         private readonly manager: McpHttpSessionManager,
     ) {
         const reactiveBindings: ReactiveEventBindings = {
-            subscribe: (topics, replaceExisting) => this.subscribe(topics, replaceExisting),
+            subscribe: (topics, replaceExisting, filters) => this.subscribe(topics, replaceExisting, filters),
         };
 
         this.mcpServer = createMcpServer({ reactiveEvents: reactiveBindings });
@@ -76,34 +81,39 @@ export class McpHttpSession {
     }
 
     async publishAuditEvent(event: AuditEventPayload) {
-        if (this.subscribedTopics.size === 0 || event.domainId !== this.principal.domainId) {
+        if (this.subscriptions.length === 0 || event.domainId !== this.principal.domainId) {
             return;
         }
 
         const derivedTopics = deriveReactiveTopics(event);
-        const matchedTopics = [...this.subscribedTopics].filter((topic) => (
-            topic === '*' || derivedTopics.includes(topic)
+        const matchedSubscriptions = this.subscriptions.filter((subscription) => (
+            matchesReactiveSubscription(event, derivedTopics, subscription)
         ));
 
-        if (matchedTopics.length === 0) {
+        if (matchedSubscriptions.length === 0) {
             return;
         }
 
         await this.mcpServer.server.notification(
-            buildReactiveEventNotification(event, matchedTopics),
+            buildReactiveEventNotification(event, matchedSubscriptions),
         );
     }
 
-    private subscribe(topics: string[], replaceExisting = false): SubscribeEventsResult {
+    private subscribe(
+        topics: string[],
+        replaceExisting = false,
+        filters?: ReactiveEventFilters,
+    ): SubscribeEventsResult {
         const newlyAddedTopics: string[] = [];
         const blockedTopics: Array<{ topic: string; reason: string }> = [];
         const unsupportedTopics: string[] = [];
+        const normalizedFilters = normalizeReactiveFilters(filters);
         const normalizedTopics = Array.from(new Set(
             topics.map((topic) => topic.trim()).filter(Boolean),
         ));
 
         if (replaceExisting) {
-            this.subscribedTopics.clear();
+            this.subscriptions.length = 0;
         }
 
         for (const topic of normalizedTopics) {
@@ -120,8 +130,13 @@ export class McpHttpSession {
                 continue;
             }
 
-            if (!this.subscribedTopics.has(topic)) {
-                this.subscribedTopics.add(topic);
+            const subscription = {
+                topic,
+                filters: normalizedFilters,
+            };
+
+            if (!this.subscriptions.some((existing) => isSameReactiveSubscription(existing, subscription))) {
+                this.subscriptions.push(subscription);
                 newlyAddedTopics.push(topic);
             }
         }
@@ -129,8 +144,14 @@ export class McpHttpSession {
         return {
             transport: 'streamable-http',
             sessionId: this.sessionIdValue,
-            subscribedTopics: [...this.subscribedTopics].sort(),
+            subscribedTopics: Array.from(new Set(
+                this.subscriptions.map((subscription) => subscription.topic),
+            )).sort(),
             newlyAddedTopics,
+            subscriptions: this.subscriptions.map((subscription) => ({
+                topic: subscription.topic,
+                filters: normalizeReactiveFilters(subscription.filters),
+            })),
             blockedTopics,
             unsupportedTopics,
         };

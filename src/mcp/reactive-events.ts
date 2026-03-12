@@ -21,17 +21,53 @@ export const SUPPORTED_REACTIVE_EVENT_TOPICS = [
 
 export type ReactiveEventTopic = typeof SUPPORTED_REACTIVE_EVENT_TOPICS[number];
 
+export const SUPPORTED_REACTIVE_FILTER_FIELDS = [
+    'entityType',
+    'entityId',
+    'action',
+    'contentTypeId',
+    'status',
+    'decision',
+    'actorId',
+    'workflowTransitionId',
+    'reviewTaskId',
+] as const;
+
+export const ReactiveEventFiltersSchema = z.object({
+    entityType: z.string().optional(),
+    entityId: z.number().int().positive().optional(),
+    action: z.string().optional(),
+    contentTypeId: z.number().int().positive().optional(),
+    status: z.string().optional(),
+    decision: z.string().optional(),
+    actorId: z.string().optional(),
+    workflowTransitionId: z.number().int().positive().optional(),
+    reviewTaskId: z.number().int().positive().optional(),
+});
+
+export type ReactiveEventFilters = z.infer<typeof ReactiveEventFiltersSchema>;
+
+export type ReactiveSubscription = {
+    topic: string;
+    filters: ReactiveEventFilters;
+};
+
 export type SubscribeEventsResult = {
     transport: 'streamable-http';
     sessionId: string | null;
     subscribedTopics: string[];
     newlyAddedTopics: string[];
+    subscriptions: ReactiveSubscription[];
     blockedTopics: Array<{ topic: string; reason: string }>;
     unsupportedTopics: string[];
 };
 
 export type ReactiveEventBindings = {
-    subscribe(topics: string[], replaceExisting?: boolean): SubscribeEventsResult;
+    subscribe(
+        topics: string[],
+        replaceExisting?: boolean,
+        filters?: ReactiveEventFilters,
+    ): SubscribeEventsResult;
 };
 
 export const ReactiveEventNotificationSchema = z.object({
@@ -39,6 +75,10 @@ export const ReactiveEventNotificationSchema = z.object({
     params: z.object({
         topic: z.string(),
         matchedTopics: z.array(z.string()),
+        matchedSubscriptions: z.array(z.object({
+            topic: z.string(),
+            filters: ReactiveEventFiltersSchema,
+        })),
         event: z.object({
             source: z.literal('audit'),
             name: z.string(),
@@ -75,6 +115,41 @@ export function parseAuditEventDetails(details: string | null): Record<string, u
     } catch {
         return { raw: details };
     }
+}
+
+export function normalizeReactiveFilters(filters: ReactiveEventFilters | undefined): ReactiveEventFilters {
+    return Object.fromEntries(
+        Object.entries(filters ?? {}).filter(([, value]) => value !== undefined),
+    ) as ReactiveEventFilters;
+}
+
+function toNumericDetail(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+
+    if (typeof value === 'string' && value.trim() !== '') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+
+    return null;
+}
+
+function stableSerializeFilters(filters: ReactiveEventFilters): string {
+    const normalized = normalizeReactiveFilters(filters);
+    const sortedEntries = Object.entries(normalized).sort(([left], [right]) => left.localeCompare(right));
+    return JSON.stringify(Object.fromEntries(sortedEntries));
+}
+
+export function isSameReactiveSubscription(
+    left: ReactiveSubscription,
+    right: ReactiveSubscription,
+): boolean {
+    return left.topic === right.topic
+        && stableSerializeFilters(left.filters) === stableSerializeFilters(right.filters);
 }
 
 export function isReactiveTopicSupported(topic: string): topic is ReactiveEventTopic {
@@ -127,6 +202,57 @@ export function deriveReactiveTopics(event: AuditEventPayload): string[] {
     return [...topics];
 }
 
+export function matchesReactiveSubscription(
+    event: AuditEventPayload,
+    derivedTopics: string[],
+    subscription: ReactiveSubscription,
+): boolean {
+    if (subscription.topic !== '*' && !derivedTopics.includes(subscription.topic)) {
+        return false;
+    }
+
+    const details = parseAuditEventDetails(event.details);
+    const filters = normalizeReactiveFilters(subscription.filters);
+
+    if (filters.entityType && event.entityType !== filters.entityType) {
+        return false;
+    }
+
+    if (filters.entityId !== undefined && event.entityId !== filters.entityId) {
+        return false;
+    }
+
+    if (filters.action && event.action !== filters.action) {
+        return false;
+    }
+
+    if (filters.actorId && event.actorId !== filters.actorId) {
+        return false;
+    }
+
+    if (filters.contentTypeId !== undefined && toNumericDetail(details?.contentTypeId) !== filters.contentTypeId) {
+        return false;
+    }
+
+    if (filters.workflowTransitionId !== undefined && toNumericDetail(details?.workflowTransitionId) !== filters.workflowTransitionId) {
+        return false;
+    }
+
+    if (filters.reviewTaskId !== undefined && toNumericDetail(details?.reviewTaskId) !== filters.reviewTaskId) {
+        return false;
+    }
+
+    if (filters.status && details?.status !== filters.status) {
+        return false;
+    }
+
+    if (filters.decision && details?.decision !== filters.decision) {
+        return false;
+    }
+
+    return true;
+}
+
 export function selectCanonicalReactiveTopic(topics: string[]): string {
     const priority = [
         'workflow.review.approved',
@@ -148,16 +274,21 @@ export function selectCanonicalReactiveTopic(topics: string[]): string {
 
 export function buildReactiveEventNotification(
     event: AuditEventPayload,
-    matchedTopics: string[],
+    matchedSubscriptions: ReactiveSubscription[],
 ) {
     const derivedTopics = deriveReactiveTopics(event);
     const topic = selectCanonicalReactiveTopic(derivedTopics);
+    const matchedTopics = Array.from(new Set(matchedSubscriptions.map((subscription) => subscription.topic)));
 
     return ReactiveEventNotificationSchema.parse({
         method: WORDCLAW_EVENT_NOTIFICATION_METHOD,
         params: {
             topic,
             matchedTopics,
+            matchedSubscriptions: matchedSubscriptions.map((subscription) => ({
+                topic: subscription.topic,
+                filters: normalizeReactiveFilters(subscription.filters),
+            })),
             event: {
                 source: 'audit',
                 name: topic,
