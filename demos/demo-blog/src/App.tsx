@@ -391,7 +391,7 @@ function EmptyState({ title, body }: { title: string; body: string }) {
         <h2 className="mt-4 text-3xl font-bold tracking-tight text-[var(--foreground)]">
           {title}
         </h2>
-        <p className="mt-4 text-base leading-7 text-gray-600 dark:text-gray-400">
+        <p className="mt-4 text-base leading-7 text-[var(--muted-foreground)]">
           {body}
         </p>
         <div className="mt-8 rounded-2xl border border-[var(--border)] bg-[#10131f] p-5">
@@ -452,12 +452,21 @@ function SectionHeading({
 function PageShell({
   children,
   className = '',
+  size = 'default',
 }: {
   children: ReactNode
   className?: string
+  size?: 'default' | 'narrow' | 'wide'
 }) {
+  const maxWidthClass =
+    size === 'narrow'
+      ? 'max-w-6xl'
+      : size === 'wide'
+        ? 'max-w-[86rem]'
+        : 'max-w-7xl'
+
   return (
-    <div className={`mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-14 ${className}`}>
+    <div className={`mx-auto w-full ${maxWidthClass} px-4 py-10 sm:px-6 sm:py-14 lg:px-8 ${className}`}>
       {children}
     </div>
   )
@@ -491,7 +500,7 @@ function Pagination({
         <Link
           aria-disabled={currentPage === 1}
           className={`inline-flex h-10 items-center justify-center rounded-full border px-4 text-sm font-medium transition-colors ${currentPage === 1
-            ? 'cursor-not-allowed border-[var(--border)] text-gray-400'
+            ? 'cursor-not-allowed border-[var(--border)] text-[var(--muted-foreground)]/60'
             : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
             }`}
           to={currentPage === 1 ? '#' : buildHref(currentPage - 1)}
@@ -515,7 +524,7 @@ function Pagination({
         <Link
           aria-disabled={currentPage === totalPages}
           className={`inline-flex h-10 items-center justify-center rounded-full border px-4 text-sm font-medium transition-colors ${currentPage === totalPages
-            ? 'cursor-not-allowed border-[var(--border)] text-gray-400'
+            ? 'cursor-not-allowed border-[var(--border)] text-[var(--muted-foreground)]/60'
             : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
             }`}
           to={currentPage === totalPages ? '#' : buildHref(currentPage + 1)}
@@ -536,11 +545,12 @@ function PostCard({ post, author }: { post: BlogPost; author?: Author }) {
         viewport={{ once: true }}
         whileInView={{ opacity: 1, y: 0 }}
       >
-        <div className="relative mb-5 aspect-[16/10] overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-800">
+        <div className="relative mb-5 aspect-[16/10] overflow-hidden rounded-2xl bg-brand-100/40">
           <img
             alt={post.data.title}
             className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-            src={post.data.coverImage}
+            src={post.data.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2864&auto=format&fit=crop'}
+            onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2864&auto=format&fit=crop' }}
           />
           <span className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-brand-700 shadow-sm backdrop-blur-sm">
             {post.data.category}
@@ -565,7 +575,7 @@ function PostCard({ post, author }: { post: BlogPost; author?: Author }) {
         <div className="mt-6 flex flex-wrap gap-2">
           {post.data.tags.slice(0, 3).map((tag) => (
             <span
-              className="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+              className="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700"
               key={tag}
             >
               #{tag}
@@ -655,7 +665,8 @@ function HomePage() {
           <img
             alt={featuredPost.data.title}
             className="h-full min-h-[20rem] w-full object-cover"
-            src={featuredPost.data.coverImage}
+            src={featuredPost.data.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2864&auto=format&fit=crop'}
+            onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2864&auto=format&fit=crop' }}
           />
         </div>
       </section>
@@ -766,7 +777,7 @@ function HomePage() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-semibold text-[var(--foreground)]">{category.name}</span>
-                  <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+                  <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
                     {category.count}
                   </span>
                 </div>
@@ -831,7 +842,7 @@ function AuthorDetailPage() {
 
   return (
     <PageShell>
-      <Link className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500" to="/authors">
+      <Link className="inline-flex items-center gap-2 text-sm text-[var(--muted-foreground)] transition-colors hover:text-brand-500" to="/authors">
         <ArrowLeft size={16} />
         Back to authors
       </Link>
@@ -960,7 +971,7 @@ function CategoryDetailPage() {
 
   return (
     <PageShell>
-      <Link className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500" to="/categories">
+      <Link className="inline-flex items-center gap-2 text-sm text-[var(--muted-foreground)] transition-colors hover:text-brand-500" to="/categories">
         <ArrowLeft size={16} />
         Back to categories
       </Link>
@@ -1016,7 +1027,7 @@ function TagDetailPage() {
   return (
     <PageShell>
       <Link
-        className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500"
+        className="inline-flex items-center gap-2 text-sm text-[var(--muted-foreground)] transition-colors hover:text-brand-500"
         to="/tags"
       >
         <ArrowLeft size={16} />
@@ -1064,32 +1075,36 @@ function ArchivePage() {
         title="All posts"
       />
       <div className="demo-surface overflow-hidden rounded-[2rem] p-0">
-        <div className="grid grid-cols-[minmax(0,1.4fr)_0.9fr_0.8fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-4 text-xs font-semibold uppercase tracking-[0.35em] text-[var(--muted-foreground)]">
-          <span>Title</span>
-          <span>Author</span>
-          <span>Category</span>
-          <span>Published</span>
+        <div className="overflow-x-auto">
+          <div className="min-w-[52rem]">
+            <div className="grid grid-cols-[minmax(0,1.4fr)_0.9fr_0.8fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-4 text-xs font-semibold uppercase tracking-[0.35em] text-[var(--muted-foreground)]">
+              <span>Title</span>
+              <span>Author</span>
+              <span>Category</span>
+              <span>Published</span>
+            </div>
+            {pagedPosts.map((post) => {
+              const author = getAuthor(authors, post.data.authorId)
+              return (
+                <Link
+                  className="grid grid-cols-[minmax(0,1.4fr)_0.9fr_0.8fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-5 transition-colors hover:bg-brand-50/60"
+                  key={post.id}
+                  to={`/post/${post.data.slug}`}
+                >
+                  <div>
+                    <p className="font-semibold text-[var(--foreground)]">{post.data.title}</p>
+                    <p className="mt-1 text-sm text-[var(--muted-foreground)]">{post.data.excerpt}</p>
+                  </div>
+                  <span className="text-sm text-[var(--muted-foreground)]">
+                    {author?.data.name || 'Unknown author'}
+                  </span>
+                  <span className="text-sm text-[var(--muted-foreground)]">{post.data.category}</span>
+                  <span className="text-sm text-[var(--muted-foreground)]">{formatDate(post.createdAt)}</span>
+                </Link>
+              )
+            })}
+          </div>
         </div>
-        {pagedPosts.map((post) => {
-          const author = getAuthor(authors, post.data.authorId)
-          return (
-            <Link
-              className="grid grid-cols-[minmax(0,1.4fr)_0.9fr_0.8fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-5 transition-colors hover:bg-brand-50/60 dark:hover:bg-brand-500/5"
-              key={post.id}
-              to={`/post/${post.data.slug}`}
-            >
-              <div>
-                <p className="font-semibold text-[var(--foreground)]">{post.data.title}</p>
-                <p className="mt-1 text-sm text-[var(--muted-foreground)]">{post.data.excerpt}</p>
-              </div>
-              <span className="text-sm text-[var(--muted-foreground)]">
-                {author?.data.name || 'Unknown author'}
-              </span>
-              <span className="text-sm text-[var(--muted-foreground)]">{post.data.category}</span>
-              <span className="text-sm text-[var(--muted-foreground)]">{formatDate(post.createdAt)}</span>
-            </Link>
-          )
-        })}
       </div>
       <Pagination
         buildHref={(page) => `/archive?page=${page}`}
@@ -1116,16 +1131,16 @@ function PostDetailPage() {
 
   return (
     <motion.article animate={{ opacity: 1 }} className="w-full" initial={{ opacity: 0 }}>
-      <PageShell className="max-w-6xl">
-        <Link className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500" to="/">
+      <PageShell>
+        <Link className="inline-flex items-center gap-2 text-sm text-[var(--muted-foreground)] transition-colors hover:text-brand-500" to="/">
           <ArrowLeft size={16} />
           Back to blog
         </Link>
 
         <header className="mt-10">
-          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+          <div className="flex flex-wrap items-center gap-4 text-sm text-[var(--muted-foreground)]">
             <Link
-              className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+              className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700"
               to={`/category/${slugify(post.data.category)}`}
             >
               {post.data.category}
@@ -1162,12 +1177,13 @@ function PostDetailPage() {
           <img
             alt={post.data.title}
             className="h-full max-h-[30rem] w-full object-cover"
-            src={post.data.coverImage}
+            src={post.data.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2864&auto=format&fit=crop'}
+            onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2864&auto=format&fit=crop' }}
           />
         </div>
 
-        <div className="mt-14 grid gap-10 xl:grid-cols-[minmax(0,1fr)_17rem]">
-          <div className="min-w-0 xl:max-w-3xl">
+        <div className="mt-14 grid gap-10 xl:grid-cols-[minmax(0,46rem)_18rem] xl:justify-between">
+          <div className="min-w-0">
             <MarkdownArticle content={post.data.content} />
           </div>
 
@@ -1179,7 +1195,7 @@ function PostDetailPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 {post.data.tags.map((tag) => (
                   <Link
-                    className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+                    className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700"
                     key={tag}
                     to={`/tag/${slugify(tag)}`}
                   >
@@ -1245,13 +1261,13 @@ function GetStartedPage() {
 
       <div className="mb-12 flex overflow-x-auto border-b border-[var(--border)]">
         <button
-          className={`px-6 py-3 text-sm font-semibold whitespace-nowrap transition-colors ${activeTab === 'humans' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-gray-500 hover:text-[var(--foreground)]'}`}
+          className={`px-6 py-3 text-sm font-semibold whitespace-nowrap transition-colors ${activeTab === 'humans' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]'}`}
           onClick={() => setActiveTab('humans')}
         >
           For human developers
         </button>
         <button
-          className={`px-6 py-3 text-sm font-semibold whitespace-nowrap transition-colors ${activeTab === 'agents' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-gray-500 hover:text-[var(--foreground)]'}`}
+          className={`px-6 py-3 text-sm font-semibold whitespace-nowrap transition-colors ${activeTab === 'agents' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]'}`}
           onClick={() => setActiveTab('agents')}
         >
           For AI agents
@@ -1263,14 +1279,14 @@ function GetStartedPage() {
           <>
             <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
               <h2 className="text-2xl font-semibold text-[var(--foreground)]">Define schemas first</h2>
-              <p className="mt-4 leading-8 text-gray-600 dark:text-gray-400">
+              <p className="mt-4 leading-8 text-[var(--muted-foreground)]">
                 The demo blog works because `demo-author` and `demo-blog-post` exist as explicit JSON schemas in WordClaw. The frontend does not hardcode fields blindly; it queries the runtime and then renders content shaped by those models.
               </p>
             </section>
 
             <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
               <h2 className="text-2xl font-semibold text-[var(--foreground)]">Seed a realistic editorial domain</h2>
-              <div className="mt-6 rounded-2xl border border-gray-800 bg-[#10131f]">
+              <div className="mt-6 rounded-2xl border border-[#293246] bg-[#10131f]">
                 <SyntaxHighlighter
                   customStyle={{ margin: 0, padding: '1.5rem', background: '#10131f' }}
                   language="bash"
@@ -1286,14 +1302,14 @@ cd demos/demo-blog && npm run dev`}
           <>
             <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
               <h2 className="text-2xl font-semibold text-[var(--foreground)]">Use MCP for discovery</h2>
-              <p className="mt-4 leading-8 text-gray-600 dark:text-gray-400">
+              <p className="mt-4 leading-8 text-[var(--muted-foreground)]">
                 Agents should discover capabilities, actor identity, and workspace targets before attempting to mutate content. WordClaw exposes that through MCP and the CLI guidance layer.
               </p>
             </section>
 
             <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
               <h2 className="text-2xl font-semibold text-[var(--foreground)]">Validate before writing</h2>
-              <div className="mt-6 rounded-2xl border border-gray-800 bg-[#10131f]">
+              <div className="mt-6 rounded-2xl border border-[#293246] bg-[#10131f]">
                 <SyntaxHighlighter
                   customStyle={{ margin: 0, padding: '1.5rem', background: '#10131f' }}
                   language="bash"
@@ -1360,7 +1376,7 @@ function Layout({ children }: { children: ReactNode }) {
 
       <main>{children}</main>
 
-      <footer className="border-t border-[var(--border)] bg-gray-50 py-12 dark:bg-[#0c0c0e]">
+      <footer className="border-t border-[var(--border)] bg-[var(--background)] py-12">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 text-sm text-[var(--muted-foreground)] sm:px-6 lg:px-8 md:flex-row md:items-center md:justify-between">
           <p>Built on WordClaw schemas, items, and agent-aware content workflows.</p>
           <div className="flex flex-wrap gap-4">
