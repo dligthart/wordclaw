@@ -8,10 +8,10 @@ import {
 } from 'react'
 import {
   BrowserRouter,
-  Link,
   NavLink,
   Route,
   Routes,
+  useLocation,
   useSearchParams,
   useParams,
 } from 'react-router-dom'
@@ -1464,9 +1464,20 @@ function AppRoutes() {
   )
 }
 
+function ScrollToTop() {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
+  return null
+}
+
 function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <DemoDataProvider>
         <AppRoutes />
       </DemoDataProvider>
