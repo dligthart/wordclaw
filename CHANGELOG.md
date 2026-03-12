@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/dligthart/wordclaw/compare/v1.7.0...v1.8.0) (2026-03-12)
+
+
+### Features
+
+* **mcp:** broaden reactive subscription topics ([a0ca1f2](https://github.com/dligthart/wordclaw/commit/a0ca1f24d7d34e4511f160fe544c287b0a87a381))
+
 # [1.7.0](https://github.com/dligthart/wordclaw/compare/v1.6.0...v1.7.0) (2026-03-12)
 
 
