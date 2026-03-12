@@ -190,6 +190,10 @@ export const schema = `
     resourcePath: String!
     """The actor UUID/ID if authenticated."""
     actorId: String
+    """Actor classification such as supervisor, api_key, or mcp."""
+    actorType: String
+    """How the actor authenticated or entered the system."""
+    actorSource: String
     """JSON details of the request."""
     details: JSON
     """Creation timestamp (ISO-8601)."""
@@ -276,6 +280,9 @@ export const schema = `
     workflowTransitionId: ID!
     status: String!
     assignee: String
+    assigneeActorId: String
+    assigneeActorType: String
+    assigneeActorSource: String
     createdAt: String
     updatedAt: String
   }
@@ -285,6 +292,9 @@ export const schema = `
     id: ID!
     contentItemId: ID!
     authorId: String!
+    authorActorId: String
+    authorActorType: String
+    authorActorSource: String
     comment: String!
     createdAt: String
   }

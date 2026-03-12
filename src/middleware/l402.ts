@@ -9,6 +9,7 @@ import {
   ProviderPaymentStatus
 } from '../interfaces/payment-provider.js';
 import { paymentFlowMetrics } from '../services/payment-metrics.js';
+import { resolveActorIdentity, type ActorIdentity } from '../services/actor-identity.js';
 
 const DEFAULT_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const MAX_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours safety cap
@@ -19,6 +20,7 @@ type PaymentState = 'pending' | 'paid' | 'consumed' | 'expired' | 'failed';
 type RequestDetails = {
   path?: string;
   domainId?: number;
+  actor?: ActorIdentity;
   requestInfo?: {
     method?: string;
     headers?: Record<string, string | string[] | undefined>;
@@ -452,6 +454,7 @@ export function l402Middleware(options: L402Options) {
     const enforcementParams: RequestDetails = {
       path,
       domainId: request.authPrincipal?.domainId,
+      actor: resolveActorIdentity(request.authPrincipal),
       requestInfo: {
         method: request.method,
         headers: sanitizedHeaders,

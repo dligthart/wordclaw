@@ -93,6 +93,9 @@ type WorkspaceWorkTarget = {
         id: number;
         status: string;
         assignee: string | null;
+        assigneeActorId: string | null;
+        assigneeActorType: string | null;
+        assigneeActorSource: string | null;
         workflowTransitionId: number;
         actionable: boolean;
         fromState: string;
@@ -492,6 +495,9 @@ async function resolveWorkTargetForContentType(
             workflowTransitionId: reviewTasks.workflowTransitionId,
             status: reviewTasks.status,
             assignee: reviewTasks.assignee,
+            assigneeActorId: reviewTasks.assigneeActorId,
+            assigneeActorType: reviewTasks.assigneeActorType,
+            assigneeActorSource: reviewTasks.assigneeActorSource,
             createdAt: reviewTasks.createdAt,
             updatedAt: reviewTasks.updatedAt,
         }).from(reviewTasks).where(and(
@@ -576,6 +582,9 @@ async function resolveWorkTargetForContentType(
                     id: candidate.task.id,
                     status: candidate.task.status,
                     assignee: candidate.task.assignee,
+                    assigneeActorId: candidate.task.assigneeActorId ?? null,
+                    assigneeActorType: candidate.task.assigneeActorType ?? null,
+                    assigneeActorSource: candidate.task.assigneeActorSource ?? null,
                     workflowTransitionId: candidate.task.workflowTransitionId,
                     actionable: candidate.actionable,
                     fromState: candidate.transition.fromState,

@@ -7,6 +7,7 @@ import {
     buildApiKeyPrincipal,
     buildMcpLocalPrincipal,
     buildSupervisorPrincipal,
+    resolveActorIdentityRef,
     resolveActorProfileId,
     toAuditActor
 } from './actor-identity.js';
@@ -81,5 +82,27 @@ describe('actor identity helpers', () => {
             actorId: 'supervisor:4',
             keyId: 'supervisor:4',
         })).toEqual(['supervisor:4']);
+    });
+
+    it('resolves canonical actor refs and legacy numeric ids into structured actor identity', () => {
+        expect(resolveActorIdentityRef('api_key:12')).toEqual({
+            actorId: 'api_key:12',
+            actorType: 'api_key',
+            actorSource: 'db'
+        });
+
+        expect(resolveActorIdentityRef('42')).toEqual({
+            actorId: 'api_key:42',
+            actorType: 'api_key',
+            actorSource: 'db'
+        });
+
+        expect(resolveActorIdentityRef('supervisor:7')).toEqual({
+            actorId: 'supervisor:7',
+            actorType: 'supervisor',
+            actorSource: 'cookie'
+        });
+
+        expect(resolveActorIdentityRef('unstructured-user')).toBeUndefined();
     });
 });

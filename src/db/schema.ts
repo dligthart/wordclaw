@@ -112,6 +112,8 @@ export const payments = pgTable('payments', {
     lastEventId: text('last_event_id'),
     resourcePath: text('resource_path').notNull(),
     actorId: text('actor_id'),
+    actorType: text('actor_type'),
+    actorSource: text('actor_source'),
     details: jsonb('details'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -183,6 +185,9 @@ export const reviewTasks = pgTable('review_tasks', {
     workflowTransitionId: integer('workflow_transition_id').references(() => workflowTransitions.id).notNull(),
     status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected', 'changes_requested'
     assignee: text('assignee'), // API Key Hash or Supervisor ID
+    assigneeActorId: text('assignee_actor_id'),
+    assigneeActorType: text('assignee_actor_type'),
+    assigneeActorSource: text('assignee_actor_source'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -192,6 +197,9 @@ export const reviewComments = pgTable('review_comments', {
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     contentItemId: integer('content_item_id').references(() => contentItems.id, { onDelete: 'cascade' }).notNull(),
     authorId: text('author_id').notNull(), // API Key Hash or Supervisor ID
+    authorActorId: text('author_actor_id'),
+    authorActorType: text('author_actor_type'),
+    authorActorSource: text('author_actor_source'),
     comment: text('comment').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
 });

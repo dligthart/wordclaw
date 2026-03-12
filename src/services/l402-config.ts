@@ -10,6 +10,7 @@ import { LnbitsPaymentProvider } from './lnbits-payment-provider.js';
 import { MockPaymentProvider } from './mock-payment-provider.js';
 import { paymentFlowMetrics } from './payment-metrics.js';
 import { getPaymentByHash, transitionPaymentStatus } from './payment-ledger.js';
+import { type ActorIdentity } from './actor-identity.js';
 
 const SAFE_PAYMENT_HEADER_ALLOWLIST = new Set([
   'user-agent',
@@ -25,6 +26,7 @@ type PaymentState = 'pending' | 'paid' | 'consumed' | 'expired' | 'failed';
 type RequestDetails = {
   path?: string;
   domainId?: number;
+  actor?: ActorIdentity;
   requestInfo?: {
     method?: string;
     headers?: Record<string, unknown>;
@@ -285,11 +287,7 @@ export const globalL402Options: L402Options = {
     const headers = (reqDetails.requestInfo?.headers || {}) as Record<string, unknown>;
     const method = reqDetails.requestInfo?.method || 'UNKNOWN';
     const safeHeaders = pickSafePaymentHeaders(headers);
-
-    let actorId: string | null = null;
-    if (typeof headers.authorization === 'string') {
-      actorId = 'system';
-    }
+    const actorIdentity = reqDetails.actor;
 
     const domainId = getDomainIdFromContext(reqDetails);
 
@@ -303,7 +301,9 @@ export const globalL402Options: L402Options = {
       status: 'pending',
       expiresAt: invoice.expiresAt,
       resourcePath: reqDetails.path || '/api',
-      actorId,
+      actorId: actorIdentity?.actorId ?? null,
+      actorType: actorIdentity?.actorType ?? null,
+      actorSource: actorIdentity?.actorSource ?? null,
       details: {
         method,
         headers: safeHeaders,

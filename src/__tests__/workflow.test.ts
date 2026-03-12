@@ -140,6 +140,9 @@ describe('Workflow & Review System (Domain 1)', () => {
         );
 
         expect(decisionResult.status).toBe('approved');
+        expect(task.assigneeActorId).toBe('api_key:77');
+        expect(task.assigneeActorType).toBe('api_key');
+        expect(task.assigneeActorSource).toBe('db');
 
         const [finalItem] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
         expect(finalItem.status).toBe('in_review');
@@ -153,16 +156,28 @@ describe('Workflow & Review System (Domain 1)', () => {
             data: JSON.stringify({ title: 'Discussion Item' })
         }).returning();
 
-        const comment1 = await WorkflowService.addComment(domainId, item.id, 'AgentA', 'Looks good to me.');
+        const comment1 = await WorkflowService.addComment(domainId, item.id, {
+            keyId: 101,
+            source: 'test',
+        }, 'Looks good to me.');
         expect(comment1.comment).toBe('Looks good to me.');
+        expect(comment1.authorId).toBe('api_key:101');
+        expect(comment1.authorActorId).toBe('api_key:101');
+        expect(comment1.authorActorType).toBe('api_key');
+        expect(comment1.authorActorSource).toBe('test');
 
-        const comment2 = await WorkflowService.addComment(domainId, item.id, 'AgentB', 'Needs more citations.');
+        const comment2 = await WorkflowService.addComment(domainId, item.id, 'supervisor:9', 'Needs more citations.');
         expect(comment2.comment).toBe('Needs more citations.');
+        expect(comment2.authorId).toBe('supervisor:9');
+        expect(comment2.authorActorType).toBe('supervisor');
+        expect(comment2.authorActorSource).toBe('cookie');
 
         const list = await WorkflowService.listComments(domainId, item.id);
         expect(list.length).toBe(2);
-        expect(list[0].authorId).toBe('AgentB');
-        expect(list[1].authorId).toBe('AgentA');
+        expect(list[0].authorId).toBe('supervisor:9');
+        expect(list[0].authorActorId).toBe('supervisor:9');
+        expect(list[1].authorId).toBe('api_key:101');
+        expect(list[1].authorActorId).toBe('api_key:101');
     });
 
     it('should reject workflow creation when content type belongs to another domain', async () => {

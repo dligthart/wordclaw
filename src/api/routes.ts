@@ -1112,6 +1112,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 id: Type.Number(),
                 status: Type.String(),
                 assignee: Type.Union([Type.String(), Type.Null()]),
+                assigneeActorId: Type.Union([Type.String(), Type.Null()]),
+                assigneeActorType: Type.Union([Type.String(), Type.Null()]),
+                assigneeActorSource: Type.Union([Type.String(), Type.Null()]),
                 workflowTransitionId: Type.Number(),
                 actionable: Type.Boolean(),
                 fromState: Type.String(),
@@ -4614,6 +4617,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     status: Type.String(),
                     resourcePath: Type.String(),
                     actorId: Type.Union([Type.String(), Type.Null()]),
+                    actorType: Type.Union([Type.String(), Type.Null()]),
+                    actorSource: Type.Union([Type.String(), Type.Null()]),
                     details: Type.Any(),
                     createdAt: Type.String()
                 }))),
@@ -4635,6 +4640,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             status: payments.status,
             resourcePath: payments.resourcePath,
             actorId: payments.actorId,
+            actorType: payments.actorType,
+            actorSource: payments.actorSource,
             details: payments.details,
             createdAt: payments.createdAt
         })
@@ -4672,6 +4679,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     status: Type.String(),
                     resourcePath: Type.String(),
                     actorId: Type.Union([Type.String(), Type.Null()]),
+                    actorType: Type.Union([Type.String(), Type.Null()]),
+                    actorSource: Type.Union([Type.String(), Type.Null()]),
                     details: Type.Any(),
                     createdAt: Type.String()
                 })),
@@ -5385,7 +5394,15 @@ export default async function apiRoutes(server: FastifyInstance) {
             response: {
                 201: createAIResponse(Type.Object({
                     id: Type.Number(),
-                    status: Type.String()
+                    contentItemId: Type.Number(),
+                    workflowTransitionId: Type.Number(),
+                    status: Type.String(),
+                    assignee: Type.Union([Type.String(), Type.Null()]),
+                    assigneeActorId: Type.Union([Type.String(), Type.Null()]),
+                    assigneeActorType: Type.Union([Type.String(), Type.Null()]),
+                    assigneeActorSource: Type.Union([Type.String(), Type.Null()]),
+                    createdAt: Type.String(),
+                    updatedAt: Type.String()
                 }))
             }
         }
@@ -5403,7 +5420,11 @@ export default async function apiRoutes(server: FastifyInstance) {
         });
 
         return reply.status(201).send({
-            data: task,
+            data: {
+                ...task,
+                createdAt: task.createdAt.toISOString(),
+                updatedAt: task.updatedAt.toISOString()
+            },
             meta: buildMeta('Item submitted for review', [`POST /api/review-tasks/${task.id}/decide`], 'high', 1)
         });
     });
@@ -5439,7 +5460,15 @@ export default async function apiRoutes(server: FastifyInstance) {
             response: {
                 200: createAIResponse(Type.Object({
                     id: Type.Number(),
-                    status: Type.String()
+                    contentItemId: Type.Number(),
+                    workflowTransitionId: Type.Number(),
+                    status: Type.String(),
+                    assignee: Type.Union([Type.String(), Type.Null()]),
+                    assigneeActorId: Type.Union([Type.String(), Type.Null()]),
+                    assigneeActorType: Type.Union([Type.String(), Type.Null()]),
+                    assigneeActorSource: Type.Union([Type.String(), Type.Null()]),
+                    createdAt: Type.String(),
+                    updatedAt: Type.String()
                 }))
             }
         }
@@ -5456,7 +5485,11 @@ export default async function apiRoutes(server: FastifyInstance) {
         );
 
         return reply.status(200).send({
-            data: task,
+            data: {
+                ...task,
+                createdAt: task.createdAt.toISOString(),
+                updatedAt: task.updatedAt.toISOString()
+            },
             meta: buildMeta(`Task ${payload.decision}`, [], 'low', 1)
         });
     });
@@ -5470,6 +5503,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 200: createAIResponse(Type.Array(Type.Object({
                     id: Type.Number(),
                     authorId: Type.String(),
+                    authorActorId: Type.Union([Type.String(), Type.Null()]),
+                    authorActorType: Type.Union([Type.String(), Type.Null()]),
+                    authorActorSource: Type.Union([Type.String(), Type.Null()]),
                     comment: Type.String(),
                     createdAt: Type.String() // Typescript requires native String for output serialization
                 })))
@@ -5496,6 +5532,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 201: createAIResponse(Type.Object({
                     id: Type.Number(),
                     authorId: Type.String(),
+                    authorActorId: Type.Union([Type.String(), Type.Null()]),
+                    authorActorType: Type.Union([Type.String(), Type.Null()]),
+                    authorActorSource: Type.Union([Type.String(), Type.Null()]),
                     comment: Type.String()
                 }))
             }
@@ -5504,9 +5543,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { id } = request.params as { id: number };
         const payload = request.body as any;
         const authPrincipal = (request as any).authPrincipal;
-        const authorId = authPrincipal?.keyId?.toString() || 'supervisor';
-
-        const comment = await WorkflowService.addComment(getDomainId(request), id, authorId, payload.comment);
+        const comment = await WorkflowService.addComment(getDomainId(request), id, authPrincipal ?? 'system', payload.comment);
 
         return reply.status(201).send({
             data: comment,

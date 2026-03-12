@@ -1657,6 +1657,67 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns canonical actor fields for payment activity', async () => {
+        const app = await buildServer();
+        const countWhereMock = vi.fn().mockResolvedValue([{ total: 1 }]);
+        const offsetMock = vi.fn().mockResolvedValue([
+            {
+                id: 14,
+                paymentHash: 'hash-14',
+                amountSatoshis: 210,
+                status: 'paid',
+                resourcePath: '/api/content-items/7',
+                actorId: 'supervisor:3',
+                actorType: 'supervisor',
+                actorSource: 'cookie',
+                details: { provider: 'mock' },
+                createdAt: '2026-03-12T10:00:00.000Z'
+            }
+        ]);
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: countWhereMock,
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockReturnValue({
+                        orderBy: vi.fn().mockReturnValue({
+                            limit: vi.fn().mockReturnValue({
+                                offset: offsetMock,
+                            }),
+                        }),
+                    }),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/payments?limit=10',
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: Array<{
+                    actorId?: string;
+                    actorType?: string;
+                    actorSource?: string;
+                }>;
+            };
+
+            expect(body.data[0]).toMatchObject({
+                actorId: 'supervisor:3',
+                actorType: 'supervisor',
+                actorSource: 'cookie'
+            });
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns AUTH_MISSING_API_KEY when auth is required', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'writer=content:read|content:write|audit:read';

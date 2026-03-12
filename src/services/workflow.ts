@@ -9,14 +9,19 @@ import {
 } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { EmbeddingService } from './embedding.js';
-import { buildActorAssignmentRefs } from './actor-identity.js';
+import {
+    buildActorAssignmentRefs,
+    resolveActorIdentity,
+    resolveActorIdentityRef,
+    type PrincipalLike,
+} from './actor-identity.js';
 
 export interface WorkflowTransitionContext {
     domainId: number;
     contentItemId: number;
     workflowTransitionId: number;
     assignee?: string;
-    authPrincipal?: { scopes: Set<string>, domainId: number };
+    authPrincipal?: PrincipalLike & { scopes: Set<string>, domainId: number };
 }
 
 export class WorkflowService {
@@ -133,13 +138,18 @@ export class WorkflowService {
                 eq(reviewTasks.status, 'pending')
             ));
 
+        const assigneeIdentity = resolveActorIdentityRef(assignee);
+
         // 4. Create the new review task
         const [newTask] = await db.insert(reviewTasks).values({
             domainId,
             contentItemId,
             workflowTransitionId,
             status: 'pending',
-            assignee
+            assignee,
+            assigneeActorId: assigneeIdentity?.actorId ?? null,
+            assigneeActorType: assigneeIdentity?.actorType ?? null,
+            assigneeActorSource: assigneeIdentity?.actorSource ?? null,
         }).returning();
 
         // 5. Update the content item native status to the transitional "fromState" (e.g. 'pending_review') 
@@ -222,11 +232,19 @@ export class WorkflowService {
             .orderBy(desc(reviewComments.createdAt), desc(reviewComments.id));
     }
 
-    static async addComment(domainId: number, contentItemId: number, authorId: string, comment: string) {
+    static async addComment(domainId: number, contentItemId: number, author: PrincipalLike | string, comment: string) {
+        const authorIdentity = typeof author === 'string'
+            ? resolveActorIdentityRef(author)
+            : resolveActorIdentity(author);
+        const authorId = authorIdentity?.actorId ?? (typeof author === 'string' ? author : 'system');
+
         const [newComment] = await db.insert(reviewComments).values({
             domainId,
             contentItemId,
             authorId,
+            authorActorId: authorIdentity?.actorId ?? null,
+            authorActorType: authorIdentity?.actorType ?? null,
+            authorActorSource: authorIdentity?.actorSource ?? null,
             comment
         }).returning();
         return newComment;

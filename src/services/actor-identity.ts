@@ -157,6 +157,75 @@ export function resolveActorIdentity(principal: PrincipalLike | null | undefined
     return undefined;
 }
 
+export function resolveActorIdentityRef(ref: string | null | undefined): ActorIdentity | undefined {
+    if (typeof ref !== 'string') {
+        return undefined;
+    }
+
+    const normalized = ref.trim();
+    if (normalized.length === 0) {
+        return undefined;
+    }
+
+    if (/^\d+$/.test(normalized)) {
+        return {
+            actorId: `api_key:${normalized}`,
+            actorType: 'api_key',
+            actorSource: 'db'
+        };
+    }
+
+    if (normalized === 'anonymous') {
+        return {
+            actorId: 'anonymous',
+            actorType: 'anonymous',
+            actorSource: 'anonymous'
+        };
+    }
+
+    if (normalized === 'mcp-local') {
+        return {
+            actorId: 'mcp-local',
+            actorType: 'mcp',
+            actorSource: 'local'
+        };
+    }
+
+    if (normalized === 'system') {
+        return {
+            actorId: 'system',
+            actorType: 'system',
+            actorSource: 'system'
+        };
+    }
+
+    if (normalized.startsWith('api_key:')) {
+        return {
+            actorId: normalized,
+            actorType: 'api_key',
+            actorSource: 'db'
+        };
+    }
+
+    if (normalized.startsWith('env_key:')) {
+        return {
+            actorId: normalized,
+            actorType: 'env_key',
+            actorSource: 'env'
+        };
+    }
+
+    if (normalized.startsWith('supervisor:')) {
+        return {
+            actorId: normalized,
+            actorType: 'supervisor',
+            actorSource: 'cookie'
+        };
+    }
+
+    return undefined;
+}
+
 export function toAuditActor(actor: number | PrincipalLike | AuditActor | null | undefined): AuditActor | undefined {
     if (typeof actor === 'number') {
         return {

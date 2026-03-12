@@ -426,4 +426,55 @@ describe('GraphQL Resolver Contracts', () => {
 
         createTransitionSpy.mockRestore();
     });
+
+    it('addReviewComment forwards canonical actor identity to the workflow service', async () => {
+        const addCommentSpy = vi.spyOn(WorkflowService, 'addComment').mockResolvedValue({
+            id: 77,
+            domainId: 1,
+            contentItemId: 12,
+            authorId: 'api_key:7',
+            authorActorId: 'api_key:7',
+            authorActorType: 'api_key',
+            authorActorSource: 'db',
+            comment: 'Looks good.',
+            createdAt: new Date('2026-03-12T10:00:00.000Z'),
+        } as any);
+
+        try {
+            const result = await resolvers.Mutation.addReviewComment({}, {
+                contentItemId: '12',
+                comment: 'Looks good.'
+            }, {
+                authPrincipal: {
+                    keyId: 7,
+                    domainId: 1,
+                    scopes: new Set(['content:write']),
+                    actorId: 'api_key:7',
+                    actorType: 'api_key',
+                    actorSource: 'db'
+                }
+            }, {});
+
+            expect(addCommentSpy).toHaveBeenCalledWith(
+                1,
+                12,
+                expect.objectContaining({
+                    actorId: 'api_key:7',
+                    actorType: 'api_key',
+                    actorSource: 'db'
+                }),
+                'Looks good.'
+            );
+            expect(result).toMatchObject({
+                authorId: 'api_key:7',
+                authorActorId: 'api_key:7',
+                authorActorType: 'api_key',
+                authorActorSource: 'db',
+                comment: 'Looks good.',
+                createdAt: '2026-03-12T10:00:00.000Z'
+            });
+        } finally {
+            addCommentSpy.mockRestore();
+        }
+    });
 });

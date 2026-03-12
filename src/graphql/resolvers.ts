@@ -2121,10 +2121,12 @@ export const resolvers = {
         }),
 
         addReviewComment: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.contentItemId }), async (_parent: unknown, args: { contentItemId: IdValue; comment: string }, context?: unknown) => {
-            const authorId = typeof (context as any)?.authPrincipal?.keyId === 'number'
-                ? (context as any).authPrincipal.keyId.toString()
-                : 'supervisor';
-            const comment = await WorkflowService.addComment(getDomainId(context), parseId(args.contentItemId), authorId, args.comment);
+            const comment = await WorkflowService.addComment(
+                getDomainId(context),
+                parseId(args.contentItemId),
+                (context as any)?.authPrincipal ?? 'system',
+                args.comment
+            );
             return {
                 ...comment,
                 createdAt: comment.createdAt.toISOString()
