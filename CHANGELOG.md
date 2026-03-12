@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/dligthart/wordclaw/compare/v1.0.0...v1.1.0) (2026-03-12)
+
+
+### Features
+
+* **cli:** export mcp tools as openai functions ([186071a](https://github.com/dligthart/wordclaw/commit/186071a8559a0285bd71dcfcb060c2127493da25))
+
 # 1.0.0 (2026-03-12)
 
 
