@@ -11,6 +11,7 @@ const USAGE_LINES = [
     'mcp call <tool> [--json <object>|--file <path>]',
     'mcp prompt <prompt> [--json <object>|--file <path>]',
     'mcp resource <uri>',
+    'mcp openai-tools',
     'mcp smoke',
     'capabilities show',
     'capabilities status',
@@ -65,6 +66,7 @@ const EXAMPLES: Record<string, string[]> = {
     ],
     'mcp': [
         'wordclaw mcp inspect',
+        'wordclaw mcp openai-tools --raw',
         'wordclaw mcp call guide_task --json \'{"taskId":"discover-workspace","intent":"review"}\'',
     ],
     'workspace': [

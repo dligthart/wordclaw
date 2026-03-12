@@ -105,6 +105,20 @@ Remote MCP is stateless today:
 - `GET /mcp` returns `405`, so clients fall back to request/response mode instead of a long-lived SSE stream
 - no MCP session ID is issued
 
+## OpenAI-Compatible Tool Export
+
+If you want to reuse the live MCP tool contract in an OpenAI-compatible agent stack, export the current inventory through the CLI:
+
+```bash
+node dist/cli/index.js mcp openai-tools \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer \
+  --raw
+```
+
+That returns an array of `type: "function"` tool definitions using the live MCP names, descriptions, and input schemas. This is useful when you want an OpenAI tool list that stays aligned with the running WordClaw deployment instead of maintaining a second handwritten contract.
+
 ## Tools
 
 Tools are the primary interface for agents. Each tool maps to a CRUD operation and uses Zod for input validation.

@@ -191,6 +191,7 @@ node dist/cli/index.js mcp resource content://types
 node dist/cli/index.js mcp resource system://deployment-status
 node dist/cli/index.js mcp resource system://workspace-context
 node dist/cli/index.js mcp resource system://agent-guidance
+node dist/cli/index.js mcp openai-tools --raw
 node dist/cli/index.js mcp smoke
 
 # Attach to a running remote MCP endpoint instead of spawning stdio
@@ -206,6 +207,7 @@ Supported MCP features:
 - direct tool calls
 - prompt retrieval
 - resource reads
+- OpenAI-compatible function tool export from the live MCP inventory
 - end-to-end smoke validation across content, workflow, audit, API key, webhook, and payment-read surfaces
 
 Important transport note:
@@ -216,6 +218,7 @@ Important transport note:
 - when running in `http` mode, the CLI attaches directly to `/mcp`
 - `mcp inspect` now also includes the deployment manifest, deployment status, current actor snapshot, and workspace context when the MCP server exposes `system://capabilities`, `system://deployment-status`, `system://current-actor`, and `system://workspace-context`
 - `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, workspace targeting, authoring, review, integrations, provenance checks, and paid-content flows
+- `mcp openai-tools` exports the current MCP tool inventory as OpenAI-compatible `type: "function"` tools so external agents can reuse the live contract without hand-mapping each tool
 
 Usability details:
 

@@ -10,6 +10,7 @@ describe('buildUsage', () => {
         expect(usage).toContain('wordclaw <command> [subcommand] [options]');
         expect(usage).toContain('repl');
         expect(usage).toContain('script run --file <path> [--continue-on-error]');
+        expect(usage).toContain('mcp openai-tools');
         expect(usage).toContain('workspace resolve --intent authoring|review|workflow|paid');
         expect(usage).toContain('--config <path>');
         expect(usage).toContain('--format <type>');

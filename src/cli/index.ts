@@ -35,6 +35,7 @@ import {
     runSmoke,
     WordClawMcpClient,
 } from './lib/mcp-client.js';
+import { buildOpenAiFunctionTools } from './lib/openai-tools.js';
 import {
     RestCliClient,
     RestCliError,
@@ -74,7 +75,7 @@ const TOP_LEVEL_COMMANDS = [
     'workflow',
     'l402',
 ] as const;
-const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'smoke'] as const;
+const MCP_SUBCOMMANDS = ['inspect', 'whoami', 'call', 'prompt', 'resource', 'openai-tools', 'smoke'] as const;
 const SCRIPT_SUBCOMMANDS = ['run'] as const;
 const CAPABILITY_SUBCOMMANDS = ['show', 'status', 'whoami'] as const;
 const WORKSPACE_SUBCOMMANDS = ['guide', 'resolve'] as const;
@@ -448,6 +449,21 @@ async function handleMcp(repoRoot: string, args: ParsedArgs, runtimeOptions: Cli
                     text,
                 },
                 text,
+            );
+            return;
+        }
+
+        if (action === 'openai-tools') {
+            const tools = buildOpenAiFunctionTools(await client.listTools());
+            printStructured(
+                args,
+                {
+                    transport: 'mcp',
+                    action: 'openai-tools',
+                    toolCount: tools.length,
+                    tools,
+                },
+                tools,
             );
             return;
         }
