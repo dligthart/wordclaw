@@ -28,11 +28,16 @@ import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
+import { SUPPORTED_REACTIVE_EVENT_TOPICS, type ReactiveEventBindings } from './reactive-events.js';
 
 type McpRequestExtra = {
     authInfo?: {
         extra?: Record<string, unknown>;
     };
+};
+
+type CreateMcpServerOptions = {
+    reactiveEvents?: ReactiveEventBindings;
 };
 
 function readResourceTemplateValue(value: string | string[] | undefined) {
@@ -72,7 +77,7 @@ function resolveMcpPrincipal(extra?: McpRequestExtra): ActorPrincipal {
     return buildMcpLocalPrincipal(domainId);
 }
 
-export function createServer() {
+export function createServer(options: CreateMcpServerOptions = {}) {
     const server = new McpServer({
         name: 'WordClaw CMS',
         version: '1.0.0'
@@ -2052,6 +2057,33 @@ server.tool(
         const decision = await PolicyEngine.evaluate(operationContext);
         return okJson(decision);
     })
+);
+
+server.tool(
+    'subscribe_events',
+    'Subscribe the active MCP session to WordClaw reactive runtime events such as content publication or workflow approval.',
+    {
+        topics: z.array(z.string()).min(1).describe('Event topics to subscribe to, e.g. content_item.published'),
+        replaceExisting: z.boolean().optional().default(false).describe('If true, replace the current topic set instead of appending to it'),
+    },
+    async ({ topics, replaceExisting }, extra) => {
+        const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
+
+        if (!options.reactiveEvents) {
+            return err(
+                'REACTIVE_STREAMS_UNAVAILABLE: This MCP transport does not expose session-backed reactive events. Use the remote HTTP /mcp endpoint with a long-lived session.'
+            );
+        }
+
+        const subscription = options.reactiveEvents.subscribe(topics, replaceExisting);
+
+        return okJson({
+            ...subscription,
+            requestedTopics: topics,
+            supportedTopics: SUPPORTED_REACTIVE_EVENT_TOPICS,
+            currentActor: buildCurrentActorSnapshot(principal),
+        });
+    }
 );
 
 server.tool(

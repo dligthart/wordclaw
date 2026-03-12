@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 
 export type AuditEventPayload = {
     id: number;
+    domainId: number;
     action: string;
     entityType: string;
     entityId: number;

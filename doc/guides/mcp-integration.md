@@ -99,11 +99,43 @@ Authentication for the HTTP endpoint matches the main runtime:
 - API key via `Authorization: Bearer <api-key>`
 - Supervisor session via `supervisor_session` plus `x-wordclaw-domain`
 
-Remote MCP is stateless today:
+Remote MCP is session-backed today:
 
-- `POST /mcp` handles MCP requests
-- `GET /mcp` returns `405`, so clients fall back to request/response mode instead of a long-lived SSE stream
-- no MCP session ID is issued
+- `POST /mcp` initializes the MCP session and handles normal request or response exchange
+- the server returns `mcp-session-id` after initialization
+- `GET /mcp` holds a standalone SSE stream open for server-pushed notifications
+- `DELETE /mcp` closes the active session explicitly
+
+This matters for reactive agents. A long-lived MCP client can now subscribe to runtime events and receive them over the same remote session instead of polling REST or MCP tools on a timer.
+
+## Reactive Subscriptions
+
+Reactive event delivery currently ships as an MCP session feature on the remote HTTP transport.
+
+- Tool: `subscribe_events`
+- Notification method: `notifications/wordclaw/event`
+- First supported topics:
+  - `content_item.published`
+  - `content_item.approved`
+  - `workflow.review.approved`
+  - `workflow.review.rejected`
+  - `content_item.create`, `content_item.update`, `content_item.delete`, `content_item.rollback`
+  - `content_item.*`
+  - `audit.*`
+
+The CLI is intentionally short-lived, so `wordclaw mcp call subscribe_events ...` is useful for contract inspection but not for staying attached long enough to receive pushed notifications. Use a persistent MCP client or the verification script below when you want to observe live events.
+
+```bash
+npx tsx verify-mcp-streams.ts
+```
+
+That script:
+
+- connects to the remote `/mcp` endpoint over Streamable HTTP
+- confirms the standalone SSE stream is attached
+- subscribes to `content_item.published`
+- creates a published content item through the normal REST API
+- waits for the matching MCP notification
 
 ## OpenAI-Compatible Tool Export
 
@@ -177,6 +209,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | Tool              | Description                    |
 |-------------------|--------------------------------|
 | `evaluate_policy` | Dry-run permission checks against the PolicyEngine |
+| `subscribe_events` | Subscribe the active MCP session to reactive WordClaw runtime events |
 
 ### Agent Guidance Tools
 

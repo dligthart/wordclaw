@@ -25,8 +25,7 @@ import { PolicyEngine } from './services/policy.js';
 import { buildOperationContext } from './services/policy-adapters.js';
 import { parseSupervisorDomainHeader } from './api/domain-context.js';
 import { buildSupervisorPrincipal, type ActorPrincipal } from './services/actor-identity.js';
-import { createServer as createMcpServer } from './mcp/server.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { McpHttpSessionManager } from './mcp/http-session-manager.js';
 
 function readRequestIdHeader(raw: string | string[] | undefined): string | null {
     if (typeof raw === 'string' && raw.trim().length > 0) {
@@ -97,6 +96,41 @@ function buildMcpAuthInfo(request: { headers: Record<string, unknown> }, princip
             wordclawPrincipal: principal
         }
     };
+}
+
+function readMcpSessionIdHeader(raw: string | string[] | undefined): string | null {
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+        return raw.trim();
+    }
+
+    if (Array.isArray(raw) && typeof raw[0] === 'string' && raw[0].trim().length > 0) {
+        return raw[0].trim();
+    }
+
+    return null;
+}
+
+function isInitializeRequestPayload(body: unknown): boolean {
+    const messages = Array.isArray(body) ? body : [body];
+
+    return messages.some((message) => (
+        !!message
+        && typeof message === 'object'
+        && (message as { method?: unknown }).method === 'initialize'
+    ));
+}
+
+function sendMcpJsonError(reply: {
+    status: (code: number) => { send: (payload: unknown) => unknown };
+}, statusCode: number, code: number, message: string) {
+    return reply.status(statusCode).send({
+        jsonrpc: '2.0',
+        error: {
+            code,
+            message
+        },
+        id: null
+    });
 }
 
 async function resolveInteractivePrincipal(request: {
@@ -219,35 +253,47 @@ export async function buildServer(): Promise<FastifyInstance> {
         }
     });
 
+    const mcpSessionManager = new McpHttpSessionManager();
+
+    server.addHook('onClose', async () => {
+        await mcpSessionManager.close();
+    });
+
     server.post('/mcp', async (request, reply) => {
         const principal = await resolveInteractivePrincipal(request as typeof request & {
             headers: Record<string, unknown>;
         });
+        const sessionId = readMcpSessionIdHeader(request.headers['mcp-session-id'] as string | string[] | undefined);
+        const isInitializeRequest = isInitializeRequestPayload(request.body);
+        let session = sessionId ? mcpSessionManager.get(sessionId) : null;
 
-        const mcpServer = createMcpServer();
-        const transport = new StreamableHTTPServerTransport({
-            sessionIdGenerator: undefined,
-            enableJsonResponse: true
-        });
-
-        const closeTransport = () => {
-            void transport.close();
-            void mcpServer.close();
-        };
-
-        reply.raw.once('close', closeTransport);
+        if (sessionId) {
+            if (!session || !session.matchesPrincipal(principal)) {
+                return sendMcpJsonError(reply, 404, -32001, 'Session not found');
+            }
+        } else if (isInitializeRequest) {
+            session = await mcpSessionManager.createSession(principal);
+        } else {
+            return sendMcpJsonError(reply, 400, -32000, 'Bad Request: Mcp-Session-Id header is required');
+        }
 
         (request.raw as IncomingMessage & {
             auth?: ReturnType<typeof buildMcpAuthInfo>;
         }).auth = buildMcpAuthInfo(request as { headers: Record<string, unknown> }, principal);
 
         try {
-            await mcpServer.connect(transport);
-            await transport.handleRequest(request.raw, reply.raw, request.body);
+            await session.handleRequest(
+                request.raw as IncomingMessage & {
+                    auth?: ReturnType<typeof buildMcpAuthInfo>;
+                },
+                reply.raw,
+                request.body
+            );
             return reply;
         } catch (error) {
-            reply.raw.off('close', closeTransport);
-            closeTransport();
+            if (!sessionId && !session.sessionId) {
+                await session.close();
+            }
             request.log.error({ err: error }, 'Failed to handle MCP HTTP request');
             if (!reply.sent) {
                 return reply.status(500).send({
@@ -263,26 +309,62 @@ export async function buildServer(): Promise<FastifyInstance> {
         }
     });
 
-    server.get('/mcp', async (_request, reply) => {
-        return reply.status(405).send({
-            jsonrpc: '2.0',
-            error: {
-                code: -32000,
-                message: 'Method not allowed.'
-            },
-            id: null
+    server.get('/mcp', async (request, reply) => {
+        const principal = await resolveInteractivePrincipal(request as typeof request & {
+            headers: Record<string, unknown>;
         });
+        const sessionId = readMcpSessionIdHeader(request.headers['mcp-session-id'] as string | string[] | undefined);
+
+        if (!sessionId) {
+            return sendMcpJsonError(reply, 400, -32000, 'Bad Request: Mcp-Session-Id header is required');
+        }
+
+        const session = mcpSessionManager.get(sessionId);
+        if (!session || !session.matchesPrincipal(principal)) {
+            return sendMcpJsonError(reply, 404, -32001, 'Session not found');
+        }
+
+        (request.raw as IncomingMessage & {
+            auth?: ReturnType<typeof buildMcpAuthInfo>;
+        }).auth = buildMcpAuthInfo(request as { headers: Record<string, unknown> }, principal);
+
+        await session.handleRequest(
+            request.raw as IncomingMessage & {
+                auth?: ReturnType<typeof buildMcpAuthInfo>;
+            },
+            reply.raw
+        );
+
+        return reply;
     });
 
-    server.delete('/mcp', async (_request, reply) => {
-        return reply.status(405).send({
-            jsonrpc: '2.0',
-            error: {
-                code: -32000,
-                message: 'Method not allowed.'
-            },
-            id: null
+    server.delete('/mcp', async (request, reply) => {
+        const principal = await resolveInteractivePrincipal(request as typeof request & {
+            headers: Record<string, unknown>;
         });
+        const sessionId = readMcpSessionIdHeader(request.headers['mcp-session-id'] as string | string[] | undefined);
+
+        if (!sessionId) {
+            return sendMcpJsonError(reply, 400, -32000, 'Bad Request: Mcp-Session-Id header is required');
+        }
+
+        const session = mcpSessionManager.get(sessionId);
+        if (!session || !session.matchesPrincipal(principal)) {
+            return sendMcpJsonError(reply, 404, -32001, 'Session not found');
+        }
+
+        (request.raw as IncomingMessage & {
+            auth?: ReturnType<typeof buildMcpAuthInfo>;
+        }).auth = buildMcpAuthInfo(request as { headers: Record<string, unknown> }, principal);
+
+        await session.handleRequest(
+            request.raw as IncomingMessage & {
+                auth?: ReturnType<typeof buildMcpAuthInfo>;
+            },
+            reply.raw
+        );
+
+        return reply;
     });
 
     server.register(import('@fastify/rate-limit'), {

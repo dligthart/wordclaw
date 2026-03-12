@@ -320,6 +320,7 @@ describe('MCP HTTP transport', () => {
         });
 
         await client.connect(transport);
+        expect(transport.sessionId).toBeTruthy();
 
         const tools = await client.listTools();
         const resources = await client.listResources();
@@ -604,6 +605,126 @@ describe('MCP HTTP transport', () => {
         const decisionText = extractFirstText(policyDecision.content as Array<{ type: string; text?: string }>);
         expect(JSON.parse(decisionText)).toEqual(expect.objectContaining({
             outcome: 'allow'
+        }));
+    });
+
+    it('streams subscribed content publication events over the MCP SSE session', async () => {
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+        const notifications: Array<Record<string, any>> = [];
+
+        client = new Client({
+            name: 'wordclaw-reactive-http-test',
+            version: '1.0.0'
+        });
+        client.fallbackNotificationHandler = async (notification) => {
+            notifications.push(notification as Record<string, any>);
+        };
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'remote-admin'
+                }
+            }
+        });
+
+        await client.connect(transport);
+        expect(transport.sessionId).toBeTruthy();
+
+        await vi.waitFor(async () => {
+            const probe = await fetch(new URL('/mcp', `${baseUrl}/`), {
+                method: 'GET',
+                headers: {
+                    accept: 'text/event-stream',
+                    'mcp-session-id': transport.sessionId as string,
+                    'x-api-key': 'remote-admin'
+                }
+            });
+
+            expect(probe.status).toBe(409);
+        });
+
+        const createTypeResponse = await fetch(new URL('/api/content-types', `${baseUrl}/`), {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'x-api-key': 'remote-admin'
+            },
+            body: JSON.stringify({
+                name: 'Reactive Article',
+                slug: `reactive-article-${Date.now()}`,
+                schema: {
+                    type: 'object',
+                    properties: {
+                        title: { type: 'string' }
+                    },
+                    required: ['title']
+                }
+            })
+        });
+        expect(createTypeResponse.status).toBe(201);
+        const createTypePayload = await createTypeResponse.json() as {
+            data: { id: number };
+        };
+
+        const subscription = await client.callTool({
+            name: 'subscribe_events',
+            arguments: {
+                topics: ['content_item.published'],
+                replaceExisting: true
+            }
+        });
+        const subscriptionText = extractFirstText(subscription.content as Array<{ type: string; text?: string }>);
+        expect(JSON.parse(subscriptionText)).toEqual(expect.objectContaining({
+            subscribedTopics: ['content_item.published'],
+            newlyAddedTopics: ['content_item.published'],
+        }));
+
+        const createItemResponse = await fetch(new URL('/api/content-items', `${baseUrl}/`), {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'x-api-key': 'remote-admin'
+            },
+            body: JSON.stringify({
+                contentTypeId: createTypePayload.data.id,
+                data: {
+                    title: 'Reactive publish event'
+                },
+                status: 'published'
+            })
+        });
+
+        expect(createItemResponse.status).toBe(201);
+
+        await vi.waitFor(() => {
+            expect(
+                notifications.some((notification) => (
+                    notification.method === 'notifications/wordclaw/event'
+                    && notification.params?.topic === 'content_item.published'
+                ))
+            ).toBe(true);
+        }, { timeout: 5000 });
+
+        const eventNotification = notifications.find((notification) => (
+            notification.method === 'notifications/wordclaw/event'
+            && notification.params?.topic === 'content_item.published'
+        ));
+
+        expect(eventNotification).toEqual(expect.objectContaining({
+            method: 'notifications/wordclaw/event',
+            params: expect.objectContaining({
+                topic: 'content_item.published',
+                matchedTopics: ['content_item.published'],
+                event: expect.objectContaining({
+                    source: 'audit',
+                    domainId: 1,
+                    entityType: 'content_item',
+                    action: 'create',
+                    name: 'content_item.published',
+                })
+            })
         }));
     });
 });

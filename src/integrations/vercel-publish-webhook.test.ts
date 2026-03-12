@@ -29,6 +29,7 @@ describe('vercel publish webhook helpers', () => {
         expect(
             shouldTriggerVercelDeploy({
                 id: 1,
+                domainId: 1,
                 action: 'update',
                 entityType: 'content_item',
                 entityId: 7,
@@ -47,6 +48,7 @@ describe('vercel publish webhook helpers', () => {
         expect(
             shouldTriggerVercelDeploy({
                 id: 2,
+                domainId: 1,
                 action: 'update',
                 entityType: 'content_item',
                 entityId: 8,

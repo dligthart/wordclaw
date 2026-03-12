@@ -50,6 +50,7 @@ export async function logAudit(
 
         const eventPayload = {
             id: entry.id,
+            domainId,
             action: entry.action,
             entityType: entry.entityType,
             entityId: entry.entityId,
