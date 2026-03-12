@@ -133,17 +133,30 @@ export class EmbeddingService {
 
         // Flatten object into readable text
         let flatText = '';
-        if (typeof data === 'object') {
-            for (const [key, value] of Object.entries(data)) {
-                if (value && typeof value !== 'object') {
-                    flatText += `${key}: ${value}\n`;
-                } else if (value) {
-                    flatText += `${key}: ${JSON.stringify(value)}\n`;
+        let parsedData = data;
+        if (typeof data === 'string') {
+            try { parsedData = JSON.parse(data); } catch (e) { }
+        }
+
+        if (typeof parsedData === 'object' && parsedData !== null) {
+            for (const [key, value] of Object.entries(parsedData)) {
+                // Skip metadata fields that add noise to vectors and search results
+                if (['slug', 'coverImage', 'authorId', 'category', 'readTimeMinutes', 'avatarUrl', 'socialLinks', 'id'].includes(key)) continue;
+
+                if (value && typeof value === 'string') {
+                    flatText += `${value}\n\n`;
+                } else if (value && typeof value !== 'object') {
+                    flatText += `${value}\n\n`;
+                } else if (Array.isArray(value)) {
+                    flatText += `${value.join(', ')}\n\n`;
                 }
             }
         } else {
-            flatText = String(data);
+            flatText = String(parsedData);
         }
+
+        flatText = flatText.trim();
+        if (!flatText) return [];
 
         // Chunk on sentence/newline boundaries, falling back to word boundaries
         const chunkSize = 1000;
