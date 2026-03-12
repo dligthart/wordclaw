@@ -47,11 +47,21 @@
                     <p id="modal-author" style="color:var(--text-muted); margin-bottom:1rem; font-size: 1.1rem;">By
                         Author</p>
                     <p id="modal-score"
-                        style="color:var(--score); font-weight:bold; margin-bottom:2rem; font-size: 1.2rem;">Score: 0
+                        style="color:var(--score); font-weight:bold; margin-bottom:1rem; font-size: 1.2rem;">Score: 0
                     </p>
+                    <div id="modal-achievements"
+                        style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem; min-height: 28px;"></div>
+                    <div id="modal-inventory"
+                        style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:2rem; min-height: 28px;"></div>
                     <div id="modal-content"
                         style="white-space:pre-wrap; color:var(--text-main); line-height:1.8; font-size: 1.05rem;">
                         Content</div>
+                    <h3 id="modal-gallery-heading" class="hidden"
+                        style="margin-top:2rem; margin-bottom:1rem; color:var(--text-muted); font-family: 'Playfair Display', serif;">
+                        Scene Highlights</h3>
+                    <div id="modal-gallery"
+                        style="display:flex; gap:1rem; overflow-x:auto; padding-bottom:1rem; scroll-snap-type:x mandatory;">
+                    </div>
                 </div>
             </div>
         </main>

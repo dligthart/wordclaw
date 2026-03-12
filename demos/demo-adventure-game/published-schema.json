@@ -1,5 +1,5 @@
 {
-    "name": "published_story_v2",
+    "name": "published_story_v3",
     "description": "An interactive adventure story completed and published by a player.",
     "type": "object",
     "properties": {
@@ -34,6 +34,27 @@
         "finale_image_url": {
             "type": "string",
             "description": "URL of the DALL-E generated finale mural."
+        },
+        "scene_images": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Array of URLs for all scene illustrations."
+        },
+        "inventory": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Array of strings representing the final inventory state."
+        },
+        "achievements": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Array of custom string achievements awarded for this run."
         },
         "body": {
             "type": "string",

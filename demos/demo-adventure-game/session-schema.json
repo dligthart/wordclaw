@@ -1,5 +1,5 @@
 {
-    "name": "game_session",
+    "name": "game_session_v3",
     "description": "A saved interactive fiction game session.",
     "type": "object",
     "properties": {
@@ -56,6 +56,13 @@
         "finaleImageUrl": {
             "type": "string",
             "description": "Ending Mural URL."
+        },
+        "scene_images": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Array of historical scene URLs."
         },
         "body": {
             "type": "string",

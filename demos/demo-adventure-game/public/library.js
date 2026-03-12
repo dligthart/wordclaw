@@ -63,6 +63,60 @@ function showStory(story) {
         ${story.finale_image_url ? `<img src="${story.finale_image_url}" style="width: 100%; max-height: 400px; object-fit: cover; border-radius: 8px; margin-bottom: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />` : ''}
         <p style="white-space: pre-wrap; font-size: 0.95rem; color: var(--text-base);">${story.full_text || 'No content found for this archive.'}</p>
     `;
+
+    const achievementsEl = document.getElementById('modal-achievements');
+    achievementsEl.innerHTML = '';
+    if (story.achievements && story.achievements.length > 0) {
+        story.achievements.forEach(ach => {
+            const badge = document.createElement('span');
+            badge.style.background = 'linear-gradient(45deg, #d4af37, #f3e5ab)';
+            badge.style.color = '#000';
+            badge.style.padding = '0.3rem 0.8rem';
+            badge.style.borderRadius = '20px';
+            badge.style.fontSize = '0.8rem';
+            badge.style.fontWeight = 'bold';
+            badge.style.boxShadow = '0 2px 5px rgba(212, 175, 55, 0.4)';
+            badge.innerHTML = \`🏆 \${ach}\`;
+            achievementsEl.appendChild(badge);
+        });
+    }
+
+    const inventoryEl = document.getElementById('modal-inventory');
+    inventoryEl.innerHTML = '';
+    if (story.inventory && story.inventory.length > 0) {
+        story.inventory.forEach(item => {
+            const pill = document.createElement('span');
+            pill.style.background = 'var(--bg-card)';
+            pill.style.border = '1px solid var(--border)';
+            pill.style.color = 'var(--text-muted)';
+            pill.style.padding = '0.3rem 0.8rem';
+            pill.style.borderRadius = '20px';
+            pill.style.fontSize = '0.8rem';
+            pill.innerHTML = \`🎒 \${item}\`;
+            inventoryEl.appendChild(pill);
+        });
+    }
+
+    const galleryEl = document.getElementById('modal-gallery');
+    const galleryHeading = document.getElementById('modal-gallery-heading');
+    galleryEl.innerHTML = '';
+    if (story.scene_images && story.scene_images.length > 0) {
+        galleryHeading.classList.remove('hidden');
+        story.scene_images.forEach(imgUrl => {
+            const img = document.createElement('img');
+            img.src = imgUrl;
+            img.style.height = '200px';
+            img.style.width = 'auto';
+            img.style.borderRadius = '8px';
+            img.style.scrollSnapAlign = 'start';
+            img.style.boxShadow = '0 4px 10px rgba(0,0,0,0.5)';
+            img.style.flexShrink = '0';
+            galleryEl.appendChild(img);
+        });
+    } else {
+        galleryHeading.classList.add('hidden');
+    }
+
     storyModal.classList.remove('hidden');
 }
 
