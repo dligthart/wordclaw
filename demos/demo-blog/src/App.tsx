@@ -8,6 +8,7 @@ import {
 } from 'react'
 import {
   BrowserRouter,
+  Link,
   NavLink,
   Route,
   Routes,
