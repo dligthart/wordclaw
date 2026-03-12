@@ -37,6 +37,10 @@ These features are currently in active development or polishing phases for upcom
 - **Status**: Proposed.
 - **Description**: Adding native `StorageAdapter` abstractions (Local/S3/R2) to securely track and serve uploaded media files associated with content items, gated by tenant `domainId`.
 
+### 5. Performance & Scalability (RFC 0024)
+- **Status**: Proposed.
+- **Description**: Establishing caching layers (Redis) for Agent capabilities/search, defining horizontal node scaling strategies, and targeting 100 concurrent agent runs at under 200ms latency.
+
 ---
 
 ## 🧪 Incubating / Experimental
