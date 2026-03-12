@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/dligthart/wordclaw/compare/v1.1.0...v1.2.0) (2026-03-12)
+
+
+### Features
+
+* **webhooks:** add vercel publish integration example ([52ac92b](https://github.com/dligthart/wordclaw/commit/52ac92b682123a1ea65e7447a99b48b3e9d51293))
+
 # [1.1.0](https://github.com/dligthart/wordclaw/compare/v1.0.0...v1.1.0) (2026-03-12)
 
 
