@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/dligthart/wordclaw/compare/v1.5.0...v1.6.0) (2026-03-12)
+
+
+### Features
+
+* **mcp:** add filter-aware reactive subscriptions ([f6ad9b2](https://github.com/dligthart/wordclaw/commit/f6ad9b2987f8480deae1ec515711dae718a56594))
+
 # [1.5.0](https://github.com/dligthart/wordclaw/compare/v1.4.0...v1.5.0) (2026-03-12)
 
 
