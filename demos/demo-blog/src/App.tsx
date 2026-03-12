@@ -1538,7 +1538,7 @@ function ScrollToTop() {
 
 function SemanticSearch() {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<{ chunkId: string, contentItemId: number, text: string, distance: number }[]>([])
+  const [results, setResults] = useState<{ id: number, contentItemId: number, textChunk: string, similarity: number }[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const { posts } = useDemoData()
@@ -1604,15 +1604,15 @@ function SemanticSearch() {
                 return (
                   <Link
                     className="block rounded-xl p-3 transition-colors hover:bg-[var(--background)]"
-                    key={result.chunkId}
+                    key={result.id}
                     to={`/post/${post.data.slug}`}
                   >
                     <p className="text-sm font-semibold text-[var(--foreground)]">{post.data.title}</p>
                     <p className="mt-1 line-clamp-2 border-l-2 border-brand-500 pl-2 text-xs text-[var(--muted-foreground)] opacity-80">
-                      {result.text}
+                      {result.textChunk}
                     </p>
                     <p className="mt-2 text-[10px] font-medium text-brand-500">
-                      Relevance Score: {((1 - result.distance) * 100).toFixed(1)}%
+                      Relevance Score: {(result.similarity * 100).toFixed(1)}%
                     </p>
                   </Link>
                 )
