@@ -8,6 +8,7 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0015: Paid Content Consumption Contract](/archive/rfc/0015-paid-content-consumption-contract)
 - [RFC-0017: Tenant Boundary and Contract Hardening](/archive/rfc/0017-tenant-boundary-and-contract-hardening)
 - [RFC-0021: Core Product Focus and Feature Pruning](/archive/rfc/0021-core-product-focus-and-feature-pruning)
+- [RFC-0025: Reactive Agentic Webhooks via MCP](/rfc/proposed/0025-agentic-webhooks)
 
 ## Historical / Non-Core Proposals
 
