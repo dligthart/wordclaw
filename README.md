@@ -254,7 +254,7 @@ WordClaw includes core demos plus a clearly separated experimental sandbox in `d
 1. **Headless React Blog (`demos/demo-blog`)**  
    Core demo.
    A beautiful Vite + React frontend demonstrating how to fetch and join Content Types (Authors & Posts) using the WordClaw REST API.
-   - Run the seeder: `node scripts/populate-demo.mjs`
+   - Run the seeder: `npm run demo:seed-blog`
    - Start the blog: `cd demos/demo-blog && npm run dev`
 
 2. **Multi-Tenant Data Isolation (`demos/multi-tenant`)**  

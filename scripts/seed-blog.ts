@@ -1,7 +1,7 @@
 import { db } from '../src/db/index.js';
 import { domains, apiKeys, contentTypes, contentItems } from '../src/db/schema.js';
 import { createApiKey } from '../src/services/api-key.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -53,7 +53,10 @@ async function setupBlogDemo() {
 
         let authorSchemaId = authorSchema?.id;
         if (!authorSchemaId) {
-            const [ct] = await db.select().from(contentTypes).where(eq(contentTypes.slug, "demo-author")).limit(1);
+            const [ct] = await db.select().from(contentTypes).where(and(
+                eq(contentTypes.domainId, blogDomain.id),
+                eq(contentTypes.slug, "demo-author")
+            )).limit(1);
             authorSchemaId = ct.id;
         }
 
@@ -81,7 +84,10 @@ async function setupBlogDemo() {
 
         let postSchemaId = postSchema?.id;
         if (!postSchemaId) {
-            const [ct] = await db.select().from(contentTypes).where(eq(contentTypes.slug, "demo-blog-post")).limit(1);
+            const [ct] = await db.select().from(contentTypes).where(and(
+                eq(contentTypes.domainId, blogDomain.id),
+                eq(contentTypes.slug, "demo-blog-post")
+            )).limit(1);
             postSchemaId = ct.id;
         }
 
@@ -175,7 +181,10 @@ async function setupBlogDemo() {
 
         // 6. Write key to `.env` inside demo-blog
         const envPath = path.join(__dirname, '../demos/demo-blog/.env');
-        fs.writeFileSync(envPath, `VITE_WORDCLAW_API_KEY=${apiKeyResult.plaintext}\n`);
+        fs.writeFileSync(
+            envPath,
+            `VITE_WORDCLAW_URL=http://localhost:4000/api\nVITE_WORDCLAW_API_KEY=${apiKeyResult.plaintext}\n`
+        );
 
         console.log("\n✅ Demo seeded successfully!");
         console.log(`Blog API Key: ${apiKeyResult.plaintext}`);

@@ -21,15 +21,15 @@ The blog then renders:
    npm run dev
    ```
 
-2. Seed demo blog content if you have not already:
+2. Seed the demo blog domain, schemas, posts, and frontend `.env`:
 
-   Use the schema manager or existing setup flow to create:
-
-   - a `demo-author` content model
-   - a `demo-blog-post` content model
-   - at least one author item and one blog post item
+   ```bash
+   npm run demo:seed-blog
+   ```
 
 3. Create a local `.env` in this folder:
+
+   The seeder writes this for you automatically. If you need to create it manually:
 
    ```bash
    VITE_WORDCLAW_URL=http://localhost:4000/api
@@ -50,3 +50,4 @@ The blog then renders:
 - `VITE_WORDCLAW_URL` should point to the WordClaw API base, typically `http://localhost:4000/api`
 - the demo expects WordClaw to return blog and author item payloads in the `data` field
 - this demo is read-only; publishing and editorial workflow actions stay in the main WordClaw supervisor/runtime
+- if the page still shows no posts, rerun `npm run demo:seed-blog` so the local `.env` and the demo domain contents are refreshed

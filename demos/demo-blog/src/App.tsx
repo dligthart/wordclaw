@@ -42,7 +42,7 @@ interface ContentTypeRecord {
 
 interface ContentItemRecord {
   id: number;
-  data: string;
+  data: string | Record<string, unknown>;
   createdAt: string;
   contentTypeId?: number;
   status?: string;
@@ -50,53 +50,110 @@ interface ContentItemRecord {
   updatedAt?: string;
 }
 
+type DemoLoadResult = {
+  posts: BlogPost[];
+  authors: Author[];
+  loading: boolean;
+  error: string | null;
+  emptyReason: string | null;
+};
+
 const API_BASE = (import.meta.env.VITE_WORDCLAW_URL || 'http://localhost:4000/api').replace(/\/$/, '')
 
 // Fetch Helpers
 const useWordClawData = () => {
-  const [posts, setPosts] = useState<BlogPost[]>([])
-  const [authors, setAuthors] = useState<Author[]>([])
-  const [loading, setLoading] = useState(true)
+  const [state, setState] = useState<DemoLoadResult>({
+    posts: [],
+    authors: [],
+    loading: true,
+    error: null,
+    emptyReason: null,
+  })
+
+  const parseItemData = <T,>(item: ContentItemRecord): T => (
+    typeof item.data === 'string' ? JSON.parse(item.data) as T : item.data as T
+  )
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const headers = { 'x-api-key': import.meta.env.VITE_WORDCLAW_API_KEY || '' };
+        const apiKey = import.meta.env.VITE_WORDCLAW_API_KEY || ''
+        if (!apiKey) {
+          throw new Error('Missing VITE_WORDCLAW_API_KEY. Run `npm run demo:seed-blog` from the repo root or set demos/demo-blog/.env.')
+        }
 
-        const ctRes = await fetch(`${API_BASE}/content-types`, { headers }).then(res => res.json())
+        const headers = { 'x-api-key': apiKey };
 
-        const types = (ctRes.data || []) as ContentTypeRecord[];
+        const fetchEnvelope = async <T,>(path: string): Promise<T> => {
+          const res = await fetch(`${API_BASE}${path}`, { headers })
+          const payload = await res.json().catch(() => ({}))
+          if (!res.ok) {
+            const errorMessage = typeof payload?.error === 'string'
+              ? payload.error
+              : `Request failed with ${res.status}`
+            const remediation = typeof payload?.remediation === 'string'
+              ? ` ${payload.remediation}`
+              : ''
+            throw new Error(`${errorMessage}.${remediation}`.trim())
+          }
+
+          return (payload.data || []) as T
+        }
+
+        const types = await fetchEnvelope<ContentTypeRecord[]>('/content-types?limit=500')
+
         const authorType = types.find((t) => t.slug === 'demo-author');
         const postType = types.find((t) => t.slug === 'demo-blog-post');
 
-        if (authorType && postType) {
-          const [fetchedAuthors, fetchedPosts] = await Promise.all([
-            fetch(`${API_BASE}/content-items?contentTypeId=${authorType.id}`, { headers }).then(res => res.json()),
-            fetch(`${API_BASE}/content-items?contentTypeId=${postType.id}`, { headers }).then(res => res.json())
-          ])
-          setAuthors(
-            ((fetchedAuthors.data || []) as ContentItemRecord[]).map((item) => ({
-              ...item,
-              data: JSON.parse(item.data),
-            }) as Author)
-          )
-          setPosts(
-            ((fetchedPosts.data || []) as ContentItemRecord[]).map((item) => ({
-              ...item,
-              data: JSON.parse(item.data),
-            }) as BlogPost)
-          )
+        if (!authorType || !postType) {
+          setState({
+            posts: [],
+            authors: [],
+            loading: false,
+            error: null,
+            emptyReason: 'The demo schemas were not found for the current API key/domain. Run `npm run demo:seed-blog` from the repo root to seed the blog domain and refresh the local .env.',
+          })
+          return
         }
+
+        const [fetchedAuthors, fetchedPosts] = await Promise.all([
+          fetchEnvelope<ContentItemRecord[]>(`/content-items?contentTypeId=${authorType.id}&limit=100`),
+          fetchEnvelope<ContentItemRecord[]>(`/content-items?contentTypeId=${postType.id}&limit=100`)
+        ])
+
+        const authors = fetchedAuthors.map((item) => ({
+          ...item,
+          data: parseItemData<Author['data']>(item),
+        })) as Author[]
+        const posts = fetchedPosts.map((item) => ({
+          ...item,
+          data: parseItemData<BlogPost['data']>(item),
+        })) as BlogPost[]
+
+        setState({
+          posts,
+          authors,
+          loading: false,
+          error: null,
+          emptyReason: posts.length === 0
+            ? 'The blog schemas exist, but there are no published posts in this domain yet. Seed the demo again or publish a demo-blog-post item.'
+            : null,
+        })
       } catch (err) {
         console.error("Failed to fetch data from WordClaw", err)
-      } finally {
-        setLoading(false)
+        setState({
+          posts: [],
+          authors: [],
+          loading: false,
+          error: err instanceof Error ? err.message : 'Failed to load demo blog data from WordClaw.',
+          emptyReason: null,
+        })
       }
     }
     loadData()
   }, [])
 
-  return { posts, authors, loading }
+  return state
 }
 
 // Components
@@ -190,12 +247,33 @@ const PostCard = ({ post, author }: { post: BlogPost, author?: Author }) => {
 }
 
 const Index = () => {
-  const { posts, authors, loading } = useWordClawData()
+  const { posts, authors, loading, error, emptyReason } = useWordClawData()
 
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-brand-500"></div>
+      </div>
+    )
+  }
+
+  if (error || emptyReason) {
+    return (
+      <div className="w-full max-w-4xl px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+        <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-500">Demo setup</p>
+          <h2 className="mt-4 text-3xl font-bold tracking-tight text-[var(--foreground)]">
+            {error ? 'The demo blog could not load content' : 'The demo blog has no posts yet'}
+          </h2>
+          <p className="mt-4 text-base leading-7 text-gray-600 dark:text-gray-400">
+            {error || emptyReason}
+          </p>
+          <div className="mt-8 rounded-2xl border border-[var(--border)] bg-[#10131f] p-5">
+            <p className="text-sm font-medium text-gray-200">Recommended local setup</p>
+            <pre className="mt-4 overflow-x-auto text-sm leading-6 text-gray-300">{`npm run demo:seed-blog
+cd demos/demo-blog && npm run dev`}</pre>
+          </div>
+        </div>
       </div>
     )
   }
