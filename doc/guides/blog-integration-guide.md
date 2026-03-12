@@ -97,6 +97,29 @@ export function useWordClawBlog() {
 
   useEffect(() => {
     async function loadData() {
+      async function fetchAllContentItems(contentTypeId) {
+        const records = [];
+        let cursor = null;
+
+        do {
+          const query = new URLSearchParams({
+            contentTypeId: String(contentTypeId),
+            status: 'published',
+            limit: '50',
+          });
+
+          if (cursor) {
+            query.set('cursor', cursor);
+          }
+
+          const payload = await fetch(`${API_BASE}/content-items?${query.toString()}`).then(res => res.json());
+          records.push(...(payload.data || []));
+          cursor = payload.meta?.nextCursor ?? null;
+        } while (cursor);
+
+        return records;
+      }
+
       // 1. Fetch Content Types to resolve IDs by slug
       const ctRes = await fetch(`${API_BASE}/content-types`).then(res => res.json());
       const types = ctRes.data || [];
@@ -105,15 +128,15 @@ export function useWordClawBlog() {
       const postType = types.find(t => t.slug === 'blog-post');
 
       if (authorType && postType) {
-        // 2. Fetch the actual content items
+        // 2. Fetch the actual content items using cursor pagination
         const [authorsRes, postsRes] = await Promise.all([
-          fetch(`${API_BASE}/content-items?contentTypeId=${authorType.id}`).then(res => res.json()),
-          fetch(`${API_BASE}/content-items?contentTypeId=${postType.id}`).then(res => res.json())
+          fetchAllContentItems(authorType.id),
+          fetchAllContentItems(postType.id)
         ]);
 
         // WordClaw returns the user-defined `data` as a stringified JSON payload
-        const parsedAuthors = authorsRes.data.map(item => ({...item, data: JSON.parse(item.data)}));
-        const parsedPosts = postsRes.data.map(item => ({...item, data: JSON.parse(item.data)}));
+        const parsedAuthors = authorsRes.map(item => ({...item, data: JSON.parse(item.data)}));
+        const parsedPosts = postsRes.map(item => ({...item, data: JSON.parse(item.data)}));
 
         setAuthors(parsedAuthors);
         setPosts(parsedPosts);
