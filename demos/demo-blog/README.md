@@ -9,9 +9,25 @@ It reads two content schemas from WordClaw:
 
 The blog then renders:
 
-- the post index
-- author-linked post detail pages
+- a richer post index with featured content
+- author directory and author detail pages
+- category archive pages
+- tag pages for cross-category browsing
+- a full archive view
+- post detail pages with styled markdown bodies
 - a `Get Started` page that explains the human and agent integration paths
+
+The seeded demo content intentionally exercises:
+
+- paragraphs
+- `h1`, `h2`, and `h3`
+- links
+- blockquotes
+- emphasis and strong text
+- ordered and unordered lists
+- fenced code blocks
+- inline code
+- markdown tables
 
 ## Run It
 

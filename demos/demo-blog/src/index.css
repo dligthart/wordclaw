@@ -42,4 +42,109 @@
   body {
     @apply bg-[var(--background)] text-[var(--foreground)] antialiased transition-colors duration-300;
   }
+
+  img {
+    display: block;
+    max-width: 100%;
+  }
+}
+
+@layer components {
+  .article-link {
+    @apply font-semibold text-brand-600 underline decoration-brand-300/70 underline-offset-4 transition-colors hover:text-brand-500 dark:text-brand-300 dark:decoration-brand-400/40 dark:hover:text-brand-200;
+  }
+
+  .article-body {
+    @apply text-[1.02rem] leading-8 text-gray-700 dark:text-gray-300;
+  }
+
+  .article-body > * + * {
+    margin-top: 1.25rem;
+  }
+
+  .article-body h1,
+  .article-body h2,
+  .article-body h3 {
+    @apply text-balance font-semibold tracking-tight text-[var(--foreground)];
+  }
+
+  .article-body h1 {
+    @apply mt-10 text-4xl;
+  }
+
+  .article-body h2 {
+    @apply mt-10 text-3xl;
+  }
+
+  .article-body h3 {
+    @apply mt-8 text-2xl;
+  }
+
+  .article-body p {
+    @apply text-pretty leading-8 text-gray-700 dark:text-gray-300;
+  }
+
+  .article-body strong {
+    @apply font-semibold text-[var(--foreground)];
+  }
+
+  .article-body em {
+    @apply italic text-gray-800 dark:text-gray-200;
+  }
+
+  .article-body blockquote {
+    @apply rounded-r-3xl border-l-4 border-brand-400/70 bg-brand-50/70 px-6 py-4 text-lg font-medium italic text-gray-700 dark:border-brand-400/40 dark:bg-brand-500/10 dark:text-gray-200;
+  }
+
+  .article-body ul,
+  .article-body ol {
+    @apply ml-6 space-y-3;
+  }
+
+  .article-body ul {
+    list-style: disc;
+  }
+
+  .article-body ol {
+    list-style: decimal;
+  }
+
+  .article-body li {
+    @apply pl-1;
+  }
+
+  .article-body li > p {
+    display: inline;
+  }
+
+  .article-body hr {
+    @apply my-10 border-t border-[var(--border)];
+  }
+
+  .article-body :not(pre) > code {
+    @apply rounded-md bg-brand-50 px-1.5 py-0.5 text-[0.92em] font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300;
+  }
+
+  .article-body pre {
+    overflow-x: auto;
+  }
+
+  .article-body table {
+    @apply mt-8 w-full overflow-hidden rounded-2xl border border-[var(--border)] text-left text-sm;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .article-body thead {
+    @apply bg-brand-50/80 dark:bg-brand-500/10;
+  }
+
+  .article-body th,
+  .article-body td {
+    @apply border-b border-[var(--border)] px-4 py-3 align-top;
+  }
+
+  .article-body tbody tr:last-child td {
+    border-bottom: 0;
+  }
 }

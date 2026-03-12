@@ -1,67 +1,125 @@
-import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Link, useParams } from 'react-router-dom'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react'
+import {
+  BrowserRouter,
+  Link,
+  NavLink,
+  Route,
+  Routes,
+  useParams,
+} from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, ArrowLeft, Clock } from 'lucide-react'
+import {
+  Archive,
+  ArrowLeft,
+  BookOpenText,
+  Clock,
+  LayoutDashboard,
+  Shapes,
+  Tag,
+  Users,
+} from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-// Types
 interface Author {
-  id: number;
+  id: number
   data: {
-    name: string;
-    slug: string;
-    avatarUrl: string;
-    bio: string;
-    socialLinks: string[];
-  };
+    name: string
+    slug: string
+    avatarUrl: string
+    bio: string
+    socialLinks: string[]
+  }
+  createdAt?: string
 }
 
 interface BlogPost {
-  id: number;
+  id: number
   data: {
-    title: string;
-    slug: string;
-    excerpt: string;
-    content: string;
-    coverImage: string;
-    authorId: number;
-    category: string;
-    tags: string[];
-    readTimeMinutes: number;
-  };
-  createdAt: string;
+    title: string
+    slug: string
+    excerpt: string
+    content: string
+    coverImage: string
+    authorId: number
+    category: string
+    tags: string[]
+    readTimeMinutes: number
+  }
+  createdAt: string
+  updatedAt?: string
 }
 
 interface ContentTypeRecord {
-  id: number;
-  slug: string;
+  id: number
+  slug: string
 }
 
 interface ContentItemRecord {
-  id: number;
-  data: string | Record<string, unknown>;
-  createdAt: string;
-  contentTypeId?: number;
-  status?: string;
-  version?: number;
-  updatedAt?: string;
+  id: number
+  data: string | Record<string, unknown>
+  createdAt: string
+  updatedAt?: string
 }
 
 type DemoLoadResult = {
-  posts: BlogPost[];
-  authors: Author[];
-  loading: boolean;
-  error: string | null;
-  emptyReason: string | null;
-};
+  posts: BlogPost[]
+  authors: Author[]
+  loading: boolean
+  error: string | null
+  emptyReason: string | null
+}
 
-const API_BASE = (import.meta.env.VITE_WORDCLAW_URL || 'http://localhost:4000/api').replace(/\/$/, '')
+const API_BASE = (
+  import.meta.env.VITE_WORDCLAW_URL || 'http://localhost:4000/api'
+).replace(/\/$/, '')
 
-// Fetch Helpers
-const useWordClawData = () => {
+const DemoDataContext = createContext<DemoLoadResult | null>(null)
+
+const formatDate = (value: string) =>
+  new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+
+const formatLongDate = (value: string) =>
+  new Date(value).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+function sortPostsDescending(posts: BlogPost[]) {
+  return [...posts].sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  )
+}
+
+function buildEmptyStateMessage(reason: string) {
+  return {
+    title: 'The demo blog needs content',
+    body: reason,
+  }
+}
+
+function useWordClawDataSource(): DemoLoadResult {
   const [state, setState] = useState<DemoLoadResult>({
     posts: [],
     authors: [],
@@ -70,40 +128,48 @@ const useWordClawData = () => {
     emptyReason: null,
   })
 
-  const parseItemData = <T,>(item: ContentItemRecord): T => (
-    typeof item.data === 'string' ? JSON.parse(item.data) as T : item.data as T
-  )
-
   useEffect(() => {
     const loadData = async () => {
       try {
         const apiKey = import.meta.env.VITE_WORDCLAW_API_KEY || ''
         if (!apiKey) {
-          throw new Error('Missing VITE_WORDCLAW_API_KEY. Run `npm run demo:seed-blog` from the repo root or set demos/demo-blog/.env.')
+          throw new Error(
+            'Missing VITE_WORDCLAW_API_KEY. Run `npm run demo:seed-blog` from the repo root or set demos/demo-blog/.env.',
+          )
         }
 
-        const headers = { 'x-api-key': apiKey };
+        const headers = { 'x-api-key': apiKey }
 
         const fetchEnvelope = async <T,>(path: string): Promise<T> => {
           const res = await fetch(`${API_BASE}${path}`, { headers })
           const payload = await res.json().catch(() => ({}))
+
           if (!res.ok) {
-            const errorMessage = typeof payload?.error === 'string'
-              ? payload.error
-              : `Request failed with ${res.status}`
-            const remediation = typeof payload?.remediation === 'string'
-              ? ` ${payload.remediation}`
-              : ''
+            const errorMessage =
+              typeof payload?.error === 'string'
+                ? payload.error
+                : `Request failed with ${res.status}`
+            const remediation =
+              typeof payload?.remediation === 'string'
+                ? ` ${payload.remediation}`
+                : ''
             throw new Error(`${errorMessage}.${remediation}`.trim())
           }
 
           return (payload.data || []) as T
         }
 
-        const types = await fetchEnvelope<ContentTypeRecord[]>('/content-types?limit=500')
+        const parseItemData = <T,>(item: ContentItemRecord): T =>
+          (typeof item.data === 'string'
+            ? (JSON.parse(item.data) as T)
+            : (item.data as T))
 
-        const authorType = types.find((t) => t.slug === 'demo-author');
-        const postType = types.find((t) => t.slug === 'demo-blog-post');
+        const types = await fetchEnvelope<ContentTypeRecord[]>(
+          '/content-types?limit=500',
+        )
+
+        const authorType = types.find((entry) => entry.slug === 'demo-author')
+        const postType = types.find((entry) => entry.slug === 'demo-blog-post')
 
         if (!authorType || !postType) {
           setState({
@@ -111,416 +177,1120 @@ const useWordClawData = () => {
             authors: [],
             loading: false,
             error: null,
-            emptyReason: 'The demo schemas were not found for the current API key/domain. Run `npm run demo:seed-blog` from the repo root to seed the blog domain and refresh the local .env.',
+            emptyReason:
+              'The blog schemas were not found for the current API key and domain. Run `npm run demo:seed-blog` from the repo root to seed the demo blog again.',
           })
           return
         }
 
         const [fetchedAuthors, fetchedPosts] = await Promise.all([
-          fetchEnvelope<ContentItemRecord[]>(`/content-items?contentTypeId=${authorType.id}&limit=100`),
-          fetchEnvelope<ContentItemRecord[]>(`/content-items?contentTypeId=${postType.id}&limit=100`)
+          fetchEnvelope<ContentItemRecord[]>(
+            `/content-items?contentTypeId=${authorType.id}&limit=100`,
+          ),
+          fetchEnvelope<ContentItemRecord[]>(
+            `/content-items?contentTypeId=${postType.id}&limit=100`,
+          ),
         ])
 
-        const authors = fetchedAuthors.map((item) => ({
-          ...item,
-          data: parseItemData<Author['data']>(item),
-        })) as Author[]
-        const posts = fetchedPosts.map((item) => ({
-          ...item,
-          data: parseItemData<BlogPost['data']>(item),
-        })) as BlogPost[]
+        const authors = fetchedAuthors.map(
+          (item) =>
+            ({
+              ...item,
+              data: parseItemData<Author['data']>(item),
+            }) as Author,
+        )
+
+        const posts = sortPostsDescending(
+          fetchedPosts.map(
+            (item) =>
+              ({
+                ...item,
+                data: parseItemData<BlogPost['data']>(item),
+              }) as BlogPost,
+          ),
+        )
 
         setState({
           posts,
           authors,
           loading: false,
           error: null,
-          emptyReason: posts.length === 0
-            ? 'The blog schemas exist, but there are no published posts in this domain yet. Seed the demo again or publish a demo-blog-post item.'
-            : null,
+          emptyReason:
+            posts.length === 0
+              ? 'The demo blog schemas exist, but this domain has no published demo-blog-post entries yet.'
+              : null,
         })
-      } catch (err) {
-        console.error("Failed to fetch data from WordClaw", err)
+      } catch (error) {
         setState({
           posts: [],
           authors: [],
           loading: false,
-          error: err instanceof Error ? err.message : 'Failed to load demo blog data from WordClaw.',
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Failed to load demo blog data from WordClaw.',
           emptyReason: null,
         })
       }
     }
+
     loadData()
   }, [])
 
   return state
 }
 
-// Components
-const Layout = ({ children }: { children: React.ReactNode }) => (
-  <div className="min-h-screen bg-[var(--background)] flex flex-col font-sans selection:bg-brand-500 selection:text-white">
-    <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--background)]/80 backdrop-blur-md">
-      <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 text-xl font-bold tracking-tight text-[var(--foreground)] hover:opacity-80 transition-opacity">
-          <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center text-white shadow-lg shadow-brand-500/30">
-            <LayoutDashboard size={18} />
-          </div>
-          WordClaw <span className="text-brand-500 font-light">Demo</span>
-        </Link>
-        <nav className="hidden md:flex gap-6 text-sm font-medium text-gray-500 dark:text-gray-400">
-          <a href="#" className="hover:text-brand-500 transition-colors">Products</a>
-          <a href="#" className="hover:text-brand-500 transition-colors">Solutions</a>
-          <a href="#" className="hover:text-brand-500 transition-colors">Resources</a>
-          <a href="#" className="text-brand-500">Blog</a>
-        </nav>
-        <Link to="/get-started" className="hidden md:flex h-9 items-center justify-center rounded-full bg-brand-500 px-4 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-brand-600 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500">
-          Get Started
-        </Link>
-      </div>
-    </header>
-    <main className="flex-1 w-full flex flex-col items-center">
-      {children}
-    </main>
-    <footer className="w-full border-t border-[var(--border)] py-12 bg-gray-50 dark:bg-[#0c0c0e]">
-      <div className="container mx-auto px-4 text-center text-sm text-gray-500">
-        <p>© 2026 WordClaw Framework Demo. All rights reserved.</p>
-      </div>
-    </footer>
-  </div>
-)
-
-const PostCard = ({ post, author }: { post: BlogPost, author?: Author }) => {
+function DemoDataProvider({ children }: { children: ReactNode }) {
+  const state = useWordClawDataSource()
   return (
-    <Link to={`/post/${post.data.slug}`}>
-      <motion.article
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        whileHover={{ y: -5 }}
-        className="group relative flex flex-col items-start justify-between rounded-2xl bg-[var(--card)] p-4 sm:p-6 shadow-sm border border-[var(--border)] hover:shadow-xl hover:shadow-brand-500/5 transition-all duration-300"
-      >
-        <div className="relative w-full aspect-[16/9] sm:aspect-[2/1] lg:aspect-[3/2] overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 mb-6">
-          <img
-            src={post.data.coverImage}
-            alt={post.data.title}
-            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
-          <div className="absolute top-4 left-4">
-            <span className="inline-flex items-center rounded-full bg-white/90 backdrop-blur-sm px-3 py-1 text-xs font-medium text-brand-700 shadow-sm ring-1 ring-inset ring-brand-700/10">
-              {post.data.category}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-x-4 text-xs text-gray-500 mb-4">
-          <time dateTime={post.createdAt} className="flex items-center gap-1">
-            <Clock size={14} />
-            {new Date(post.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-          </time>
-          <span className="flex items-center gap-1">
-            {post.data.readTimeMinutes} min read
-          </span>
-        </div>
-
-        <div className="group relative">
-          <h3 className="mt-3 text-xl font-semibold leading-6 text-[var(--foreground)] group-hover:text-brand-500 transition-colors line-clamp-2">
-            {post.data.title}
-          </h3>
-          <p className="mt-3 line-clamp-3 text-sm leading-6 text-gray-600 dark:text-gray-400">
-            {post.data.excerpt}
-          </p>
-        </div>
-
-        {author && (
-          <div className="relative mt-8 flex items-center gap-x-4">
-            <img src={author.data.avatarUrl} alt="" className="h-10 w-10 rounded-full bg-gray-50 ring-2 ring-white dark:ring-gray-900 object-cover" />
-            <div className="text-sm leading-6">
-              <p className="font-semibold text-[var(--foreground)]">
-                {author.data.name}
-              </p>
-            </div>
-          </div>
-        )}
-      </motion.article>
-    </Link>
+    <DemoDataContext.Provider value={state}>{children}</DemoDataContext.Provider>
   )
 }
 
-const Index = () => {
-  const { posts, authors, loading, error, emptyReason } = useWordClawData()
+function useDemoData() {
+  const value = useContext(DemoDataContext)
+  if (!value) {
+    throw new Error('useDemoData must be used within DemoDataProvider.')
+  }
+  return value
+}
 
-  if (loading) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-brand-500"></div>
-      </div>
-    )
+function getAuthor(authors: Author[], authorId: number) {
+  return authors.find((author) => author.id === authorId)
+}
+
+function getCategoryEntries(posts: BlogPost[]) {
+  const counts = new Map<string, number>()
+  for (const post of posts) {
+    counts.set(post.data.category, (counts.get(post.data.category) || 0) + 1)
   }
 
-  if (error || emptyReason) {
-    return (
-      <div className="w-full max-w-4xl px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
-        <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-500">Demo setup</p>
-          <h2 className="mt-4 text-3xl font-bold tracking-tight text-[var(--foreground)]">
-            {error ? 'The demo blog could not load content' : 'The demo blog has no posts yet'}
-          </h2>
-          <p className="mt-4 text-base leading-7 text-gray-600 dark:text-gray-400">
-            {error || emptyReason}
-          </p>
-          <div className="mt-8 rounded-2xl border border-[var(--border)] bg-[#10131f] p-5">
-            <p className="text-sm font-medium text-gray-200">Recommended local setup</p>
-            <pre className="mt-4 overflow-x-auto text-sm leading-6 text-gray-300">{`npm run demo:seed-blog
-cd demos/demo-blog && npm run dev`}</pre>
-          </div>
-        </div>
-      </div>
-    )
+  return [...counts.entries()]
+    .map(([name, count]) => ({
+      name,
+      slug: slugify(name),
+      count,
+    }))
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+}
+
+function getTagEntries(posts: BlogPost[]) {
+  const counts = new Map<string, number>()
+
+  for (const post of posts) {
+    for (const tag of post.data.tags) {
+      counts.set(tag, (counts.get(tag) || 0) + 1)
+    }
   }
 
+  return [...counts.entries()]
+    .map(([name, count]) => ({
+      name,
+      slug: slugify(name),
+      count,
+    }))
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+}
+
+const markdownComponents: Components = {
+  a: ({ href = '', children }) => {
+    if (href.startsWith('/')) {
+      return (
+        <Link className="article-link" to={href}>
+          {children}
+        </Link>
+      )
+    }
+
+    return (
+      <a className="article-link" href={href} rel="noreferrer" target="_blank">
+        {children}
+      </a>
+    )
+  },
+  code: ({ className, children }) => {
+    const match = /language-(\w+)/.exec(className || '')
+    const content = String(children ?? '').replace(/\n$/, '')
+
+    if (match) {
+      return (
+        <SyntaxHighlighter
+          customStyle={{
+            margin: '1.75rem 0',
+            padding: '1rem 1.25rem',
+            borderRadius: '1rem',
+            background: '#10131f',
+            border: '1px solid rgba(122, 143, 182, 0.16)',
+          }}
+          language={match[1]}
+          style={atomDark}
+        >
+          {content}
+        </SyntaxHighlighter>
+      )
+    }
+
+    return <code>{children}</code>
+  },
+}
+
+function LoadingState() {
   return (
-    <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
-      <div className="mx-auto max-w-2xl text-center mb-16 sm:mb-20">
-        <motion.h2
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-3xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl lg:text-6xl mb-6"
-        >
-          From the <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-brand-600">WordClaw</span> Desk
-        </motion.h2>
-        <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mt-2 text-lg leading-8 text-gray-600 dark:text-gray-400 max-w-xl mx-auto"
-        >
-          Insights on headless architecture, agentic workflows, and the future of connected digital experiences.
-        </motion.p>
-      </div>
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-brand-500" />
+    </div>
+  )
+}
 
-      <div className="mx-auto grid max-w-2xl grid-cols-1 gap-x-8 gap-y-16 lg:max-w-none lg:grid-cols-3">
-        {posts.map((post) => (
-          <PostCard
-            key={post.id}
-            post={post}
-            author={authors.find(a => a.id === post.data.authorId)}
-          />
-        ))}
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="w-full max-w-4xl px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-500">
+          Demo setup
+        </p>
+        <h2 className="mt-4 text-3xl font-bold tracking-tight text-[var(--foreground)]">
+          {title}
+        </h2>
+        <p className="mt-4 text-base leading-7 text-gray-600 dark:text-gray-400">
+          {body}
+        </p>
+        <div className="mt-8 rounded-2xl border border-[var(--border)] bg-[#10131f] p-5">
+          <p className="text-sm font-medium text-gray-200">Recommended local setup</p>
+          <pre className="mt-4 overflow-x-auto text-sm leading-6 text-gray-300">{`npm run demo:seed-blog
+cd demos/demo-blog && npm run dev`}</pre>
+        </div>
       </div>
     </div>
   )
 }
 
-const PostDetail = () => {
-  const { slug } = useParams()
-  const { posts, authors, loading } = useWordClawData()
+function DemoStateBoundary({ children }: { children: ReactNode }) {
+  const { loading, error, emptyReason } = useDemoData()
 
-  if (loading) return <div className="min-h-[60vh] flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-b-2 border-brand-500"></div></div>
+  if (loading) {
+    return <LoadingState />
+  }
 
-  const post = posts.find(p => p.data.slug === slug)
-  if (!post) return <div className="py-24 text-center">Post not found</div>
+  if (error) {
+    return <EmptyState body={error} title="The demo blog could not load content" />
+  }
 
-  const author = authors.find(a => a.id === post.data.authorId)
+  if (emptyReason) {
+    const message = buildEmptyStateMessage(emptyReason)
+    return <EmptyState body={message.body} title={message.title} />
+  }
 
+  return <>{children}</>
+}
+
+function SectionHeading({
+  eyebrow,
+  title,
+  copy,
+}: {
+  eyebrow: string
+  title: string
+  copy?: string
+}) {
   return (
-    <motion.article
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-20"
-    >
-      <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-500 mb-8 transition-colors">
-        <ArrowLeft size={16} /> Back to blog
-      </Link>
+    <div className="mb-8">
+      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+        {eyebrow}
+      </p>
+      <h2 className="mt-3 text-3xl font-bold tracking-tight text-[var(--foreground)]">
+        {title}
+      </h2>
+      {copy ? (
+        <p className="mt-3 max-w-2xl text-base leading-7 text-gray-600 dark:text-gray-400">
+          {copy}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
-      <div className="flex items-center gap-x-4 text-sm text-gray-500 mb-6">
-        <span className="inline-flex items-center rounded-full bg-brand-50 dark:bg-brand-500/10 px-3 py-1 text-xs font-semibold text-brand-700 dark:text-brand-400">
-          {post.data.category}
-        </span>
-        <time dateTime={post.createdAt} className="flex items-center gap-1">
-          {new Date(post.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-        </time>
-        <span>·</span>
-        <span>{post.data.readTimeMinutes} min read</span>
-      </div>
+function PageShell({ children }: { children: ReactNode }) {
+  return <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-14 sm:py-20">{children}</div>
+}
 
-      <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--foreground)] mb-8 leading-tight">
-        {post.data.title}
-      </h1>
-
-      {author && (
-        <div className="flex items-center gap-4 mb-12 py-6 border-y border-[var(--border)]">
-          <img src={author.data.avatarUrl} alt="" className="h-14 w-14 rounded-full object-cover bg-gray-50 ring-2 ring-white dark:ring-gray-900" />
-          <div>
-            <div className="font-semibold text-[var(--foreground)] text-lg">{author.data.name}</div>
-            <div className="text-gray-500 text-sm">{author.data.bio}</div>
-          </div>
+function PostCard({ post, author }: { post: BlogPost; author?: Author }) {
+  return (
+    <Link to={`/post/${post.data.slug}`}>
+      <motion.article
+        className="group relative flex h-full flex-col rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-500/5"
+        initial={{ opacity: 0, y: 18 }}
+        viewport={{ once: true }}
+        whileInView={{ opacity: 1, y: 0 }}
+      >
+        <div className="relative mb-5 aspect-[16/10] overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-800">
+          <img
+            alt={post.data.title}
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            src={post.data.coverImage}
+          />
+          <span className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-brand-700 shadow-sm backdrop-blur-sm">
+            {post.data.category}
+          </span>
         </div>
-      )}
 
-      <div className="w-full aspect-[2/1] bg-gray-100 dark:bg-gray-800 rounded-2xl overflow-hidden mb-12 shadow-lg shadow-black/5">
-        <img src={post.data.coverImage} className="w-full h-full object-cover" alt="Cover" />
-      </div>
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span className="inline-flex items-center gap-1">
+            <Clock size={13} />
+            {formatDate(post.createdAt)}
+          </span>
+          <span>{post.data.readTimeMinutes} min read</span>
+        </div>
 
-      <div className="prose prose-lg dark:prose-invert prose-brand max-w-none prose-headings:font-bold prose-a:text-brand-500 hover:prose-a:text-brand-600 prose-img:rounded-xl prose-pre:bg-[#121214] prose-pre:text-gray-100 prose-blockquote:border-l-4 prose-blockquote:border-brand-500 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:bg-brand-50 dark:prose-blockquote:bg-brand-500/5 prose-blockquote:py-1 prose-blockquote:rounded-r-lg">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {post.data.content}
-        </ReactMarkdown>
-      </div>
+        <h3 className="mt-4 text-2xl font-semibold leading-tight text-[var(--foreground)] transition-colors group-hover:text-brand-500">
+          {post.data.title}
+        </h3>
+        <p className="mt-3 flex-1 text-sm leading-7 text-gray-600 dark:text-gray-400">
+          {post.data.excerpt}
+        </p>
 
-      <div className="mt-16 pt-8 border-t border-[var(--border)]">
-        <h3 className="font-semibold text-lg mb-4">Tags</h3>
-        <div className="flex gap-2 flex-wrap">
-          {post.data.tags.map(tag => (
-            <span key={tag} className="px-3 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-sm">
+        <div className="mt-6 flex flex-wrap gap-2">
+          {post.data.tags.slice(0, 3).map((tag) => (
+            <span
+              className="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+              key={tag}
+            >
               #{tag}
             </span>
           ))}
         </div>
+
+        {author ? (
+          <div className="mt-6 flex items-center gap-3 border-t border-[var(--border)] pt-5">
+            <img
+              alt={author.data.name}
+              className="h-11 w-11 rounded-full object-cover"
+              src={author.data.avatarUrl}
+            />
+            <div>
+              <p className="font-medium text-[var(--foreground)]">{author.data.name}</p>
+              <p className="text-sm text-gray-500">{author.data.bio}</p>
+            </div>
+          </div>
+        ) : null}
+      </motion.article>
+    </Link>
+  )
+}
+
+function MarkdownArticle({ content }: { content: string }) {
+  return (
+    <div className="article-body">
+      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
+function HomePage() {
+  const { posts, authors } = useDemoData()
+  const featuredPost = posts[0]
+  const recentPosts = posts.slice(1, 7)
+  const categories = getCategoryEntries(posts)
+
+  if (!featuredPost) {
+    return <EmptyState body="No featured post is available yet." title="The demo blog has no featured article" />
+  }
+
+  const featuredAuthor = getAuthor(authors, featuredPost.data.authorId)
+
+  return (
+    <PageShell>
+      <section className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-stretch">
+        <div className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+            Featured article
+          </p>
+          <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl">
+            {featuredPost.data.title}
+          </h1>
+          <p className="mt-5 max-w-2xl text-lg leading-8 text-gray-600 dark:text-gray-400">
+            {featuredPost.data.excerpt}
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+            <span>{formatLongDate(featuredPost.createdAt)}</span>
+            <span>{featuredPost.data.readTimeMinutes} min read</span>
+            <Link className="font-medium text-brand-500" to={`/category/${slugify(featuredPost.data.category)}`}>
+              {featuredPost.data.category}
+            </Link>
+          </div>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              className="inline-flex h-11 items-center justify-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-600"
+              to={`/post/${featuredPost.data.slug}`}
+            >
+              Read article
+            </Link>
+            <Link
+              className="inline-flex h-11 items-center justify-center rounded-full border border-[var(--border)] px-5 text-sm font-semibold text-[var(--foreground)] transition-colors hover:border-brand-300 hover:text-brand-500"
+              to="/archive"
+            >
+              Browse archive
+            </Link>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--card)] shadow-sm">
+          <img
+            alt={featuredPost.data.title}
+            className="h-full min-h-[22rem] w-full object-cover"
+            src={featuredPost.data.coverImage}
+          />
+        </div>
+      </section>
+
+      <section className="mt-20 grid gap-6 md:grid-cols-3">
+        <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+            Editorial demo
+          </p>
+          <p className="mt-4 text-4xl font-bold text-[var(--foreground)]">{posts.length}</p>
+          <p className="mt-2 text-sm text-gray-500">Published demo posts with rich markdown content.</p>
+        </div>
+        <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+            Authors
+          </p>
+          <p className="mt-4 text-4xl font-bold text-[var(--foreground)]">{authors.length}</p>
+          <p className="mt-2 text-sm text-gray-500">Editorial personas with linked author pages and bios.</p>
+        </div>
+        <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+            Categories
+          </p>
+          <p className="mt-4 text-4xl font-bold text-[var(--foreground)]">{categories.length}</p>
+          <p className="mt-2 text-sm text-gray-500">Category browsing, archive pages, and related post groupings.</p>
+        </div>
+      </section>
+
+      <section className="mt-20">
+        <SectionHeading
+          copy="Recent seeded entries with connected authors and markdown-driven editorial bodies."
+          eyebrow="Latest posts"
+          title="Recently published"
+        />
+        <div className="grid gap-8 lg:grid-cols-3">
+          {recentPosts.map((post) => (
+            <PostCard author={getAuthor(authors, post.data.authorId)} key={post.id} post={post} />
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-20 grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+            Byline
+          </p>
+          {featuredAuthor ? (
+            <div className="mt-5">
+              <div className="flex items-center gap-4">
+                <img
+                  alt={featuredAuthor.data.name}
+                  className="h-16 w-16 rounded-full object-cover"
+                  src={featuredAuthor.data.avatarUrl}
+                />
+                <div>
+                  <h3 className="text-xl font-semibold text-[var(--foreground)]">{featuredAuthor.data.name}</h3>
+                  <p className="text-sm text-gray-500">{featuredAuthor.data.bio}</p>
+                </div>
+              </div>
+              <Link
+                className="mt-6 inline-flex text-sm font-semibold text-brand-500"
+                to={`/author/${featuredAuthor.data.slug}`}
+              >
+                View author page
+              </Link>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+          <SectionHeading
+            copy="Jump into the seeded category views to inspect different content clusters."
+            eyebrow="Explore"
+            title="Browse by category"
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            {categories.map((category) => (
+              <Link
+                className="rounded-2xl border border-[var(--border)] bg-[var(--background)] px-5 py-4 transition-colors hover:border-brand-300 hover:text-brand-500"
+                key={category.slug}
+                to={`/category/${category.slug}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold text-[var(--foreground)]">{category.name}</span>
+                  <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+                    {category.count}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+    </PageShell>
+  )
+}
+
+function AuthorsPage() {
+  const { authors, posts } = useDemoData()
+
+  return (
+    <PageShell>
+      <SectionHeading
+        copy="Browse the seeded editorial voices behind the demo blog."
+        eyebrow="Authors"
+        title="Meet the editorial team"
+      />
+      <div className="grid gap-8 lg:grid-cols-3">
+        {authors.map((author) => {
+          const authoredPosts = posts.filter((post) => post.data.authorId === author.id)
+          return (
+            <Link
+              className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-500/5"
+              key={author.id}
+              to={`/author/${author.data.slug}`}
+            >
+              <img
+                alt={author.data.name}
+                className="h-16 w-16 rounded-full object-cover"
+                src={author.data.avatarUrl}
+              />
+              <h3 className="mt-5 text-2xl font-semibold text-[var(--foreground)]">{author.data.name}</h3>
+              <p className="mt-3 text-sm leading-7 text-gray-600 dark:text-gray-400">{author.data.bio}</p>
+              <p className="mt-6 text-sm font-medium text-brand-500">{authoredPosts.length} published articles</p>
+            </Link>
+          )
+        })}
       </div>
+    </PageShell>
+  )
+}
+
+function AuthorDetailPage() {
+  const { slug } = useParams()
+  const { authors, posts } = useDemoData()
+  const author = authors.find((entry) => entry.data.slug === slug)
+
+  if (!author) {
+    return <EmptyState body="The requested author was not found in the seeded demo data." title="Author not found" />
+  }
+
+  const authoredPosts = posts.filter((post) => post.data.authorId === author.id)
+
+  return (
+    <PageShell>
+      <Link className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500" to="/authors">
+        <ArrowLeft size={16} />
+        Back to authors
+      </Link>
+
+      <div className="mt-8 rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+          <img
+            alt={author.data.name}
+            className="h-24 w-24 rounded-full object-cover"
+            src={author.data.avatarUrl}
+          />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+              Author profile
+            </p>
+            <h1 className="mt-3 text-4xl font-bold tracking-tight text-[var(--foreground)]">
+              {author.data.name}
+            </h1>
+            <p className="mt-4 max-w-3xl text-base leading-8 text-gray-600 dark:text-gray-400">
+              {author.data.bio}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <section className="mt-16">
+        <SectionHeading
+          eyebrow="Articles"
+          title={`${authoredPosts.length} published posts`}
+        />
+        <div className="grid gap-8 lg:grid-cols-2">
+          {authoredPosts.map((post) => (
+            <PostCard author={author} key={post.id} post={post} />
+          ))}
+        </div>
+      </section>
+    </PageShell>
+  )
+}
+
+function CategoriesPage() {
+  const { posts } = useDemoData()
+  const categories = getCategoryEntries(posts)
+
+  return (
+    <PageShell>
+      <SectionHeading
+        copy="The demo blog includes several content clusters so you can see how category-led browsing feels in a schema-backed frontend."
+        eyebrow="Categories"
+        title="Browse the archive by category"
+      />
+      <div className="grid gap-6 lg:grid-cols-3">
+        {categories.map((category) => (
+          <Link
+            className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-500/5"
+            key={category.slug}
+            to={`/category/${category.slug}`}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+              Category
+            </p>
+            <h3 className="mt-4 text-2xl font-semibold text-[var(--foreground)]">{category.name}</h3>
+            <p className="mt-3 text-sm leading-7 text-gray-600 dark:text-gray-400">
+              {category.count} seeded articles connected to this editorial topic.
+            </p>
+          </Link>
+        ))}
+      </div>
+    </PageShell>
+  )
+}
+
+function TagsPage() {
+  const { posts } = useDemoData()
+  const tags = getTagEntries(posts)
+
+  return (
+    <PageShell>
+      <SectionHeading
+        copy="Browse the seeded post taxonomy by tag to see related content cluster naturally across categories."
+        eyebrow="Tags"
+        title="Explore by topic"
+      />
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {tags.map((tag) => (
+          <Link
+            className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-500/5"
+            key={tag.slug}
+            to={`/tag/${tag.slug}`}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+              Topic
+            </p>
+            <h3 className="mt-4 text-2xl font-semibold text-[var(--foreground)]">
+              #{tag.name}
+            </h3>
+            <p className="mt-3 text-sm leading-7 text-gray-600 dark:text-gray-400">
+              {tag.count} post{tag.count === 1 ? '' : 's'} tagged with this topic.
+            </p>
+          </Link>
+        ))}
+      </div>
+    </PageShell>
+  )
+}
+
+function CategoryDetailPage() {
+  const { categorySlug } = useParams()
+  const { posts, authors } = useDemoData()
+  const category = getCategoryEntries(posts).find((entry) => entry.slug === categorySlug)
+
+  if (!category) {
+    return <EmptyState body="The requested category was not found in the seeded demo data." title="Category not found" />
+  }
+
+  const categoryPosts = posts.filter((post) => slugify(post.data.category) === category.slug)
+
+  return (
+    <PageShell>
+      <Link className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500" to="/categories">
+        <ArrowLeft size={16} />
+        Back to categories
+      </Link>
+
+      <div className="mt-8 rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+          Category
+        </p>
+        <h1 className="mt-4 text-4xl font-bold tracking-tight text-[var(--foreground)]">
+          {category.name}
+        </h1>
+        <p className="mt-4 text-base leading-8 text-gray-600 dark:text-gray-400">
+          {category.count} demo post{category.count === 1 ? '' : 's'} in this archive slice.
+        </p>
+      </div>
+
+      <div className="mt-16 grid gap-8 lg:grid-cols-2">
+        {categoryPosts.map((post) => (
+          <PostCard author={getAuthor(authors, post.data.authorId)} key={post.id} post={post} />
+        ))}
+      </div>
+    </PageShell>
+  )
+}
+
+function TagDetailPage() {
+  const { tagSlug } = useParams()
+  const { posts, authors } = useDemoData()
+  const tag = getTagEntries(posts).find((entry) => entry.slug === tagSlug)
+
+  if (!tag) {
+    return (
+      <EmptyState
+        body="The requested tag was not found in the seeded demo data."
+        title="Tag not found"
+      />
+    )
+  }
+
+  const taggedPosts = posts.filter((post) =>
+    post.data.tags.some((entry) => slugify(entry) === tag.slug),
+  )
+
+  return (
+    <PageShell>
+      <Link
+        className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500"
+        to="/tags"
+      >
+        <ArrowLeft size={16} />
+        Back to tags
+      </Link>
+
+      <div className="mt-8 rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+          Topic
+        </p>
+        <h1 className="mt-4 text-4xl font-bold tracking-tight text-[var(--foreground)]">
+          #{tag.name}
+        </h1>
+        <p className="mt-4 text-base leading-8 text-gray-600 dark:text-gray-400">
+          {tag.count} demo post{tag.count === 1 ? '' : 's'} carrying this shared topic.
+        </p>
+      </div>
+
+      <div className="mt-16 grid gap-8 lg:grid-cols-2">
+        {taggedPosts.map((post) => (
+          <PostCard author={getAuthor(authors, post.data.authorId)} key={post.id} post={post} />
+        ))}
+      </div>
+    </PageShell>
+  )
+}
+
+function ArchivePage() {
+  const { posts, authors } = useDemoData()
+
+  return (
+    <PageShell>
+      <SectionHeading
+        copy="A denser chronological archive for quickly scanning every seeded article."
+        eyebrow="Archive"
+        title="All posts"
+      />
+      <div className="overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--card)] shadow-sm">
+        <div className="grid grid-cols-[1.2fr_0.8fr_0.7fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-4 text-xs font-semibold uppercase tracking-[0.35em] text-gray-500">
+          <span>Title</span>
+          <span>Author</span>
+          <span>Category</span>
+          <span>Published</span>
+        </div>
+        {posts.map((post) => {
+          const author = getAuthor(authors, post.data.authorId)
+          return (
+            <Link
+              className="grid grid-cols-[1.2fr_0.8fr_0.7fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-5 transition-colors hover:bg-brand-50/60 dark:hover:bg-brand-500/5"
+              key={post.id}
+              to={`/post/${post.data.slug}`}
+            >
+              <div>
+                <p className="font-semibold text-[var(--foreground)]">{post.data.title}</p>
+                <p className="mt-1 text-sm text-gray-500">{post.data.excerpt}</p>
+              </div>
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                {author?.data.name || 'Unknown author'}
+              </span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">{post.data.category}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">{formatDate(post.createdAt)}</span>
+            </Link>
+          )
+        })}
+      </div>
+    </PageShell>
+  )
+}
+
+function PostDetailPage() {
+  const { slug } = useParams()
+  const { posts, authors } = useDemoData()
+  const post = posts.find((entry) => entry.data.slug === slug)
+
+  if (!post) {
+    return <EmptyState body="The requested post was not found in the seeded demo data." title="Post not found" />
+  }
+
+  const author = getAuthor(authors, post.data.authorId)
+  const relatedPosts = posts
+    .filter((entry) => entry.id !== post.id && entry.data.category === post.data.category)
+    .slice(0, 3)
+
+  return (
+    <motion.article animate={{ opacity: 1 }} className="w-full" initial={{ opacity: 0 }}>
+      <PageShell>
+        <Link className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500" to="/">
+          <ArrowLeft size={16} />
+          Back to blog
+        </Link>
+
+        <header className="mt-10">
+          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+            <Link
+              className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+              to={`/category/${slugify(post.data.category)}`}
+            >
+              {post.data.category}
+            </Link>
+            <span>{formatLongDate(post.createdAt)}</span>
+            <span>{post.data.readTimeMinutes} min read</span>
+          </div>
+
+          <h1 className="mt-6 max-w-4xl text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl lg:text-6xl">
+            {post.data.title}
+          </h1>
+          <p className="mt-6 max-w-3xl text-xl leading-8 text-gray-600 dark:text-gray-400">
+            {post.data.excerpt}
+          </p>
+
+          {author ? (
+            <div className="mt-10 flex items-center gap-4 rounded-3xl border border-[var(--border)] bg-[var(--card)] px-5 py-4">
+              <img
+                alt={author.data.name}
+                className="h-14 w-14 rounded-full object-cover"
+                src={author.data.avatarUrl}
+              />
+              <div>
+                <Link className="font-semibold text-[var(--foreground)] hover:text-brand-500" to={`/author/${author.data.slug}`}>
+                  {author.data.name}
+                </Link>
+                <p className="text-sm text-gray-500">{author.data.bio}</p>
+              </div>
+            </div>
+          ) : null}
+        </header>
+
+        <div className="mt-12 overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--card)] shadow-sm">
+          <img
+            alt={post.data.title}
+            className="h-full max-h-[34rem] w-full object-cover"
+            src={post.data.coverImage}
+          />
+        </div>
+
+        <div className="mt-14 grid gap-12 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="min-w-0">
+            <MarkdownArticle content={post.data.content} />
+          </div>
+
+          <aside className="space-y-5">
+            <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+                Tags
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {post.data.tags.map((tag) => (
+                  <Link
+                    className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+                    key={tag}
+                    to={`/tag/${slugify(tag)}`}
+                  >
+                    #{tag}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
+                Explore
+              </p>
+              <div className="mt-4 space-y-3">
+                <Link className="block font-medium text-[var(--foreground)] hover:text-brand-500" to="/archive">
+                  Browse archive
+                </Link>
+                <Link className="block font-medium text-[var(--foreground)] hover:text-brand-500" to="/authors">
+                  View authors
+                </Link>
+                <Link className="block font-medium text-[var(--foreground)] hover:text-brand-500" to="/categories">
+                  Browse categories
+                </Link>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        {relatedPosts.length > 0 ? (
+          <section className="mt-20">
+            <SectionHeading
+              eyebrow="More in this category"
+              title={`Related ${post.data.category} articles`}
+            />
+            <div className="grid gap-8 lg:grid-cols-3">
+              {relatedPosts.map((relatedPost) => (
+                <PostCard
+                  author={getAuthor(authors, relatedPost.data.authorId)}
+                  key={relatedPost.id}
+                  post={relatedPost}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </PageShell>
     </motion.article>
   )
 }
 
-const GetStarted = () => {
+function GetStartedPage() {
   const [activeTab, setActiveTab] = useState<'humans' | 'agents'>('humans')
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24"
-    >
-      <div className="mb-12">
-        <h1 className="text-4xl font-bold tracking-tight text-[var(--foreground)] mb-6">
-          Integrating with WordClaw
-        </h1>
-        <p className="text-xl text-gray-600 dark:text-gray-400">
-          WordClaw is built from the ground up to serve both human developers and autonomous AI agents. Select your integration mode below.
-        </p>
-      </div>
+    <PageShell>
+      <SectionHeading
+        copy="This demo intentionally shows both the developer path and the agent path, because WordClaw is designed for structured content operations across both."
+        eyebrow="Get started"
+        title="Integrating with WordClaw"
+      />
 
-      <div className="flex border-b border-[var(--border)] mb-12 overflow-x-auto">
+      <div className="mb-12 flex overflow-x-auto border-b border-[var(--border)]">
         <button
-          className={`px-6 py-3 font-semibold text-sm focus:outline-none whitespace-nowrap transition-colors ${activeTab === 'humans' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-gray-500 hover:text-[var(--foreground)]'}`}
+          className={`px-6 py-3 text-sm font-semibold whitespace-nowrap transition-colors ${activeTab === 'humans' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-gray-500 hover:text-[var(--foreground)]'}`}
           onClick={() => setActiveTab('humans')}
         >
-          For Human Developers
+          For human developers
         </button>
         <button
-          className={`px-6 py-3 font-semibold text-sm focus:outline-none whitespace-nowrap transition-colors ${activeTab === 'agents' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-gray-500 hover:text-[var(--foreground)]'}`}
+          className={`px-6 py-3 text-sm font-semibold whitespace-nowrap transition-colors ${activeTab === 'agents' ? 'border-b-2 border-brand-500 text-[var(--foreground)]' : 'text-gray-500 hover:text-[var(--foreground)]'}`}
           onClick={() => setActiveTab('agents')}
         >
-          For AI Agents (MCP)
+          For AI agents
         </button>
       </div>
 
-      <div className="space-y-12">
-        {activeTab === 'humans' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12">
-            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">1. Defining Schemas</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-                In WordClaw, you define the structure of your data using JSON Schema. For this blog, we created two Content Types via the WordClaw API: <strong>Demo Author</strong> and <strong>Demo Blog Post</strong>.
+      <div className="space-y-8">
+        {activeTab === 'humans' ? (
+          <>
+            <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold text-[var(--foreground)]">Define schemas first</h2>
+              <p className="mt-4 leading-8 text-gray-600 dark:text-gray-400">
+                The demo blog works because `demo-author` and `demo-blog-post` exist as explicit JSON schemas in WordClaw. The frontend does not hardcode fields blindly; it queries the runtime and then renders content shaped by those models.
               </p>
-              <ul className="list-disc pl-6 text-gray-600 dark:text-gray-400 space-y-2 mb-6">
-                <li><strong>Demo Author:</strong> Has fields for name, slug, bio, and avatarUrl.</li>
-                <li><strong>Demo Blog Post:</strong> Has fields for title, slug, excerpt, content, coverImage, category, tags, and crucially, an <code>authorId</code>.</li>
-              </ul>
-              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
-                <SyntaxHighlighter language="json" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
-                  {`// Example: Relating Post to Author in Schema\n{\n  "authorId": { \n    "type": "number", \n    "description": "Reference to Author Content Item ID" \n  }\n}`}
-                </SyntaxHighlighter>
-              </div>
             </section>
 
-            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">2. Fetching Content</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-                Since WordClaw provides a REST API, getting your content is as simple as making HTTP requests. This demo uses a custom React hook to fetch the Content Types first, then fetches the underlying Content Items to build relationships.
-              </p>
-              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
-                <SyntaxHighlighter language="javascript" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
-                  {`// 1. Get the list of all Content Types\nconst types = await fetch('/api/content-types').then(r => r.json())\nconst postType = types.data.find(t => t.slug === 'demo-blog-post')\n\n// 2. Fetch the corresponding items using the ContentType ID\nconst posts = await fetch('/api/content-items?contentTypeId=' + postType.id)`}
+            <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold text-[var(--foreground)]">Seed a realistic editorial domain</h2>
+              <div className="mt-6 rounded-2xl border border-gray-800 bg-[#10131f]">
+                <SyntaxHighlighter
+                  customStyle={{ margin: 0, padding: '1.5rem', background: '#10131f' }}
+                  language="bash"
+                  style={atomDark}
+                >
+                  {`npm run demo:seed-blog
+cd demos/demo-blog && npm run dev`}
                 </SyntaxHighlighter>
               </div>
+            </section>
+          </>
+        ) : (
+          <>
+            <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold text-[var(--foreground)]">Use MCP for discovery</h2>
+              <p className="mt-4 leading-8 text-gray-600 dark:text-gray-400">
+                Agents should discover capabilities, actor identity, and workspace targets before attempting to mutate content. WordClaw exposes that through MCP and the CLI guidance layer.
+              </p>
             </section>
 
-            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">3. Normalizing Data</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-                WordClaw stores dynamic content inside a JSONB column on the backend. When consuming the REST API directly, you need to parse the <code>data</code> field back into an object in your frontend state.
-              </p>
-              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
-                <SyntaxHighlighter language="javascript" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
-                  {`// The item.data comes back as a stringified JSON payload\nconst parsedPosts = fetchedPosts.data.map(item => ({\n  ...item,\n  data: JSON.parse(item.data)\n}))`}
+            <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+              <h2 className="text-2xl font-semibold text-[var(--foreground)]">Validate before writing</h2>
+              <div className="mt-6 rounded-2xl border border-gray-800 bg-[#10131f]">
+                <SyntaxHighlighter
+                  customStyle={{ margin: 0, padding: '1.5rem', background: '#10131f' }}
+                  language="bash"
+                  style={atomDark}
+                >
+                  {`wordclaw content guide --content-type-id 12
+wordclaw mcp call guide_task --json '{"taskId":"author-content"}'`}
                 </SyntaxHighlighter>
               </div>
             </section>
-          </motion.div>
+          </>
         )}
+      </div>
+    </PageShell>
+  )
+}
 
-        {activeTab === 'agents' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12">
-            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">1. Model Context Protocol (MCP)</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-                AI Agents don't need to write raw HTTP requests to integrate. WordClaw runs a deeply integrated <strong>MCP Server</strong>, allowing agents to natively discover and interact with the semantic rules of your content models.
-              </p>
-              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
-                <SyntaxHighlighter language="json" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
-                  {`// In your Claude Desktop config (claude_desktop_config.json)\n{\n  "mcpServers": {\n    "wordclaw": {\n      "command": "node",\n      "args": ["/path/to/wordclaw/dist/mcp/index.js"]\n    }\n  }\n}`}
-                </SyntaxHighlighter>
-              </div>
-              <p className="text-gray-600 dark:text-gray-400 mt-4 leading-relaxed">Once connected, the agent gets immediate access to tools like <code>list_content_types</code> and <code>create_content_item</code>.</p>
-            </section>
+function Layout({ children }: { children: ReactNode }) {
+  const navItems = [
+    { to: '/', label: 'Blog', icon: BookOpenText },
+    { to: '/authors', label: 'Authors', icon: Users },
+    { to: '/categories', label: 'Categories', icon: Shapes },
+    { to: '/tags', label: 'Tags', icon: Tag },
+    { to: '/archive', label: 'Archive', icon: Archive },
+  ]
 
-            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">2. Dry-Run Validation</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-                As an agent, mutating records in a CMS can be destructive. WordClaw exposes a <code>?mode=dry_run</code> parameter across all state-mutating endpoints, letting the agent validate schemas strictly without affecting production data.
-              </p>
-              <div className="rounded-xl overflow-hidden shadow-lg border border-gray-800">
-                <SyntaxHighlighter language="bash" style={atomDark} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '14px', background: '#121214' }}>
-                  {`# The agent tests its payload generation against the JSON Schema\ncurl -X POST "http://localhost:4000/api/content-items?mode=dry_run" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "contentTypeId": 12, \n    "data": {"title": "Test", "authorId": "Bob"} \n  }'\n\n# The API replies securely with an intuitive 400 error \n# catching hallucinations instantly if authorId was expected to be a number.`}
-                </SyntaxHighlighter>
-              </div>
-            </section>
+  return (
+    <div className="min-h-screen bg-[var(--background)] font-sans text-[var(--foreground)] selection:bg-brand-500 selection:text-white">
+      <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-[var(--background)]/88 backdrop-blur-md">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
+          <Link className="flex items-center gap-3 text-xl font-bold tracking-tight text-[var(--foreground)] transition-opacity hover:opacity-80" to="/">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/25">
+              <LayoutDashboard size={18} />
+            </div>
+            <span>
+              WordClaw <span className="font-light text-brand-500">Demo</span>
+            </span>
+          </Link>
 
-            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-              <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">3. Vector Generation</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4 leading-relaxed">
-                WordClaw natively hooks into semantic generation endpoints. Every time content is published, an AI agent operates synchronously in the backend to index the content into vector space for RAG retrievals automatically.
-              </p>
-            </section>
-          </motion.div>
-        )}
+          <nav className="hidden items-center gap-6 text-sm font-medium md:flex">
+            {navItems.map((item) => (
+              <NavLink
+                className={({ isActive }) =>
+                  isActive
+                    ? 'text-brand-500'
+                    : 'text-gray-500 transition-colors hover:text-[var(--foreground)]'
+                }
+                key={item.to}
+                to={item.to}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
 
-        <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-          <h2 className="text-2xl font-semibold mb-4 text-[var(--foreground)]">Next Steps</h2>
-          <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-6">
-            Explore the <a href="https://github.com/dligthart/wordclaw" target="_blank" className="text-brand-500 hover:underline inline-flex items-center gap-1">WordClaw documentation</a> to learn about more advanced features such as Workflows, Webhooks, AI Vector Embeddings, and the MCP Agent Server.
-          </p>
-          <div className="flex justify-start">
-            <Link to="/" className="inline-flex items-center gap-2 font-medium text-brand-600 dark:text-brand-400 hover:text-brand-500 transition-colors">
-              <ArrowLeft size={16} /> Back to the Demo Blog
+          <Link
+            className="inline-flex h-10 items-center justify-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-600"
+            to="/get-started"
+          >
+            Get Started
+          </Link>
+        </div>
+      </header>
+
+      <main>{children}</main>
+
+      <footer className="border-t border-[var(--border)] bg-gray-50 py-12 dark:bg-[#0c0c0e]">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 text-sm text-gray-500 sm:px-6 lg:px-8 md:flex-row md:items-center md:justify-between">
+          <p>Built on WordClaw schemas, items, and agent-aware content workflows.</p>
+          <div className="flex flex-wrap gap-4">
+            <Link className="hover:text-brand-500" to="/archive">
+              Archive
+            </Link>
+            <Link className="hover:text-brand-500" to="/authors">
+              Authors
+            </Link>
+            <Link className="hover:text-brand-500" to="/tags">
+              Tags
+            </Link>
+            <Link className="hover:text-brand-500" to="/get-started">
+              Get Started
             </Link>
           </div>
-        </section>
-      </div>
-    </motion.div>
+        </div>
+      </footer>
+    </div>
+  )
+}
+
+function AppRoutes() {
+  return (
+    <Layout>
+      <Routes>
+        <Route
+          element={
+            <DemoStateBoundary>
+              <HomePage />
+            </DemoStateBoundary>
+          }
+          path="/"
+        />
+        <Route
+          element={
+            <DemoStateBoundary>
+              <AuthorsPage />
+            </DemoStateBoundary>
+          }
+          path="/authors"
+        />
+        <Route
+          element={
+            <DemoStateBoundary>
+              <AuthorDetailPage />
+            </DemoStateBoundary>
+          }
+          path="/author/:slug"
+        />
+        <Route
+          element={
+            <DemoStateBoundary>
+              <CategoriesPage />
+            </DemoStateBoundary>
+          }
+          path="/categories"
+        />
+        <Route
+          element={
+            <DemoStateBoundary>
+              <TagsPage />
+            </DemoStateBoundary>
+          }
+          path="/tags"
+        />
+        <Route
+          element={
+            <DemoStateBoundary>
+              <CategoryDetailPage />
+            </DemoStateBoundary>
+          }
+          path="/category/:categorySlug"
+        />
+        <Route
+          element={
+            <DemoStateBoundary>
+              <TagDetailPage />
+            </DemoStateBoundary>
+          }
+          path="/tag/:tagSlug"
+        />
+        <Route
+          element={
+            <DemoStateBoundary>
+              <ArchivePage />
+            </DemoStateBoundary>
+          }
+          path="/archive"
+        />
+        <Route
+          element={
+            <DemoStateBoundary>
+              <PostDetailPage />
+            </DemoStateBoundary>
+          }
+          path="/post/:slug"
+        />
+        <Route path="/get-started" element={<GetStartedPage />} />
+      </Routes>
+    </Layout>
   )
 }
 
 function App() {
   return (
     <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/post/:slug" element={<PostDetail />} />
-          <Route path="/get-started" element={<GetStarted />} />
-        </Routes>
-      </Layout>
+      <DemoDataProvider>
+        <AppRoutes />
+      </DemoDataProvider>
     </BrowserRouter>
   )
 }
