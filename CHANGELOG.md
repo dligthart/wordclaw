@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/dligthart/wordclaw/compare/v1.6.0...v1.7.0) (2026-03-12)
+
+
+### Features
+
+* **api:** implement dall-e dynamic scene generation and persistent avatar ui ([1c7ccde](https://github.com/dligthart/wordclaw/commit/1c7ccdeb0db31aa5184b906d44d8d3daf1b0eec5))
+
 # [1.6.0](https://github.com/dligthart/wordclaw/compare/v1.5.0...v1.6.0) (2026-03-12)
 
 
