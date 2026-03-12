@@ -153,6 +153,8 @@ describe('API Route Contracts', () => {
                         mcpActorResourceUri: string;
                         mcpWorkspaceResourceUri: string;
                         mcpWorkspaceTargetToolName: string;
+                        mcpReactiveToolName: string;
+                        mcpReactiveNotificationMethod: string;
                         cliStatusCommand: string;
                         cliWhoAmICommand: string;
                         cliWorkspaceCommand: string;
@@ -163,6 +165,15 @@ describe('API Route Contracts', () => {
                             transports: string[];
                             endpoint: string;
                             attachable: boolean;
+                            reactive: {
+                                supported: boolean;
+                                transport: string;
+                                sessionHeader: string;
+                                standaloneSsePath: string;
+                                subscriptionTool: string;
+                                notificationMethod: string;
+                                supportedTopics: string[];
+                            };
                         };
                     };
                     auth: {
@@ -211,6 +222,8 @@ describe('API Route Contracts', () => {
             expect(body.data.discovery.mcpActorResourceUri).toBe('system://current-actor');
             expect(body.data.discovery.mcpWorkspaceResourceUri).toBe('system://workspace-context');
             expect(body.data.discovery.mcpWorkspaceTargetToolName).toBe('resolve_workspace_target');
+            expect(body.data.discovery.mcpReactiveToolName).toBe('subscribe_events');
+            expect(body.data.discovery.mcpReactiveNotificationMethod).toBe('notifications/wordclaw/event');
             expect(body.data.discovery.cliStatusCommand).toBe('node dist/cli/index.js capabilities status');
             expect(body.data.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
             expect(body.data.discovery.cliWorkspaceCommand).toBe('node dist/cli/index.js workspace guide');
@@ -218,6 +231,17 @@ describe('API Route Contracts', () => {
             expect(body.data.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
             expect(body.data.protocolSurfaces.mcp.endpoint).toBe('/mcp');
             expect(body.data.protocolSurfaces.mcp.attachable).toBe(true);
+            expect(body.data.protocolSurfaces.mcp.reactive).toEqual(expect.objectContaining({
+                supported: true,
+                transport: 'streamable-http',
+                sessionHeader: 'mcp-session-id',
+                standaloneSsePath: '/mcp',
+                subscriptionTool: 'subscribe_events',
+                notificationMethod: 'notifications/wordclaw/event',
+            }));
+            expect(body.data.protocolSurfaces.mcp.reactive.supportedTopics).toEqual(
+                expect.arrayContaining(['content_item.published', 'workflow.review.approved']),
+            );
             expect(body.data.auth.mcp.endpoint).toBe('/mcp');
             expect(body.data.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
             expect(body.data.modules).toEqual(
@@ -322,7 +346,19 @@ describe('API Route Contracts', () => {
                     checks: {
                         database: { status: string };
                         restApi: { status: string; basePath: string };
-                        mcp: { status: string; endpoint: string; transports: string[]; attachable: boolean };
+                        mcp: {
+                            status: string;
+                            endpoint: string;
+                            transports: string[];
+                            attachable: boolean;
+                            reactive: {
+                                supported: boolean;
+                                transport: string;
+                                subscriptionTool: string;
+                                notificationMethod: string;
+                                supportedTopicCount: number;
+                            };
+                        };
                         agentRuns: { status: string; enabled: boolean };
                     };
                     warnings: string[];
@@ -340,6 +376,12 @@ describe('API Route Contracts', () => {
                 endpoint: '/mcp',
                 transports: ['stdio', 'streamable-http'],
                 attachable: true,
+                reactive: expect.objectContaining({
+                    supported: true,
+                    transport: 'streamable-http',
+                    subscriptionTool: 'subscribe_events',
+                    notificationMethod: 'notifications/wordclaw/event',
+                }),
             }));
             expect(body.data.checks.agentRuns).toEqual(expect.objectContaining({
                 status: 'disabled',

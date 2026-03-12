@@ -9,6 +9,10 @@ import {
     isExperimentalDelegationEnabled,
     isExperimentalRevenueEnabled,
 } from '../config/runtime-features.js';
+import {
+    SUPPORTED_REACTIVE_EVENT_TOPICS,
+    WORDCLAW_EVENT_NOTIFICATION_METHOD,
+} from '../mcp/reactive-events.js';
 
 export type CapabilityManifest = ReturnType<typeof buildCapabilityManifest>;
 
@@ -466,6 +470,8 @@ export function buildCapabilityManifest() {
             mcpActorResourceUri: 'system://current-actor',
             mcpWorkspaceResourceUri: 'system://workspace-context',
             mcpWorkspaceTargetToolName: 'resolve_workspace_target',
+            mcpReactiveToolName: 'subscribe_events',
+            mcpReactiveNotificationMethod: WORDCLAW_EVENT_NOTIFICATION_METHOD,
             cliCommand: 'node dist/cli/index.js capabilities show',
             cliStatusCommand: 'node dist/cli/index.js capabilities status',
             cliWhoAmICommand: 'node dist/cli/index.js capabilities whoami',
@@ -482,6 +488,15 @@ export function buildCapabilityManifest() {
                 transports: ['stdio', 'streamable-http'],
                 endpoint: '/mcp',
                 attachable: true,
+                reactive: {
+                    supported: true,
+                    transport: 'streamable-http',
+                    sessionHeader: 'mcp-session-id',
+                    standaloneSsePath: '/mcp',
+                    subscriptionTool: 'subscribe_events',
+                    notificationMethod: WORDCLAW_EVENT_NOTIFICATION_METHOD,
+                    supportedTopics: [...SUPPORTED_REACTIVE_EVENT_TOPICS],
+                },
             },
             graphql: {
                 role: 'compatibility',

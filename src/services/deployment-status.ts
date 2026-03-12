@@ -25,6 +25,13 @@ export type DeploymentStatusSnapshot = {
             endpoint: string;
             transports: string[];
             attachable: boolean;
+            reactive: {
+                supported: boolean;
+                transport: string;
+                subscriptionTool: string;
+                notificationMethod: string;
+                supportedTopicCount: number;
+            };
             note: string;
         };
         agentRuns: {
@@ -111,8 +118,15 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                 endpoint: manifest.protocolSurfaces.mcp.endpoint,
                 transports: [...manifest.protocolSurfaces.mcp.transports],
                 attachable: manifest.protocolSurfaces.mcp.attachable,
+                reactive: {
+                    supported: manifest.protocolSurfaces.mcp.reactive.supported,
+                    transport: manifest.protocolSurfaces.mcp.reactive.transport,
+                    subscriptionTool: manifest.protocolSurfaces.mcp.reactive.subscriptionTool,
+                    notificationMethod: manifest.protocolSurfaces.mcp.reactive.notificationMethod,
+                    supportedTopicCount: manifest.protocolSurfaces.mcp.reactive.supportedTopics.length,
+                },
                 note: manifest.protocolSurfaces.mcp.attachable
-                    ? 'MCP supports both local stdio and remote streamable HTTP.'
+                    ? 'MCP supports both local stdio and remote streamable HTTP, including session-backed reactive subscriptions.'
                     : 'MCP is only available through local process attachment.',
             },
             agentRuns: agentRunsStatus,

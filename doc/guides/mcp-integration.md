@@ -11,7 +11,7 @@ WordClaw now exposes MCP in two ways:
 - **Local stdio** for embedded or developer-run MCP sessions
 - **Streamable HTTP** at `/mcp` for attachable remote clients
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption. For the live readiness layer, read `system://deployment-status`. For the authenticated workspace layer, read `system://workspace-context`. That workspace snapshot now also groups the strongest authoring, workflow, review, and paid-content targets for the active actor. If you already know the task class and want the best schema plus the next concrete work target immediately, use `system://workspace-target/<intent>` or the `resolve_workspace_target` tool. That resolution now prioritizes the strongest actionable candidate across the active workspace rather than only picking the busiest schema first. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption. The MCP section now also includes a reactive contract block describing whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which session header is used, and which topics are currently supported. For the live readiness layer, read `system://deployment-status`. That snapshot mirrors the reactive MCP status with the active transport, notification method, and supported topic count. For the authenticated workspace layer, read `system://workspace-context`. That workspace snapshot now also groups the strongest authoring, workflow, review, and paid-content targets for the active actor. If you already know the task class and want the best schema plus the next concrete work target immediately, use `system://workspace-target/<intent>` or the `resolve_workspace_target` tool. That resolution now prioritizes the strongest actionable candidate across the active workspace rather than only picking the busiest schema first. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
 
 Recommended remote MCP preflight:
 
@@ -127,15 +127,28 @@ The CLI is intentionally short-lived, so `wordclaw mcp call subscribe_events ...
 
 ```bash
 npx tsx verify-mcp-streams.ts
+
+npx tsx demos/mcp-demo-agent.ts watch content_item.published \
+  --transport http \
+  --base-url http://localhost:4000 \
+  --api-key writer
 ```
 
-That script:
+The verification script:
 
 - connects to the remote `/mcp` endpoint over Streamable HTTP
 - confirms the standalone SSE stream is attached
 - subscribes to `content_item.published`
 - creates a published content item through the normal REST API
 - waits for the matching MCP notification
+
+The demo agent `watch` mode is better for iterative testing:
+
+- keeps the MCP session open until you press `Ctrl+C`
+- prints the discovered reactive contract from `system://capabilities`
+- subscribes to the requested topic through `subscribe_events`
+- reacts to matching `notifications/wordclaw/event` payloads
+- fetches the latest REST snapshot for `content_item` events so you can see the post-notification follow-up
 
 ## OpenAI-Compatible Tool Export
 

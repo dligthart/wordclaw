@@ -134,6 +134,12 @@ describe('WordClawMcpClient over HTTP', () => {
                     endpoint: '/mcp',
                     attachable: true,
                     transports: ['stdio', 'streamable-http'],
+                    reactive: expect.objectContaining({
+                        supported: true,
+                        transport: 'streamable-http',
+                        subscriptionTool: 'subscribe_events',
+                        notificationMethod: 'notifications/wordclaw/event',
+                    }),
                 }),
             }),
         }));

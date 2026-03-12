@@ -591,6 +591,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                         mcpActorResourceUri: Type.String(),
                         mcpWorkspaceResourceUri: Type.String(),
                         mcpWorkspaceTargetToolName: Type.String(),
+                        mcpReactiveToolName: Type.String(),
+                        mcpReactiveNotificationMethod: Type.String(),
                         cliCommand: Type.String(),
                         cliStatusCommand: Type.String(),
                         cliWhoAmICommand: Type.String(),
@@ -606,7 +608,16 @@ export default async function apiRoutes(server: FastifyInstance) {
                             role: Type.String(),
                             transports: Type.Array(Type.String()),
                             endpoint: Type.String(),
-                            attachable: Type.Boolean()
+                            attachable: Type.Boolean(),
+                            reactive: Type.Object({
+                                supported: Type.Boolean(),
+                                transport: Type.String(),
+                                sessionHeader: Type.String(),
+                                standaloneSsePath: Type.String(),
+                                subscriptionTool: Type.String(),
+                                notificationMethod: Type.String(),
+                                supportedTopics: Type.Array(Type.String()),
+                            })
                         }),
                         graphql: Type.Object({
                             role: Type.String()
@@ -749,6 +760,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             endpoint: Type.String(),
                             transports: Type.Array(Type.String()),
                             attachable: Type.Boolean(),
+                            reactive: Type.Object({
+                                supported: Type.Boolean(),
+                                transport: Type.String(),
+                                subscriptionTool: Type.String(),
+                                notificationMethod: Type.String(),
+                                supportedTopicCount: Type.Number(),
+                            }),
                             note: Type.String(),
                         }),
                         agentRuns: Type.Object({
@@ -781,6 +799,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             endpoint: Type.String(),
                             transports: Type.Array(Type.String()),
                             attachable: Type.Boolean(),
+                            reactive: Type.Object({
+                                supported: Type.Boolean(),
+                                transport: Type.String(),
+                                subscriptionTool: Type.String(),
+                                notificationMethod: Type.String(),
+                                supportedTopicCount: Type.Number(),
+                            }),
                             note: Type.String(),
                         }),
                         agentRuns: Type.Object({

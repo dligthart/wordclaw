@@ -55,6 +55,8 @@ describe('buildCapabilityManifest', () => {
         expect(manifest.discovery.mcpActorResourceUri).toBe('system://current-actor');
         expect(manifest.discovery.mcpWorkspaceResourceUri).toBe('system://workspace-context');
         expect(manifest.discovery.mcpWorkspaceTargetToolName).toBe('resolve_workspace_target');
+        expect(manifest.discovery.mcpReactiveToolName).toBe('subscribe_events');
+        expect(manifest.discovery.mcpReactiveNotificationMethod).toBe('notifications/wordclaw/event');
         expect(manifest.discovery.cliStatusCommand).toBe('node dist/cli/index.js capabilities status');
         expect(manifest.discovery.cliWhoAmICommand).toBe('node dist/cli/index.js capabilities whoami');
         expect(manifest.discovery.cliWorkspaceCommand).toBe('node dist/cli/index.js workspace guide');
@@ -62,6 +64,21 @@ describe('buildCapabilityManifest', () => {
         expect(manifest.protocolSurfaces.mcp.transports).toEqual(['stdio', 'streamable-http']);
         expect(manifest.protocolSurfaces.mcp.endpoint).toBe('/mcp');
         expect(manifest.protocolSurfaces.mcp.attachable).toBe(true);
+        expect(manifest.protocolSurfaces.mcp.reactive).toEqual(expect.objectContaining({
+            supported: true,
+            transport: 'streamable-http',
+            sessionHeader: 'mcp-session-id',
+            standaloneSsePath: '/mcp',
+            subscriptionTool: 'subscribe_events',
+            notificationMethod: 'notifications/wordclaw/event',
+        }));
+        expect(manifest.protocolSurfaces.mcp.reactive.supportedTopics).toEqual(
+            expect.arrayContaining([
+                'content_item.published',
+                'content_item.approved',
+                'workflow.review.approved',
+            ]),
+        );
         expect(manifest.auth.mcp.endpoint).toBe('/mcp');
         expect(manifest.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
         expect(manifest.protocolContract.required).toEqual(['rest', 'mcp']);
