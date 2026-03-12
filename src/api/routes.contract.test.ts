@@ -241,7 +241,13 @@ describe('API Route Contracts', () => {
                 notificationMethod: 'notifications/wordclaw/event',
             }));
             expect(body.data.protocolSurfaces.mcp.reactive.supportedTopics).toEqual(
-                expect.arrayContaining(['content_item.published', 'workflow.review.approved']),
+                expect.arrayContaining([
+                    'content_item.published',
+                    'workflow.review.approved',
+                    'content_type.*',
+                    'api_key.create',
+                    'webhook.update',
+                ]),
             );
             expect(body.data.protocolSurfaces.mcp.reactive.supportedFilterFields).toEqual(
                 expect.arrayContaining(['contentTypeId', 'entityId', 'status', 'decision']),

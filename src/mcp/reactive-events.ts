@@ -5,6 +5,27 @@ import type { AuditEventPayload } from '../services/event-bus.js';
 
 export const WORDCLAW_EVENT_NOTIFICATION_METHOD = 'notifications/wordclaw/event';
 
+const CONTENT_TYPE_REACTIVE_EVENT_TOPICS = [
+    'content_type.*',
+    'content_type.create',
+    'content_type.update',
+    'content_type.delete',
+] as const;
+
+const API_KEY_REACTIVE_EVENT_TOPICS = [
+    'api_key.*',
+    'api_key.create',
+    'api_key.update',
+    'api_key.delete',
+] as const;
+
+const WEBHOOK_REACTIVE_EVENT_TOPICS = [
+    'webhook.*',
+    'webhook.create',
+    'webhook.update',
+    'webhook.delete',
+] as const;
+
 export const SUPPORTED_REACTIVE_EVENT_TOPICS = [
     '*',
     'audit.*',
@@ -17,6 +38,9 @@ export const SUPPORTED_REACTIVE_EVENT_TOPICS = [
     'content_item.published',
     'workflow.review.approved',
     'workflow.review.rejected',
+    ...CONTENT_TYPE_REACTIVE_EVENT_TOPICS,
+    ...API_KEY_REACTIVE_EVENT_TOPICS,
+    ...WEBHOOK_REACTIVE_EVENT_TOPICS,
 ] as const;
 
 export type ReactiveEventTopic = typeof SUPPORTED_REACTIVE_EVENT_TOPICS[number];
@@ -101,6 +125,10 @@ function hasScope(principal: ActorPrincipal, scope: string): boolean {
     return principal.scopes.has('admin') || principal.scopes.has(scope);
 }
 
+function matchesTopicFamily(topic: string, family: string): boolean {
+    return topic === `${family}.*` || topic.startsWith(`${family}.`);
+}
+
 export function parseAuditEventDetails(details: string | null): Record<string, unknown> | null {
     if (!details) {
         return null;
@@ -165,8 +193,16 @@ export function canSubscribeToReactiveTopic(principal: ActorPrincipal, topic: st
         return hasScope(principal, 'audit:read');
     }
 
-    if (topic.startsWith('content_item.') || topic.startsWith('workflow.review.')) {
+    if (
+        matchesTopicFamily(topic, 'content_item')
+        || matchesTopicFamily(topic, 'content_type')
+        || topic.startsWith('workflow.review.')
+    ) {
         return hasScope(principal, 'content:read') || hasScope(principal, 'content:write');
+    }
+
+    if (matchesTopicFamily(topic, 'api_key') || matchesTopicFamily(topic, 'webhook')) {
+        return principal.scopes.has('admin');
     }
 
     return false;
@@ -179,9 +215,14 @@ export function deriveReactiveTopics(event: AuditEventPayload): string[] {
         `${event.entityType}.${event.action}`,
     ]);
 
-    if (event.entityType === 'content_item') {
-        topics.add('content_item.*');
+    if (event.entityType === 'content_item'
+        || event.entityType === 'content_type'
+        || event.entityType === 'api_key'
+        || event.entityType === 'webhook') {
+        topics.add(`${event.entityType}.*`);
+    }
 
+    if (event.entityType === 'content_item') {
         const status = typeof details?.status === 'string' ? details.status : null;
         const decision = typeof details?.decision === 'string' ? details.decision : null;
 

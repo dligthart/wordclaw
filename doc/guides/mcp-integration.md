@@ -124,8 +124,20 @@ Reactive event delivery currently ships as an MCP session feature on the remote 
   - `workflow.review.approved`
   - `workflow.review.rejected`
   - `content_item.create`, `content_item.update`, `content_item.delete`, `content_item.rollback`
+  - `content_type.create`, `content_type.update`, `content_type.delete`
+  - `api_key.create`, `api_key.update`, `api_key.delete`
+  - `webhook.create`, `webhook.update`, `webhook.delete`
   - `content_item.*`
+  - `content_type.*`
+  - `api_key.*`
+  - `webhook.*`
   - `audit.*`
+
+Scope expectations for those families are intentionally conservative:
+
+- `content_item.*`, `workflow.review.*`, and `content_type.*` require `content:read`, `content:write`, or `admin`
+- `api_key.*` and `webhook.*` require `admin`
+- `*` remains admin-only
 
 The CLI is intentionally short-lived, so `wordclaw mcp call subscribe_events ...` is useful for contract inspection but not for staying attached long enough to receive pushed notifications. Use a persistent MCP client or the verification script below when you want to observe live events.
 
@@ -142,6 +154,12 @@ npx tsx demos/mcp-demo-agent.ts watch content_item.published \
   --base-url http://localhost:4000 \
   --api-key writer \
   --filters '{"contentTypeId":12}'
+
+npx tsx demos/mcp-demo-agent.ts watch api_key.create \
+  --transport http \
+  --base-url http://localhost:4000 \
+  --api-key remote-admin \
+  --once
 ```
 
 The verification script:

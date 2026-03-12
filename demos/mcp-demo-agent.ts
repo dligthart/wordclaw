@@ -8,6 +8,7 @@
  *   npx tsx demos/mcp-demo-agent.ts prompt workflow-guidance
  *   npx tsx demos/mcp-demo-agent.ts resource system://capabilities
  *   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin --once
+ *   npx tsx demos/mcp-demo-agent.ts watch api_key.create --transport http --api-key remote-admin --once
  *
  * By default the demo agent starts a local stdio MCP session. Use --transport http
  * plus --api-key (or WORDCLAW_API_KEY) when you want a persistent remote session
@@ -87,6 +88,7 @@ Examples:
   npx tsx demos/mcp-demo-agent.ts resource system://capabilities
   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin
   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin --filters '{"contentTypeId":12}'
+  npx tsx demos/mcp-demo-agent.ts watch api_key.create --transport http --api-key remote-admin --once
 
 Options:
   --transport <stdio|http>  Choose stdio (default) or remote HTTP MCP transport

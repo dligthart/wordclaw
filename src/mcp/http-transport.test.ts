@@ -896,4 +896,152 @@ describe('MCP HTTP transport', () => {
             }),
         }));
     });
+
+    it('delivers api key creation events to admin-only reactive subscribers', async () => {
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+        const notifications: Array<Record<string, any>> = [];
+
+        client = new Client({
+            name: 'wordclaw-reactive-api-key-test',
+            version: '1.0.0'
+        });
+        client.fallbackNotificationHandler = async (notification) => {
+            notifications.push(notification as Record<string, any>);
+        };
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'remote-admin'
+                }
+            }
+        });
+
+        await client.connect(transport);
+        expect(transport.sessionId).toBeTruthy();
+
+        await vi.waitFor(async () => {
+            const probe = await fetch(new URL('/mcp', `${baseUrl}/`), {
+                method: 'GET',
+                headers: {
+                    accept: 'text/event-stream',
+                    'mcp-session-id': transport.sessionId as string,
+                    'x-api-key': 'remote-admin'
+                }
+            });
+
+            expect(probe.status).toBe(409);
+        });
+
+        const subscription = await client.callTool({
+            name: 'subscribe_events',
+            arguments: {
+                topics: ['api_key.create'],
+                replaceExisting: true
+            }
+        });
+        const subscriptionText = extractFirstText(subscription.content as Array<{ type: string; text?: string }>);
+        expect(JSON.parse(subscriptionText)).toEqual(expect.objectContaining({
+            subscribedTopics: ['api_key.create'],
+            newlyAddedTopics: ['api_key.create'],
+            blockedTopics: [],
+        }));
+
+        const createKeyResponse = await fetch(new URL('/api/auth/keys', `${baseUrl}/`), {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'x-api-key': 'remote-admin'
+            },
+            body: JSON.stringify({
+                name: `Reactive session key ${Date.now()}`,
+                scopes: ['content:read']
+            })
+        });
+        expect(createKeyResponse.status).toBe(201);
+        const createKeyPayload = await createKeyResponse.json() as {
+            data: { id: number };
+        };
+
+        await vi.waitFor(() => {
+            expect(
+                notifications.some((notification) => (
+                    notification.method === 'notifications/wordclaw/event'
+                    && notification.params?.topic === 'api_key.create'
+                    && notification.params?.event?.entityId === createKeyPayload.data.id
+                ))
+            ).toBe(true);
+        }, { timeout: 5000 });
+
+        const eventNotification = notifications.find((notification) => (
+            notification.method === 'notifications/wordclaw/event'
+            && notification.params?.topic === 'api_key.create'
+            && notification.params?.event?.entityId === createKeyPayload.data.id
+        ));
+
+        expect(eventNotification).toEqual(expect.objectContaining({
+            method: 'notifications/wordclaw/event',
+            params: expect.objectContaining({
+                topic: 'api_key.create',
+                matchedTopics: ['api_key.create'],
+                matchedSubscriptions: [
+                    {
+                        topic: 'api_key.create',
+                        filters: {},
+                    },
+                ],
+                event: expect.objectContaining({
+                    source: 'audit',
+                    domainId: 1,
+                    entityType: 'api_key',
+                    action: 'create',
+                    entityId: createKeyPayload.data.id,
+                    name: 'api_key.create',
+                }),
+            }),
+        }));
+    });
+
+    it('blocks api key reactive subscriptions for non-admin actors', async () => {
+        process.env.API_KEYS = 'remote-admin=admin,writer=content:write';
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-reactive-api-key-blocked-test',
+            version: '1.0.0'
+        });
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'writer'
+                }
+            }
+        });
+
+        await client.connect(transport);
+
+        const subscription = await client.callTool({
+            name: 'subscribe_events',
+            arguments: {
+                topics: ['api_key.create'],
+                replaceExisting: true
+            }
+        });
+        const subscriptionText = extractFirstText(subscription.content as Array<{ type: string; text?: string }>);
+
+        expect(JSON.parse(subscriptionText)).toEqual(expect.objectContaining({
+            subscribedTopics: [],
+            newlyAddedTopics: [],
+            blockedTopics: [
+                {
+                    topic: 'api_key.create',
+                    reason: 'Current actor is missing the scope required for this event topic.',
+                },
+            ],
+            unsupportedTopics: [],
+        }));
+    });
 });

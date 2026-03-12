@@ -77,6 +77,9 @@ describe('buildCapabilityManifest', () => {
                 'content_item.published',
                 'content_item.approved',
                 'workflow.review.approved',
+                'content_type.*',
+                'api_key.create',
+                'webhook.update',
             ]),
         );
         expect(manifest.protocolSurfaces.mcp.reactive.supportedFilterFields).toEqual(
