@@ -29,6 +29,7 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
+import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import {
     buildCurrentActorSnapshot,
     buildSupervisorPrincipal,
@@ -54,6 +55,7 @@ type ContentItemsQuery = {
     sortDir?: 'asc' | 'desc';
     limit?: number;
     offset?: number;
+    cursor?: string;
 };
 type PaginationQuery = {
     limit?: number;
@@ -2573,7 +2575,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     Type.Literal('desc')
                 ])),
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
-                offset: Type.Optional(Type.Number({ minimum: 0 }))
+                offset: Type.Optional(Type.Number({ minimum: 0 })),
+                cursor: Type.Optional(Type.String())
             }),
             response: {
                 200: createAIResponse(Type.Array(Type.Object({
@@ -2599,20 +2602,11 @@ export default async function apiRoutes(server: FastifyInstance) {
             sortBy,
             sortDir,
             limit: rawLimit,
-            offset: rawOffset
+            offset: rawOffset,
+            cursor
         } = request.query as ContentItemsQuery;
 
         const limit = clampLimit(rawLimit);
-        const offset = clampOffset(rawOffset);
-        const searchQuery = q?.trim();
-        const searchPattern = searchQuery ? `%${searchQuery}%` : null;
-        const sortColumn =
-            sortBy === 'createdAt'
-                ? contentItems.createdAt
-                : sortBy === 'version'
-                    ? contentItems.version
-                    : contentItems.updatedAt;
-        const orderByClause = sortDir === 'asc' ? asc(sortColumn) : desc(sortColumn);
 
         const afterDate = createdAfter ? new Date(createdAfter) : null;
         if (afterDate && Number.isNaN(afterDate.getTime())) {
@@ -2632,55 +2626,42 @@ export default async function apiRoutes(server: FastifyInstance) {
             });
         }
 
-        const conditions = [
-            eq(contentItems.domainId, getDomainId(request)),
-            contentTypeId !== undefined ? eq(contentItems.contentTypeId, contentTypeId) : undefined,
-            status ? eq(contentItems.status, status) : undefined,
-            searchPattern
-                ? or(
-                    ilike(contentItems.data, searchPattern),
-                    ilike(contentItems.status, searchPattern),
-                    sql<boolean>`CAST(${contentItems.id} AS TEXT) ILIKE ${searchPattern}`
-                )
-                : undefined,
-            afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
-            beforeDate ? lte(contentItems.createdAt, beforeDate) : undefined,
-        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
-
-        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-        const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(contentItems).where(whereClause);
-        const rawItems = await db.select({
-            item: contentItems,
-            schema: contentTypes.schema,
-            basePrice: contentTypes.basePrice
-        })
-            .from(contentItems)
-            .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
-            .where(whereClause)
-            .orderBy(orderByClause)
-            .limit(limit)
-            .offset(offset);
-
-        const items = rawItems.map(row => {
-            if ((row.basePrice || 0) > 0) {
-                return {
-                    ...row.item,
-                    data: redactPremiumFields(row.schema, row.item.data)
-                };
+        let result;
+        try {
+            result = await listContentItems(getDomainId(request), {
+                contentTypeId,
+                status,
+                q,
+                createdAfter: afterDate,
+                createdBefore: beforeDate,
+                sortBy,
+                sortDir,
+                limit,
+                offset: cursor ? rawOffset : clampOffset(rawOffset),
+                cursor
+            });
+        } catch (error) {
+            if (error instanceof ContentItemListError) {
+                return reply.status(400).send(toErrorPayload(error.message, error.code, error.remediation));
             }
-            return row.item;
-        });
-        const hasMore = offset + items.length < total;
+            throw error;
+        }
 
         return {
-            data: items,
+            data: result.items,
             meta: buildMeta(
                 'Filter or select a content item',
                 ['POST /api/content-items'],
                 'low',
                 1,
                 false,
-                { total, offset, limit, hasMore }
+                {
+                    total: result.total,
+                    limit: result.limit,
+                    hasMore: result.hasMore,
+                    nextCursor: result.nextCursor,
+                    ...(result.offset !== undefined ? { offset: result.offset } : {})
+                }
             )
         };
     });

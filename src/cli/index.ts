@@ -997,7 +997,8 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
                 sortBy: getStringFlag(args, 'sort-by'),
                 sortDir: getStringFlag(args, 'sort-dir'),
                 limit: maybeNumber(getNumberFlag(args, 'limit')),
-                offset: maybeNumber(getNumberFlag(args, 'offset')),
+                offset: getStringFlag(args, 'cursor') ? undefined : maybeNumber(getNumberFlag(args, 'offset')),
+                cursor: getStringFlag(args, 'cursor'),
             },
         });
         printResponse(args, response);

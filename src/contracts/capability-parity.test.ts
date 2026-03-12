@@ -209,7 +209,7 @@ describe('Capability Parity Matrix', () => {
         }
     });
 
-    it('keeps content item filtering contract aligned', () => {
+    it('keeps content item filtering aligned while exposing cursor pagination on primary agent surfaces', () => {
         const contentItemsRouteBlock = getRestRouteBlock(routesSource, 'GET', '/content-items');
         expect(contentItemsRouteBlock?.includes('contentTypeId: Type.Optional(Type.Number())')).toBe(true);
         expect(contentItemsRouteBlock?.includes('status: Type.Optional(Type.String())')).toBe(true);
@@ -217,6 +217,7 @@ describe('Capability Parity Matrix', () => {
         expect(contentItemsRouteBlock?.includes('createdBefore: Type.Optional(Type.String())')).toBe(true);
         expect(contentItemsRouteBlock?.includes('limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 }))')).toBe(true);
         expect(contentItemsRouteBlock?.includes('offset: Type.Optional(Type.Number({ minimum: 0 }))')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('cursor: Type.Optional(Type.String())')).toBe(true);
 
         const contentItemsToolBlock = getMcpToolBlock(mcpSource, 'get_content_items');
         expect(contentItemsToolBlock?.includes('contentTypeId: z.number().optional()')).toBe(true);
@@ -225,6 +226,7 @@ describe('Capability Parity Matrix', () => {
         expect(contentItemsToolBlock?.includes('createdBefore: z.string().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('limit: z.number().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('offset: z.number().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('cursor: z.string().optional()')).toBe(true);
 
         const queryArgNames = graphqlSurface.queryArgs.get('contentItems');
         expect(queryArgNames?.has('contentTypeId')).toBe(true);

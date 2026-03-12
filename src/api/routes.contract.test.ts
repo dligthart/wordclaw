@@ -1907,6 +1907,125 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns cursor pagination metadata for content items', async () => {
+        const app = await buildServer();
+        const countWhereMock = vi.fn().mockResolvedValue([{ total: 2 }]);
+        const limitMock = vi.fn().mockResolvedValue([
+            {
+                item: {
+                    id: 21,
+                    contentTypeId: 7,
+                    data: '{"title":"First"}',
+                    status: 'published',
+                    version: 2,
+                    createdAt: new Date('2026-03-08T10:00:00.000Z'),
+                    updatedAt: new Date('2026-03-08T10:30:00.000Z')
+                },
+                schema: '{"type":"object"}',
+                basePrice: 0
+            },
+            {
+                item: {
+                    id: 20,
+                    contentTypeId: 7,
+                    data: '{"title":"Second"}',
+                    status: 'draft',
+                    version: 1,
+                    createdAt: new Date('2026-03-08T09:00:00.000Z'),
+                    updatedAt: new Date('2026-03-08T09:15:00.000Z')
+                },
+                schema: '{"type":"object"}',
+                basePrice: 0
+            }
+        ]);
+        const orderByMock = vi.fn(() => ({ limit: limitMock }));
+        const whereMock = vi.fn(() => ({ orderBy: orderByMock }));
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: countWhereMock
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: () => ({
+                        where: whereMock
+                    }),
+                }),
+            }));
+
+        const cursor = Buffer.from(JSON.stringify({
+            createdAt: '2026-03-09T11:00:00.000Z',
+            id: 99
+        }), 'utf8').toString('base64url');
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: `/api/content-items?contentTypeId=7&limit=1&cursor=${cursor}`
+            });
+
+            expect(response.statusCode).toBe(200);
+
+            const body = response.json() as {
+                data: Array<{ id: number }>;
+                meta: { total: number; limit: number; hasMore: boolean; nextCursor: string | null; offset?: number };
+            };
+
+            expect(body.data).toHaveLength(1);
+            expect(body.data[0]).toMatchObject({ id: 21 });
+            expect(body.meta).toMatchObject({
+                total: 2,
+                limit: 1,
+                hasMore: true,
+                nextCursor: expect.any(String)
+            });
+            expect(body.meta.offset).toBeUndefined();
+            expect(limitMock).toHaveBeenCalledWith(2);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns INVALID_CONTENT_ITEMS_CURSOR for malformed content-item cursor', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?cursor=not-a-cursor'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('INVALID_CONTENT_ITEMS_CURSOR');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_ITEMS_CURSOR_OFFSET_CONFLICT when cursor and offset are both provided', async () => {
+        const app = await buildServer();
+        const cursor = Buffer.from(JSON.stringify({
+            createdAt: '2026-03-09T11:00:00.000Z',
+            id: 99
+        }), 'utf8').toString('base64url');
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: `/api/content-items?cursor=${cursor}&offset=0`
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_ITEMS_CURSOR_OFFSET_CONFLICT');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns INVALID_WEBHOOK_EVENTS when webhook registration has empty events', async () => {
         const app = await buildServer();
 

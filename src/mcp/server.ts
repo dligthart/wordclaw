@@ -26,6 +26,7 @@ import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
 import { buildL402Guide } from '../cli/lib/l402-guide.js';
 import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
+import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 
 type McpRequestExtra = {
@@ -1053,57 +1054,35 @@ server.tool(
         createdAfter: z.string().optional().describe('ISO-8601 created-at lower bound'),
         createdBefore: z.string().optional().describe('ISO-8601 created-at upper bound'),
         limit: z.number().optional().describe('Page size (default 50, max 500)'),
-        offset: z.number().optional().describe('Row offset (default 0)')
+        offset: z.number().optional().describe('Row offset (default 0)'),
+        cursor: z.string().optional().describe('Cursor returned by a previous get_content_items page')
     },
-    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, createdAfter, createdBefore, limit: rawLimit, offset: rawOffset }, extra, domainId) => {
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, createdAfter, createdBefore, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
         try {
-            const limit = clampLimit(rawLimit);
-            const offset = clampOffset(rawOffset);
-            const afterDate = parseDateArg(createdAfter, 'createdAfter');
-            const beforeDate = parseDateArg(createdBefore, 'createdBefore');
-
-            const conditions = [
-                eq(contentItems.domainId, domainId),
-                contentTypeId !== undefined ? eq(contentItems.contentTypeId, contentTypeId) : undefined,
-                status ? eq(contentItems.status, status) : undefined,
-                afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
-                beforeDate ? lte(contentItems.createdAt, beforeDate) : undefined,
-            ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
-
-            const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-            const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
-                .from(contentItems)
-                .where(whereClause);
-
-            const rawItems = await db.select({
-                item: contentItems,
-                schema: contentTypes.schema,
-                basePrice: contentTypes.basePrice
-            })
-                .from(contentItems)
-                .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
-                .where(whereClause)
-                .limit(limit)
-                .offset(offset);
-
-            const items = rawItems.map(row => {
-                if ((row.basePrice || 0) > 0) {
-                    return {
-                        ...row.item,
-                        data: redactPremiumFields(row.schema, row.item.data)
-                    };
-                }
-                return row.item;
+            const result = await listContentItems(domainId, {
+                contentTypeId,
+                status,
+                createdAfter: parseDateArg(createdAfter, 'createdAfter'),
+                createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                limit: clampLimit(rawLimit),
+                offset: cursor ? rawOffset : clampOffset(rawOffset),
+                cursor,
+                sortBy: cursor ? 'createdAt' : undefined,
+                sortDir: cursor ? 'desc' : undefined
             });
 
             return okJson({
-                items,
-                total,
-                limit,
-                offset,
-                hasMore: offset + items.length < total
+                items: result.items,
+                total: result.total,
+                limit: result.limit,
+                ...(result.offset !== undefined ? { offset: result.offset } : {}),
+                hasMore: result.hasMore,
+                nextCursor: result.nextCursor
             });
         } catch (error) {
+            if (error instanceof ContentItemListError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
             return err(`Error listing content items: ${(error as Error).message}`);
         }
     })

@@ -13,6 +13,7 @@ import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
+import { listContentItems } from '../services/content-item.service.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 import { toAuditActor, type AuditActor } from '../services/actor-identity.js';
 
@@ -901,39 +902,16 @@ export const resolvers = {
             offset: rawOffset
         }: OptionalContentTypeArg, context: unknown) => {
             const numericTypeId = parseOptionalId(contentTypeId, 'contentTypeId');
-            const afterDate = parseDateArg(createdAfter, 'createdAfter');
-            const beforeDate = parseDateArg(createdBefore, 'createdBefore');
-            const limit = clampLimit(rawLimit);
-            const offset = clampOffset(rawOffset);
-
-            const conditions = [
-                eq(contentItems.domainId, getDomainId(context)),
-                numericTypeId !== undefined ? eq(contentItems.contentTypeId, numericTypeId) : undefined,
-                status ? eq(contentItems.status, status) : undefined,
-                afterDate ? gte(contentItems.createdAt, afterDate) : undefined,
-                beforeDate ? lte(contentItems.createdAt, beforeDate) : undefined,
-            ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
-
-            const rawItems = await db.select({
-                item: contentItems,
-                schema: contentTypes.schema,
-                basePrice: contentTypes.basePrice
-            })
-                .from(contentItems)
-                .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
-                .where(conditions.length > 0 ? and(...conditions) : undefined)
-                .limit(limit)
-                .offset(offset);
-
-            return rawItems.map(row => {
-                if ((row.basePrice || 0) > 0) {
-                    return {
-                        ...row.item,
-                        data: redactPremiumFields(row.schema, row.item.data)
-                    };
-                }
-                return row.item;
+            const result = await listContentItems(getDomainId(context), {
+                contentTypeId: numericTypeId,
+                status,
+                createdAfter: parseDateArg(createdAfter, 'createdAfter'),
+                createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                limit: clampLimit(rawLimit),
+                offset: clampOffset(rawOffset)
             });
+
+            return result.items;
         }),
 
         contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
