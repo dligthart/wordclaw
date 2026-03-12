@@ -49,6 +49,7 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 
 ### Native Vector RAG and Semantic Search
 
+- **Auto-Enabled** — Simply provide an `OPENAI_API_KEY` in your `.env` to automatically enable vector capabilities.
 - **Automated Embeddings** — Published content can be chunked and embedded into `pgvector`.
 - **Semantic Search** — Agents can query the CMS using natural-language relevance without external vector infrastructure.
 

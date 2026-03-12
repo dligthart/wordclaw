@@ -11,6 +11,8 @@
 
 **WordClaw** is a safe content runtime for AI agents and human supervisors. It combines structured content contracts, approval-aware workflows, dry-run safety, auditability, and agent-native access patterns so autonomous systems can operate on content without losing governance.
 
+For a look ahead at what is in active development versus what is experimental, check out the [ROADMAP](ROADMAP.md).
+
 ## 🚀 Features
 
 ### Core Today
@@ -71,7 +73,7 @@
     LNBITS_BASE_URL=
     LNBITS_ADMIN_KEY=
     ```
-    `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). If unset, semantic search returns a clear disabled response and write-side embedding sync is skipped. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth. 
+    `OPENAI_API_KEY` is optional but highly recommended. Supplying it automatically enables native Vector RAG (embeddings and semantic search). `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth. 
     
     ### L402 / Lightning Provisioning
     By default, WordClaw uses a mocked Lightning network locally. If you run WordClaw in `NODE_ENV=production`, it requires a real Lightning backend. To provision a self-hosted Lightning node, set `PAYMENT_PROVIDER=lnbits` and configure the `LNBITS_BASE_URL` (e.g. `https://your-lnbits-domain.com`) and your `LNBITS_ADMIN_KEY`.

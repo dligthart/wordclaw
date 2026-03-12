@@ -16,6 +16,12 @@ const start = async () => {
         await server.listen({ port, host });
         console.log(`Server listening at http://${host}:${port}`);
 
+        if (process.env.OPENAI_API_KEY) {
+            console.log('🧠 Vector RAG enabled (OPENAI_API_KEY detected)');
+        } else {
+            console.log('💡 Tip: Add OPENAI_API_KEY to enable native Vector RAG and semantic search');
+        }
+
         accessEventsWorker.start(); // Start the background worker
         paymentReconciliationWorker.start();
         if (isExperimentalAgentRunsEnabled()) {
