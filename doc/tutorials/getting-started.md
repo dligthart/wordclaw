@@ -135,6 +135,7 @@ npx tsx src/cli/index.ts ct ls --limit 10 --raw
 # Built mode
 npm run build
 node dist/cli/index.js content list --limit 10
+node dist/cli/index.js content list --limit 10 --cursor <nextCursor>
 ```
 
 Recommended environment variables:

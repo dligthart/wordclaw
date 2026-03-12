@@ -2710,11 +2710,32 @@ paths:
         - type: string
           required: false
           in: query
+          name: q
+        - type: string
+          required: false
+          in: query
           name: createdAfter
         - type: string
           required: false
           in: query
           name: createdBefore
+        - required: false
+          in: query
+          name: sortBy
+          schema:
+            type: string
+            enum:
+              - updatedAt
+              - createdAt
+              - version
+        - required: false
+          in: query
+          name: sortDir
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
         - minimum: 1
           maximum: 500
           type: number
@@ -2726,6 +2747,10 @@ paths:
           required: false
           in: query
           name: offset
+        - type: string
+          required: false
+          in: query
+          name: cursor
       responses:
         "200":
           description: Default Response

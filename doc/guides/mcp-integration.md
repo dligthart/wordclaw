@@ -125,7 +125,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 |-------------------------------|----------------------------------------|
 | `create_content_item`         | Create a single content item           |
 | `create_content_items_batch`  | Batch create (supports atomic mode)    |
-| `get_content_items`           | List with filters                      |
+| `get_content_items`           | List with filters and cursor paging    |
 | `get_content_item`            | Get by ID                              |
 | `update_content_item`         | Update (auto-versions)                 |
 | `update_content_items_batch`  | Batch update                           |

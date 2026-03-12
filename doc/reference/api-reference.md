@@ -95,7 +95,44 @@ curl -X POST http://localhost:4000/api/content-items \
 }
 ```
 
-### 3. Paying an L402 Invoice
+### 3. Listing Content with Cursor Pagination
+
+List content safely in pages without fetching the entire dataset up front. Reuse the returned `meta.nextCursor` for the next request.
+
+**Request:**
+```bash
+curl -H "x-api-key: writer" \
+  "http://localhost:4000/api/content-items?contentTypeId=15&status=draft&limit=2"
+```
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": 88,
+      "contentTypeId": 15,
+      "status": "draft",
+      "version": 1,
+      "data": "{\"title\":\"React Generator\"}",
+      "createdAt": "2024-03-24T12:00:00Z",
+      "updatedAt": "2024-03-24T12:00:00Z"
+    }
+  ],
+  "meta": {
+    "hasMore": true,
+    "nextCursor": "eyJjcmVhdGVkQXQiOiIyMDI0LTAzLTI0VDEyOjAwOjAwLjAwMFoiLCJpZCI6ODh9"
+  }
+}
+```
+
+**Next page:**
+```bash
+curl -H "x-api-key: writer" \
+  "http://localhost:4000/api/content-items?contentTypeId=15&status=draft&limit=2&cursor=eyJjcmVhdGVkQXQiOiIyMDI0LTAzLTI0VDEyOjAwOjAwLjAwMFoiLCJpZCI6ODh9"
+```
+
+### 4. Paying an L402 Invoice
 
 Confirming a purchase locally with a simulated payment backend.
 
