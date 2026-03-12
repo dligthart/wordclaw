@@ -584,6 +584,53 @@ If a migration fails because of a missing \`vector\` type, remember that WordCla
         authorSlug: 'alice-builder',
         readTimeMinutes: 5,
     },
+    {
+        title: 'Building a Dynamic Blog Overview Page',
+        slug: 'building-a-dynamic-blog-overview-page',
+        excerpt: 'Learn how to build a dynamic, responsive blog overview page by fetching Content Items and their related references from the WordClaw API.',
+        content: `# Constructing the Overview
+
+Creating a blog overview page requires fetching multiple content types from WordClaw and stitching them together on your frontend. 
+
+## The API Request
+
+To build an overview, you need the "Blog Post" items and the "Author" items.
+
+\`\`\`javascript
+const [authorsRes, postsRes] = await Promise.all([
+  fetch('/api/content-items?contentTypeId=' + authorTypeId).then(res => res.json()),
+  fetch('/api/content-items?contentTypeId=' + postTypeId).then(res => res.json())
+]);
+\`\`\`
+
+## Resolving the Relationships
+
+Posts usually contain a reference ID to their author (e.g. \`authorId: 10\`). When rendering the overview card, you look up the author by this ID.
+
+\`\`\`tsx
+{posts.map(post => {
+  const author = authors.find(a => a.id === post.data.authorId);
+  return (
+    <article key={post.id} className="blog-card">
+      <img src={post.data.coverImage} alt={post.data.title} />
+      <h2>{post.data.title}</h2>
+      <p>{post.data.excerpt}</p>
+      {author && <span>By {author.data.name}</span>}
+    </article>
+  );
+})}
+\`\`\`
+
+## Pagination and Performance
+
+By default, \`GET /api/content-items\` returns all items. If you have a large library, make sure to consider frontend pagination, or watch for the upcoming cursor-based pagination API features in the backend roadmap!
+`,
+        coverImage: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=2872&auto=format&fit=crop',
+        category: 'Tutorials',
+        tags: ['React', 'Frontend', 'Tutorials', 'API'],
+        authorSlug: 'alice-builder',
+        readTimeMinutes: 5,
+    },
 ];
 
 async function setupBlogDemo() {
