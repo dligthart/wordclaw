@@ -1,0 +1,331 @@
+:root {
+    --bg-dark: #0f172a;
+    --bg-panel: #1e293b;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --health: #ef4444;
+    --score: #f59e0b;
+    --glow: rgba(59, 130, 246, 0.4);
+    --border: rgba(255, 255, 255, 0.1);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 100%);
+}
+
+#app {
+    width: 100%;
+    max-width: 800px;
+    padding: 2rem;
+    position: relative;
+    z-index: 1;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    background: linear-gradient(90deg, #fff, var(--text-muted));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.gamestats {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+}
+
+.stat .label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.stat .value {
+    font-weight: 800;
+}
+
+#health {
+    color: var(--health);
+}
+
+#score {
+    color: var(--score);
+}
+
+.health-down {
+    animation: flashRed 1s;
+}
+
+.health-up {
+    animation: flashGreen 1s;
+}
+
+.score-up {
+    animation: flashGold 1s;
+}
+
+@keyframes flashRed {
+    50% {
+        color: white;
+        text-shadow: 0 0 10px red;
+    }
+}
+
+@keyframes flashGreen {
+    50% {
+        color: white;
+        text-shadow: 0 0 10px #22c55e;
+    }
+}
+
+@keyframes flashGold {
+    50% {
+        color: white;
+        text-shadow: 0 0 10px gold;
+    }
+}
+
+#story-container {
+    background: var(--bg-panel);
+    padding: 2.5rem;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+#story-container.fade-out {
+    opacity: 0.5;
+    transform: scale(0.98);
+    pointer-events: none;
+}
+
+#story-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    color: var(--accent);
+}
+
+#story-text {
+    line-height: 1.7;
+    font-size: 1.1rem;
+    color: #cbd5e1;
+    margin-bottom: 2.5rem;
+}
+
+#choices-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+button {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+button:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 15px var(--glow);
+    transform: translateY(-2px);
+}
+
+button:active {
+    transform: translateY(0);
+}
+
+.primary-btn {
+    background: var(--accent);
+    border-color: var(--accent);
+    text-align: center;
+    justify-content: center;
+    font-weight: 600;
+}
+
+.primary-btn:hover {
+    background: var(--accent-hover);
+}
+
+#loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    gap: 1rem;
+    color: var(--accent);
+}
+
+.hidden {
+    display: none !important;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(59, 130, 246, 0.3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+#publish-container {
+    background: var(--bg-panel);
+    padding: 2.5rem;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    text-align: center;
+    margin-top: 2rem;
+}
+
+#publish-container h3 {
+    margin-bottom: 0.5rem;
+    color: var(--score);
+}
+
+#death-reason {
+    color: var(--health);
+    margin-bottom: 1.5rem;
+    font-style: italic;
+}
+
+.publish-form {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+input[type="text"] {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    border-radius: 8px;
+    color: white;
+    font-family: 'Inter', sans-serif;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+input[type="text"]:focus {
+    border-color: var(--accent);
+}
+
+#publish-status {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: #22c55e;
+}
+
+#themes-container {
+    background: var(--bg-panel);
+    padding: 2.5rem;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    text-align: center;
+}
+
+#themes-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    color: var(--accent);
+}
+
+#themes-subtitle {
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+}
+
+.theme-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.theme-card {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: left;
+}
+
+.theme-card h3 {
+    color: var(--text-main);
+    margin-bottom: 0.5rem;
+    font-size: 1.2rem;
+}
+
+.theme-card p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.theme-card:hover {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: var(--accent);
+    transform: translateY(-3px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}

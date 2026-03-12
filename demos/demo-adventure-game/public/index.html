@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordClaw Adventure</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:ital,wght@0,700;1,400&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <meta name="description" content="An interactive AI-generated adventure game powered by WordClaw.">
+</head>
+
+<body>
+    <div id="app">
+        <header>
+            <h1 class="logo">WordClaw Adventure</h1>
+            <div class="gamestats">
+                <div class="stat"><span class="label">❤️ Health</span><span id="health" class="value">--</span></div>
+                <div class="stat"><span class="label">⭐ Score</span><span id="score" class="value">-- / 100</span></div>
+            </div>
+        </header>
+        <main>
+            <div id="loading" class="hidden">
+                <div class="spinner"></div>
+                <p>Generating Fate...</p>
+            </div>
+
+            <div id="themes-container">
+                <h2 id="themes-title">Choose Your Destiny</h2>
+                <p id="themes-subtitle">Every great story begins with a spark. What kind of adventure awaits?</p>
+                <div id="theme-cards" class="theme-grid">
+                    <!-- Themes will be injected here -->
+                </div>
+            </div>
+
+            <div id="story-container" class="hidden">
+                <h2 id="story-title">Welcome to the Abyss</h2>
+                <div id="story-text">Your journey into the unknown begins here.</div>
+
+                <div id="choices-container">
+                    <!-- Branch choices injected here -->
+                </div>
+            </div>
+
+            <div id="publish-container" class="hidden">
+                <h3>Your journey has ended.</h3>
+                <p id="death-reason" class="hidden"></p>
+                <div class="publish-form">
+                    <input type="text" id="author-name" placeholder="Enter your alias to publish..." maxlength="30" />
+                    <button id="publish-btn" class="primary-btn">Publish Story to WordClaw</button>
+                </div>
+                <div id="publish-status"></div>
+            </div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+
+</html>

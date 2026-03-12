@@ -1,0 +1,42 @@
+{
+    "name": "story_node",
+    "description": "A single narrative moment in the interactive adventure game.",
+    "type": "object",
+    "properties": {
+        "title": {
+            "type": "string",
+            "description": "A short, evocative title for this story node."
+        },
+        "narrative_text": {
+            "type": "string",
+            "description": "The main atmospheric text describing what the player sees and experiences."
+        },
+        "available_choices": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "The actions the player can choose to take next. If empty, the game assumes an end-state."
+        },
+        "body": {
+            "type": "string",
+            "description": "Required base core field by WordClaw."
+        },
+        "health_delta": {
+            "type": "integer",
+            "description": "The impact this narrative choice has on the player's health (e.g., -10 for damage, +5 for healing)."
+        },
+        "score_delta": {
+            "type": "integer",
+            "description": "The score points rewarded or penalized by this node."
+        }
+    },
+    "required": [
+        "title",
+        "narrative_text",
+        "available_choices",
+        "body",
+        "health_delta",
+        "score_delta"
+    ]
+}
