@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/dligthart/wordclaw/compare/v1.4.0...v1.5.0) (2026-03-12)
+
+
+### Features
+
+* **mcp:** expose reactive contract and demo watch agent ([af8243d](https://github.com/dligthart/wordclaw/commit/af8243dcdaa7b339fb8ecdfff7113e9f534f770b))
+
 # [1.4.0](https://github.com/dligthart/wordclaw/compare/v1.3.0...v1.4.0) (2026-03-12)
 
 
