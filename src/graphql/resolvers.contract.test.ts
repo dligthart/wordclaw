@@ -446,7 +446,7 @@ describe('GraphQL Resolver Contracts', () => {
                 comment: 'Looks good.'
             }, {
                 authPrincipal: {
-                    keyId: 7,
+                    actorRef: 7,
                     domainId: 1,
                     scopes: new Set(['content:write']),
                     actorId: 'api_key:7',

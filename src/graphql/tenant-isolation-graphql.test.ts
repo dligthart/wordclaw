@@ -114,7 +114,7 @@ describe('GraphQL Tenant Isolation', () => {
                     headers: request.headers as Record<string, string>,
                     url: '/graphql',
                     authPrincipal: {
-                        keyId: `tenant-${domainId}`,
+                        actorRef: `tenant-${domainId}`,
                         domainId,
                         scopes: new Set(['admin']),
                         source: 'test'

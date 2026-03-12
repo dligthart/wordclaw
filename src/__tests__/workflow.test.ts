@@ -132,7 +132,7 @@ describe('Workflow & Review System (Domain 1)', () => {
             task.id,
             'approved',
             {
-                keyId: 77,
+                actorRef: 77,
                 actorId: 'api_key:77',
                 scopes: new Set(['content:write']),
                 domainId
@@ -157,7 +157,7 @@ describe('Workflow & Review System (Domain 1)', () => {
         }).returning();
 
         const comment1 = await WorkflowService.addComment(domainId, item.id, {
-            keyId: 101,
+            actorRef: 101,
             source: 'test',
         }, 'Looks good to me.');
         expect(comment1.comment).toBe('Looks good to me.');

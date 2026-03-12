@@ -63,7 +63,7 @@ function resolveMcpPrincipal(extra?: McpRequestExtra): ActorPrincipal {
         && typeof principal === 'object'
         && 'domainId' in principal
         && 'scopes' in principal
-        && 'keyId' in principal
+        && 'actorRef' in principal
     ) {
         return principal as ActorPrincipal;
     }

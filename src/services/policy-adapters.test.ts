@@ -42,7 +42,7 @@ describe('buildOperationContext', () => {
     it('normalizes tenant resource context with principal domain when missing', () => {
         const context = buildOperationContext(
             'graphql',
-            { keyId: 7, domainId: 5, scopes: new Set(['content:write']), source: 'db' },
+            { actorRef: 7, domainId: 5, scopes: new Set(['content:write']), source: 'db' },
             'content.write',
             { type: 'content_item', id: '42' }
         );
@@ -57,7 +57,7 @@ describe('buildOperationContext', () => {
     it('does not attach domain context to system resources', () => {
         const context = buildOperationContext(
             'rest',
-            { keyId: 'system', domainId: 1, scopes: new Set(['admin']), source: 'db' },
+            { actorRef: 'system', domainId: 1, scopes: new Set(['admin']), source: 'db' },
             'policy.read',
             { type: 'system' }
         );

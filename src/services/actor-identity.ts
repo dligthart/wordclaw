@@ -9,14 +9,14 @@ export type ActorIdentity = {
 };
 
 export type ActorPrincipal = ActorIdentity & {
-    keyId: number | string;
+    actorRef: number | string;
     domainId: number;
     scopes: Set<string>;
     source: ActorSource;
 };
 
 export type PrincipalLike = Partial<ActorIdentity> & {
-    keyId?: number | string;
+    actorRef?: number | string;
     source?: string;
 };
 
@@ -31,13 +31,13 @@ export type CurrentActorSnapshot = ActorIdentity & {
     assignmentRefs: string[];
 };
 
-export function buildApiKeyPrincipal(keyId: number, domainId: number, scopes: Set<string>): ActorPrincipal {
+export function buildApiKeyPrincipal(apiKeyId: number, domainId: number, scopes: Set<string>): ActorPrincipal {
     return {
-        keyId,
+        actorRef: apiKeyId,
         domainId,
         scopes,
         source: 'db',
-        actorId: `api_key:${keyId}`,
+        actorId: `api_key:${apiKeyId}`,
         actorType: 'api_key',
         actorSource: 'db'
     };
@@ -47,7 +47,7 @@ export function buildEnvKeyPrincipal(keyFragment: string, domainId: number, scop
     const normalizedKey = keyFragment.trim() || 'env';
 
     return {
-        keyId: normalizedKey,
+        actorRef: normalizedKey,
         domainId,
         scopes,
         source: 'env',
@@ -59,7 +59,7 @@ export function buildEnvKeyPrincipal(keyFragment: string, domainId: number, scop
 
 export function buildAnonymousLocalPrincipal(): ActorPrincipal {
     return {
-        keyId: 'anonymous',
+        actorRef: 'anonymous',
         domainId: 1,
         scopes: new Set(['admin']),
         source: 'anonymous',
@@ -71,7 +71,7 @@ export function buildAnonymousLocalPrincipal(): ActorPrincipal {
 
 export function buildSupervisorPrincipal(supervisorId: number, domainId: number): ActorPrincipal {
     return {
-        keyId: `supervisor:${supervisorId}`,
+        actorRef: `supervisor:${supervisorId}`,
         domainId,
         scopes: new Set(['admin']),
         source: 'cookie',
@@ -83,7 +83,7 @@ export function buildSupervisorPrincipal(supervisorId: number, domainId: number)
 
 export function buildMcpLocalPrincipal(domainId: number): ActorPrincipal {
     return {
-        keyId: 'mcp-local',
+        actorRef: 'mcp-local',
         domainId,
         scopes: new Set(['admin']),
         source: 'local',
@@ -106,7 +106,14 @@ export function resolveActorIdentity(principal: PrincipalLike | null | undefined
         };
     }
 
-    if (principal.keyId === 'anonymous') {
+    if (typeof principal.actorId === 'string') {
+        const identityFromActorId = resolveActorIdentityRef(principal.actorId);
+        if (identityFromActorId) {
+            return identityFromActorId;
+        }
+    }
+
+    if (principal.actorRef === 'anonymous') {
         return {
             actorId: 'anonymous',
             actorType: 'anonymous',
@@ -114,7 +121,7 @@ export function resolveActorIdentity(principal: PrincipalLike | null | undefined
         };
     }
 
-    if (principal.keyId === 'mcp-local') {
+    if (principal.actorRef === 'mcp-local') {
         return {
             actorId: 'mcp-local',
             actorType: 'mcp',
@@ -122,33 +129,33 @@ export function resolveActorIdentity(principal: PrincipalLike | null | undefined
         };
     }
 
-    if (typeof principal.keyId === 'string' && principal.keyId.startsWith('supervisor:')) {
+    if (typeof principal.actorRef === 'string' && principal.actorRef.startsWith('supervisor:')) {
         return {
-            actorId: principal.keyId,
+            actorId: principal.actorRef,
             actorType: 'supervisor',
             actorSource: 'cookie'
         };
     }
 
-    if (typeof principal.keyId === 'number') {
+    if (typeof principal.actorRef === 'number') {
         return {
-            actorId: `api_key:${principal.keyId}`,
+            actorId: `api_key:${principal.actorRef}`,
             actorType: 'api_key',
             actorSource: principal.source === 'test' ? 'test' : 'db'
         };
     }
 
-    if (typeof principal.keyId === 'string' && principal.source === 'env') {
+    if (typeof principal.actorRef === 'string' && principal.source === 'env') {
         return {
-            actorId: `env_key:${principal.keyId}`,
+            actorId: `env_key:${principal.actorRef}`,
             actorType: 'env_key',
             actorSource: 'env'
         };
     }
 
-    if (typeof principal.keyId === 'string') {
+    if (typeof principal.actorRef === 'string') {
         return {
-            actorId: principal.keyId,
+            actorId: principal.actorRef,
             actorType: 'system',
             actorSource: principal.source === 'test' ? 'test' : 'system'
         };
@@ -241,15 +248,13 @@ export function toAuditActor(actor: number | PrincipalLike | AuditActor | null |
         return undefined;
     }
 
+    const apiKeyId = actor && typeof actor === 'object'
+        ? resolveApiKeyId(actor)
+        : undefined;
+
     return {
         ...identity,
-        userId: identity.actorType === 'api_key'
-            && actor
-            && typeof actor === 'object'
-            && 'keyId' in actor
-            && typeof actor.keyId === 'number'
-            ? actor.keyId
-            : null
+        userId: apiKeyId ?? null
     };
 }
 
@@ -277,7 +282,7 @@ export function resolveActorProfileId(principal: PrincipalLike | null | undefine
 }
 
 export function buildActorAssignmentRefs(principal: {
-    keyId?: number | string;
+    actorRef?: number | string;
     actorId?: string;
     assignmentRefs?: string[];
 } | null | undefined): string[] {
@@ -299,14 +304,40 @@ export function buildActorAssignmentRefs(principal: {
         refs.add(principal.actorId.trim());
     }
 
-    if (principal.keyId !== undefined && principal.keyId !== null) {
-        const keyRef = String(principal.keyId).trim();
-        if (keyRef.length > 0) {
-            refs.add(keyRef);
+    if (principal.actorRef !== undefined && principal.actorRef !== null) {
+        const actorRef = String(principal.actorRef).trim();
+        if (actorRef.length > 0) {
+            refs.add(actorRef);
         }
     }
 
     return Array.from(refs);
+}
+
+export function resolveApiKeyId(principal: PrincipalLike | null | undefined): number | undefined {
+    if (!principal) {
+        return undefined;
+    }
+
+    if (typeof principal.actorRef === 'number') {
+        return principal.actorType === 'api_key' || !principal.actorType ? principal.actorRef : undefined;
+    }
+
+    if (typeof principal.actorRef === 'string' && /^\d+$/.test(principal.actorRef)) {
+        const parsed = Number(principal.actorRef);
+        return Number.isSafeInteger(parsed) ? parsed : undefined;
+    }
+
+    const actorId = principal.actorId?.trim();
+    if (actorId?.startsWith('api_key:')) {
+        const rawId = actorId.slice('api_key:'.length);
+        if (/^\d+$/.test(rawId)) {
+            const parsed = Number(rawId);
+            return Number.isSafeInteger(parsed) ? parsed : undefined;
+        }
+    }
+
+    return undefined;
 }
 
 export function buildCurrentActorSnapshot(principal: ActorPrincipal): CurrentActorSnapshot {

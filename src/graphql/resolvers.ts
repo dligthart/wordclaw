@@ -154,7 +154,7 @@ const experimentalAgentRunMutationResolvers = isExperimentalAgentRunsEnabled() ?
         const definitionId = args.definitionId !== undefined
             ? parseId(args.definitionId, 'definitionId')
             : undefined;
-        const requestedBy = contextView(context).authPrincipal?.keyId?.toString();
+        const requestedBy = contextView(context).authPrincipal?.actorRef?.toString();
 
         try {
             const run = await AgentRunService.createRun(getDomainId(context), {
@@ -236,7 +236,7 @@ const experimentalAgentRunMutationResolvers = isExperimentalAgentRunsEnabled() ?
 
 type ResolverContext = {
     requestId?: string;
-    authPrincipal?: { keyId: number | string; scopes: Set<string>; source: string };
+    authPrincipal?: { actorRef: number | string; scopes: Set<string>; source: string };
     headers?: Record<string, string>;
     url?: string;
 };

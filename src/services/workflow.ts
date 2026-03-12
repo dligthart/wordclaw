@@ -168,7 +168,7 @@ export class WorkflowService {
         authPrincipal: {
             scopes: Set<string>;
             domainId: number;
-            keyId?: number | string;
+            actorRef?: number | string;
             actorId?: string;
         },
     ) {

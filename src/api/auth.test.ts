@@ -52,7 +52,7 @@ describe('API auth guardrails', () => {
         await expect(authenticateApiRequest({})).resolves.toMatchObject({
             ok: true,
             principal: {
-                keyId: 'anonymous',
+                actorRef: 'anonymous',
                 domainId: 1,
                 source: 'anonymous'
             }
@@ -61,7 +61,7 @@ describe('API auth guardrails', () => {
         await expect(authorizeApiRequest('POST', '/api/content-types', {})).resolves.toMatchObject({
             ok: true,
             principal: {
-                keyId: 'anonymous',
+                actorRef: 'anonymous',
                 domainId: 1,
                 source: 'anonymous'
             }

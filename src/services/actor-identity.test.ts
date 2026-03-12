@@ -17,7 +17,7 @@ describe('actor identity helpers', () => {
         const principal = buildApiKeyPrincipal(42, 7, new Set(['content:read']));
 
         expect(principal).toMatchObject({
-            keyId: 42,
+            actorRef: 42,
             domainId: 7,
             actorId: 'api_key:42',
             actorType: 'api_key',
@@ -75,12 +75,12 @@ describe('actor identity helpers', () => {
     it('builds assignment refs with both canonical actor ids and legacy key ids where needed', () => {
         expect(buildActorAssignmentRefs({
             actorId: 'api_key:12',
-            keyId: 12,
+            actorRef: 12,
         })).toEqual(['api_key:12', '12']);
 
         expect(buildActorAssignmentRefs({
             actorId: 'supervisor:4',
-            keyId: 'supervisor:4',
+            actorRef: 'supervisor:4',
         })).toEqual(['supervisor:4']);
     });
 

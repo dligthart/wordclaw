@@ -174,7 +174,7 @@ async function resolvePrincipalFromKey(rawKey: string, envKeys: Map<string, Set<
             'AUTH_KEY_EXPIRED',
             'Rotate the API key and retry with a non-expired key.',
             {
-                keyId: dbKey.id
+                apiKeyId: dbKey.id
             }
         );
     }
@@ -219,7 +219,7 @@ export async function authorizeApiRequest(method: string, routePath: string, hea
             `Use an API key with scope '${required}' or 'admin'.`,
             {
                 requiredScope: required,
-                keyId: resolved.keyId
+                apiKeyId: typeof resolved.actorRef === 'number' ? resolved.actorRef : undefined
             }
         );
     }

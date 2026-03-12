@@ -358,9 +358,9 @@ export class AgentRunService {
     private static async resolveRunExecutionPrincipal(
         domainId: number,
         runId: number
-    ): Promise<{ keyId: string; domainId: number; scopes: Set<string>; source: string }> {
+    ): Promise<{ actorRef: string; domainId: number; scopes: Set<string>; source: string }> {
         const fallbackPrincipal = {
-            keyId: `agent-run:${runId}`,
+            actorRef: `agent-run:${runId}`,
             domainId,
             scopes: new Set<string>(['content:write']),
             source: 'agent_run_runtime'
@@ -381,7 +381,7 @@ export class AgentRunService {
         if (!requesterKeyId) {
             return {
                 ...fallbackPrincipal,
-                keyId: `agent-run:${runId}:${run.requestedBy}`
+                actorRef: `agent-run:${runId}:${run.requestedBy}`
             };
         }
 
@@ -398,7 +398,7 @@ export class AgentRunService {
         if (!requesterKey) {
             return {
                 ...fallbackPrincipal,
-                keyId: `agent-run:${runId}:missing-key:${requesterKeyId}`
+                actorRef: `agent-run:${runId}:missing-key:${requesterKeyId}`
             };
         }
 
@@ -408,7 +408,7 @@ export class AgentRunService {
         }
 
         return {
-            keyId: requesterKey.id.toString(),
+            actorRef: requesterKey.id.toString(),
             domainId,
             scopes,
             source: 'agent_run_runtime'
@@ -416,14 +416,14 @@ export class AgentRunService {
     }
 
     private static async evaluateRuntimeMutationPolicy(
-        principal: { keyId: string; domainId: number; scopes: Set<string>; source: string },
+        principal: { actorRef: string; domainId: number; scopes: Set<string>; source: string },
         resourceType: string,
         resourceId: string
     ) {
         const operationContext = buildOperationContext(
             'rest',
             {
-                keyId: principal.keyId,
+                actorRef: principal.actorRef,
                 domainId: principal.domainId,
                 scopes: principal.scopes,
                 source: principal.source
