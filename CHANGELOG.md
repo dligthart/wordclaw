@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/dligthart/wordclaw/compare/v1.9.0...v1.10.0) (2026-03-12)
+
+
+### Features
+
+* **mcp:** add reactive subscription recipes ([fce5527](https://github.com/dligthart/wordclaw/commit/fce552751ca483f7015db5108c09cb52d82c2d2c))
+
 # [1.9.0](https://github.com/dligthart/wordclaw/compare/v1.8.0...v1.9.0) (2026-03-12)
 
 
