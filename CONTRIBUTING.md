@@ -32,7 +32,7 @@ For a full view of the current and historical product decisions, see the [RFC ov
 - **TypeScript:** We strictly use TypeScript. Ensure your code passes type checking (`npx tsc --noEmit`).
 - **Formatting & Linting:** Run `npm run lint` and `npm run format` (if available) before committing. We use ESLint and Prettier.
 - **Testing:** New core features and bug fixes must include tests. We run tests using Vitest. `npm run test` or `npm run test:watch`.
-- **Commit Messages:** We follow semantic commit messages (e.g., `feat:`, `fix:`, `docs:`, `chore:`).
+- **Commit Messages:** We follow strict conventional commit messages (e.g., `feat:`, `fix:`, `docs:`, `chore:`) to power our automated Semantic Release pipeline. Please read the [Agent Commit Standards](doc/guides/agent-commit-standards.md) before pushing code.
 
 ## Pull Request Process
 
