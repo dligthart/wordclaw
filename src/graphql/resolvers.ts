@@ -13,7 +13,7 @@ import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
-import { listContentItems } from '../services/content-item.service.js';
+import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 import { toAuditActor, type AuditActor } from '../services/actor-identity.js';
 
@@ -269,6 +269,7 @@ type OptionalContentTypeArg = {
     createdBefore?: string;
     limit?: number;
     offset?: number;
+    cursor?: string;
 };
 type ContentTypesArgs = {
     limit?: number;
@@ -899,19 +900,28 @@ export const resolvers = {
             createdAfter,
             createdBefore,
             limit: rawLimit,
-            offset: rawOffset
+            offset: rawOffset,
+            cursor
         }: OptionalContentTypeArg, context: unknown) => {
             const numericTypeId = parseOptionalId(contentTypeId, 'contentTypeId');
-            const result = await listContentItems(getDomainId(context), {
-                contentTypeId: numericTypeId,
-                status,
-                createdAfter: parseDateArg(createdAfter, 'createdAfter'),
-                createdBefore: parseDateArg(createdBefore, 'createdBefore'),
-                limit: clampLimit(rawLimit),
-                offset: clampOffset(rawOffset)
-            });
+            try {
+                const result = await listContentItems(getDomainId(context), {
+                    contentTypeId: numericTypeId,
+                    status,
+                    createdAfter: parseDateArg(createdAfter, 'createdAfter'),
+                    createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                    limit: clampLimit(rawLimit),
+                    offset: cursor ? rawOffset : clampOffset(rawOffset),
+                    cursor
+                });
 
-            return result.items;
+                return result.items;
+            } catch (error) {
+                if (error instanceof ContentItemListError) {
+                    throw toError(error.message, error.code, error.remediation);
+                }
+                throw error;
+            }
         }),
 
         contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {

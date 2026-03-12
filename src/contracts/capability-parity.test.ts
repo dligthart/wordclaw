@@ -235,6 +235,7 @@ describe('Capability Parity Matrix', () => {
         expect(queryArgNames?.has('createdBefore')).toBe(true);
         expect(queryArgNames?.has('limit')).toBe(true);
         expect(queryArgNames?.has('offset')).toBe(true);
+        expect(queryArgNames?.has('cursor')).toBe(true);
     });
 
     it('keeps audit cursor pagination contract aligned', () => {

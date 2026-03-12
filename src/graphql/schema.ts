@@ -339,7 +339,8 @@ ${agentRunTypeDefs}
       createdAfter: String,
       createdBefore: String,
       limit: Int = 50,
-      offset: Int = 0
+      offset: Int = 0,
+      cursor: String
     ): [ContentItem!]!
     """Get one content item by id."""
     contentItem(id: ID!): ContentItem

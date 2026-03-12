@@ -288,6 +288,31 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('contentItems rejects malformed cursor with deterministic code', async () => {
+        await expect(
+            resolvers.Query.contentItems({}, { cursor: 'not-a-cursor' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'INVALID_CONTENT_ITEMS_CURSOR'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
+    it('contentItems rejects cursor and offset together with deterministic code', async () => {
+        const cursor = Buffer.from(JSON.stringify({
+            createdAt: '2026-03-09T11:00:00.000Z',
+            id: 88
+        }), 'utf8').toString('base64url');
+
+        await expect(
+            resolvers.Query.contentItems({}, { cursor, offset: 0 }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_ITEMS_CURSOR_OFFSET_CONFLICT'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
     it('agentRuns rejects invalid status filter with deterministic code', async () => {
         await expect(
             resolvers.Query.agentRuns!({}, { status: 'not-a-status' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
