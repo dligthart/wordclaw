@@ -1,5 +1,6 @@
 import {
   createContext,
+  startTransition,
   useContext,
   useEffect,
   useState,
@@ -11,6 +12,7 @@ import {
   NavLink,
   Route,
   Routes,
+  useSearchParams,
   useParams,
 } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -160,9 +162,9 @@ function useWordClawDataSource(): DemoLoadResult {
         }
 
         const parseItemData = <T,>(item: ContentItemRecord): T =>
-          (typeof item.data === 'string'
-            ? (JSON.parse(item.data) as T)
-            : (item.data as T))
+        (typeof item.data === 'string'
+          ? (JSON.parse(item.data) as T)
+          : (item.data as T))
 
         const types = await fetchEnvelope<ContentTypeRecord[]>(
           '/content-types?limit=500',
@@ -292,6 +294,42 @@ function getTagEntries(posts: BlogPost[]) {
     .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
 }
 
+function parsePageParam(value: string | null) {
+  const parsed = Number.parseInt(value || '1', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+}
+
+function clampPage(page: number, totalPages: number) {
+  return Math.min(Math.max(page, 1), Math.max(totalPages, 1))
+}
+
+function paginateItems<T>(items: T[], page: number, pageSize: number) {
+  const start = (page - 1) * pageSize
+  return items.slice(start, start + pageSize)
+}
+
+function getPageWindow(currentPage: number, totalPages: number) {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1)
+  }
+
+  if (currentPage <= 3) {
+    return [1, 2, 3, 4, 5]
+  }
+
+  if (currentPage >= totalPages - 2) {
+    return [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+  }
+
+  return [
+    currentPage - 2,
+    currentPage - 1,
+    currentPage,
+    currentPage + 1,
+    currentPage + 2,
+  ]
+}
+
 const markdownComponents: Components = {
   a: ({ href = '', children }) => {
     if (href.startsWith('/')) {
@@ -402,7 +440,7 @@ function SectionHeading({
         {title}
       </h2>
       {copy ? (
-        <p className="mt-3 max-w-2xl text-base leading-7 text-gray-600 dark:text-gray-400">
+        <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--muted-foreground)]">
           {copy}
         </p>
       ) : null}
@@ -410,15 +448,89 @@ function SectionHeading({
   )
 }
 
-function PageShell({ children }: { children: ReactNode }) {
-  return <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-14 sm:py-20">{children}</div>
+function PageShell({
+  children,
+  className = '',
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={`w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-14 ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+  buildHref,
+}: {
+  currentPage: number
+  totalPages: number
+  buildHref: (page: number) => string
+}) {
+  if (totalPages <= 1) {
+    return null
+  }
+
+  const pageWindow = getPageWindow(currentPage, totalPages)
+
+  return (
+    <nav
+      aria-label="Pagination"
+      className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--border)] pt-5"
+    >
+      <div className="text-sm text-[var(--muted-foreground)]">
+        Page {currentPage} of {totalPages}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          aria-disabled={currentPage === 1}
+          className={`inline-flex h-10 items-center justify-center rounded-full border px-4 text-sm font-medium transition-colors ${currentPage === 1
+              ? 'cursor-not-allowed border-[var(--border)] text-gray-400'
+              : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
+            }`}
+          to={currentPage === 1 ? '#' : buildHref(currentPage - 1)}
+        >
+          Previous
+        </Link>
+
+        {pageWindow.map((page) => (
+          <Link
+            className={`inline-flex h-10 min-w-10 items-center justify-center rounded-full border px-3 text-sm font-semibold transition-colors ${page === currentPage
+                ? 'border-brand-500 bg-brand-500 text-white'
+                : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
+              }`}
+            key={page}
+            to={buildHref(page)}
+          >
+            {page}
+          </Link>
+        ))}
+
+        <Link
+          aria-disabled={currentPage === totalPages}
+          className={`inline-flex h-10 items-center justify-center rounded-full border px-4 text-sm font-medium transition-colors ${currentPage === totalPages
+              ? 'cursor-not-allowed border-[var(--border)] text-gray-400'
+              : 'border-[var(--border)] text-[var(--foreground)] hover:border-brand-300 hover:text-brand-600'
+            }`}
+          to={currentPage === totalPages ? '#' : buildHref(currentPage + 1)}
+        >
+          Next
+        </Link>
+      </div>
+    </nav>
+  )
 }
 
 function PostCard({ post, author }: { post: BlogPost; author?: Author }) {
   return (
     <Link to={`/post/${post.data.slug}`}>
       <motion.article
-        className="group relative flex h-full flex-col rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-500/5"
+        className="demo-surface group relative flex h-full flex-col rounded-3xl p-5 transition-all duration-300 hover:-translate-y-1 hover:border-brand-200 hover:shadow-xl hover:shadow-brand-500/5"
         initial={{ opacity: 0, y: 18 }}
         viewport={{ once: true }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -434,7 +546,7 @@ function PostCard({ post, author }: { post: BlogPost; author?: Author }) {
           </span>
         </div>
 
-        <div className="flex items-center gap-3 text-xs text-gray-500">
+        <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
           <span className="inline-flex items-center gap-1">
             <Clock size={13} />
             {formatDate(post.createdAt)}
@@ -445,7 +557,7 @@ function PostCard({ post, author }: { post: BlogPost; author?: Author }) {
         <h3 className="mt-4 text-2xl font-semibold leading-tight text-[var(--foreground)] transition-colors group-hover:text-brand-500">
           {post.data.title}
         </h3>
-        <p className="mt-3 flex-1 text-sm leading-7 text-gray-600 dark:text-gray-400">
+        <p className="mt-3 flex-1 text-sm leading-7 text-[var(--muted-foreground)]">
           {post.data.excerpt}
         </p>
 
@@ -469,7 +581,7 @@ function PostCard({ post, author }: { post: BlogPost; author?: Author }) {
             />
             <div>
               <p className="font-medium text-[var(--foreground)]">{author.data.name}</p>
-              <p className="text-sm text-gray-500">{author.data.bio}</p>
+              <p className="text-sm text-[var(--muted-foreground)]">{author.data.bio}</p>
             </div>
           </div>
         ) : null}
@@ -490,8 +602,10 @@ function MarkdownArticle({ content }: { content: string }) {
 
 function HomePage() {
   const { posts, authors } = useDemoData()
+  const [visiblePostCount, setVisiblePostCount] = useState(4)
   const featuredPost = posts[0]
-  const recentPosts = posts.slice(1, 7)
+  const additionalPosts = posts.slice(1)
+  const recentPosts = additionalPosts.slice(0, visiblePostCount)
   const categories = getCategoryEntries(posts)
 
   if (!featuredPost) {
@@ -502,18 +616,18 @@ function HomePage() {
 
   return (
     <PageShell>
-      <section className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-stretch">
-        <div className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+      <section className="grid gap-8 xl:grid-cols-[1.08fr_0.92fr] xl:items-stretch">
+        <div className="demo-surface rounded-[2rem] p-8 sm:p-10">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
             Featured article
           </p>
           <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl">
             {featuredPost.data.title}
           </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-gray-600 dark:text-gray-400">
+          <p className="mt-5 max-w-2xl text-lg leading-8 text-[var(--muted-foreground)]">
             {featuredPost.data.excerpt}
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+          <div className="mt-8 flex flex-wrap items-center gap-4 text-sm text-[var(--muted-foreground)]">
             <span>{formatLongDate(featuredPost.createdAt)}</span>
             <span>{featuredPost.data.readTimeMinutes} min read</span>
             <Link className="font-medium text-brand-500" to={`/category/${slugify(featuredPost.data.category)}`}>
@@ -522,13 +636,13 @@ function HomePage() {
           </div>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
-              className="inline-flex h-11 items-center justify-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-600"
+              className="inline-flex h-11 items-center justify-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-white shadow-[0_12px_24px_-16px_rgba(59,96,204,0.8)] transition-colors hover:bg-brand-600"
               to={`/post/${featuredPost.data.slug}`}
             >
               Read article
             </Link>
             <Link
-              className="inline-flex h-11 items-center justify-center rounded-full border border-[var(--border)] px-5 text-sm font-semibold text-[var(--foreground)] transition-colors hover:border-brand-300 hover:text-brand-500"
+              className="inline-flex h-11 items-center justify-center rounded-full border border-[var(--border)] bg-white/80 px-5 text-sm font-semibold text-[var(--foreground)] transition-colors hover:border-brand-300 hover:text-brand-500"
               to="/archive"
             >
               Browse archive
@@ -536,54 +650,80 @@ function HomePage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--card)] shadow-sm">
+        <div className="demo-surface overflow-hidden rounded-[2rem] p-0">
           <img
             alt={featuredPost.data.title}
-            className="h-full min-h-[22rem] w-full object-cover"
+            className="h-full min-h-[20rem] w-full object-cover"
             src={featuredPost.data.coverImage}
           />
         </div>
       </section>
 
-      <section className="mt-20 grid gap-6 md:grid-cols-3">
-        <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+      <section className="mt-16 grid gap-5 md:grid-cols-3">
+        <div className="demo-surface rounded-3xl p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
             Editorial demo
           </p>
           <p className="mt-4 text-4xl font-bold text-[var(--foreground)]">{posts.length}</p>
-          <p className="mt-2 text-sm text-gray-500">Published demo posts with rich markdown content.</p>
+          <p className="mt-2 text-sm text-[var(--muted-foreground)]">Published demo posts with rich markdown content.</p>
         </div>
-        <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+        <div className="demo-surface rounded-3xl p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
             Authors
           </p>
           <p className="mt-4 text-4xl font-bold text-[var(--foreground)]">{authors.length}</p>
-          <p className="mt-2 text-sm text-gray-500">Editorial personas with linked author pages and bios.</p>
+          <p className="mt-2 text-sm text-[var(--muted-foreground)]">Editorial personas with linked author pages and bios.</p>
         </div>
-        <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+        <div className="demo-surface rounded-3xl p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
             Categories
           </p>
           <p className="mt-4 text-4xl font-bold text-[var(--foreground)]">{categories.length}</p>
-          <p className="mt-2 text-sm text-gray-500">Category browsing, archive pages, and related post groupings.</p>
+          <p className="mt-2 text-sm text-[var(--muted-foreground)]">Category browsing, archive pages, and related post groupings.</p>
         </div>
       </section>
 
-      <section className="mt-20">
+      <section className="mt-16">
         <SectionHeading
           copy="Recent seeded entries with connected authors and markdown-driven editorial bodies."
           eyebrow="Latest posts"
           title="Recently published"
         />
-        <div className="grid gap-8 lg:grid-cols-3">
+        <div className="grid gap-6 lg:grid-cols-2">
           {recentPosts.map((post) => (
             <PostCard author={getAuthor(authors, post.data.authorId)} key={post.id} post={post} />
           ))}
         </div>
+        {visiblePostCount < additionalPosts.length ? (
+          <div className="mt-8 flex justify-center">
+            <button
+              className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white/80 px-5 py-3 text-sm font-semibold text-[var(--foreground)] transition-colors hover:border-brand-300 hover:text-brand-500"
+              onClick={() =>
+                startTransition(() => {
+                  setVisiblePostCount((current) =>
+                    Math.min(current + 4, additionalPosts.length),
+                  )
+                })
+              }
+              type="button"
+            >
+              More stories
+            </button>
+          </div>
+        ) : (
+          <div className="mt-8 flex justify-center">
+            <Link
+              className="inline-flex items-center justify-center rounded-full border border-[var(--border)] bg-white/80 px-5 py-3 text-sm font-semibold text-[var(--foreground)] transition-colors hover:border-brand-300 hover:text-brand-500"
+              to="/archive"
+            >
+              Browse full archive
+            </Link>
+          </div>
+        )}
       </section>
 
-      <section className="mt-20 grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+      <section className="mt-16 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+        <div className="demo-surface rounded-[2rem] p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
             Byline
           </p>
@@ -597,7 +737,7 @@ function HomePage() {
                 />
                 <div>
                   <h3 className="text-xl font-semibold text-[var(--foreground)]">{featuredAuthor.data.name}</h3>
-                  <p className="text-sm text-gray-500">{featuredAuthor.data.bio}</p>
+                  <p className="text-sm text-[var(--muted-foreground)]">{featuredAuthor.data.bio}</p>
                 </div>
               </div>
               <Link
@@ -610,7 +750,7 @@ function HomePage() {
           ) : null}
         </div>
 
-        <div className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+        <div className="demo-surface rounded-[2rem] p-8">
           <SectionHeading
             copy="Jump into the seeded category views to inspect different content clusters."
             eyebrow="Explore"
@@ -619,7 +759,7 @@ function HomePage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {categories.map((category) => (
               <Link
-                className="rounded-2xl border border-[var(--border)] bg-[var(--background)] px-5 py-4 transition-colors hover:border-brand-300 hover:text-brand-500"
+                className="rounded-2xl border border-[var(--border)] bg-[var(--background)]/70 px-5 py-4 transition-colors hover:border-brand-300 hover:bg-white hover:text-brand-500"
                 key={category.slug}
                 to={`/category/${category.slug}`}
               >
@@ -653,7 +793,7 @@ function AuthorsPage() {
           const authoredPosts = posts.filter((post) => post.data.authorId === author.id)
           return (
             <Link
-              className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-500/5"
+              className="demo-surface rounded-[2rem] p-7 transition-all hover:-translate-y-1 hover:border-brand-200 hover:shadow-lg hover:shadow-brand-500/5"
               key={author.id}
               to={`/author/${author.data.slug}`}
             >
@@ -663,7 +803,7 @@ function AuthorsPage() {
                 src={author.data.avatarUrl}
               />
               <h3 className="mt-5 text-2xl font-semibold text-[var(--foreground)]">{author.data.name}</h3>
-              <p className="mt-3 text-sm leading-7 text-gray-600 dark:text-gray-400">{author.data.bio}</p>
+              <p className="mt-3 text-sm leading-7 text-[var(--muted-foreground)]">{author.data.bio}</p>
               <p className="mt-6 text-sm font-medium text-brand-500">{authoredPosts.length} published articles</p>
             </Link>
           )
@@ -675,6 +815,7 @@ function AuthorsPage() {
 
 function AuthorDetailPage() {
   const { slug } = useParams()
+  const [searchParams] = useSearchParams()
   const { authors, posts } = useDemoData()
   const author = authors.find((entry) => entry.data.slug === slug)
 
@@ -683,6 +824,9 @@ function AuthorDetailPage() {
   }
 
   const authoredPosts = posts.filter((post) => post.data.authorId === author.id)
+  const totalPages = Math.max(1, Math.ceil(authoredPosts.length / 4))
+  const currentPage = clampPage(parsePageParam(searchParams.get('page')), totalPages)
+  const pagedPosts = paginateItems(authoredPosts, currentPage, 4)
 
   return (
     <PageShell>
@@ -691,7 +835,7 @@ function AuthorDetailPage() {
         Back to authors
       </Link>
 
-      <div className="mt-8 rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+      <div className="demo-surface mt-8 rounded-[2rem] p-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
           <img
             alt={author.data.name}
@@ -705,7 +849,7 @@ function AuthorDetailPage() {
             <h1 className="mt-3 text-4xl font-bold tracking-tight text-[var(--foreground)]">
               {author.data.name}
             </h1>
-            <p className="mt-4 max-w-3xl text-base leading-8 text-gray-600 dark:text-gray-400">
+            <p className="mt-4 max-w-3xl text-base leading-8 text-[var(--muted-foreground)]">
               {author.data.bio}
             </p>
           </div>
@@ -718,10 +862,15 @@ function AuthorDetailPage() {
           title={`${authoredPosts.length} published posts`}
         />
         <div className="grid gap-8 lg:grid-cols-2">
-          {authoredPosts.map((post) => (
+          {pagedPosts.map((post) => (
             <PostCard author={author} key={post.id} post={post} />
           ))}
         </div>
+        <Pagination
+          buildHref={(page) => `/author/${author.data.slug}?page=${page}`}
+          currentPage={currentPage}
+          totalPages={totalPages}
+        />
       </section>
     </PageShell>
   )
@@ -741,7 +890,7 @@ function CategoriesPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         {categories.map((category) => (
           <Link
-            className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-500/5"
+            className="demo-surface rounded-[2rem] p-7 transition-all hover:-translate-y-1 hover:border-brand-200 hover:shadow-lg hover:shadow-brand-500/5"
             key={category.slug}
             to={`/category/${category.slug}`}
           >
@@ -749,7 +898,7 @@ function CategoriesPage() {
               Category
             </p>
             <h3 className="mt-4 text-2xl font-semibold text-[var(--foreground)]">{category.name}</h3>
-            <p className="mt-3 text-sm leading-7 text-gray-600 dark:text-gray-400">
+            <p className="mt-3 text-sm leading-7 text-[var(--muted-foreground)]">
               {category.count} seeded articles connected to this editorial topic.
             </p>
           </Link>
@@ -773,7 +922,7 @@ function TagsPage() {
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {tags.map((tag) => (
           <Link
-            className="rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-500/5"
+            className="demo-surface rounded-[2rem] p-7 transition-all hover:-translate-y-1 hover:border-brand-200 hover:shadow-lg hover:shadow-brand-500/5"
             key={tag.slug}
             to={`/tag/${tag.slug}`}
           >
@@ -783,7 +932,7 @@ function TagsPage() {
             <h3 className="mt-4 text-2xl font-semibold text-[var(--foreground)]">
               #{tag.name}
             </h3>
-            <p className="mt-3 text-sm leading-7 text-gray-600 dark:text-gray-400">
+            <p className="mt-3 text-sm leading-7 text-[var(--muted-foreground)]">
               {tag.count} post{tag.count === 1 ? '' : 's'} tagged with this topic.
             </p>
           </Link>
@@ -795,6 +944,7 @@ function TagsPage() {
 
 function CategoryDetailPage() {
   const { categorySlug } = useParams()
+  const [searchParams] = useSearchParams()
   const { posts, authors } = useDemoData()
   const category = getCategoryEntries(posts).find((entry) => entry.slug === categorySlug)
 
@@ -803,6 +953,9 @@ function CategoryDetailPage() {
   }
 
   const categoryPosts = posts.filter((post) => slugify(post.data.category) === category.slug)
+  const totalPages = Math.max(1, Math.ceil(categoryPosts.length / 4))
+  const currentPage = clampPage(parsePageParam(searchParams.get('page')), totalPages)
+  const pagedPosts = paginateItems(categoryPosts, currentPage, 4)
 
   return (
     <PageShell>
@@ -811,29 +964,35 @@ function CategoryDetailPage() {
         Back to categories
       </Link>
 
-      <div className="mt-8 rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+      <div className="demo-surface mt-8 rounded-[2rem] p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
           Category
         </p>
         <h1 className="mt-4 text-4xl font-bold tracking-tight text-[var(--foreground)]">
           {category.name}
         </h1>
-        <p className="mt-4 text-base leading-8 text-gray-600 dark:text-gray-400">
+        <p className="mt-4 text-base leading-8 text-[var(--muted-foreground)]">
           {category.count} demo post{category.count === 1 ? '' : 's'} in this archive slice.
         </p>
       </div>
 
       <div className="mt-16 grid gap-8 lg:grid-cols-2">
-        {categoryPosts.map((post) => (
+        {pagedPosts.map((post) => (
           <PostCard author={getAuthor(authors, post.data.authorId)} key={post.id} post={post} />
         ))}
       </div>
+      <Pagination
+        buildHref={(page) => `/category/${category.slug}?page=${page}`}
+        currentPage={currentPage}
+        totalPages={totalPages}
+      />
     </PageShell>
   )
 }
 
 function TagDetailPage() {
   const { tagSlug } = useParams()
+  const [searchParams] = useSearchParams()
   const { posts, authors } = useDemoData()
   const tag = getTagEntries(posts).find((entry) => entry.slug === tagSlug)
 
@@ -849,6 +1008,9 @@ function TagDetailPage() {
   const taggedPosts = posts.filter((post) =>
     post.data.tags.some((entry) => slugify(entry) === tag.slug),
   )
+  const totalPages = Math.max(1, Math.ceil(taggedPosts.length / 4))
+  const currentPage = clampPage(parsePageParam(searchParams.get('page')), totalPages)
+  const pagedPosts = paginateItems(taggedPosts, currentPage, 4)
 
   return (
     <PageShell>
@@ -860,29 +1022,38 @@ function TagDetailPage() {
         Back to tags
       </Link>
 
-      <div className="mt-8 rounded-[2rem] border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
+      <div className="demo-surface mt-8 rounded-[2rem] p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
           Topic
         </p>
         <h1 className="mt-4 text-4xl font-bold tracking-tight text-[var(--foreground)]">
           #{tag.name}
         </h1>
-        <p className="mt-4 text-base leading-8 text-gray-600 dark:text-gray-400">
+        <p className="mt-4 text-base leading-8 text-[var(--muted-foreground)]">
           {tag.count} demo post{tag.count === 1 ? '' : 's'} carrying this shared topic.
         </p>
       </div>
 
       <div className="mt-16 grid gap-8 lg:grid-cols-2">
-        {taggedPosts.map((post) => (
+        {pagedPosts.map((post) => (
           <PostCard author={getAuthor(authors, post.data.authorId)} key={post.id} post={post} />
         ))}
       </div>
+      <Pagination
+        buildHref={(page) => `/tag/${tag.slug}?page=${page}`}
+        currentPage={currentPage}
+        totalPages={totalPages}
+      />
     </PageShell>
   )
 }
 
 function ArchivePage() {
+  const [searchParams] = useSearchParams()
   const { posts, authors } = useDemoData()
+  const totalPages = Math.max(1, Math.ceil(posts.length / 5))
+  const currentPage = clampPage(parsePageParam(searchParams.get('page')), totalPages)
+  const pagedPosts = paginateItems(posts, currentPage, 5)
 
   return (
     <PageShell>
@@ -891,34 +1062,39 @@ function ArchivePage() {
         eyebrow="Archive"
         title="All posts"
       />
-      <div className="overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--card)] shadow-sm">
-        <div className="grid grid-cols-[1.2fr_0.8fr_0.7fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-4 text-xs font-semibold uppercase tracking-[0.35em] text-gray-500">
+      <div className="demo-surface overflow-hidden rounded-[2rem] p-0">
+        <div className="grid grid-cols-[minmax(0,1.4fr)_0.9fr_0.8fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-4 text-xs font-semibold uppercase tracking-[0.35em] text-[var(--muted-foreground)]">
           <span>Title</span>
           <span>Author</span>
           <span>Category</span>
           <span>Published</span>
         </div>
-        {posts.map((post) => {
+        {pagedPosts.map((post) => {
           const author = getAuthor(authors, post.data.authorId)
           return (
             <Link
-              className="grid grid-cols-[1.2fr_0.8fr_0.7fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-5 transition-colors hover:bg-brand-50/60 dark:hover:bg-brand-500/5"
+              className="grid grid-cols-[minmax(0,1.4fr)_0.9fr_0.8fr_0.8fr] gap-4 border-b border-[var(--border)] px-6 py-5 transition-colors hover:bg-brand-50/60 dark:hover:bg-brand-500/5"
               key={post.id}
               to={`/post/${post.data.slug}`}
             >
               <div>
                 <p className="font-semibold text-[var(--foreground)]">{post.data.title}</p>
-                <p className="mt-1 text-sm text-gray-500">{post.data.excerpt}</p>
+                <p className="mt-1 text-sm text-[var(--muted-foreground)]">{post.data.excerpt}</p>
               </div>
-              <span className="text-sm text-gray-600 dark:text-gray-400">
+              <span className="text-sm text-[var(--muted-foreground)]">
                 {author?.data.name || 'Unknown author'}
               </span>
-              <span className="text-sm text-gray-600 dark:text-gray-400">{post.data.category}</span>
-              <span className="text-sm text-gray-600 dark:text-gray-400">{formatDate(post.createdAt)}</span>
+              <span className="text-sm text-[var(--muted-foreground)]">{post.data.category}</span>
+              <span className="text-sm text-[var(--muted-foreground)]">{formatDate(post.createdAt)}</span>
             </Link>
           )
         })}
       </div>
+      <Pagination
+        buildHref={(page) => `/archive?page=${page}`}
+        currentPage={currentPage}
+        totalPages={totalPages}
+      />
     </PageShell>
   )
 }
@@ -939,7 +1115,7 @@ function PostDetailPage() {
 
   return (
     <motion.article animate={{ opacity: 1 }} className="w-full" initial={{ opacity: 0 }}>
-      <PageShell>
+      <PageShell className="max-w-6xl">
         <Link className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-brand-500" to="/">
           <ArrowLeft size={16} />
           Back to blog
@@ -960,42 +1136,42 @@ function PostDetailPage() {
           <h1 className="mt-6 max-w-4xl text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl lg:text-6xl">
             {post.data.title}
           </h1>
-          <p className="mt-6 max-w-3xl text-xl leading-8 text-gray-600 dark:text-gray-400">
+          <p className="mt-6 max-w-3xl text-xl leading-8 text-[var(--muted-foreground)]">
             {post.data.excerpt}
           </p>
 
           {author ? (
-            <div className="mt-10 flex items-center gap-4 rounded-3xl border border-[var(--border)] bg-[var(--card)] px-5 py-4">
+            <div className="demo-surface mt-10 inline-flex items-center gap-4 rounded-full px-5 py-3 pr-8">
               <img
                 alt={author.data.name}
-                className="h-14 w-14 rounded-full object-cover"
+                className="h-12 w-12 rounded-full object-cover"
                 src={author.data.avatarUrl}
               />
               <div>
                 <Link className="font-semibold text-[var(--foreground)] hover:text-brand-500" to={`/author/${author.data.slug}`}>
                   {author.data.name}
                 </Link>
-                <p className="text-sm text-gray-500">{author.data.bio}</p>
+                <p className="text-xs text-[var(--muted-foreground)] line-clamp-1 max-w-[18rem]">{author.data.bio}</p>
               </div>
             </div>
           ) : null}
         </header>
 
-        <div className="mt-12 overflow-hidden rounded-[2rem] border border-[var(--border)] bg-[var(--card)] shadow-sm">
+        <div className="demo-surface mt-12 overflow-hidden rounded-[2rem] p-0">
           <img
             alt={post.data.title}
-            className="h-full max-h-[34rem] w-full object-cover"
+            className="h-full max-h-[30rem] w-full object-cover"
             src={post.data.coverImage}
           />
         </div>
 
-        <div className="mt-14 grid gap-12 lg:grid-cols-[minmax(0,1fr)_18rem]">
-          <div className="min-w-0">
+        <div className="mt-14 grid gap-10 xl:grid-cols-[minmax(0,1fr)_17rem]">
+          <div className="min-w-0 xl:max-w-3xl">
             <MarkdownArticle content={post.data.content} />
           </div>
 
-          <aside className="space-y-5">
-            <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+          <aside className="space-y-5 xl:sticky xl:top-24 xl:self-start">
+            <div className="demo-surface rounded-3xl p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
                 Tags
               </p>
@@ -1011,7 +1187,7 @@ function PostDetailPage() {
                 ))}
               </div>
             </div>
-            <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+            <div className="demo-surface rounded-3xl p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
                 Explore
               </p>
@@ -1024,6 +1200,9 @@ function PostDetailPage() {
                 </Link>
                 <Link className="block font-medium text-[var(--foreground)] hover:text-brand-500" to="/categories">
                   Browse categories
+                </Link>
+                <Link className="block font-medium text-[var(--foreground)] hover:text-brand-500" to="/tags">
+                  Browse tags
                 </Link>
               </div>
             </div>
@@ -1153,13 +1332,13 @@ function Layout({ children }: { children: ReactNode }) {
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-6 text-sm font-medium md:flex">
+          <nav className="hidden items-center gap-7 text-sm font-medium md:flex">
             {navItems.map((item) => (
               <NavLink
                 className={({ isActive }) =>
                   isActive
                     ? 'text-brand-500'
-                    : 'text-gray-500 transition-colors hover:text-[var(--foreground)]'
+                    : 'text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]'
                 }
                 key={item.to}
                 to={item.to}
@@ -1181,7 +1360,7 @@ function Layout({ children }: { children: ReactNode }) {
       <main>{children}</main>
 
       <footer className="border-t border-[var(--border)] bg-gray-50 py-12 dark:bg-[#0c0c0e]">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 text-sm text-gray-500 sm:px-6 lg:px-8 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 text-sm text-[var(--muted-foreground)] sm:px-6 lg:px-8 md:flex-row md:items-center md:justify-between">
           <p>Built on WordClaw schemas, items, and agent-aware content workflows.</p>
           <div className="flex flex-wrap gap-4">
             <Link className="hover:text-brand-500" to="/archive">
