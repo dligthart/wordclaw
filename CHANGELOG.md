@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/dligthart/wordclaw/compare/v1.8.0...v1.9.0) (2026-03-12)
+
+
+### Features
+
+* **ui:** implement grand archives enrichment with achievements and inventory rendering ([618aa7b](https://github.com/dligthart/wordclaw/commit/618aa7be8fb4b09bea89b9fbdfa4d69c966428eb))
+
 # [1.8.0](https://github.com/dligthart/wordclaw/compare/v1.7.0...v1.8.0) (2026-03-12)
 
 
