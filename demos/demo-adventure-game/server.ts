@@ -29,6 +29,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let storyNodeContentTypeId: number | null = null;
 let publishedStoryContentTypeId: number | null = null;
+let gameSessionContentTypeId: number | null = null;
 
 // Initial setup logic
 async function setupWordclawSchemas() {
@@ -45,12 +46,12 @@ async function setupWordclawSchemas() {
         const data = await snRes.json();
         const types = data.data as any[];
 
-        const existingNode = types.find(t => t.slug === 'story-node-v2');
+        const existingNode = types.find(t => t.slug === 'story-node-v3');
         if (existingNode) {
             storyNodeContentTypeId = existingNode.id;
-            console.log(`✅ StoryNode V2 Schema found (ID: ${storyNodeContentTypeId})`);
+            console.log(`✅ StoryNode V3 Schema found (ID: ${storyNodeContentTypeId})`);
         } else {
-            console.log("📦 Creating new StoryNode V2 ContentType...");
+            console.log("📦 Creating new StoryNode V3 ContentType...");
             const schemaDef = JSON.parse(fs.readFileSync('./schema.json', 'utf-8'));
             const createRes = await fetch(`${WORDCLAW_API_URL}/content-types`, {
                 method: 'POST',
@@ -59,9 +60,9 @@ async function setupWordclawSchemas() {
                     'x-api-key': WORDCLAW_API_KEY!
                 },
                 body: JSON.stringify({
-                    name: 'StoryNode V2',
-                    slug: 'story-node-v2',
-                    description: 'Interactive fiction nodes (Supports Win States).',
+                    name: 'StoryNode V3',
+                    slug: 'story-node-v3',
+                    description: 'Interactive fiction nodes with D20 Risky Hooks and Inventory arrays.',
                     schema: schemaDef
                 })
             });
@@ -69,19 +70,19 @@ async function setupWordclawSchemas() {
             if (createRes.ok) {
                 const created = await createRes.json();
                 storyNodeContentTypeId = created.data.id;
-                console.log(`✅ StoryNode V2 Schema created (ID: ${storyNodeContentTypeId})`);
+                console.log(`✅ StoryNode V3 Schema created (ID: ${storyNodeContentTypeId})`);
             } else {
-                console.error("❌ Failed to create StoryNode V2 Schema:", await createRes.json());
+                console.error("❌ Failed to create StoryNode V3 Schema:", await createRes.json());
                 process.exit(1);
             }
         }
 
-        const existingPublish = types.find(t => t.slug === 'published-story');
+        const existingPublish = types.find(t => t.slug === 'published-story-v2');
         if (existingPublish) {
             publishedStoryContentTypeId = existingPublish.id;
-            console.log(`✅ PublishedStory Schema found (ID: ${publishedStoryContentTypeId})`);
+            console.log(`✅ PublishedStory V2 Schema found (ID: ${publishedStoryContentTypeId})`);
         } else {
-            console.log("📦 Creating new PublishedStory ContentType...");
+            console.log("📦 Creating new PublishedStory V2 ContentType...");
             const publishDef = JSON.parse(fs.readFileSync('./published-schema.json', 'utf-8'));
             const createPubRes = await fetch(`${WORDCLAW_API_URL}/content-types`, {
                 method: 'POST',
@@ -90,9 +91,9 @@ async function setupWordclawSchemas() {
                     'x-api-key': WORDCLAW_API_KEY!
                 },
                 body: JSON.stringify({
-                    name: 'PublishedStory',
-                    slug: 'published-story',
-                    description: 'Completed interactive fiction runs.',
+                    name: 'PublishedStory V2',
+                    slug: 'published-story-v2',
+                    description: 'Completed interactive fiction runs including Roguelike RPG data.',
                     schema: publishDef
                 })
             });
@@ -100,9 +101,40 @@ async function setupWordclawSchemas() {
             if (createPubRes.ok) {
                 const created = await createPubRes.json();
                 publishedStoryContentTypeId = created.data.id;
-                console.log(`✅ PublishedStory Schema created (ID: ${publishedStoryContentTypeId})`);
+                console.log(`✅ PublishedStory V2 Schema created (ID: ${publishedStoryContentTypeId})`);
             } else {
-                console.error("❌ Failed to create PublishedStory Schema:", await createPubRes.json());
+                console.error("❌ Failed to create PublishedStory V2 Schema:", await createPubRes.json());
+                process.exit(1);
+            }
+        }
+
+        const existingSession = types.find(t => t.slug === 'game-session-v2');
+        if (existingSession) {
+            gameSessionContentTypeId = existingSession.id;
+            console.log(`✅ GameSession Schema found (ID: ${gameSessionContentTypeId})`);
+        } else {
+            console.log("📦 Creating new GameSession ContentType...");
+            const sessionDef = JSON.parse(fs.readFileSync('./session-schema.json', 'utf-8'));
+            const createSessRes = await fetch(`${WORDCLAW_API_URL}/content-types`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': WORDCLAW_API_KEY!
+                },
+                body: JSON.stringify({
+                    name: 'GameSession V2',
+                    slug: 'game-session-v2',
+                    description: 'A saved interactive fiction game session.',
+                    schema: sessionDef
+                })
+            });
+
+            if (createSessRes.ok) {
+                const created = await createSessRes.json();
+                gameSessionContentTypeId = created.data.id;
+                console.log(`✅ GameSession Schema created (ID: ${gameSessionContentTypeId})`);
+            } else {
+                console.error("❌ Failed to create GameSession Schema:", await createSessRes.json());
                 process.exit(1);
             }
         }
@@ -119,15 +151,20 @@ async function generateBranches(contextLog: string[], theme?: string, isFinale: 
         : `Generate the very first opening scene for a ${theme || 'dark fantasy'} interactive text adventure.`;
 
     let systemPrompt = `You are an interactive fiction engine that strictly outputs JSON. 
-You are given a context of the story so far.
+You are given a context of the story so far, including the player's character class, their quirk, and their current inventory.
 You MUST generate an array containing EXACTLY 3 distinct potential branching narratives representing what happens next.
 Because the player's choices impact their stats, you must provide a "health_delta" (e.g., -10 if they get hurt, +5 if they heal, 0 if nothing happens) and a "score_delta" (e.g. +50 for finding an item, +10 for progressing safely).
+The "inventory_changes" field MUST be an array of strings representing items gained or lost in this specific narrative beat (e.g. ["+Rusty Key", "-Gold Coin"]). If nothing changes, return an empty array [].
 
 EACH of the 3 branches must strictly follow this JSON schema structure:
 {
   "title": "Short title",
   "narrative_text": "Atmospheric description of what happens",
-  "available_choices": ["Choice A", "Choice B"],
+  "available_choices": [
+    { "text": "Choice A", "is_risky": true, "difficulty": 12 },
+    { "text": "Choice B", "is_risky": false, "difficulty": 0 }
+  ],
+  "inventory_changes": [],
   "body": "Required string by the engine",
   "health_delta": 0,
   "score_delta": 10
@@ -235,8 +272,14 @@ const sessions: Record<string, {
     health: number;
     score: number;
     theme: string;
+    characterClass: string;
+    quirk: string;
+    inventory: string[];
     history: string[];
     log: any[];
+    heroImageUrl?: string | null;
+    sceneImageUrl?: string | null;
+    finaleImageUrl?: string | null;
 }> = {};
 
 app.get('/api/themes', async (req, res) => {
@@ -282,12 +325,15 @@ Return ONLY the JSON array. Do not include markdown blocks.`
 });
 
 app.post('/api/start', async (req, res) => {
-    const { theme } = req.body;
+    const { theme, characterClass, quirk } = req.body;
     const sessionId = Math.random().toString(36).substring(7);
     sessions[sessionId] = {
         health: 100,
         score: 0,
         theme: theme || 'dark fantasy',
+        characterClass: characterClass || 'Adventurer',
+        quirk: quirk || 'Optimistic',
+        inventory: [],
         history: [],
         log: []
     };
@@ -299,6 +345,60 @@ app.post('/api/start', async (req, res) => {
         return res.status(500).json({ error: "Failed to generate valid opening scene." });
     }
 
+    // Generate Hero Portrait and Scene Image in parallel
+    let heroImageUrl: string | null = null;
+    let sceneImageUrl: string | null = null;
+
+    try {
+        const [heroRes, sceneRes] = await Promise.all([
+            fetch('https://api.openai.com/v1/images/generations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${OPENAI_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: `A beautiful, majestic, epic fantasy portrait of a ${sessions[sessionId].quirk} ${sessions[sessionId].characterClass}. The setting and style should be heavily inspired by the following theme: ${sessions[sessionId].theme}. High quality digital art style, highly detailed.`,
+                    n: 1,
+                    size: "1024x1024"
+                })
+            }),
+            fetch('https://api.openai.com/v1/images/generations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${OPENAI_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: `A highly detailed, epic fantasy digital painting illustrating the following scene: "${validBranch.narrative_text}". The scene features our hero: a ${sessions[sessionId].quirk} ${sessions[sessionId].characterClass} in the setting: ${sessions[sessionId].theme}. Style: Immersive, dramatic, high fantasy concept art. Keep the artwork entirely safe, abstracting any violence, gore, or sensitive themes to adhere strictly to safety policies.`,
+                    n: 1,
+                    size: "1024x1024"
+                })
+            })
+        ]);
+
+        if (heroRes.ok) {
+            const imgBody = await heroRes.json() as any;
+            heroImageUrl = imgBody.data[0].url;
+            sessions[sessionId].heroImageUrl = heroImageUrl;
+        } else {
+            console.error("DALL-E Hero generation failed", await heroRes.text());
+        }
+
+        if (sceneRes.ok) {
+            const imgBody = await sceneRes.json() as any;
+            sceneImageUrl = imgBody.data[0].url;
+            sessions[sessionId].sceneImageUrl = sceneImageUrl;
+        } else {
+            console.error("DALL-E Scene generation failed", await sceneRes.text());
+        }
+
+    } catch (e) {
+        console.error("Failed to generate DALL-E images", e);
+    }
+
     sessions[sessionId].history.push(`Scene: ${validBranch.narrative_text}`);
     sessions[sessionId].log.push(validBranch);
 
@@ -306,19 +406,29 @@ app.post('/api/start', async (req, res) => {
         sessionId,
         node: validBranch,
         health: sessions[sessionId].health,
-        score: sessions[sessionId].score
+        score: sessions[sessionId].score,
+        inventory: sessions[sessionId].inventory,
+        heroImageUrl,
+        sceneImageUrl
     });
 });
 
 app.post('/api/choose', async (req, res) => {
-    const { sessionId, choice } = req.body;
+    const { sessionId, choice, rollEvent } = req.body;
     const session = sessions[sessionId];
 
     if (!session) {
         return res.status(404).json({ error: "Session not found." });
     }
 
-    session.history.push(`Player Action: ${choice}`);
+    let actionLog = choice;
+    if (rollEvent) {
+        const { result, difficulty } = rollEvent;
+        const isSuccess = result >= difficulty;
+        actionLog += ` [D20 ROLL: ${result} vs DC ${difficulty} - ${isSuccess ? 'SUCCESS!' : 'CRITICAL FAILURE!'}]`;
+    }
+
+    session.history.push(`Player Action: ${actionLog}`);
 
     // Check if dead
     if (session.health <= 0) {
@@ -336,6 +446,19 @@ app.post('/api/choose', async (req, res) => {
     session.health += (validBranch.health_delta || 0);
     session.score += (validBranch.score_delta || 0);
 
+    // Process inventory
+    if (validBranch.inventory_changes && Array.isArray(validBranch.inventory_changes)) {
+        validBranch.inventory_changes.forEach((change: string) => {
+            if (change.startsWith('+')) {
+                const item = change.substring(1).trim();
+                session.inventory.push(item);
+            } else if (change.startsWith('-')) {
+                const item = change.substring(1).trim();
+                session.inventory = session.inventory.filter(i => i !== item);
+            }
+        });
+    }
+
     // Bounds check
     if (session.health > 100) session.health = 100;
 
@@ -347,20 +470,222 @@ app.post('/api/choose', async (req, res) => {
     session.history.push(`Scene: ${validBranch.narrative_text}`);
     session.log.push(validBranch);
 
+    let sceneImageUrl = undefined;
+
+    if (session.health <= 0 || isFinale) {
+        try {
+            const promptOutcome = session.health <= 0
+                ? `A dramatic, highly detailed illustration showing the tragic defeat of the hero. They were a ${session.quirk} ${session.characterClass}. Setting: ${session.theme}. Style: Dramatic, melancholic, epic digital art. Keep the artwork entirely safe, abstracting any violence or gore.`
+                : `A glorious, triumphant, highly detailed illustration showing the hero achieving their ultimate destiny in victory. They are a ${session.quirk} ${session.characterClass}. Setting: ${session.theme}. Style: Bright, heroic, epic digital art. Keep the artwork entirely safe, avoiding any explicit content.`;
+
+            const imageRes = await fetch('https://api.openai.com/v1/images/generations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${OPENAI_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: promptOutcome,
+                    n: 1,
+                    size: "1024x1024"
+                })
+            });
+            if (imageRes.ok) {
+                const imgBody = await imageRes.json() as any;
+                session.finaleImageUrl = imgBody.data[0].url;
+            } else {
+                console.error("DALL-E Finale generation failed", await imageRes.text());
+            }
+        } catch (e) {
+            console.error("Failed to generate finale image", e);
+        }
+    }
+
     if (session.health <= 0) {
         res.json({
             node: validBranch,
             health: session.health,
             score: session.score,
-            death: true
+            inventory: session.inventory,
+            death: true,
+            finaleImageUrl: session.finaleImageUrl
         });
     } else {
+        // Generate a scene image for normal progression
+        try {
+            const imageRes = await fetch('https://api.openai.com/v1/images/generations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${OPENAI_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: `A highly detailed, epic fantasy digital painting illustrating the following scene: "${validBranch.narrative_text}". The scene features our hero: a ${session.quirk} ${session.characterClass} in the setting: ${session.theme}. Style: Immersive, dramatic, high fantasy concept art. Keep the artwork entirely safe, abstracting any violence, gore, or sensitive themes to adhere strictly to safety policies.`,
+                    n: 1,
+                    size: "1024x1024"
+                })
+            });
+            if (imageRes.ok) {
+                const imgBody = await imageRes.json() as any;
+                sceneImageUrl = imgBody.data[0].url;
+            } else {
+                console.error("DALL-E Scene generation failed", await imageRes.text());
+            }
+        } catch (e) {
+            console.error("Failed to generate scene image", e);
+        }
+
+        session.sceneImageUrl = sceneImageUrl;
+
         res.json({
             node: validBranch,
             health: session.health,
             score: session.score,
-            death: false
+            inventory: session.inventory,
+            death: false,
+            sceneImageUrl: sceneImageUrl
         });
+    }
+});
+
+app.post('/api/save', async (req, res) => {
+    const { sessionId } = req.body;
+    const session = sessions[sessionId];
+
+    if (!session) {
+        return res.status(404).json({ error: "Session not found." });
+    }
+
+    try {
+        const payload = {
+            sessionId,
+            health: session.health,
+            score: session.score,
+            theme: session.theme,
+            characterClass: session.characterClass,
+            quirk: session.quirk,
+            inventory: session.inventory,
+            history: session.history,
+            log: session.log,
+            heroImageUrl: session.heroImageUrl,
+            sceneImageUrl: session.sceneImageUrl,
+            finaleImageUrl: session.finaleImageUrl,
+            body: `Saved game session: ${sessionId}`
+        };
+
+        const saveRes = await fetch(`${WORDCLAW_API_URL}/content-items`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': WORDCLAW_API_KEY!
+            },
+            body: JSON.stringify({
+                contentTypeId: gameSessionContentTypeId,
+                data: payload,
+                status: 'published'
+            })
+        });
+
+        if (!saveRes.ok) throw new Error("Failed to save to WordClaw");
+
+        res.json({ success: true, message: "Game progress saved to WordClaw." });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/load', async (req, res) => {
+    const { sessionId } = req.body;
+
+    try {
+        const fetchRes = await fetch(`${WORDCLAW_API_URL}/content-items?limit=500`, {
+            headers: { 'x-api-key': WORDCLAW_API_KEY! }
+        });
+
+        if (!fetchRes.ok) throw new Error("Failed to search WordClaw");
+
+        const data = await fetchRes.json() as any;
+        const allItems = data.data || [];
+
+        let loadedSession = null;
+        for (const item of allItems) {
+            if (item.contentTypeId === gameSessionContentTypeId) {
+                const parsed = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+                if (parsed.sessionId === sessionId) {
+                    loadedSession = parsed;
+                    break;
+                }
+            }
+        }
+
+        if (!loadedSession) return res.status(404).json({ error: "Save file not found." });
+
+        sessions[sessionId] = {
+            health: loadedSession.health,
+            score: loadedSession.score,
+            theme: loadedSession.theme,
+            characterClass: loadedSession.characterClass,
+            quirk: loadedSession.quirk,
+            inventory: loadedSession.inventory || [],
+            history: loadedSession.history || [],
+            log: loadedSession.log || [],
+            heroImageUrl: loadedSession.heroImageUrl,
+            sceneImageUrl: loadedSession.sceneImageUrl,
+            finaleImageUrl: loadedSession.finaleImageUrl
+        };
+
+        const lastNode = loadedSession.log[loadedSession.log.length - 1];
+
+        res.json({
+            node: lastNode,
+            health: sessions[sessionId].health,
+            score: sessions[sessionId].score,
+            inventory: sessions[sessionId].inventory,
+            heroImageUrl: sessions[sessionId].heroImageUrl,
+            sceneImageUrl: sessions[sessionId].sceneImageUrl,
+            finaleImageUrl: sessions[sessionId].finaleImageUrl,
+            message: "Save file restored successfully."
+        });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/stories', async (req, res) => {
+    try {
+        const fetchRes = await fetch(`${WORDCLAW_API_URL}/content-items?content_type_id=${publishedStoryContentTypeId}&limit=50&sort=-created_at`, {
+            headers: {
+                'x-api-key': WORDCLAW_API_KEY!
+            }
+        });
+
+        if (!fetchRes.ok) {
+            const err = await fetchRes.json();
+            console.error("Failed to fetch stories from WordClaw:", err);
+            return res.status(500).json({ error: "Failed to fetch stories from WordClaw" });
+        }
+
+        const data = await fetchRes.json() as any;
+        const allItems = data.data || [];
+
+        const filtered = allItems.filter((item: any) => item.contentTypeId === publishedStoryContentTypeId);
+        const mapped = filtered.map((item: any) => {
+            let parsedData = {};
+            try {
+                parsedData = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+            } catch (e) { }
+            return {
+                ...item,
+                data: parsedData
+            };
+        });
+
+        res.json({ stories: mapped });
+    } catch (e) {
+        console.error("Error fetching library:", e);
+        res.status(500).json({ error: "Internal server error" });
     }
 });
 
@@ -379,6 +704,10 @@ app.post('/api/publish', async (req, res) => {
         full_text,
         final_score: session.score,
         author: author || "Anonymous",
+        character_class: `${session.quirk} ${session.characterClass}`,
+        cause_of_death: session.health <= 0 ? "Succumbed to their injuries" : "Survived the adventure",
+        hero_image_url: session.heroImageUrl,
+        finale_image_url: session.finaleImageUrl,
         body: "Generated published story."
     };
 
@@ -398,7 +727,7 @@ app.post('/api/publish', async (req, res) => {
     if (saveRes.ok) {
         res.json({ success: true, message: "Story published to WordClaw successfully!" });
     } else {
-        const err = await saveRes.json();
+        const err = await saveRes.json() as any;
         console.error("Failed to publish story:", err);
         res.status(500).json({ error: "Failed to publish story to WordClaw." });
     }

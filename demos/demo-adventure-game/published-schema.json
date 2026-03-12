@@ -1,5 +1,5 @@
 {
-    "name": "published_story",
+    "name": "published_story_v2",
     "description": "An interactive adventure story completed and published by a player.",
     "type": "object",
     "properties": {
@@ -18,6 +18,22 @@
         "author": {
             "type": "string",
             "description": "The name or alias of the player who completed the adventure."
+        },
+        "character_class": {
+            "type": "string",
+            "description": "The character class played."
+        },
+        "cause_of_death": {
+            "type": "string",
+            "description": "The string outlining their survival or demise."
+        },
+        "hero_image_url": {
+            "type": "string",
+            "description": "URL of the DALL-E generated hero portrait."
+        },
+        "finale_image_url": {
+            "type": "string",
+            "description": "URL of the DALL-E generated finale mural."
         },
         "body": {
             "type": "string",

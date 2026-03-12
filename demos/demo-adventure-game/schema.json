@@ -14,9 +14,35 @@
         "available_choices": {
             "type": "array",
             "items": {
-                "type": "string"
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "The action the player can choose to take next."
+                    },
+                    "is_risky": {
+                        "type": "boolean",
+                        "description": "True if this choice requires a skill check (dice roll)."
+                    },
+                    "difficulty": {
+                        "type": "integer",
+                        "description": "The Difficulty Class (1-20) if this is a risky choice. 0 if not risky."
+                    }
+                },
+                "required": [
+                    "text",
+                    "is_risky",
+                    "difficulty"
+                ]
             },
             "description": "The actions the player can choose to take next. If empty, the game assumes an end-state."
+        },
+        "inventory_changes": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Items the player gained or lost (e.g. ['+Rusty Key', '-Gold Coin']). Empty if no changes."
         },
         "body": {
             "type": "string",
@@ -24,7 +50,7 @@
         },
         "health_delta": {
             "type": "integer",
-            "description": "The impact this narrative choice has on the player's health (e.g., -10 for damage, +5 for healing)."
+            "description": "The impact this narrative choice has on the player's health."
         },
         "score_delta": {
             "type": "integer",
@@ -35,6 +61,7 @@
         "title",
         "narrative_text",
         "available_choices",
+        "inventory_changes",
         "body",
         "health_delta",
         "score_delta"

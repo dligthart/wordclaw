@@ -1,0 +1,77 @@
+{
+    "name": "game_session",
+    "description": "A saved interactive fiction game session.",
+    "type": "object",
+    "properties": {
+        "sessionId": {
+            "type": "string",
+            "description": "The unique session ID."
+        },
+        "health": {
+            "type": "integer",
+            "description": "Current health points."
+        },
+        "score": {
+            "type": "integer",
+            "description": "Current sequence score."
+        },
+        "theme": {
+            "type": "string",
+            "description": "The selected base narrative theme."
+        },
+        "characterClass": {
+            "type": "string",
+            "description": "The hero character class."
+        },
+        "quirk": {
+            "type": "string",
+            "description": "The hero's personality quirk."
+        },
+        "inventory": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Current items held."
+        },
+        "history": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Player actions and outcomes."
+        },
+        "log": {
+            "type": "array",
+            "description": "The raw JSON array of the nodes encountered."
+        },
+        "heroImageUrl": {
+            "type": "string",
+            "description": "Avatar URL."
+        },
+        "sceneImageUrl": {
+            "type": "string",
+            "description": "Dynamic scene URL."
+        },
+        "finaleImageUrl": {
+            "type": "string",
+            "description": "Ending Mural URL."
+        },
+        "body": {
+            "type": "string",
+            "description": "Required base core field by WordClaw."
+        }
+    },
+    "required": [
+        "sessionId",
+        "health",
+        "score",
+        "theme",
+        "characterClass",
+        "quirk",
+        "inventory",
+        "history",
+        "log",
+        "body"
+    ]
+}

@@ -17,8 +17,14 @@
         <header>
             <h1 class="logo">WordClaw Adventure</h1>
             <div class="gamestats">
+                <img id="avatar-image" class="hidden" src="" alt="Hero Avatar"
+                    style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent); box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);">
                 <div class="stat"><span class="label">❤️ Health</span><span id="health" class="value">--</span></div>
                 <div class="stat"><span class="label">⭐ Score</span><span id="score" class="value">-- / 100</span></div>
+            </div>
+            <div id="save-tools" class="hidden">
+                <button id="save-btn" class="primary-btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">Save
+                    Game</button>
             </div>
         </header>
         <main>
@@ -27,24 +33,81 @@
                 <p>Generating Fate...</p>
             </div>
 
+            <div id="dice-container" class="hidden">
+                <div class="dice-scene">
+                    <div id="d20" class="cube">
+                        <div class="cube-face cube-front"><span id="dice-value">20</span></div>
+                    </div>
+                </div>
+                <h3 id="dice-target">Target DC: <span id="dc-value">15</span></h3>
+                <h2 id="dice-result-text" class="hidden">SUCCESS!</h2>
+            </div>
+
             <div id="themes-container">
                 <h2 id="themes-title">Choose Your Destiny</h2>
                 <p id="themes-subtitle">Every great story begins with a spark. What kind of adventure awaits?</p>
                 <div id="theme-cards" class="theme-grid">
                     <!-- Themes will be injected here -->
                 </div>
+
+            </div>
+
+            <div id="character-container" class="hidden">
+                <h2 id="themes-title">Forge Your Hero</h2>
+                <p id="themes-subtitle">Every legend needs a protagonist. Who will face this adventure?</p>
+
+                <h3 style="text-align: left; margin-bottom: 0.5rem; color: var(--accent);">Choose a Class:</h3>
+                <div id="class-grid" class="class-grid">
+                    <!-- Javascript injected classes -->
+                </div>
+
+                <h3 style="text-align: left; margin-bottom: 0.5rem; color: var(--accent); margin-top: 1rem;">Choose
+                    a
+                    Trait/Quirk:</h3>
+                <div id="quirk-grid" class="class-grid">
+                    <!-- Javascript injected quirks -->
+                </div>
+
+                <div style="margin-top: 2rem;">
+                    <button id="start-adventure-btn" class="primary-btn"
+                        style="width: 100%; padding: 1.2rem; font-size: 1.1rem;" disabled>Begin Adventure</button>
+                </div>
             </div>
 
             <div id="story-container" class="hidden">
-                <h2 id="story-title">Welcome to the Abyss</h2>
-                <div id="story-text">Your journey into the unknown begins here.</div>
+                <div id="save-tools" class="hidden" style="text-align: right; margin-bottom: 1rem;">
+                    <button id="save-btn" class="primary-btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">Save
+                        Game</button>
+                </div>
 
-                <div id="choices-container">
-                    <!-- Branch choices injected here -->
+                <div class="story-layout">
+                    <div class="story-image-pane">
+                        <img id="scene-image" class="hidden" src="" alt="Scene Illustration"
+                            style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); object-fit: cover;">
+                    </div>
+
+                    <div class="story-text-pane">
+                        <h2 id="story-title">Welcome to the Abyss</h2>
+                        <div id="story-text">Your journey into the unknown begins here.</div>
+
+                        <div id="choices-container">
+                            <!-- Branch choices injected here -->
+                        </div>
+
+                        <div id="inventory-display" class="hidden">
+                            <h4 style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.5rem;">🎒
+                                Inventory:</h4>
+                            <div id="inventory-pills"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div id="publish-container" class="hidden">
+                <div style="text-align: center; margin-bottom: 2rem;">
+                    <img id="finale-mural" class="hidden" src="" alt="Finale Mural"
+                        style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); object-fit: cover;">
+                </div>
                 <h3>Your journey has ended.</h3>
                 <p id="death-reason" class="hidden"></p>
                 <div class="publish-form">
@@ -54,6 +117,29 @@
                 <div id="publish-status"></div>
             </div>
         </main>
+
+        <footer id="app-footer">
+            <div class="footer-content">
+                <div class="footer-actions">
+                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">Resume a Run</h4>
+                    <div style="display: flex; gap: 0.5rem; max-width: 400px;">
+                        <input type="text" id="load-session-input" placeholder="Enter Session ID..."
+                            style="flex:1; padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-panel); color: white;">
+                        <button id="load-session-btn" class="primary-btn" style="padding: 0.8rem 1.2rem;">Load
+                            Game</button>
+                    </div>
+                </div>
+                <div class="footer-links">
+                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">Explore</h4>
+                    <a href="/library.html" class="primary-btn"
+                        style="text-decoration:none; padding: 0.8rem 1.2rem; display:inline-block; background: linear-gradient(135deg, #10b981, #059669); border:none;">📖
+                        Read the Grand Archives</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 WordClaw Adventure. Built by DLIGTHART.</p>
+            </div>
+        </footer>
     </div>
     <script src="app.js"></script>
 </body>
