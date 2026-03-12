@@ -26,7 +26,7 @@ For a look ahead at what is in active development versus what is experimental, c
 
 ### Optional Modules
 
--   **Native Vector & RAG**: Built-in pgvector embeddings generation and semantic search for AI agents.
+-   **Native Vector & RAG**: Built-in pgvector embeddings generation and semantic search for AI agents. See the [Native Vector RAG Guide](doc/guides/native-vector-rag.md) for details.
 
 ### Compatibility / Experimental
 

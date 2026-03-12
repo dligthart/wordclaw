@@ -96,7 +96,7 @@ Business logic lives in isolated service modules. No API handler accesses the da
 The `PolicyEngine` remains protocol-agnostic. A request from REST, MCP, or the current GraphQL compatibility surface traverses through a `ContextAdapter` to map into a flat, protocol-agnostic `OperationContext`. The engine parses the active rules against the principal's scope and produces an immutable `PolicyDecision` (allow/deny) and automatically populates the `policy_decision_logs` database table.
 
 #### Embedding Service (Vector RAG)
-An asynchronous `EmbeddingService` listens to the WordClaw `EventBus` for `content_item.published` events. It chunks the document payload, hits an external LLM Embeddings Provider (e.g. OpenAI), and stores vectors in a `pgvector` enabled Postgres table. This powers out-of-the-box semantic search endpoints for AI agents.
+An asynchronous `EmbeddingService` listens to the WordClaw `EventBus` for `content_item.published` events. It chunks the document payload, hits an external LLM Embeddings Provider (e.g. OpenAI), and stores vectors in a `pgvector` enabled Postgres table. This powers out-of-the-box semantic search endpoints for AI agents. For details on how RAG is exposed, see the [Native Vector RAG Guide](../guides/native-vector-rag.md).
 
 ### Data Layer
 
