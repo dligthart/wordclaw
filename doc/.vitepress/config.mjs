@@ -29,7 +29,8 @@ export default withMermaid(defineConfig({
                     { text: 'Blog Integration', link: '/guides/blog-integration-guide' },
                     { text: 'CLI Guide', link: '/guides/cli-guide' },
                     { text: 'LangGraph MCP Starter', link: '/guides/langgraph-mcp-starter' },
-                    { text: 'MCP Integration', link: '/guides/mcp-integration' }
+                    { text: 'MCP Integration', link: '/guides/mcp-integration' },
+                    { text: 'Vercel Deploy Webhook', link: '/guides/vercel-deploy-webhook' }
                 ]
             },
             {

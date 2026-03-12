@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { db } from '../db/index.js';
-import { workflows, workflowTransitions, contentTypes, contentItems, reviewTasks, reviewComments, domains } from '../db/schema.js';
+import { workflows, workflowTransitions, contentTypes, contentItems, reviewTasks, reviewComments, domains, auditLogs } from '../db/schema.js';
 import { WorkflowService } from '../services/workflow.js';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
 describe('Workflow & Review System (Domain 1)', () => {
     const domainId = 1;
@@ -102,13 +102,40 @@ describe('Workflow & Review System (Domain 1)', () => {
             domainId,
             task2.id,
             'approved',
-            { scopes: new Set(['reviewer', 'admin']), domainId }
+            {
+                scopes: new Set(['reviewer', 'admin']),
+                domainId,
+                actorId: 'api_key:reviewer',
+                actorType: 'api_key',
+                actorSource: 'test',
+            }
         );
 
         expect(decisionResult.status).toBe('approved');
 
         const [finalItem] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
         expect(finalItem.status).toBe('published'); // transition execution successful
+
+        const [auditEntry] = await db.select()
+            .from(auditLogs)
+            .where(and(eq(auditLogs.entityType, 'content_item'), eq(auditLogs.entityId, item.id)))
+            .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+            .limit(1);
+
+        expect(auditEntry).toBeDefined();
+        expect(auditEntry.action).toBe('update');
+        expect(auditEntry.actorId).toBe('api_key:reviewer');
+        expect(auditEntry.actorType).toBe('api_key');
+
+        const details = auditEntry.details ? JSON.parse(auditEntry.details) : null;
+        expect(details).toEqual(expect.objectContaining({
+            source: 'workflow_review_decision',
+            decision: 'approved',
+            previousStatus: 'in_review',
+            status: 'published',
+            reviewTaskId: task2.id,
+            workflowTransitionId: transition2Id,
+        }));
     });
 
     it('should allow canonical actor ids to satisfy review-task assignee checks', async () => {

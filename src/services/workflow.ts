@@ -9,10 +9,12 @@ import {
 } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { EmbeddingService } from './embedding.js';
+import { logAudit } from './audit.js';
 import {
     buildActorAssignmentRefs,
     resolveActorIdentity,
     resolveActorIdentityRef,
+    toAuditActor,
     type PrincipalLike,
 } from './actor-identity.js';
 
@@ -165,11 +167,9 @@ export class WorkflowService {
         domainId: number,
         taskId: number,
         decision: 'approved' | 'rejected',
-        authPrincipal: {
+        authPrincipal: PrincipalLike & {
             scopes: Set<string>;
             domainId: number;
-            actorRef?: number | string;
-            actorId?: string;
         },
     ) {
         const results = await db.select()
@@ -219,6 +219,22 @@ export class WorkflowService {
                 } else {
                     EmbeddingService.deleteItemEmbeddings(domainId, task.contentItemId).catch(console.error);
                 }
+
+                await logAudit(
+                    domainId,
+                    'update',
+                    'content_item',
+                    task.contentItemId,
+                    {
+                        source: 'workflow_review_decision',
+                        reviewTaskId: task.id,
+                        workflowTransitionId: transition.id,
+                        decision,
+                        previousStatus: transition.fromState,
+                        status: transition.toState,
+                    },
+                    toAuditActor(authPrincipal),
+                );
             }
         }
 
