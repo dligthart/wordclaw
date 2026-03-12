@@ -6,6 +6,7 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import ActorIdentity from "$lib/components/ActorIdentity.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import Surface from "$lib/components/ui/Surface.svelte";
@@ -25,6 +26,9 @@
             workflowTransitionId: number;
             status: string;
             assignee: string | null;
+            assigneeActorId: string | null;
+            assigneeActorType: string | null;
+            assigneeActorSource: string | null;
             createdAt: string;
             updatedAt: string;
         };
@@ -529,18 +533,44 @@
                                         <div
                                             class="mt-3 flex items-center justify-between gap-2 text-[0.68rem] text-gray-500 dark:text-gray-400"
                                         >
-                                            <span
-                                                title={new Date(
-                                                    payload.task.createdAt,
-                                                ).toLocaleString()}
+                                            <div class="min-w-0">
+                                                {#if payload.task.assignee || payload.task.assigneeActorId}
+                                                    <ActorIdentity
+                                                        actorId={payload.task.assigneeActorId ??
+                                                            payload.task.assignee}
+                                                        actorType={payload.task.assigneeActorType}
+                                                        actorSource={payload.task.assigneeActorSource}
+                                                        fallback="Unassigned"
+                                                        compact={true}
+                                                    />
+                                                {:else}
+                                                    <span
+                                                        title={new Date(
+                                                            payload.task.createdAt,
+                                                        ).toLocaleString()}
+                                                    >
+                                                        Submitted {formatRelativeDate(
+                                                            payload.task.createdAt,
+                                                        )}
+                                                    </span>
+                                                {/if}
+                                            </div>
+                                            <div
+                                                class="flex flex-col items-end gap-1 text-right"
                                             >
-                                                Submitted {formatRelativeDate(
-                                                    payload.task.createdAt,
-                                                )}
-                                            </span>
-                                            <span class="font-mono"
-                                                >Task {payload.task.id}</span
-                                            >
+                                                <span
+                                                    title={new Date(
+                                                        payload.task.createdAt,
+                                                    ).toLocaleString()}
+                                                >
+                                                    Submitted {formatRelativeDate(
+                                                        payload.task.createdAt,
+                                                    )}
+                                                </span>
+                                                <span class="font-mono"
+                                                    >Task {payload.task.id}</span
+                                                >
+                                            </div>
                                         </div>
                                     </button>
                                 </li>
@@ -783,6 +813,26 @@
                                                     selectedTask.transition
                                                         .toState,
                                                 )}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt
+                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                            >
+                                                Assigned Reviewer
+                                            </dt>
+                                            <dd class="mt-1">
+                                                <ActorIdentity
+                                                    actorId={selectedTask.task
+                                                        .assigneeActorId ??
+                                                        selectedTask.task
+                                                            .assignee}
+                                                    actorType={selectedTask.task
+                                                        .assigneeActorType}
+                                                    actorSource={selectedTask.task
+                                                        .assigneeActorSource}
+                                                    fallback="Unassigned"
+                                                />
                                             </dd>
                                         </div>
                                         <div>

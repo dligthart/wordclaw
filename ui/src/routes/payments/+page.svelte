@@ -5,6 +5,7 @@
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import ActorIdentity from "$lib/components/ActorIdentity.svelte";
     import { deepParseJson } from "$lib/utils";
     import { Icon } from "svelte-hero-icons";
     import { ArrowPath } from "svelte-hero-icons";
@@ -16,7 +17,7 @@
     const columns = [
         { key: "_expand", label: "", width: "40px" },
         { key: "id", label: "ID", sortable: true },
-        { key: "actorId", label: "Actor" },
+        { key: "actorId", label: "Initiator" },
         { key: "amountSatoshis", label: "Amount (Sats)" },
         { key: "status", label: "Status", sortable: true },
         { key: "resourcePath", label: "Resource Path" },
@@ -105,15 +106,12 @@
                             >{row.id}</span
                         >
                     {:else if column.key === "actorId"}
-                        <span class="font-mono">
-                            {#if row.actorId}
-                                {row.actorId}
-                            {:else}
-                                <span class="italic text-gray-400"
-                                    >Anonymous</span
-                                >
-                            {/if}
-                        </span>
+                        <ActorIdentity
+                            actorId={row.actorId}
+                            actorType={row.actorType}
+                            actorSource={row.actorSource}
+                            compact={true}
+                        />
                     {:else if column.key === "amountSatoshis"}
                         {row.amountSatoshis}
                     {:else if column.key === "status"}
@@ -142,6 +140,37 @@
                 {#snippet expanded(ctx: any)}
                     {@const row = ctx.row}
                     <div class="px-6 sm:px-10 py-4">
+                        <div
+                            class="mb-4 grid gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-4 text-sm dark:border-slate-700 dark:bg-slate-900/40 md:grid-cols-[minmax(0,1fr)_auto]"
+                        >
+                            <div>
+                                <p
+                                    class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400"
+                                >
+                                    Initiated By
+                                </p>
+                                <div class="mt-2">
+                                    <ActorIdentity
+                                        actorId={row.actorId}
+                                        actorType={row.actorType}
+                                        actorSource={row.actorSource}
+                                        fallback="System / unauthenticated"
+                                    />
+                                </div>
+                            </div>
+                            <div class="min-w-0">
+                                <p
+                                    class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400"
+                                >
+                                    Payment Hash
+                                </p>
+                                <span
+                                    class="mt-2 inline-block break-all rounded-md bg-slate-200 px-2 py-1 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                >
+                                    {row.paymentHash}
+                                </span>
+                            </div>
+                        </div>
                         {#if row.details}
                             <JsonCodeBlock
                                 label="Request Context"
@@ -152,15 +181,6 @@
                                 No detailed request context recorded.
                             </p>
                         {/if}
-                        <div
-                            class="mt-4 text-sm text-gray-500 dark:text-gray-400"
-                        >
-                            <strong>Payment Hash:</strong>
-                            <span
-                                class="font-mono text-xs ml-2 bg-gray-200 dark:bg-gray-700 p-1 rounded break-all"
-                                >{row.paymentHash}</span
-                            >
-                        </div>
                     </div>
                 {/snippet}
             </DataTable>

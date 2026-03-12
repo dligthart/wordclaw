@@ -53,7 +53,11 @@ export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: Fast
             updates: recentLogs.filter(l => l.action === 'update').length,
             deletes: recentLogs.filter(l => l.action === 'delete').length,
             rollbacks: recentLogs.filter(l => l.action === 'rollback').length,
-            activeActors: new Set(recentLogs.filter(l => l.userId).map(l => l.userId)).size
+            activeActors: new Set(
+                recentLogs
+                    .map((log) => log.actorId ?? (log.userId ? `api_key:${log.userId}` : null))
+                    .filter((actor): actor is string => Boolean(actor))
+            ).size
         };
 
         const paidPayments = await db

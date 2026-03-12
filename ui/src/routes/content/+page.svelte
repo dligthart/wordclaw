@@ -7,6 +7,7 @@
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
     import DataTable from "$lib/components/DataTable.svelte";
+    import ActorIdentity from "$lib/components/ActorIdentity.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import Input from "$lib/components/ui/Input.svelte";
@@ -69,6 +70,9 @@
     type ReviewComment = {
         id: number;
         authorId: string;
+        authorActorId: string | null;
+        authorActorType: string | null;
+        authorActorSource: string | null;
         comment: string;
         createdAt: string;
     };
@@ -1865,11 +1869,13 @@
                                             <div
                                                 class="flex items-center justify-between gap-2"
                                             >
-                                                <span
-                                                    class="text-xs font-semibold text-slate-800 dark:text-slate-100"
-                                                >
-                                                    {comment.authorId}
-                                                </span>
+                                                <ActorIdentity
+                                                    actorId={comment.authorActorId ??
+                                                        comment.authorId}
+                                                    actorType={comment.authorActorType}
+                                                    actorSource={comment.authorActorSource}
+                                                    compact={true}
+                                                />
                                                 <span
                                                     class="text-[0.68rem] text-slate-500 dark:text-slate-400"
                                                 >

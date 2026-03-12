@@ -57,11 +57,41 @@ describe('Supervisor Dashboard Domain Isolation', () => {
         domainBId = domainB.id;
 
         await db.insert(auditLogs).values([
-            { domainId: domainAId, action: 'create', entityType: 'content_item', entityId: 1, userId: 10, details: 'domain-a-create' },
-            { domainId: domainAId, action: 'rollback', entityType: 'content_item', entityId: 2, userId: 10, details: 'domain-a-rollback' },
-            { domainId: domainAId, action: 'error', entityType: 'system', entityId: 3, userId: 11, details: 'domain-a-error' },
-            { domainId: domainBId, action: 'create', entityType: 'content_item', entityId: 4, userId: 12, details: 'domain-b-create' },
-            { domainId: domainBId, action: 'error', entityType: 'system', entityId: 5, userId: 13, details: 'domain-b-error' }
+            {
+                domainId: domainAId,
+                action: 'create',
+                entityType: 'content_item',
+                entityId: 1,
+                userId: null,
+                actorId: 'supervisor:10',
+                actorType: 'supervisor',
+                actorSource: 'cookie',
+                details: 'domain-a-create'
+            },
+            {
+                domainId: domainAId,
+                action: 'rollback',
+                entityType: 'content_item',
+                entityId: 2,
+                userId: null,
+                actorId: 'env_key:review-bot',
+                actorType: 'env_key',
+                actorSource: 'env',
+                details: 'domain-a-rollback'
+            },
+            { domainId: domainAId, action: 'error', entityType: 'system', entityId: 3, userId: null, details: 'domain-a-error' },
+            {
+                domainId: domainBId,
+                action: 'create',
+                entityType: 'content_item',
+                entityId: 4,
+                userId: null,
+                actorId: 'api_key:12',
+                actorType: 'api_key',
+                actorSource: 'db',
+                details: 'domain-b-create'
+            },
+            { domainId: domainBId, action: 'error', entityType: 'system', entityId: 5, userId: null, details: 'domain-b-error' }
         ]);
 
         await db.insert(payments).values([
@@ -166,7 +196,7 @@ describe('Supervisor Dashboard Domain Isolation', () => {
                 pendingCount: number;
             };
             agentRunSummary: null;
-            recentEvents: Array<{ domainId: number; details: string | null }>;
+            recentEvents: Array<{ domainId: number; details: string | null; actorId: string | null }>;
             alerts: Array<{ type: string; message: string }>;
         };
 
@@ -188,6 +218,7 @@ describe('Supervisor Dashboard Domain Isolation', () => {
 
         expect(payload.recentEvents.every((event) => event.domainId === domainAId)).toBe(true);
         expect(payload.recentEvents.some((event) => event.details === 'domain-b-create')).toBe(false);
+        expect(payload.recentEvents.some((event) => event.actorId === 'supervisor:10')).toBe(true);
 
         const alertMessages = payload.alerts.map((alert) => alert.message);
         expect(alertMessages.some((message) => message.includes('domain-a-error'))).toBe(true);

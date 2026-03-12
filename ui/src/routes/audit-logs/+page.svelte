@@ -6,18 +6,21 @@
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
+    import ActorIdentity from "$lib/components/ActorIdentity.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import Select from "$lib/components/ui/Select.svelte";
     import Surface from "$lib/components/ui/Surface.svelte";
-    import { Icon, ArrowPath, Key } from "svelte-hero-icons";
+    import { Icon, ArrowPath } from "svelte-hero-icons";
 
     type AuditEvent = {
         id: number;
         action: string;
         entityType: string;
         entityId: number;
-        userId: number | null;
+        actorId: string | null;
+        actorType: string | null;
+        actorSource: string | null;
         details: any;
         createdAt: string;
     };
@@ -44,7 +47,7 @@
         { key: "createdAt", label: "Timestamp" },
         { key: "action", label: "Action" },
         { key: "entity", label: "Entity" },
-        { key: "userId", label: "Actor" },
+        { key: "actorId", label: "Actor" },
     ];
 
     async function loadEvents(reset = false) {
@@ -212,19 +215,13 @@
                         <Badge variant="muted" class="font-mono normal-case">
                             {row.entityType}:{row.entityId}
                         </Badge>
-                    {:else if column.key === "userId"}
-                        {#if row.userId}
-                            <span
-                                class="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400"
-                            >
-                                <Icon src={Key} class="w-4 h-4" />
-                                {row.userId}
-                            </span>
-                        {:else}
-                            <span class="text-sm italic text-slate-400"
-                                >System / Unauthenticated</span
-                            >
-                        {/if}
+                    {:else if column.key === "actorId"}
+                        <ActorIdentity
+                            actorId={row.actorId}
+                            actorType={row.actorType}
+                            actorSource={row.actorSource}
+                            compact={true}
+                        />
                     {/if}
                 {/snippet}
 

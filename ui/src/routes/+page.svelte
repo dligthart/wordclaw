@@ -4,6 +4,7 @@
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import ActionBadge from "$lib/components/ActionBadge.svelte";
+    import ActorIdentity from "$lib/components/ActorIdentity.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
     import Surface from "$lib/components/ui/Surface.svelte";
     import {
@@ -13,6 +14,18 @@
         Bolt,
         ChevronRight,
     } from "svelte-hero-icons";
+
+    type RecentEvent = {
+        id: number;
+        entityType: string;
+        entityId: number;
+        action: string;
+        actorId: string | null;
+        actorType: string | null;
+        actorSource: string | null;
+        userId: number | null;
+        createdAt: string;
+    };
 
     type DashboardData = {
         health: {
@@ -65,7 +78,7 @@
                 } | null;
             };
         } | null;
-        recentEvents: any[];
+        recentEvents: RecentEvent[];
         alerts: { type: string; message: string }[];
     };
 
@@ -704,9 +717,13 @@
                                         <td
                                             class="px-6 py-4 text-slate-500 dark:text-slate-400"
                                         >
-                                            {event.userId
-                                                ? `ID: ${event.userId}`
-                                                : "Unknown"}
+                                            <ActorIdentity
+                                                actorId={event.actorId}
+                                                actorType={event.actorType}
+                                                actorSource={event.actorSource}
+                                                legacyUserId={event.userId}
+                                                compact={true}
+                                            />
                                         </td>
                                     </tr>
                                 {:else}
