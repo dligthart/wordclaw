@@ -4,6 +4,7 @@ import {
     decodeAssetContentBase64,
     decodeAssetsCursor,
     encodeAssetsCursor,
+    getAssetEntitlementScope,
     AssetListError
 } from './assets.js';
 
@@ -31,5 +32,26 @@ describe('asset cursor helpers', () => {
 
     it('returns null for malformed cursor payload', () => {
         expect(decodeAssetsCursor('not-a-cursor')).toBeNull();
+    });
+});
+
+describe('getAssetEntitlementScope', () => {
+    it('returns a normalized subscription scope for entitled assets', () => {
+        expect(getAssetEntitlementScope({
+            accessMode: 'entitled',
+            entitlementScopeType: 'subscription',
+            entitlementScopeRef: null
+        })).toEqual({
+            type: 'subscription',
+            ref: null
+        });
+    });
+
+    it('returns null for non-entitled assets', () => {
+        expect(getAssetEntitlementScope({
+            accessMode: 'public',
+            entitlementScopeType: null,
+            entitlementScopeRef: null
+        })).toBeNull();
     });
 });

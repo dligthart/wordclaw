@@ -91,6 +91,8 @@ export const assets = pgTable('assets', {
     storageProvider: text('storage_provider').notNull(),
     storageKey: text('storage_key').notNull(),
     accessMode: text('access_mode').notNull().default('public'),
+    entitlementScopeType: text('entitlement_scope_type'),
+    entitlementScopeRef: integer('entitlement_scope_ref'),
     status: text('status').notNull().default('active'),
     metadata: jsonb('metadata').notNull().default({}),
     uploaderActorId: text('uploader_actor_id'),
@@ -103,6 +105,7 @@ export const assets = pgTable('assets', {
     return {
         assetDomainCreatedAtIdx: index('asset_domain_created_at_idx').on(table.domainId, table.createdAt),
         assetDomainStatusIdx: index('asset_domain_status_idx').on(table.domainId, table.status),
+        assetDomainEntitlementScopeIdx: index('asset_domain_entitlement_scope_idx').on(table.domainId, table.entitlementScopeType, table.entitlementScopeRef),
         assetStorageKeyUniqueIdx: uniqueIndex('asset_storage_key_unique').on(table.storageKey),
     };
 });

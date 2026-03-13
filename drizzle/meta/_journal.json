@@ -169,6 +169,13 @@
       "when": 1773421200000,
       "tag": "0023_media_asset_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1773507600000,
+      "tag": "0024_asset_entitlement_scope",
+      "breakpoints": true
     }
   ]
 }

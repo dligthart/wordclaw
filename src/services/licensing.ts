@@ -2,6 +2,23 @@ import { db } from '../db/index.js';
 import { offers, entitlements, licensePolicies, accessEvents, agentProfiles } from '../db/schema.js';
 import { and, eq, gt, isNull, or, desc } from 'drizzle-orm';
 
+export type OfferReadScope =
+    | { scopeType: 'item'; scopeRef: number }
+    | { scopeType: 'type'; scopeRef: number }
+    | { scopeType: 'subscription'; scopeRef: null };
+
+function buildOfferReadScopeCondition(scope: OfferReadScope) {
+    if (scope.scopeType === 'item') {
+        return and(eq(offers.scopeType, 'item'), eq(offers.scopeRef, scope.scopeRef));
+    }
+
+    if (scope.scopeType === 'type') {
+        return and(eq(offers.scopeType, 'type'), eq(offers.scopeRef, scope.scopeRef));
+    }
+
+    return and(eq(offers.scopeType, 'subscription'), isNull(offers.scopeRef));
+}
+
 export class LicensingService {
     /**
      * Retrieves active offers for a given domain and optional scope.
@@ -16,6 +33,14 @@ export class LicensingService {
         if (scopeRef !== undefined) conditions.push(eq(offers.scopeRef, scopeRef));
 
         return await db.select().from(offers).where(and(...conditions));
+    }
+
+    static async getActiveOffersForReadScope(domainId: number, scope: OfferReadScope) {
+        return db.select().from(offers).where(and(
+            eq(offers.domainId, domainId),
+            eq(offers.active, true),
+            buildOfferReadScopeCondition(scope)
+        ));
     }
 
     /**
@@ -145,6 +170,26 @@ export class LicensingService {
                     and(eq(offers.scopeType, 'type'), eq(offers.scopeRef, contentTypeId)),
                     and(eq(offers.scopeType, 'subscription'), isNull(offers.scopeRef))
                 )
+            ));
+
+        return rows.map((row) => row.entitlement);
+    }
+
+    static async getEligibleEntitlementsForReadScope(
+        domainId: number,
+        agentProfileId: number,
+        scope: OfferReadScope
+    ) {
+        const rows = await db.select({
+            entitlement: entitlements
+        }).from(entitlements)
+            .innerJoin(offers, eq(entitlements.offerId, offers.id))
+            .where(and(
+                eq(entitlements.domainId, domainId),
+                eq(entitlements.agentProfileId, agentProfileId),
+                eq(entitlements.status, 'active'),
+                eq(offers.domainId, domainId),
+                buildOfferReadScopeCondition(scope)
             ));
 
         return rows.map((row) => row.entitlement);

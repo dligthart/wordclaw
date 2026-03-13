@@ -1,13 +1,18 @@
 import { and, desc, eq, ilike, lt, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { assets } from '../db/schema.js';
+import { assets, contentItems, contentTypes } from '../db/schema.js';
 import { logAudit } from './audit.js';
 import { getAssetStorageProvider } from './asset-storage.js';
 import type { AuditActor } from './actor-identity.js';
 
-export type AssetAccessMode = 'public' | 'signed';
+export type AssetAccessMode = 'public' | 'signed' | 'entitled';
 export type AssetStatus = 'active' | 'deleted';
+export type AssetEntitlementScopeType = 'item' | 'type' | 'subscription';
+export type AssetEntitlementScope = {
+    type: AssetEntitlementScopeType;
+    ref?: number | null;
+};
 
 export type CreateAssetInput = {
     domainId: number;
@@ -16,6 +21,7 @@ export type CreateAssetInput = {
     mimeType: string;
     contentBase64: string;
     accessMode?: AssetAccessMode;
+    entitlementScope?: AssetEntitlementScope;
     metadata?: Record<string, unknown>;
     actor?: AuditActor;
 };
@@ -53,6 +59,97 @@ export class AssetListError extends Error {
         this.code = code;
         this.remediation = remediation;
     }
+}
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+async function normalizeEntitlementScope(
+    domainId: number,
+    accessMode: AssetAccessMode,
+    entitlementScope?: AssetEntitlementScope
+): Promise<{ type: AssetEntitlementScopeType | null; ref: number | null }> {
+    if (accessMode !== 'entitled') {
+        if (entitlementScope) {
+            throw new AssetListError(
+                'Entitlement scope is only valid for entitled assets',
+                'ASSET_ENTITLEMENT_SCOPE_UNEXPECTED',
+                'Remove entitlementScope or switch accessMode to "entitled".'
+            );
+        }
+
+        return { type: null, ref: null };
+    }
+
+    if (!entitlementScope) {
+        throw new AssetListError(
+            'Entitlement scope is required for entitled assets',
+            'ASSET_ENTITLEMENT_SCOPE_REQUIRED',
+            'Provide entitlementScope with type "item", "type", or "subscription".'
+        );
+    }
+
+    if (entitlementScope.type === 'subscription') {
+        if (entitlementScope.ref !== undefined && entitlementScope.ref !== null) {
+            throw new AssetListError(
+                'Subscription-scoped entitled assets cannot include a reference ID',
+                'ASSET_ENTITLEMENT_SCOPE_INVALID',
+                'Omit entitlementScope.ref when entitlementScope.type is "subscription".'
+            );
+        }
+
+        return { type: 'subscription', ref: null };
+    }
+
+    if (entitlementScope.type !== 'item' && entitlementScope.type !== 'type') {
+        throw new AssetListError(
+            'Invalid entitlement scope type',
+            'ASSET_ENTITLEMENT_SCOPE_INVALID',
+            'Use entitlementScope.type of "item", "type", or "subscription".'
+        );
+    }
+
+    if (!isPositiveInteger(entitlementScope.ref)) {
+        throw new AssetListError(
+            'Entitlement scope reference must be a positive integer',
+            'ASSET_ENTITLEMENT_SCOPE_INVALID',
+            `Provide entitlementScope.ref as a positive integer when entitlementScope.type is "${entitlementScope.type}".`
+        );
+    }
+
+    if (entitlementScope.type === 'item') {
+        const [item] = await db.select({ id: contentItems.id }).from(contentItems).where(and(
+            eq(contentItems.id, entitlementScope.ref),
+            eq(contentItems.domainId, domainId)
+        ));
+
+        if (!item) {
+            throw new AssetListError(
+                'Entitlement content item not found',
+                'ASSET_ENTITLEMENT_SCOPE_TARGET_NOT_FOUND',
+                'Provide an entitlementScope.ref that points to a content item in the current domain.'
+            );
+        }
+    } else {
+        const [contentType] = await db.select({ id: contentTypes.id }).from(contentTypes).where(and(
+            eq(contentTypes.id, entitlementScope.ref),
+            eq(contentTypes.domainId, domainId)
+        ));
+
+        if (!contentType) {
+            throw new AssetListError(
+                'Entitlement content type not found',
+                'ASSET_ENTITLEMENT_SCOPE_TARGET_NOT_FOUND',
+                'Provide an entitlementScope.ref that points to a content type in the current domain.'
+            );
+        }
+    }
+
+    return {
+        type: entitlementScope.type,
+        ref: entitlementScope.ref
+    };
 }
 
 function normalizeBase64(raw: string): string {
@@ -111,6 +208,8 @@ export function decodeAssetsCursor(cursor: string): AssetCursor | null {
 }
 
 export async function createAsset(input: CreateAssetInput) {
+    const accessMode = input.accessMode || 'public';
+    const entitlementScope = await normalizeEntitlementScope(input.domainId, accessMode, input.entitlementScope);
     const bytes = decodeAssetContentBase64(input.contentBase64);
     const storage = getAssetStorageProvider();
     const stored = await storage.put(input.domainId, input.filename, bytes);
@@ -125,7 +224,9 @@ export async function createAsset(input: CreateAssetInput) {
             byteHash: stored.byteHash,
             storageProvider: stored.provider,
             storageKey: stored.storageKey,
-            accessMode: input.accessMode || 'public',
+            accessMode,
+            entitlementScopeType: entitlementScope.type,
+            entitlementScopeRef: entitlementScope.ref,
             status: 'active',
             metadata: input.metadata || {},
             uploaderActorId: input.actor?.actorId ?? null,
@@ -142,7 +243,9 @@ export async function createAsset(input: CreateAssetInput) {
                 filename: created.filename,
                 mimeType: created.mimeType,
                 sizeBytes: created.sizeBytes,
-                accessMode: created.accessMode
+                accessMode: created.accessMode,
+                entitlementScopeType: created.entitlementScopeType,
+                entitlementScopeRef: created.entitlementScopeRef
             },
             input.actor
         );
@@ -255,6 +358,30 @@ export async function getPublicAsset(id: number) {
     ));
 
     return asset ?? null;
+}
+
+export function getAssetEntitlementScope(asset: {
+    accessMode: string;
+    entitlementScopeType: string | null;
+    entitlementScopeRef: number | null;
+}): AssetEntitlementScope | null {
+    if (asset.accessMode !== 'entitled' || !asset.entitlementScopeType) {
+        return null;
+    }
+
+    if (asset.entitlementScopeType === 'subscription') {
+        return { type: 'subscription', ref: null };
+    }
+
+    if ((asset.entitlementScopeType === 'item' || asset.entitlementScopeType === 'type')
+        && isPositiveInteger(asset.entitlementScopeRef)) {
+        return {
+            type: asset.entitlementScopeType,
+            ref: asset.entitlementScopeRef
+        };
+    }
+
+    return null;
 }
 
 export async function readAssetContent(storageKey: string) {

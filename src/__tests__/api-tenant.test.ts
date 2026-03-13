@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
-import { agentRunDefinitions, agentRuns, apiKeys, assets, domains, contentItems, contentTypes, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
+import { accessEvents, agentProfiles, agentRunDefinitions, agentRuns, apiKeys, assets, domains, contentItems, contentTypes, entitlements, licensePolicies, offers, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
 import { hashApiKey } from '../services/api-key.js';
+import { getAssetStorageProvider } from '../services/asset-storage.js';
 import { settleAgentRun } from '../test/agent-run-test-helpers.js';
 import crypto from 'crypto';
 
@@ -399,6 +400,149 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
             if (assetBackedTypeId) {
                 await db.delete(contentTypes).where(eq(contentTypes.id, assetBackedTypeId));
+            }
+        }
+    });
+
+    it('entitled asset content requires a domain-owned entitlement and consumes it on read', async () => {
+        let assetId: number | null = null;
+        let assetStorageKey: string | null = null;
+        let offerId: number | null = null;
+        let policyId: number | null = null;
+        let agentProfileId: number | null = null;
+        let entitlementId: number | null = null;
+
+        try {
+            const createAssetResponse = await fastify.inject({
+                method: 'POST',
+                url: '/api/assets',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    filename: 'premium-guide.pdf',
+                    mimeType: 'application/pdf',
+                    contentBase64: Buffer.from('premium asset bytes').toString('base64'),
+                    accessMode: 'entitled',
+                    entitlementScope: {
+                        type: 'subscription'
+                    }
+                }
+            });
+
+            expect(createAssetResponse.statusCode).toBe(201);
+            const createdAssetId = (JSON.parse(createAssetResponse.payload) as { data: { id: number } }).data.id;
+            assetId = createdAssetId;
+
+            const [asset] = await db.select().from(assets).where(eq(assets.id, createdAssetId));
+            expect(asset.accessMode).toBe('entitled');
+            assetStorageKey = asset.storageKey;
+
+            const [offer] = await db.insert(offers).values({
+                domainId: domain1Id,
+                slug: 'asset-sub-' + crypto.randomUUID().slice(0, 8),
+                name: 'Asset Subscription',
+                scopeType: 'subscription',
+                scopeRef: null,
+                priceSats: 125,
+                active: true
+            }).returning();
+            offerId = offer.id;
+
+            const [policy] = await db.insert(licensePolicies).values({
+                domainId: domain1Id,
+                offerId: offer.id,
+                version: 1,
+                maxReads: 2,
+                allowedChannels: ['rest']
+            }).returning();
+            policyId = policy.id;
+
+            const [profile] = await db.insert(agentProfiles).values({
+                domainId: domain1Id,
+                apiKeyId: Number(apiKey1Id),
+                displayName: 'Domain 1 reader'
+            }).returning();
+            agentProfileId = profile.id;
+
+            const offersResponse = await fastify.inject({
+                method: 'GET',
+                url: `/api/assets/${assetId}/offers`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+
+            expect(offersResponse.statusCode).toBe(200);
+            const offersPayload = JSON.parse(offersResponse.payload) as {
+                data: Array<{ id: number }>;
+            };
+            expect(offersPayload.data.some((candidate) => candidate.id === offer.id)).toBe(true);
+
+            const withoutEntitlement = await fastify.inject({
+                method: 'GET',
+                url: `/api/assets/${assetId}/content`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+
+            expect(withoutEntitlement.statusCode).toBe(402);
+            expect(JSON.parse(withoutEntitlement.payload).code).toBe('OFFER_REQUIRED');
+
+            const [entitlement] = await db.insert(entitlements).values({
+                domainId: domain1Id,
+                offerId: offer.id,
+                policyId: policy.id,
+                policyVersion: policy.version,
+                agentProfileId: profile.id,
+                paymentHash: 'asset-pay-' + crypto.randomUUID().slice(0, 12),
+                status: 'active',
+                remainingReads: 2,
+                activatedAt: new Date()
+            }).returning();
+            entitlementId = entitlement.id;
+
+            const wrongDomainRead = await fastify.inject({
+                method: 'GET',
+                url: `/api/assets/${assetId}/content`,
+                headers: {
+                    'x-api-key': rawKey2,
+                    'x-entitlement-id': String(entitlement.id)
+                }
+            });
+
+            expect(wrongDomainRead.statusCode).toBe(404);
+            expect(JSON.parse(wrongDomainRead.payload).code).toBe('ASSET_NOT_FOUND');
+
+            const entitledRead = await fastify.inject({
+                method: 'GET',
+                url: `/api/assets/${assetId}/content`,
+                headers: {
+                    'x-api-key': rawKey1,
+                    'x-entitlement-id': String(entitlement.id)
+                }
+            });
+
+            expect(entitledRead.statusCode).toBe(200);
+            expect(entitledRead.headers['x-wordclaw-access-mode']).toBe('entitled');
+            expect(entitledRead.body).toBe('premium asset bytes');
+
+            const [updatedEntitlement] = await db.select().from(entitlements).where(eq(entitlements.id, entitlement.id));
+            expect(updatedEntitlement.remainingReads).toBe(1);
+        } finally {
+            if (entitlementId) {
+                await db.delete(accessEvents).where(eq(accessEvents.entitlementId, entitlementId));
+                await db.delete(entitlements).where(eq(entitlements.id, entitlementId));
+            }
+            if (policyId) {
+                await db.delete(licensePolicies).where(eq(licensePolicies.id, policyId));
+            }
+            if (offerId) {
+                await db.delete(offers).where(eq(offers.id, offerId));
+            }
+            if (agentProfileId) {
+                await db.delete(agentProfiles).where(eq(agentProfiles.id, agentProfileId));
+            }
+            if (assetId) {
+                await db.delete(assets).where(eq(assets.id, assetId));
+            }
+            if (assetStorageKey) {
+                await getAssetStorageProvider().remove(assetStorageKey).catch(() => undefined);
             }
         }
     });

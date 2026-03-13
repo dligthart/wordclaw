@@ -39,6 +39,7 @@ import apiRoutes from './routes.js';
 import { WorkflowService } from '../services/workflow.js';
 import { AgentRunService } from '../services/agent-runs.js';
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
+import { LicensingService } from '../services/licensing.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import * as assetService from '../services/assets.js';
 
@@ -2296,6 +2297,8 @@ describe('API Route Contracts', () => {
             storageProvider: 'local',
             storageKey: '1/test-hero.png',
             accessMode: 'public',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
             status: 'active',
             metadata: { width: 1200 },
             uploaderActorId: 'anonymous',
@@ -2326,6 +2329,8 @@ describe('API Route Contracts', () => {
                     delivery: {
                         contentPath: string;
                         requiresAuth: boolean;
+                        requiresEntitlement: boolean;
+                        offersPath: string | null;
                     };
                 };
             };
@@ -2334,7 +2339,9 @@ describe('API Route Contracts', () => {
                 id: 18,
                 delivery: {
                     contentPath: '/api/assets/18/content',
-                    requiresAuth: false
+                    requiresAuth: false,
+                    requiresEntitlement: false,
+                    offersPath: null
                 }
             });
             expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({
@@ -2363,6 +2370,8 @@ describe('API Route Contracts', () => {
                 storageProvider: 'local',
                 storageKey: '1/spec.pdf',
                 accessMode: 'signed',
+                entitlementScopeType: null,
+                entitlementScopeRef: null,
                 status: 'active',
                 metadata: {},
                 uploaderActorId: 'api_key:2',
@@ -2394,7 +2403,8 @@ describe('API Route Contracts', () => {
             expect(body.data[0]).toMatchObject({
                 id: 32,
                 delivery: {
-                    requiresAuth: true
+                    requiresAuth: true,
+                    requiresEntitlement: false
                 }
             });
             expect(body.meta).toMatchObject({
@@ -2431,6 +2441,8 @@ describe('API Route Contracts', () => {
             storageProvider: 'local',
             storageKey: '1/cover.jpg',
             accessMode: 'public',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
             status: 'active',
             metadata: {},
             uploaderActorId: null,
@@ -2455,6 +2467,68 @@ describe('API Route Contracts', () => {
         } finally {
             publicSpy.mockRestore();
             contentSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('lists offers for an entitled asset', async () => {
+        const app = await buildServer();
+        const getAssetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
+            id: 77,
+            domainId: 1,
+            filename: 'premium.pdf',
+            originalFilename: 'premium.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 512,
+            byteHash: 'hash-77',
+            storageProvider: 'local',
+            storageKey: '1/premium.pdf',
+            accessMode: 'entitled',
+            entitlementScopeType: 'subscription',
+            entitlementScopeRef: null,
+            status: 'active',
+            metadata: {},
+            uploaderActorId: 'api_key:1',
+            uploaderActorType: 'api_key',
+            uploaderActorSource: 'db',
+            createdAt: new Date('2026-03-13T12:00:00.000Z'),
+            updatedAt: new Date('2026-03-13T12:00:00.000Z'),
+            deletedAt: null
+        });
+        const offersSpy = vi.spyOn(LicensingService, 'getActiveOffersForReadScope').mockResolvedValue([
+            {
+                id: 9,
+                domainId: 1,
+                slug: 'premium-subscription',
+                name: 'Premium Subscription',
+                scopeType: 'subscription',
+                scopeRef: null,
+                priceSats: 250,
+                active: true
+            }
+        ] as any);
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/assets/77/offers'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as { data: Array<{ id: number; scopeType: string }> };
+            expect(body.data).toEqual([
+                expect.objectContaining({
+                    id: 9,
+                    scopeType: 'subscription'
+                })
+            ]);
+            expect(offersSpy).toHaveBeenCalledWith(1, {
+                scopeType: 'subscription',
+                scopeRef: null
+            });
+        } finally {
+            offersSpy.mockRestore();
+            getAssetSpy.mockRestore();
             await app.close();
         }
     });
@@ -2494,6 +2568,8 @@ describe('API Route Contracts', () => {
             storageProvider: 'local',
             storageKey: '1/diagram.svg',
             accessMode: 'signed',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
             status: 'deleted',
             metadata: {},
             uploaderActorId: 'api_key:9',

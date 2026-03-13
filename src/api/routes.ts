@@ -21,7 +21,7 @@ import { createL402Challenge, l402Middleware } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService, EmbeddingServiceError } from '../services/embedding.js';
-import { LicensingService } from '../services/licensing.js';
+import { LicensingService, type OfferReadScope } from '../services/licensing.js';
 import { transitionPaymentStatus } from '../services/payment-ledger.js';
 import { paymentFlowMetrics } from '../services/payment-metrics.js';
 import { parsePaymentWebhookEvent, verifyPaymentWebhookSignature } from '../services/payment-webhook.js';
@@ -32,8 +32,10 @@ import { agentRunWorker } from '../workers/agent-run.worker.js';
 import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import {
     AssetListError,
+    type AssetEntitlementScope,
     createAsset,
     getAsset,
+    getAssetEntitlementScope,
     getPublicAsset,
     listAssets,
     readAssetContent,
@@ -70,7 +72,7 @@ type ContentItemsQuery = {
 };
 type AssetsQuery = {
     q?: string;
-    accessMode?: 'public' | 'signed';
+    accessMode?: 'public' | 'signed' | 'entitled';
     status?: 'active' | 'deleted';
     limit?: number;
     offset?: number;
@@ -81,7 +83,11 @@ type CreateAssetBody = {
     originalFilename?: string;
     mimeType: string;
     contentBase64: string;
-    accessMode?: 'public' | 'signed';
+    accessMode?: 'public' | 'signed' | 'entitled';
+    entitlementScope?: {
+        type: 'item' | 'type' | 'subscription';
+        ref?: number;
+    };
     metadata?: Record<string, unknown>;
 };
 type PaginationQuery = {
@@ -228,6 +234,28 @@ function offerScopeRank(scopeType: string): number {
     if (scopeType === 'type') return 1;
     if (scopeType === 'subscription') return 2;
     return 99;
+}
+
+function toOfferReadScope(entitlementScope: AssetEntitlementScope | null): OfferReadScope | null {
+    if (!entitlementScope) {
+        return null;
+    }
+
+    if (entitlementScope.type === 'subscription') {
+        return {
+            scopeType: 'subscription',
+            scopeRef: null
+        };
+    }
+
+    if (typeof entitlementScope.ref !== 'number') {
+        return null;
+    }
+
+    return {
+        scopeType: entitlementScope.type,
+        scopeRef: entitlementScope.ref
+    };
 }
 
 function fromValidationFailure(failure: ValidationFailure): AIErrorPayload {
@@ -509,6 +537,17 @@ const AssetResponseSchema = Type.Object({
     byteHash: Type.Union([Type.String(), Type.Null()]),
     storageProvider: Type.String(),
     accessMode: Type.String(),
+    entitlementScope: Type.Union([
+        Type.Object({
+            type: Type.Union([
+                Type.Literal('item'),
+                Type.Literal('type'),
+                Type.Literal('subscription')
+            ]),
+            ref: Type.Union([Type.Number(), Type.Null()])
+        }),
+        Type.Null()
+    ]),
     status: Type.String(),
     metadata: Type.Object({}, { additionalProperties: true }),
     uploaderActorId: Type.Union([Type.String(), Type.Null()]),
@@ -519,8 +558,21 @@ const AssetResponseSchema = Type.Object({
     deletedAt: Type.Union([Type.String(), Type.Null()]),
     delivery: Type.Object({
         contentPath: Type.String(),
-        requiresAuth: Type.Boolean()
+        requiresAuth: Type.Boolean(),
+        requiresEntitlement: Type.Boolean(),
+        offersPath: Type.Union([Type.String(), Type.Null()])
     })
+});
+
+const OfferResponseSchema = Type.Object({
+    id: Type.Number(),
+    domainId: Type.Number(),
+    slug: Type.String(),
+    name: Type.String(),
+    scopeType: Type.String(),
+    scopeRef: Type.Union([Type.Number(), Type.Null()]),
+    priceSats: Type.Number(),
+    active: Type.Boolean()
 });
 
 function serializeAsset(asset: {
@@ -532,6 +584,8 @@ function serializeAsset(asset: {
     byteHash: string | null;
     storageProvider: string;
     accessMode: string;
+    entitlementScopeType: string | null;
+    entitlementScopeRef: number | null;
     status: string;
     metadata: unknown;
     uploaderActorId: string | null;
@@ -550,6 +604,7 @@ function serializeAsset(asset: {
         byteHash: asset.byteHash ?? null,
         storageProvider: asset.storageProvider,
         accessMode: asset.accessMode,
+        entitlementScope: getAssetEntitlementScope(asset),
         status: asset.status,
         metadata: asset.metadata && typeof asset.metadata === 'object' ? asset.metadata as Record<string, unknown> : {},
         uploaderActorId: asset.uploaderActorId ?? null,
@@ -560,7 +615,9 @@ function serializeAsset(asset: {
         deletedAt: asset.deletedAt ? asset.deletedAt.toISOString() : null,
         delivery: {
             contentPath: `/api/assets/${asset.id}/content`,
-            requiresAuth: asset.accessMode !== 'public'
+            requiresAuth: asset.accessMode !== 'public',
+            requiresEntitlement: asset.accessMode === 'entitled',
+            offersPath: asset.accessMode === 'entitled' ? `/api/assets/${asset.id}/offers` : null
         }
     };
 }
@@ -2499,8 +2556,17 @@ export default async function apiRoutes(server: FastifyInstance) {
                 contentBase64: Type.String({ minLength: 1 }),
                 accessMode: Type.Optional(Type.Union([
                     Type.Literal('public'),
-                    Type.Literal('signed')
+                    Type.Literal('signed'),
+                    Type.Literal('entitled')
                 ])),
+                entitlementScope: Type.Optional(Type.Object({
+                    type: Type.Union([
+                        Type.Literal('item'),
+                        Type.Literal('type'),
+                        Type.Literal('subscription')
+                    ]),
+                    ref: Type.Optional(Type.Number({ minimum: 1 }))
+                })),
                 metadata: Type.Optional(Type.Object({}, { additionalProperties: true }))
             }),
             response: {
@@ -2520,6 +2586,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 mimeType: body.mimeType,
                 contentBase64: body.contentBase64,
                 accessMode: body.accessMode,
+                entitlementScope: body.entitlementScope,
                 metadata: body.metadata,
                 actor: toAuditActorFromRequest(request as RequestActorCarrier)
             });
@@ -2547,7 +2614,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                 q: Type.Optional(Type.String()),
                 accessMode: Type.Optional(Type.Union([
                     Type.Literal('public'),
-                    Type.Literal('signed')
+                    Type.Literal('signed'),
+                    Type.Literal('entitled')
                 ])),
                 status: Type.Optional(Type.Union([
                     Type.Literal('active'),
@@ -2631,15 +2699,73 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
+    server.get('/assets/:id/offers', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Array(OfferResponseSchema)),
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const domainId = getDomainId(request);
+        const asset = await getAsset(id, domainId);
+
+        if (!asset) {
+            return reply.status(404).send(notFoundAsset(id));
+        }
+
+        if (asset.accessMode !== 'entitled') {
+            return {
+                data: [],
+                meta: buildMeta(
+                    'This asset does not require an entitlement',
+                    ['GET /api/assets/:id/content'],
+                    'low',
+                    0
+                )
+            };
+        }
+
+        const entitlementScope = toOfferReadScope(getAssetEntitlementScope(asset));
+        if (!entitlementScope) {
+            return reply.status(409).send(toErrorPayload(
+                'Asset entitlement scope unavailable',
+                'ASSET_ENTITLEMENT_UNAVAILABLE',
+                'Configure a valid entitlementScope on the asset before offering paid access.'
+            ));
+        }
+
+        const availableOffers = await LicensingService.getActiveOffersForReadScope(domainId, entitlementScope);
+        availableOffers.sort((left, right) => offerScopeRank(left.scopeType) - offerScopeRank(right.scopeType));
+
+        return {
+            data: availableOffers,
+            meta: buildMeta(
+                availableOffers.length > 0 ? 'Purchase an offer' : 'No offers currently available',
+                ['POST /api/offers/:id/purchase'],
+                'low',
+                0
+            )
+        };
+    });
+
     server.get('/assets/:id/content', {
         schema: {
             params: Type.Object({
                 id: Type.Number()
             }),
             response: {
+                400: AIErrorResponse,
                 401: AIErrorResponse,
+                402: AIErrorResponse,
                 403: AIErrorResponse,
-                404: AIErrorResponse
+                404: AIErrorResponse,
+                409: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -2653,9 +2779,146 @@ export default async function apiRoutes(server: FastifyInstance) {
                 return reply.status(statusCode).send(auth.payload);
             }
 
+            (request as RequestActorCarrier).authPrincipal = auth.principal;
             asset = await getAsset(id, auth.principal.domainId);
             if (!asset) {
                 return reply.status(404).send(notFoundAsset(id));
+            }
+
+            if (asset.accessMode === 'entitled') {
+                const domainId = auth.principal.domainId;
+                const entitlementScope = toOfferReadScope(getAssetEntitlementScope(asset));
+                if (!entitlementScope) {
+                    return reply.status(409).send(toErrorPayload(
+                        'Asset entitlement scope unavailable',
+                        'ASSET_ENTITLEMENT_UNAVAILABLE',
+                        'Configure a valid entitlementScope on the asset before requesting entitlement-backed delivery.'
+                    ));
+                }
+
+                const matchingOffers = await LicensingService.getActiveOffersForReadScope(domainId, entitlementScope);
+                if (matchingOffers.length === 0) {
+                    return reply.status(409).send(toErrorPayload(
+                        'Asset entitlement offers unavailable',
+                        'ASSET_ENTITLEMENT_UNAVAILABLE',
+                        `No active offers are configured for this asset. Configure an offer or switch access mode before retrying GET /api/assets/${id}/content.`
+                    ));
+                }
+
+                const principalApiKeyId = resolveApiKeyId(auth.principal);
+                if (principalApiKeyId === undefined) {
+                    return reply.status(402).send(toErrorPayload(
+                        'Offer purchase required',
+                        'OFFER_REQUIRED',
+                        `This asset is licensed by offer. Discover offers with GET /api/assets/${id}/offers and complete POST /api/offers/:id/purchase with an API key principal.`
+                    ));
+                }
+
+                const [profile] = await db.select().from(agentProfiles).where(and(
+                    eq(agentProfiles.apiKeyId, principalApiKeyId),
+                    eq(agentProfiles.domainId, domainId)
+                ));
+
+                if (!profile) {
+                    return reply.status(402).send(toErrorPayload(
+                        'Offer purchase required',
+                        'OFFER_REQUIRED',
+                        `You do not have an entitlement for this asset. Discover offers with GET /api/assets/${id}/offers and purchase one first.`
+                    ));
+                }
+
+                const entitlementHeader = readSingleHeaderValue(request.headers['x-entitlement-id']);
+                const requestedEntitlementId = entitlementHeader ? parsePositiveIntHeader(entitlementHeader) : null;
+                if (entitlementHeader && !requestedEntitlementId) {
+                    return reply.status(400).send(toErrorPayload(
+                        'Invalid entitlement header',
+                        'INVALID_ENTITLEMENT_ID',
+                        'Provide x-entitlement-id as a positive integer.'
+                    ));
+                }
+
+                const eligibleEntitlements = await LicensingService.getEligibleEntitlementsForReadScope(
+                    domainId,
+                    profile.id,
+                    entitlementScope
+                );
+
+                let selectedEntitlement = null as typeof eligibleEntitlements[number] | null;
+                if (requestedEntitlementId) {
+                    selectedEntitlement = eligibleEntitlements.find((entry) => entry.id === requestedEntitlementId) ?? null;
+                    if (!selectedEntitlement) {
+                        const existing = await LicensingService.getEntitlementForAgentById(domainId, profile.id, requestedEntitlementId);
+                        if (!existing) {
+                            return reply.status(404).send(toErrorPayload(
+                                'Entitlement not found',
+                                'ENTITLEMENT_NOT_FOUND',
+                                'Provide a valid entitlement ID owned by this API key and domain.'
+                            ));
+                        }
+                        return reply.status(403).send(toErrorPayload(
+                            'Entitlement not active',
+                            'ENTITLEMENT_NOT_ACTIVE',
+                            'Use an active entitlement or purchase a new offer.'
+                        ));
+                    }
+                } else {
+                    if (eligibleEntitlements.length === 0) {
+                        return reply.status(402).send(toErrorPayload(
+                            'Offer purchase required',
+                            'OFFER_REQUIRED',
+                            `No eligible entitlement was found. Purchase an offer via POST /api/offers/:id/purchase.`
+                        ));
+                    }
+
+                    if (eligibleEntitlements.length > 1) {
+                        return reply.status(409).send({
+                            ...toErrorPayload(
+                                'Multiple entitlements eligible',
+                                'ENTITLEMENT_AMBIGUOUS',
+                                'Retry with x-entitlement-id set to the entitlement you want to consume.'
+                            ),
+                            context: {
+                                candidateEntitlementIds: eligibleEntitlements.map((entry) => entry.id)
+                            }
+                        });
+                    }
+
+                    selectedEntitlement = eligibleEntitlements[0];
+                }
+
+                const consumeResult = await LicensingService.atomicallyDecrementRead(domainId, selectedEntitlement.id);
+                await LicensingService.recordAccessEvent(
+                    domainId,
+                    selectedEntitlement.id,
+                    request.url.split('?')[0],
+                    `${request.method.toUpperCase()} /api/assets/:id/content`,
+                    consumeResult.granted,
+                    consumeResult.reason
+                );
+
+                if (!consumeResult.granted) {
+                    if (consumeResult.reason === 'entitlement_expired') {
+                        return reply.status(403).send(toErrorPayload(
+                            'Entitlement expired',
+                            'ENTITLEMENT_EXPIRED',
+                            'Purchase a new offer or use another active entitlement.'
+                        ));
+                    }
+
+                    if (consumeResult.reason === 'remaining_reads_exhausted' || consumeResult.reason === 'race_condition_exhaustion') {
+                        return reply.status(403).send(toErrorPayload(
+                            'Entitlement exhausted',
+                            'ENTITLEMENT_EXHAUSTED',
+                            'Purchase a new offer or use another entitlement with remaining reads.'
+                        ));
+                    }
+
+                    return reply.status(403).send(toErrorPayload(
+                        'Entitlement not active',
+                        'ENTITLEMENT_NOT_ACTIVE',
+                        'Use an active entitlement or purchase a new offer.'
+                    ));
+                }
             }
         }
 
