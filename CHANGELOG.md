@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/dligthart/wordclaw/compare/v1.12.0...v1.13.0) (2026-03-13)
+
+
+### Features
+
+* **assets:** add asset storage and schema references ([f585a37](https://github.com/dligthart/wordclaw/commit/f585a37e2a244b22ce26aae6eb4ab6a88e2a76e4))
+
 # [1.12.0](https://github.com/dligthart/wordclaw/compare/v1.11.0...v1.12.0) (2026-03-13)
 
 
