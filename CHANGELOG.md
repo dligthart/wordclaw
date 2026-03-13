@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/dligthart/wordclaw/compare/v1.11.0...v1.12.0) (2026-03-13)
+
+
+### Features
+
+* **mcp:** add reactive follow-up discovery ([60d4adb](https://github.com/dligthart/wordclaw/commit/60d4adbfd1aa5c0e05031f61efe9ac9405dc62a3))
+
 # [1.11.0](https://github.com/dligthart/wordclaw/compare/v1.10.0...v1.11.0) (2026-03-13)
 
 
