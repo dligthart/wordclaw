@@ -149,7 +149,7 @@ describe('WordClawMcpClient over HTTP', () => {
                                 requiredScopes: ['admin'],
                             }),
                         ]),
-                        supportedFilterFields: expect.arrayContaining(['contentTypeId', 'entityId']),
+                        supportedFilterFields: expect.arrayContaining(['contentTypeId', 'entityId', 'actorType']),
                     }),
                 }),
             }),

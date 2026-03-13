@@ -608,6 +608,221 @@ describe('MCP HTTP transport', () => {
         }));
     });
 
+    it('returns actor-aware reactive recommendations in task guidance payloads', async () => {
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-reactive-guidance-test',
+            version: '1.0.0'
+        });
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'remote-admin'
+                }
+            }
+        });
+
+        await client.connect(transport);
+
+        const createTypeResponse = await fetch(new URL('/api/content-types', `${baseUrl}/`), {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'x-api-key': 'remote-admin'
+            },
+            body: JSON.stringify({
+                name: 'Reactive Guidance Article',
+                slug: `reactive-guidance-article-${Date.now()}`,
+                schema: {
+                    type: 'object',
+                    properties: {
+                        title: { type: 'string' }
+                    },
+                    required: ['title']
+                }
+            })
+        });
+        expect(createTypeResponse.status).toBe(201);
+        const createTypePayload = await createTypeResponse.json() as {
+            data: { id: number };
+        };
+
+        const authorGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'author-content',
+                contentTypeId: createTypePayload.data.id,
+            }
+        });
+        const integrationGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'manage-integrations',
+            }
+        });
+        const entityProvenanceGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'verify-provenance',
+                entityType: 'content_item',
+                entityId: 123,
+                action: 'update',
+            }
+        });
+        const actorProvenanceGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'verify-provenance',
+                actorId: 'env_key:remote-admin',
+                actorType: 'env_key',
+            }
+        });
+
+        const authorGuideJson = JSON.parse(
+            extractFirstText(authorGuide.content as Array<{ type: string; text?: string }>),
+        );
+        const integrationGuideJson = JSON.parse(
+            extractFirstText(integrationGuide.content as Array<{ type: string; text?: string }>),
+        );
+        const entityProvenanceGuideJson = JSON.parse(
+            extractFirstText(entityProvenanceGuide.content as Array<{ type: string; text?: string }>),
+        );
+        const actorProvenanceGuideJson = JSON.parse(
+            extractFirstText(actorProvenanceGuide.content as Array<{ type: string; text?: string }>),
+        );
+
+        expect(authorGuideJson).toEqual(expect.objectContaining({
+            taskId: 'author-content',
+            reactiveRecommendation: expect.objectContaining({
+                available: true,
+                recipeId: 'content-lifecycle',
+                filters: {
+                    contentTypeId: createTypePayload.data.id,
+                },
+                subscribe: {
+                    tool: 'subscribe_events',
+                    arguments: {
+                        recipeId: 'content-lifecycle',
+                        filters: {
+                            contentTypeId: createTypePayload.data.id,
+                        },
+                    },
+                },
+            }),
+        }));
+        expect(authorGuideJson.reactiveRecommendation.resolvedTopics).toEqual(
+            expect.arrayContaining(['content_item.create', 'content_item.update', 'content_item.published']),
+        );
+
+        expect(integrationGuideJson).toEqual(expect.objectContaining({
+            taskId: 'manage-integrations',
+            reactiveRecommendation: expect.objectContaining({
+                available: true,
+                recipeId: 'integration-admin',
+                subscribe: {
+                    tool: 'subscribe_events',
+                    arguments: {
+                        recipeId: 'integration-admin',
+                    },
+                },
+            }),
+        }));
+
+        expect(entityProvenanceGuideJson).toEqual(expect.objectContaining({
+            taskId: 'verify-provenance',
+            reactiveRecommendation: expect.objectContaining({
+                available: true,
+                recipeId: 'content-lifecycle',
+                filters: {
+                    entityId: 123,
+                    action: 'update',
+                },
+                subscribe: {
+                    tool: 'subscribe_events',
+                    arguments: {
+                        recipeId: 'content-lifecycle',
+                        filters: {
+                            entityId: 123,
+                            action: 'update',
+                        },
+                    },
+                },
+            }),
+        }));
+
+        expect(actorProvenanceGuideJson).toEqual(expect.objectContaining({
+            taskId: 'verify-provenance',
+            reactiveRecommendation: expect.objectContaining({
+                available: true,
+                recipeId: null,
+                resolvedTopics: ['audit.*'],
+                blockedTopics: [],
+                filters: {
+                    actorId: 'env_key:remote-admin',
+                    actorType: 'env_key',
+                },
+                subscribe: {
+                    tool: 'subscribe_events',
+                    arguments: {
+                        topics: ['audit.*'],
+                        filters: {
+                            actorId: 'env_key:remote-admin',
+                            actorType: 'env_key',
+                        },
+                    },
+                },
+            }),
+        }));
+    });
+
+    it('suppresses blocked reactive recommendations for actors without the required scopes', async () => {
+        process.env.API_KEYS = 'reviewer=content:write';
+
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-reactive-guidance-blocked-test',
+            version: '1.0.0'
+        });
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'reviewer'
+                }
+            }
+        });
+
+        await client.connect(transport);
+
+        const guide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'manage-integrations',
+            }
+        });
+        const guideJson = JSON.parse(
+            extractFirstText(guide.content as Array<{ type: string; text?: string }>),
+        );
+
+        expect(guideJson).toEqual(expect.objectContaining({
+            taskId: 'manage-integrations',
+            reactiveRecommendation: expect.objectContaining({
+                available: false,
+                recipeId: 'integration-admin',
+                subscribe: null,
+                reason: 'Current actor is missing the scopes required for the recommended reactive subscription.',
+            }),
+        }));
+        expect(guideJson.reactiveRecommendation.blockedTopics).toEqual(
+            expect.arrayContaining(['api_key.create', 'webhook.create']),
+        );
+    });
+
     it('streams subscribed content publication events over the MCP SSE session', async () => {
         app = await buildServer();
         const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });

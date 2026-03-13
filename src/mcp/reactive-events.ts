@@ -53,6 +53,7 @@ export const SUPPORTED_REACTIVE_FILTER_FIELDS = [
     'status',
     'decision',
     'actorId',
+    'actorType',
     'workflowTransitionId',
     'reviewTaskId',
 ] as const;
@@ -120,6 +121,7 @@ export const ReactiveEventFiltersSchema = z.object({
     status: z.string().optional(),
     decision: z.string().optional(),
     actorId: z.string().optional(),
+    actorType: z.string().optional(),
     workflowTransitionId: z.number().int().positive().optional(),
     reviewTaskId: z.number().int().positive().optional(),
 });
@@ -328,6 +330,10 @@ export function matchesReactiveSubscription(
     }
 
     if (filters.actorId && event.actorId !== filters.actorId) {
+        return false;
+    }
+
+    if (filters.actorType && event.actorType !== filters.actorType) {
         return false;
     }
 

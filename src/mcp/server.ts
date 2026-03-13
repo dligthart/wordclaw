@@ -29,6 +29,7 @@ import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import {
+    canSubscribeToReactiveTopic,
     getReactiveSubscriptionRecipe,
     REACTIVE_SUBSCRIPTION_RECIPE_IDS,
     ReactiveEventFiltersSchema,
@@ -67,6 +68,128 @@ const GUIDE_TASK_IDS = [
 ] as const;
 
 type GuideTaskId = typeof GUIDE_TASK_IDS[number];
+
+type ReactiveTaskRecommendation = {
+    available: boolean;
+    reason: string;
+    recipeId: string | null;
+    resolvedTopics: string[];
+    blockedTopics: string[];
+    filters: Record<string, unknown>;
+    subscribe: {
+        tool: 'subscribe_events';
+        arguments: Record<string, unknown>;
+    } | null;
+};
+
+function normalizeReactiveGuideFilters(filters: Record<string, unknown>) {
+    return Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => value !== undefined),
+    );
+}
+
+function buildReactiveTaskRecommendation(
+    principal: ActorPrincipal,
+    options: {
+        taskId: GuideTaskId;
+        contentTypeId?: number;
+        reviewTaskId?: number;
+        actorId?: string;
+        actorType?: string;
+        entityType?: string;
+        entityId?: number;
+        action?: string;
+    },
+): ReactiveTaskRecommendation | null {
+    let recipeId: string | null = null;
+    let explicitTopics: string[] = [];
+    let reason = '';
+    let filters: Record<string, unknown> = {};
+
+    if (options.taskId === 'author-content') {
+        if (options.contentTypeId === undefined) {
+            return null;
+        }
+
+        recipeId = 'content-lifecycle';
+        reason = 'Watch lifecycle changes for the schema you are actively authoring into.';
+        filters = {
+            contentTypeId: options.contentTypeId,
+        };
+    } else if (options.taskId === 'review-workflow') {
+        recipeId = 'review-decisions';
+        reason = 'Watch approval and rejection events while supervising the review queue.';
+        filters = {
+            reviewTaskId: options.reviewTaskId,
+        };
+    } else if (options.taskId === 'manage-integrations') {
+        recipeId = 'integration-admin';
+        reason = 'Watch API key and webhook mutations while managing external integration surfaces.';
+    } else if (options.taskId === 'verify-provenance') {
+        if (options.entityType === 'content_item') {
+            recipeId = 'content-lifecycle';
+            reason = 'Watch subsequent lifecycle changes for the target content item or its schema.';
+            filters = {
+                entityId: options.entityId,
+                action: options.action,
+            };
+        } else if (options.entityType === 'content_type') {
+            recipeId = 'schema-governance';
+            reason = 'Watch future schema mutations for the targeted content model.';
+            filters = {
+                entityId: options.entityId,
+                action: options.action,
+            };
+        } else if (options.entityType === 'api_key' || options.entityType === 'webhook') {
+            recipeId = 'integration-admin';
+            reason = 'Watch future integration changes for the targeted admin entity.';
+            filters = {
+                entityType: options.entityType,
+                entityId: options.entityId,
+                action: options.action,
+            };
+        } else {
+            explicitTopics = ['audit.*'];
+            reason = 'Use the filtered audit stream when provenance depends on actor filters or mixed entity types.';
+            filters = {
+                actorId: options.actorId,
+                actorType: options.actorType,
+                entityType: options.entityType,
+                entityId: options.entityId,
+                action: options.action,
+            };
+        }
+    } else {
+        return null;
+    }
+
+    const recipe = recipeId ? getReactiveSubscriptionRecipe(recipeId) : null;
+    const normalizedFilters = normalizeReactiveGuideFilters(filters);
+    const resolvedTopics = recipe ? [...recipe.topics] : explicitTopics;
+    const allowedTopics = resolvedTopics.filter((topic) => canSubscribeToReactiveTopic(principal, topic));
+    const blockedTopics = resolvedTopics.filter((topic) => !canSubscribeToReactiveTopic(principal, topic));
+    const available = allowedTopics.length > 0;
+
+    return {
+        available,
+        reason: available
+            ? reason
+            : 'Current actor is missing the scopes required for the recommended reactive subscription.',
+        recipeId,
+        resolvedTopics,
+        blockedTopics,
+        filters: normalizedFilters,
+        subscribe: available
+            ? {
+                tool: 'subscribe_events',
+                arguments: {
+                    ...(recipeId ? { recipeId } : { topics: allowedTopics }),
+                    ...(Object.keys(normalizedFilters).length > 0 ? { filters: normalizedFilters } : {}),
+                },
+            }
+            : null,
+    };
+}
 
 function resolveMcpPrincipal(extra?: McpRequestExtra): ActorPrincipal {
     const principal = extra?.authInfo?.extra?.wordclawPrincipal;
@@ -2457,6 +2580,10 @@ server.tool(
 
             return okJson({
                 ...basePayload,
+                reactiveRecommendation: buildReactiveTaskRecommendation(principal, {
+                    taskId,
+                    contentTypeId,
+                }),
                 guide,
             });
         }
@@ -2483,6 +2610,10 @@ server.tool(
 
             return okJson({
                 ...basePayload,
+                reactiveRecommendation: buildReactiveTaskRecommendation(principal, {
+                    taskId,
+                    reviewTaskId,
+                }),
                 guide,
             });
         }
@@ -2510,6 +2641,9 @@ server.tool(
 
             return okJson({
                 ...basePayload,
+                reactiveRecommendation: buildReactiveTaskRecommendation(principal, {
+                    taskId,
+                }),
                 guide,
             });
         }
@@ -2578,6 +2712,14 @@ server.tool(
 
             return okJson({
                 ...basePayload,
+                reactiveRecommendation: buildReactiveTaskRecommendation(principal, {
+                    taskId,
+                    actorId,
+                    actorType,
+                    entityType,
+                    entityId,
+                    action,
+                }),
                 guide,
             });
         }

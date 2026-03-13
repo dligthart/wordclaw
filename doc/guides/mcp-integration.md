@@ -77,6 +77,13 @@ node dist/cli/index.js mcp call guide_task '{"taskId":"verify-provenance","entit
   --api-key writer
 ```
 
+For `author-content`, `review-workflow`, `manage-integrations`, and `verify-provenance`, `guide_task` now returns a `reactiveRecommendation` block when MCP reactivity can help the current actor stay in sync with runtime changes. That payload is intentionally runnable:
+
+- `recipeId` points to the preferred reactive subscription recipe when one exists
+- `filters` narrows the runtime stream to the current schema, review task, actor, or entity
+- `subscribe` contains the exact `subscribe_events` arguments the agent can send next
+- `available=false` and `subscribe=null` mean the current actor is missing the scopes required for the recommended stream
+
 ## Starting the Local MCP Server
 
 ```bash
@@ -314,6 +321,13 @@ Current task ids exposed through `guide_task`:
 - `manage-integrations`
 - `verify-provenance` with optional `actorId`, `actorType`, `entityType`, `entityId`, `action`, and `limit`
 - `consume-paid-content` with `contentItemId` and optional `offerId`
+
+Reactive guidance today is attached to these `guide_task` flows:
+
+- `author-content` recommends the `content-lifecycle` recipe scoped by `contentTypeId`
+- `review-workflow` recommends the `review-decisions` recipe and narrows to `reviewTaskId` when provided
+- `manage-integrations` recommends the `integration-admin` recipe for API key and webhook changes
+- `verify-provenance` recommends either a scoped recipe (`content-lifecycle`, `schema-governance`, `integration-admin`) or a filtered `audit.*` subscription for actor-centric provenance checks
 
 ## Response Format
 

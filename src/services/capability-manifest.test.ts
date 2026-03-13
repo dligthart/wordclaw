@@ -93,7 +93,7 @@ describe('buildCapabilityManifest', () => {
             ]),
         );
         expect(manifest.protocolSurfaces.mcp.reactive.supportedFilterFields).toEqual(
-            expect.arrayContaining(['contentTypeId', 'entityId', 'status', 'decision']),
+            expect.arrayContaining(['contentTypeId', 'entityId', 'status', 'decision', 'actorType']),
         );
         expect(manifest.auth.mcp.endpoint).toBe('/mcp');
         expect(manifest.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
