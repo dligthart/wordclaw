@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
-import { agentRunDefinitions, agentRuns, apiKeys, domains, contentItems, contentTypes, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
+import { agentRunDefinitions, agentRuns, apiKeys, assets, domains, contentItems, contentTypes, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
@@ -318,6 +318,87 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
             if (domain2TypeId) {
                 await db.delete(contentTypes).where(eq(contentTypes.id, domain2TypeId));
+            }
+        }
+    });
+
+    it('content-item create rejects asset references outside the caller domain', async () => {
+        let assetBackedTypeId: number | null = null;
+        let foreignAssetId: number | null = null;
+
+        try {
+            const [assetBackedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: 'Domain 1 Asset-backed Type',
+                slug: 'd1-asset-type-' + crypto.randomUUID().slice(0, 8),
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: {
+                        title: { type: 'string' },
+                        heroImage: {
+                            type: 'object',
+                            'x-wordclaw-field-kind': 'asset',
+                            properties: {
+                                assetId: { type: 'integer' },
+                                alt: { type: 'string' }
+                            },
+                            required: ['assetId']
+                        }
+                    },
+                    required: ['title', 'heroImage']
+                }),
+                basePrice: 0
+            }).returning();
+            assetBackedTypeId = assetBackedType.id;
+
+            const [foreignAsset] = await db.insert(assets).values({
+                domainId: domain2Id,
+                filename: 'tenant-2-cover.png',
+                originalFilename: 'tenant-2-cover.png',
+                mimeType: 'image/png',
+                sizeBytes: 512,
+                storageProvider: 'local',
+                storageKey: `tenant-${domain2Id}/asset-${crypto.randomUUID()}.png`,
+                accessMode: 'public',
+                status: 'active',
+                metadata: {}
+            }).returning();
+            foreignAssetId = foreignAsset.id;
+
+            const response = await fastify.inject({
+                method: 'POST',
+                url: '/api/content-items',
+                headers: { 'x-api-key': rawKey1 },
+                payload: {
+                    contentTypeId: assetBackedTypeId,
+                    data: {
+                        title: 'Cross-domain asset reference',
+                        heroImage: {
+                            assetId: foreignAssetId,
+                            alt: 'Should fail'
+                        }
+                    },
+                    status: 'draft'
+                }
+            });
+
+            expect(response.statusCode).toBe(400);
+            const payload = JSON.parse(response.payload) as {
+                code: string;
+                context?: {
+                    details?: string;
+                    invalidAssetIds?: number[];
+                };
+            };
+            expect(payload.code).toBe('CONTENT_ASSET_REFERENCE_INVALID');
+            expect(payload.context?.invalidAssetIds).toContain(foreignAssetId);
+            expect(payload.context?.details).toContain(String(foreignAssetId));
+        } finally {
+            if (foreignAssetId) {
+                await db.delete(assets).where(eq(assets.id, foreignAssetId));
+            }
+            if (assetBackedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, assetBackedTypeId));
             }
         }
     });

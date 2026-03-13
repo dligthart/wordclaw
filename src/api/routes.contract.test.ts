@@ -40,6 +40,7 @@ import { WorkflowService } from '../services/workflow.js';
 import { AgentRunService } from '../services/agent-runs.js';
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
+import * as assetService from '../services/assets.js';
 
 type ApiErrorBody = {
     error: string;
@@ -1247,6 +1248,37 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns INVALID_CONTENT_SCHEMA_ASSET_EXTENSION for malformed asset schema extensions', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-types',
+                payload: {
+                    name: 'Broken Asset Type',
+                    slug: 'broken-asset-type',
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            heroImage: {
+                                type: 'string',
+                                'x-wordclaw-field-kind': 'asset'
+                            }
+                        }
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('INVALID_CONTENT_SCHEMA_ASSET_EXTENSION');
+            expect(mocks.dbMock.insert).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns CONTENT_TYPE_SLUG_CONFLICT for content-type create duplicate slug in domain', async () => {
         const app = await buildServer();
         const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
@@ -1969,6 +2001,81 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns CONTENT_ASSET_REFERENCE_INVALID when content-item create references missing assets', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                heroImage: {
+                                    type: 'object',
+                                    'x-wordclaw-field-kind': 'asset',
+                                    properties: {
+                                        assetId: { type: 'integer' }
+                                    },
+                                    required: ['assetId']
+                                }
+                            }
+                        }),
+                        basePrice: 0
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                heroImage: {
+                                    type: 'object',
+                                    'x-wordclaw-field-kind': 'asset',
+                                    properties: {
+                                        assetId: { type: 'integer' }
+                                    },
+                                    required: ['assetId']
+                                }
+                            }
+                        }),
+                        basePrice: 0
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([]),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-items',
+                payload: {
+                    contentTypeId: 1,
+                    data: {
+                        heroImage: {
+                            assetId: 999
+                        }
+                    },
+                    status: 'draft'
+                }
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_ASSET_REFERENCE_INVALID');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns INVALID_CREATED_AFTER for malformed content-item filter date', async () => {
         const app = await buildServer();
 
@@ -2172,6 +2279,245 @@ describe('API Route Contracts', () => {
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('CONTENT_ITEMS_CURSOR_OFFSET_CONFLICT');
         } finally {
+            await app.close();
+        }
+    });
+
+    it('creates an asset through the REST upload route', async () => {
+        const app = await buildServer();
+        const createSpy = vi.spyOn(assetService, 'createAsset').mockResolvedValue({
+            id: 18,
+            domainId: 1,
+            filename: 'hero.png',
+            originalFilename: 'hero.png',
+            mimeType: 'image/png',
+            sizeBytes: 128,
+            byteHash: 'abc123',
+            storageProvider: 'local',
+            storageKey: '1/test-hero.png',
+            accessMode: 'public',
+            status: 'active',
+            metadata: { width: 1200 },
+            uploaderActorId: 'anonymous',
+            uploaderActorType: 'anonymous',
+            uploaderActorSource: 'anonymous',
+            createdAt: new Date('2026-03-13T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-13T10:00:00.000Z'),
+            deletedAt: null
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets',
+                payload: {
+                    filename: 'hero.png',
+                    mimeType: 'image/png',
+                    contentBase64: Buffer.from('png-bytes').toString('base64'),
+                    accessMode: 'public',
+                    metadata: { width: 1200 }
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            const body = response.json() as {
+                data: {
+                    id: number;
+                    delivery: {
+                        contentPath: string;
+                        requiresAuth: boolean;
+                    };
+                };
+            };
+
+            expect(body.data).toMatchObject({
+                id: 18,
+                delivery: {
+                    contentPath: '/api/assets/18/content',
+                    requiresAuth: false
+                }
+            });
+            expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({
+                domainId: 1,
+                filename: 'hero.png',
+                mimeType: 'image/png',
+                accessMode: 'public'
+            }));
+        } finally {
+            createSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns cursor pagination metadata for assets', async () => {
+        const app = await buildServer();
+        const listSpy = vi.spyOn(assetService, 'listAssets').mockResolvedValue({
+            items: [{
+                id: 32,
+                domainId: 1,
+                filename: 'spec.pdf',
+                originalFilename: 'spec.pdf',
+                mimeType: 'application/pdf',
+                sizeBytes: 2048,
+                byteHash: 'hash-32',
+                storageProvider: 'local',
+                storageKey: '1/spec.pdf',
+                accessMode: 'signed',
+                status: 'active',
+                metadata: {},
+                uploaderActorId: 'api_key:2',
+                uploaderActorType: 'api_key',
+                uploaderActorSource: 'db',
+                createdAt: new Date('2026-03-13T12:00:00.000Z'),
+                updatedAt: new Date('2026-03-13T12:00:00.000Z'),
+                deletedAt: null
+            }],
+            total: 2,
+            limit: 1,
+            hasMore: true,
+            nextCursor: 'next-assets-cursor'
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/assets?limit=1&cursor=current-assets-cursor&accessMode=signed'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: Array<{ id: number; delivery: { requiresAuth: boolean } }>;
+                meta: { total: number; limit: number; hasMore: boolean; nextCursor: string };
+            };
+
+            expect(body.data).toHaveLength(1);
+            expect(body.data[0]).toMatchObject({
+                id: 32,
+                delivery: {
+                    requiresAuth: true
+                }
+            });
+            expect(body.meta).toMatchObject({
+                total: 2,
+                limit: 1,
+                hasMore: true,
+                nextCursor: 'next-assets-cursor'
+            });
+            expect(listSpy).toHaveBeenCalledWith(1, {
+                q: undefined,
+                accessMode: 'signed',
+                status: undefined,
+                limit: 1,
+                offset: undefined,
+                cursor: 'current-assets-cursor'
+            });
+        } finally {
+            listSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('serves public asset content without auth', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        const app = await buildServer();
+        const publicSpy = vi.spyOn(assetService, 'getPublicAsset').mockResolvedValue({
+            id: 44,
+            domainId: 1,
+            filename: 'cover.jpg',
+            originalFilename: 'cover.jpg',
+            mimeType: 'image/jpeg',
+            sizeBytes: 12,
+            byteHash: 'hash-44',
+            storageProvider: 'local',
+            storageKey: '1/cover.jpg',
+            accessMode: 'public',
+            status: 'active',
+            metadata: {},
+            uploaderActorId: null,
+            uploaderActorType: null,
+            uploaderActorSource: null,
+            createdAt: new Date('2026-03-13T12:00:00.000Z'),
+            updatedAt: new Date('2026-03-13T12:00:00.000Z'),
+            deletedAt: null
+        });
+        const contentSpy = vi.spyOn(assetService, 'readAssetContent').mockResolvedValue(Buffer.from('hello world'));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/assets/44/content'
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.headers['content-type']).toContain('image/jpeg');
+            expect(response.headers['x-wordclaw-access-mode']).toBe('public');
+            expect(response.body).toBe('hello world');
+        } finally {
+            publicSpy.mockRestore();
+            contentSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('requires auth for signed asset content', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        const app = await buildServer();
+        const publicSpy = vi.spyOn(assetService, 'getPublicAsset').mockResolvedValue(
+            null as unknown as Awaited<ReturnType<typeof assetService.getPublicAsset>>
+        );
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/assets/51/content'
+            });
+
+            expect(response.statusCode).toBe(401);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('AUTH_MISSING_API_KEY');
+        } finally {
+            publicSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('soft-deletes an asset through the REST delete route', async () => {
+        const app = await buildServer();
+        const deleteSpy = vi.spyOn(assetService, 'softDeleteAsset').mockResolvedValue({
+            id: 61,
+            domainId: 1,
+            filename: 'diagram.svg',
+            originalFilename: 'diagram.svg',
+            mimeType: 'image/svg+xml',
+            sizeBytes: 512,
+            byteHash: 'hash-61',
+            storageProvider: 'local',
+            storageKey: '1/diagram.svg',
+            accessMode: 'signed',
+            status: 'deleted',
+            metadata: {},
+            uploaderActorId: 'api_key:9',
+            uploaderActorType: 'api_key',
+            uploaderActorSource: 'db',
+            createdAt: new Date('2026-03-13T12:00:00.000Z'),
+            updatedAt: new Date('2026-03-13T13:00:00.000Z'),
+            deletedAt: new Date('2026-03-13T13:00:00.000Z')
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'DELETE',
+                url: '/api/assets/61'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as { data: { status: string } };
+            expect(body.data.status).toBe('deleted');
+            expect(deleteSpy).toHaveBeenCalledWith(61, 1, expect.objectContaining({
+                actorId: 'anonymous'
+            }));
+        } finally {
+            deleteSpy.mockRestore();
             await app.close();
         }
     });

@@ -80,6 +80,33 @@ export const apiKeys = pgTable('api_keys', {
     lastUsedAt: timestamp('last_used_at'),
 });
 
+export const assets = pgTable('assets', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    filename: text('filename').notNull(),
+    originalFilename: text('original_filename').notNull(),
+    mimeType: text('mime_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    byteHash: text('byte_hash'),
+    storageProvider: text('storage_provider').notNull(),
+    storageKey: text('storage_key').notNull(),
+    accessMode: text('access_mode').notNull().default('public'),
+    status: text('status').notNull().default('active'),
+    metadata: jsonb('metadata').notNull().default({}),
+    uploaderActorId: text('uploader_actor_id'),
+    uploaderActorType: text('uploader_actor_type'),
+    uploaderActorSource: text('uploader_actor_source'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at'),
+}, (table) => {
+    return {
+        assetDomainCreatedAtIdx: index('asset_domain_created_at_idx').on(table.domainId, table.createdAt),
+        assetDomainStatusIdx: index('asset_domain_status_idx').on(table.domainId, table.status),
+        assetStorageKeyUniqueIdx: uniqueIndex('asset_storage_key_unique').on(table.storageKey),
+    };
+});
+
 export const webhooks = pgTable('webhooks', {
     id: serial('id').primaryKey(),
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),

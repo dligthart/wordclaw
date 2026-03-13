@@ -996,7 +996,7 @@ server.tool(
             }
 
             const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
-            const contentFailure = validateContentDataAgainstSchema(contentType.schema, dataStr);
+            const contentFailure = await validateContentDataAgainstSchema(contentType.schema, dataStr, domainId);
             if (contentFailure) {
                 return err(validationFailureToText(contentFailure));
             }
@@ -1049,7 +1049,7 @@ server.tool(
                 }
 
                 const itemDataStr = typeof item.data === 'string' ? item.data : JSON.stringify(item.data);
-                const validation = validateContentDataAgainstSchema(contentType.schema, itemDataStr);
+                const validation = await validateContentDataAgainstSchema(contentType.schema, itemDataStr, domainId);
                 if (validation) {
                     return buildItemError(index, validation.code, validation.error);
                 }
@@ -1077,7 +1077,7 @@ server.tool(
                         }
 
                         const itemDataStr = typeof item.data === 'string' ? item.data : JSON.stringify(item.data);
-                        const validation = validateContentDataAgainstSchema(contentType.schema, itemDataStr);
+                        const validation = await validateContentDataAgainstSchema(contentType.schema, itemDataStr, domainId);
                         if (validation) {
                             throw new Error(JSON.stringify(buildItemError(index, validation.code, validation.error)));
                         }
@@ -1131,7 +1131,7 @@ server.tool(
                 }
 
                 const itemDataStr = typeof item.data === 'string' ? item.data : JSON.stringify(item.data);
-                const validation = validateContentDataAgainstSchema(contentType.schema, itemDataStr);
+                const validation = await validateContentDataAgainstSchema(contentType.schema, itemDataStr, domainId);
                 if (validation) {
                     results.push(buildItemError(index, validation.code, validation.error));
                     continue;
@@ -1279,7 +1279,7 @@ server.tool(
             }
 
             const targetData = typeof updateData.data === 'string' ? updateData.data : existing.data;
-            const contentFailure = validateContentDataAgainstSchema(contentType.schema, targetData);
+            const contentFailure = await validateContentDataAgainstSchema(contentType.schema, targetData, domainId);
             if (contentFailure) {
                 return err(validationFailureToText(contentFailure));
             }
@@ -1383,7 +1383,7 @@ server.tool(
             }
 
             const targetData = item.data ?? existing.data;
-            const validation = validateContentDataAgainstSchema(contentType.schema, targetData);
+            const validation = await validateContentDataAgainstSchema(contentType.schema, targetData, domainId);
             if (validation) {
                 return {
                     ok: false,
@@ -1449,7 +1449,7 @@ server.tool(
                         }
 
                         const targetData = item.data ?? existing.data;
-                        const validation = validateContentDataAgainstSchema(contentType.schema, targetData);
+                        const validation = await validateContentDataAgainstSchema(contentType.schema, targetData, domainId);
                         if (validation) {
                             throw new Error(JSON.stringify(buildItemError(index, validation.code, validation.error)));
                         }
@@ -1723,7 +1723,7 @@ server.tool(
                 return err(`Content type ${currentItem.contentTypeId} not found`);
             }
 
-            const contentFailure = validateContentDataAgainstSchema(contentType.schema, targetVersion.data);
+            const contentFailure = await validateContentDataAgainstSchema(contentType.schema, targetVersion.data, domainId);
             if (contentFailure) {
                 return err(validationFailureToText(contentFailure));
             }

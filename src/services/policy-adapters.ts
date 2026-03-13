@@ -96,6 +96,13 @@ export function resolveRestResource(routePath: string, domainId?: number): Opera
             ...(domainId !== undefined ? { domainId } : {})
         };
     }
+    if (segments[1] === 'assets') {
+        return {
+            type: 'asset',
+            id: segments[2],
+            ...(domainId !== undefined ? { domainId } : {})
+        };
+    }
     if (segments[1] === 'agent-runs') {
         return {
             type: 'agent_run',

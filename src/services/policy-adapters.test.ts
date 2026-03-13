@@ -36,6 +36,15 @@ describe('resolveRestResource', () => {
             domainId: 4
         });
     });
+
+    it('resolves asset resource IDs with domain context', () => {
+        const resource = resolveRestResource('/api/assets/13', 2);
+        expect(resource).toEqual({
+            type: 'asset',
+            id: '13',
+            domainId: 2
+        });
+    });
 });
 
 describe('buildOperationContext', () => {

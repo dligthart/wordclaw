@@ -801,7 +801,7 @@ export class AgentRunService {
                 continue;
             }
 
-            const failure = validateContentDataAgainstSchema(target.schema, target.data);
+            const failure = await validateContentDataAgainstSchema(target.schema, target.data, domainId);
             if (failure) {
                 const failedAt = new Date();
                 await db.update(agentRunSteps)

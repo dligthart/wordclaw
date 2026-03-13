@@ -12,7 +12,7 @@ import {
 } from '../config/runtime-features.js';
 import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure, redactPremiumFields } from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
-import { authenticateApiRequest, getDomainId } from './auth.js';
+import { authenticateApiRequest, authorizeApiRequest, getDomainId } from './auth.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { PolicyEngine } from '../services/policy.js';
@@ -30,6 +30,15 @@ import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
+import {
+    AssetListError,
+    createAsset,
+    getAsset,
+    getPublicAsset,
+    listAssets,
+    readAssetContent,
+    softDeleteAsset
+} from '../services/assets.js';
 import {
     buildCurrentActorSnapshot,
     buildSupervisorPrincipal,
@@ -58,6 +67,22 @@ type ContentItemsQuery = {
     limit?: number;
     offset?: number;
     cursor?: string;
+};
+type AssetsQuery = {
+    q?: string;
+    accessMode?: 'public' | 'signed';
+    status?: 'active' | 'deleted';
+    limit?: number;
+    offset?: number;
+    cursor?: string;
+};
+type CreateAssetBody = {
+    filename: string;
+    originalFilename?: string;
+    mimeType: string;
+    contentBase64: string;
+    accessMode?: 'public' | 'signed';
+    metadata?: Record<string, unknown>;
 };
 type PaginationQuery = {
     limit?: number;
@@ -260,6 +285,14 @@ function notFoundContentItem(id: number): AIErrorPayload {
         'Content item not found',
         'CONTENT_ITEM_NOT_FOUND',
         `The content item with ID ${id} does not exist. List available items with GET /api/content-items to find valid IDs.`
+    );
+}
+
+function notFoundAsset(id: number): AIErrorPayload {
+    return toErrorPayload(
+        'Asset not found',
+        'ASSET_NOT_FOUND',
+        `The asset with ID ${id} does not exist in the current domain or is not available. List assets with GET /api/assets to find valid IDs.`
     );
 }
 
@@ -467,6 +500,71 @@ function buildCurrentActorResponse(principal: ActorPrincipal) {
     };
 }
 
+const AssetResponseSchema = Type.Object({
+    id: Type.Number(),
+    filename: Type.String(),
+    originalFilename: Type.String(),
+    mimeType: Type.String(),
+    sizeBytes: Type.Number(),
+    byteHash: Type.Union([Type.String(), Type.Null()]),
+    storageProvider: Type.String(),
+    accessMode: Type.String(),
+    status: Type.String(),
+    metadata: Type.Object({}, { additionalProperties: true }),
+    uploaderActorId: Type.Union([Type.String(), Type.Null()]),
+    uploaderActorType: Type.Union([Type.String(), Type.Null()]),
+    uploaderActorSource: Type.Union([Type.String(), Type.Null()]),
+    createdAt: Type.String(),
+    updatedAt: Type.String(),
+    deletedAt: Type.Union([Type.String(), Type.Null()]),
+    delivery: Type.Object({
+        contentPath: Type.String(),
+        requiresAuth: Type.Boolean()
+    })
+});
+
+function serializeAsset(asset: {
+    id: number;
+    filename: string;
+    originalFilename: string;
+    mimeType: string;
+    sizeBytes: number;
+    byteHash: string | null;
+    storageProvider: string;
+    accessMode: string;
+    status: string;
+    metadata: unknown;
+    uploaderActorId: string | null;
+    uploaderActorType: string | null;
+    uploaderActorSource: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    deletedAt: Date | null;
+}) {
+    return {
+        id: asset.id,
+        filename: asset.filename,
+        originalFilename: asset.originalFilename,
+        mimeType: asset.mimeType,
+        sizeBytes: asset.sizeBytes,
+        byteHash: asset.byteHash ?? null,
+        storageProvider: asset.storageProvider,
+        accessMode: asset.accessMode,
+        status: asset.status,
+        metadata: asset.metadata && typeof asset.metadata === 'object' ? asset.metadata as Record<string, unknown> : {},
+        uploaderActorId: asset.uploaderActorId ?? null,
+        uploaderActorType: asset.uploaderActorType ?? null,
+        uploaderActorSource: asset.uploaderActorSource ?? null,
+        createdAt: asset.createdAt.toISOString(),
+        updatedAt: asset.updatedAt.toISOString(),
+        deletedAt: asset.deletedAt ? asset.deletedAt.toISOString() : null,
+        delivery: {
+            contentPath: `/api/assets/${asset.id}/content`,
+            requiresAuth: asset.accessMode !== 'public'
+        }
+    };
+}
+
 function clampLimit(limit: number | undefined, fallback = 50, max = 500): number {
     if (limit === undefined) {
         return fallback;
@@ -539,6 +637,10 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         if (path === '/api/capabilities' || path === '/api/deployment-status') {
+            return undefined;
+        }
+
+        if (/^\/api\/assets\/\d+\/content$/.test(path)) {
             return undefined;
         }
 
@@ -2387,6 +2489,232 @@ export default async function apiRoutes(server: FastifyInstance) {
             )
         };
     });
+
+    server.post('/assets', {
+        schema: {
+            body: Type.Object({
+                filename: Type.String({ minLength: 1 }),
+                originalFilename: Type.Optional(Type.String({ minLength: 1 })),
+                mimeType: Type.String({ minLength: 1 }),
+                contentBase64: Type.String({ minLength: 1 }),
+                accessMode: Type.Optional(Type.Union([
+                    Type.Literal('public'),
+                    Type.Literal('signed')
+                ])),
+                metadata: Type.Optional(Type.Object({}, { additionalProperties: true }))
+            }),
+            response: {
+                201: createAIResponse(AssetResponseSchema),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as CreateAssetBody;
+
+        let created;
+        try {
+            created = await createAsset({
+                domainId: getDomainId(request),
+                filename: body.filename,
+                originalFilename: body.originalFilename,
+                mimeType: body.mimeType,
+                contentBase64: body.contentBase64,
+                accessMode: body.accessMode,
+                metadata: body.metadata,
+                actor: toAuditActorFromRequest(request as RequestActorCarrier)
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return reply.status(400).send(toErrorPayload(error.message, error.code, error.remediation));
+            }
+            throw error;
+        }
+
+        return reply.status(201).send({
+            data: serializeAsset(created),
+            meta: buildMeta(
+                'Inspect the uploaded asset or attach it to content',
+                ['GET /api/assets/:id', 'GET /api/assets/:id/content'],
+                'low',
+                1
+            )
+        });
+    });
+
+    server.get('/assets', {
+        schema: {
+            querystring: Type.Object({
+                q: Type.Optional(Type.String()),
+                accessMode: Type.Optional(Type.Union([
+                    Type.Literal('public'),
+                    Type.Literal('signed')
+                ])),
+                status: Type.Optional(Type.Union([
+                    Type.Literal('active'),
+                    Type.Literal('deleted')
+                ])),
+                limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
+                offset: Type.Optional(Type.Number({ minimum: 0 })),
+                cursor: Type.Optional(Type.String())
+            }),
+            response: {
+                200: createAIResponse(Type.Array(AssetResponseSchema)),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const query = request.query as AssetsQuery;
+        const limit = clampLimit(query.limit);
+
+        let result;
+        try {
+            result = await listAssets(getDomainId(request), {
+                q: query.q,
+                accessMode: query.accessMode,
+                status: query.status,
+                limit,
+                offset: query.cursor ? query.offset : clampOffset(query.offset),
+                cursor: query.cursor
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return reply.status(400).send(toErrorPayload(error.message, error.code, error.remediation));
+            }
+            throw error;
+        }
+
+        return {
+            data: result.items.map((asset) => serializeAsset(asset)),
+            meta: buildMeta(
+                'Inspect an asset or upload a new one',
+                ['POST /api/assets', 'GET /api/assets/:id'],
+                'low',
+                1,
+                false,
+                {
+                    total: result.total,
+                    limit: result.limit,
+                    hasMore: result.hasMore,
+                    nextCursor: result.nextCursor,
+                    ...(result.offset !== undefined ? { offset: result.offset } : {})
+                }
+            )
+        };
+    });
+
+    server.get('/assets/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(AssetResponseSchema),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const asset = await getAsset(id, getDomainId(request));
+
+        if (!asset) {
+            return reply.status(404).send(notFoundAsset(id));
+        }
+
+        return {
+            data: serializeAsset(asset),
+            meta: buildMeta(
+                'Fetch the asset bytes or remove the asset',
+                ['GET /api/assets/:id/content', 'DELETE /api/assets/:id'],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.get('/assets/:id/content', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        let asset = await getPublicAsset(id);
+
+        if (!asset) {
+            const auth = await authorizeApiRequest(request.method, request.url.split('?')[0], request.headers);
+            if (!auth.ok) {
+                const statusCode = auth.statusCode === 403 ? 403 : 401;
+                return reply.status(statusCode).send(auth.payload);
+            }
+
+            asset = await getAsset(id, auth.principal.domainId);
+            if (!asset) {
+                return reply.status(404).send(notFoundAsset(id));
+            }
+        }
+
+        try {
+            const content = await readAssetContent(asset.storageKey);
+            reply.header('content-type', asset.mimeType);
+            reply.header('content-length', String(content.byteLength));
+            reply.header('content-disposition', `inline; filename="${asset.originalFilename}"`);
+            reply.header('x-wordclaw-access-mode', asset.accessMode);
+            if (asset.accessMode === 'public') {
+                reply.header('cache-control', 'public, max-age=3600');
+            } else {
+                reply.header('cache-control', 'private, no-store');
+            }
+
+            return reply.send(content);
+        } catch (error) {
+            request.log.warn({ err: error, assetId: id }, 'Failed to read asset content');
+            return reply.status(404).send(toErrorPayload(
+                'Asset content not found',
+                'ASSET_CONTENT_NOT_FOUND',
+                'The asset metadata exists, but the underlying file is missing from storage.'
+            ));
+        }
+    });
+
+    server.delete('/assets/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(AssetResponseSchema),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const deleted = await softDeleteAsset(
+            id,
+            getDomainId(request),
+            toAuditActorFromRequest(request as RequestActorCarrier)
+        );
+
+        if (!deleted) {
+            return reply.status(404).send(notFoundAsset(id));
+        }
+
+        return {
+            data: serializeAsset(deleted),
+            meta: buildMeta(
+                'The asset is now soft-deleted and cannot be newly referenced',
+                ['GET /api/assets', 'GET /api/assets/:id'],
+                'low',
+                1
+            )
+        };
+    });
+
     const globalL402Middleware = l402Middleware(globalL402Options);
 
     server.post('/content-items', {
@@ -2427,7 +2755,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentType(data.contentTypeId));
         }
 
-        const contentValidation = validateContentDataAgainstSchema(contentType.schema, data.data);
+        const contentValidation = await validateContentDataAgainstSchema(contentType.schema, data.data, getDomainId(request));
         if (contentValidation) {
             return reply.status(400).send(fromValidationFailure(contentValidation));
         }
@@ -2522,7 +2850,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentType(data.contentTypeId));
         }
 
-        const contentValidation = validateContentDataAgainstSchema(contentType.schema, data.data);
+        const contentValidation = await validateContentDataAgainstSchema(contentType.schema, data.data, getDomainId(request));
         if (contentValidation) {
             return reply.status(400).send(fromValidationFailure(contentValidation));
         }
@@ -3466,7 +3794,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         const targetData = typeof updateData.data === 'string'
             ? updateData.data
             : existing.data;
-        const contentValidation = validateContentDataAgainstSchema(targetContentType.schema, targetData);
+        const contentValidation = await validateContentDataAgainstSchema(targetContentType.schema, targetData, getDomainId(request));
         if (contentValidation) {
             return reply.status(400).send(fromValidationFailure(contentValidation));
         }
@@ -3628,7 +3956,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             return reply.status(404).send(notFoundContentType(currentItem.contentTypeId));
         }
 
-        const contentValidation = validateContentDataAgainstSchema(contentType.schema, targetVersion.data);
+        const contentValidation = await validateContentDataAgainstSchema(contentType.schema, targetVersion.data, getDomainId(request));
         if (contentValidation) {
             return reply.status(400).send(fromValidationFailure(contentValidation));
         }
@@ -3848,7 +4176,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     return buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`);
                 }
 
-                const contentValidation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                const contentValidation = await validateContentDataAgainstSchema(contentType.schema, item.data, getDomainId(request));
                 if (contentValidation) {
                     return buildError(index, contentValidation.code, contentValidation.error);
                 }
@@ -3886,7 +4214,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                             throw new Error(JSON.stringify(buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`)));
                         }
 
-                        const contentValidation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                        const contentValidation = await validateContentDataAgainstSchema(contentType.schema, item.data, getDomainId(request));
                         if (contentValidation) {
                             throw new Error(JSON.stringify(buildError(index, contentValidation.code, contentValidation.error)));
                         }
@@ -3954,7 +4282,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     continue;
                 }
 
-                const contentValidation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                const contentValidation = await validateContentDataAgainstSchema(contentType.schema, item.data, getDomainId(request));
                 if (contentValidation) {
                     results.push(buildError(index, contentValidation.code, contentValidation.error));
                     continue;
@@ -4061,7 +4389,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
 
             const targetData = updateData.data ?? existing.data;
-            const validation = validateContentDataAgainstSchema(targetContentType.schema, targetData);
+            const validation = await validateContentDataAgainstSchema(targetContentType.schema, targetData, getDomainId(request));
             if (validation) {
                 return { ok: false, error: buildError(index, validation.code, validation.error) } as const;
             }
@@ -4123,7 +4451,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                         }
 
                         const targetData = updateData.data ?? existing.data;
-                        const validation = validateContentDataAgainstSchema(targetContentType.schema, targetData);
+                        const validation = await validateContentDataAgainstSchema(targetContentType.schema, targetData, getDomainId(request));
                         if (validation) {
                             throw new Error(JSON.stringify(buildError(index, validation.code, validation.error)));
                         }

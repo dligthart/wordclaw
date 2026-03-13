@@ -11,6 +11,7 @@ export type AuditAction = 'create' | 'update' | 'delete' | 'rollback';
 export type EntityType =
     | 'content_type'
     | 'content_item'
+    | 'asset'
     | 'api_key'
     | 'webhook'
     | 'l402_operator_config'

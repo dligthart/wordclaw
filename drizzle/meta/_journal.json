@@ -162,6 +162,13 @@
       "when": 1773338400000,
       "tag": "0022_agent_run_checkpoints_repair",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1773421200000,
+      "tag": "0023_media_asset_storage",
+      "breakpoints": true
     }
   ]
 }

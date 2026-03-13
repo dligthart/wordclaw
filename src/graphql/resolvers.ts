@@ -760,7 +760,7 @@ async function validateContentItemUpdateInput(item: {
     }
 
     const targetData = updateData.data ?? existing.data;
-    const contentValidation = validateContentDataAgainstSchema(targetContentType.schema, targetData);
+    const contentValidation = await validateContentDataAgainstSchema(targetContentType.schema, targetData, domainId);
     if (contentValidation) {
         return {
             ok: false,
@@ -1204,7 +1204,7 @@ export const resolvers = {
                 throw notFoundContentTypeError(contentTypeId);
             }
 
-            const contentFailure = validateContentDataAgainstSchema(contentType.schema, dataStr);
+            const contentFailure = await validateContentDataAgainstSchema(contentType.schema, dataStr, getDomainId(context));
             if (contentFailure) {
                 throw toErrorFromValidation(contentFailure);
             }
@@ -1272,7 +1272,7 @@ export const resolvers = {
                         continue;
                     }
 
-                    const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                    const validation = await validateContentDataAgainstSchema(contentType.schema, item.data, getDomainId(context));
                     if (validation) {
                         results.push(buildBatchError(index, validation.code, validation.error));
                         continue;
@@ -1302,7 +1302,7 @@ export const resolvers = {
                                 throw new Error(JSON.stringify(buildBatchError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`)));
                             }
 
-                            const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                            const validation = await validateContentDataAgainstSchema(contentType.schema, item.data, getDomainId(context));
                             if (validation) {
                                 throw new Error(JSON.stringify(buildBatchError(index, validation.code, validation.error)));
                             }
@@ -1371,7 +1371,7 @@ export const resolvers = {
                         continue;
                     }
 
-                    const validation = validateContentDataAgainstSchema(contentType.schema, item.data);
+                    const validation = await validateContentDataAgainstSchema(contentType.schema, item.data, getDomainId(context));
                     if (validation) {
                         results.push(buildBatchError(index, validation.code, validation.error));
                         continue;
@@ -1440,7 +1440,7 @@ export const resolvers = {
             }
 
             const targetData = typeof updateData.data === 'string' ? updateData.data : existing.data;
-            const contentFailure = validateContentDataAgainstSchema(contentType.schema, targetData);
+            const contentFailure = await validateContentDataAgainstSchema(contentType.schema, targetData, getDomainId(context));
             if (contentFailure) {
                 throw toErrorFromValidation(contentFailure);
             }
@@ -1568,7 +1568,7 @@ export const resolvers = {
                             }
 
                             const targetData = updateData.data ?? existing.data;
-                            const validation = validateContentDataAgainstSchema(targetContentType.schema, targetData);
+                            const validation = await validateContentDataAgainstSchema(targetContentType.schema, targetData, getDomainId(context));
                             if (validation) {
                                 throw new Error(JSON.stringify(buildBatchError(index, validation.code, validation.error)));
                             }
@@ -1977,7 +1977,7 @@ export const resolvers = {
                 throw notFoundContentTypeError(currentItem.contentTypeId);
             }
 
-            const contentFailure = validateContentDataAgainstSchema(contentType.schema, target.data);
+            const contentFailure = await validateContentDataAgainstSchema(contentType.schema, target.data, getDomainId(context));
             if (contentFailure) {
                 throw toErrorFromValidation(contentFailure);
             }
