@@ -4,6 +4,7 @@ let selectedClass = null;
 let selectedQuirk = null;
 
 const healthEl = document.getElementById('health');
+const healthBar = document.getElementById('health-bar');
 const scoreEl = document.getElementById('score');
 const titleEl = document.getElementById('story-title');
 const textEl = document.getElementById('story-text');
@@ -148,13 +149,24 @@ function updateStats(newHealth, newScore) {
     const oldHealth = parseInt(healthEl.innerText) || 100;
     const oldScore = parseInt(scoreEl.innerText.split(' / ')[0]) || 0;
 
-    healthEl.innerText = newHealth;
+    const clampedHealth = Math.max(0, Math.min(100, newHealth));
+    healthEl.innerText = clampedHealth;
     scoreEl.innerText = `${newScore} / 100`;
+
+    // Update health bar
+    if (healthBar) {
+        healthBar.style.width = clampedHealth + '%';
+        healthBar.classList.remove('hp-high', 'hp-mid', 'hp-low', 'hp-critical');
+        if (clampedHealth > 60) healthBar.classList.add('hp-high');
+        else if (clampedHealth > 30) healthBar.classList.add('hp-mid');
+        else if (clampedHealth > 0) healthBar.classList.add('hp-low');
+        else healthBar.classList.add('hp-critical');
+    }
 
     // Animate diffs
     if (newHealth < oldHealth) {
         healthEl.classList.remove('health-down');
-        void healthEl.offsetWidth; // trigger reflow
+        void healthEl.offsetWidth;
         healthEl.classList.add('health-down');
     } else if (newHealth > oldHealth) {
         healthEl.classList.remove('health-up');
@@ -170,30 +182,38 @@ function updateStats(newHealth, newScore) {
 }
 
 function renderNode(node) {
-    titleEl.innerText = node.title;
-    textEl.innerText = node.narrative_text;
+    // Smooth scene transition
+    storyContainer.classList.add('scene-exit');
+    setTimeout(() => {
+        titleEl.innerText = node.title;
+        textEl.innerText = node.narrative_text;
 
-    choicesContainer.innerHTML = '';
-    if (node.available_choices && node.available_choices.length > 0) {
-        node.available_choices.forEach(choice => {
-            const isObj = typeof choice === 'object' && choice !== null;
-            const text = isObj ? choice.text : choice;
-            const isRisky = isObj ? choice.is_risky : false;
-            const difficulty = isObj ? choice.difficulty : 0;
+        choicesContainer.innerHTML = '';
+        if (node.available_choices && node.available_choices.length > 0) {
+            node.available_choices.forEach(choice => {
+                const isObj = typeof choice === 'object' && choice !== null;
+                const text = isObj ? choice.text : choice;
+                const isRisky = isObj ? choice.is_risky : false;
+                const difficulty = isObj ? choice.difficulty : 0;
 
-            const btn = document.createElement('button');
-            btn.className = 'choice-btn';
+                const btn = document.createElement('button');
+                btn.className = 'choice-btn';
 
-            if (isRisky) {
-                btn.innerHTML = `<span>🎲 [DC ${difficulty}] ${text}</span> <span>→</span>`;
-                btn.addEventListener('click', () => performDiceRoll(text, difficulty));
-            } else {
-                btn.innerHTML = `<span>${text}</span> <span>→</span>`;
-                btn.addEventListener('click', () => makeChoice(text));
-            }
-            choicesContainer.appendChild(btn);
-        });
-    }
+                if (isRisky) {
+                    btn.innerHTML = `<span>🎲 [DC ${difficulty}] ${text}</span> <span>→</span>`;
+                    btn.addEventListener('click', () => performDiceRoll(text, difficulty));
+                } else {
+                    btn.innerHTML = `<span>${text}</span> <span>→</span>`;
+                    btn.addEventListener('click', () => makeChoice(text));
+                }
+                choicesContainer.appendChild(btn);
+            });
+        }
+
+        storyContainer.classList.remove('scene-exit');
+        storyContainer.classList.add('scene-enter');
+        setTimeout(() => storyContainer.classList.remove('scene-enter'), 400);
+    }, 250);
 }
 
 function performDiceRoll(choiceText, difficulty) {
@@ -201,26 +221,96 @@ function performDiceRoll(choiceText, difficulty) {
     diceResultText.classList.add('hidden');
     dcValue.innerText = difficulty;
 
-    // Start rolling animation
+    // Reset all states
+    d20.className = 'd20-body';
+    const particlesEl = document.getElementById('dice-particles');
+    if (particlesEl) particlesEl.innerHTML = '';
+
+    // Start rolling animation + number cycling
     d20.classList.add('rolling');
     diceValue.innerText = '?';
 
+    // Rapidly cycle numbers during roll
+    const cycleInterval = setInterval(() => {
+        diceValue.innerText = Math.floor(Math.random() * 20) + 1;
+    }, 80);
+
     setTimeout(() => {
+        clearInterval(cycleInterval);
         d20.classList.remove('rolling');
+
         const result = Math.floor(Math.random() * 20) + 1;
-        diceValue.innerText = result; // show final face
         const isSuccess = result >= difficulty;
+        const isCritSuccess = result === 20;
+        const isCritFail = result === 1;
 
-        diceResultText.innerText = isSuccess ? 'SUCCESS!' : 'CRITICAL FAILURE!';
-        diceResultText.className = isSuccess ? 'success-text' : 'failure-text';
-        diceResultText.classList.remove('hidden');
+        // Determine label
+        let resultLabel, resultClass;
+        if (isCritSuccess) {
+            resultLabel = 'CRITICAL SUCCESS!';
+            resultClass = 'success-text crit-text';
+        } else if (isCritFail) {
+            resultLabel = 'CRITICAL FAILURE!';
+            resultClass = 'failure-text crit-text';
+        } else if (isSuccess) {
+            resultLabel = 'SUCCESS!';
+            resultClass = 'success-text';
+        } else {
+            resultLabel = 'FAILURE!';
+            resultClass = 'failure-text';
+        }
 
-        // Wait a moment for dramatic effect before advancing
+        // Show final number
+        diceValue.innerText = result;
+
+        // Dramatic land
+        d20.classList.add('landed');
+        d20.classList.add(isSuccess ? 'dice-success' : 'dice-failure');
+        if (isCritSuccess || isCritFail) d20.classList.add('dice-crit');
+
+        // Screen shake
+        const stage = diceContainer.querySelector('.dice-stage');
+        if (stage) {
+            stage.classList.add('dice-shake');
+            setTimeout(() => stage.classList.remove('dice-shake'), 500);
+        }
+
+        // Spawn particles
+        if (particlesEl) {
+            const color = isSuccess ? '#22c55e' : '#ef4444';
+            const count = (isCritSuccess || isCritFail) ? 35 : 20;
+            for (let i = 0; i < count; i++) {
+                const p = document.createElement('div');
+                p.className = 'dice-particle';
+                const angle = (Math.PI * 2 * i) / count;
+                const dist = 60 + Math.random() * (isCritSuccess || isCritFail ? 120 : 80);
+                const tx = Math.cos(angle) * dist;
+                const ty = Math.sin(angle) * dist;
+                p.style.background = color;
+                p.style.animation = `particleBurst 0.8s ease-out forwards`;
+                p.style.setProperty('--tx', tx + 'px');
+                p.style.setProperty('--ty', ty + 'px');
+                p.style.transform = `translate(${tx}px, ${ty}px)`;
+                p.style.width = (3 + Math.random() * 3) + 'px';
+                p.style.height = p.style.width;
+                particlesEl.appendChild(p);
+            }
+        }
+
+        // Show result text after a beat
+        setTimeout(() => {
+            diceResultText.innerText = resultLabel;
+            diceResultText.className = 'dice-result ' + resultClass;
+            diceResultText.classList.remove('hidden');
+        }, 400);
+
+        // Advance the story
         setTimeout(() => {
             diceContainer.classList.add('hidden');
+            d20.className = 'd20-body'; // reset
             makeChoice(choiceText, { result, difficulty });
-        }, 2000);
-    }, 1500);
+        }, 2500);
+    }, 1800);
 }
 
 function renderInventory(inventory) {
@@ -238,7 +328,7 @@ function renderInventory(inventory) {
     });
 }
 
-function showEndGame(isDeath, reason, finaleImageUrl) {
+function showEndGame(isDeath, reason, finaleImageUrl, achievements) {
     choicesContainer.innerHTML = '';
     publishContainer.classList.remove('hidden');
 
@@ -254,6 +344,22 @@ function showEndGame(isDeath, reason, finaleImageUrl) {
         deathReasonEl.classList.remove('hidden');
         deathReasonEl.innerText = "🏆 Victory! You survived the adventure and claimed your ultimate destiny.";
         deathReasonEl.style.color = "var(--score)";
+    }
+
+    // Display achievements
+    if (achievements && achievements.length > 0) {
+        const display = document.getElementById('achievements-display');
+        const list = document.getElementById('achievements-list');
+        if (display && list) {
+            display.classList.remove('hidden');
+            list.innerHTML = '';
+            achievements.forEach(a => {
+                const badge = document.createElement('span');
+                badge.className = 'achievement-badge';
+                badge.innerText = a;
+                list.appendChild(badge);
+            });
+        }
     }
 }
 
@@ -325,10 +431,10 @@ async function makeChoice(choiceText, rollObj = null) {
 
         if (data.death) {
             sceneImage.classList.add('hidden');
-            showEndGame(true, data.reason, data.finaleImageUrl);
+            showEndGame(true, data.reason, data.finaleImageUrl, data.achievements);
         } else if (!data.node.available_choices || data.node.available_choices.length === 0) {
             sceneImage.classList.add('hidden');
-            showEndGame(false, null, data.finaleImageUrl);
+            showEndGame(false, null, data.finaleImageUrl, data.achievements);
         }
 
     } catch (e) {

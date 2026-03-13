@@ -6,80 +6,140 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WordClaw Adventure</title>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:ital,wght@0,700;1,400&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Cinzel:wght@400;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <meta name="description" content="An interactive AI-generated adventure game powered by WordClaw.">
 </head>
 
 <body>
+    <!-- Animated background particles -->
+    <div id="particles-bg" aria-hidden="true"></div>
+
     <div id="app">
         <header>
             <h1 class="logo">WordClaw Adventure</h1>
             <div class="gamestats">
                 <img id="avatar-image" class="hidden" src="" alt="Hero Avatar"
                     style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent); box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);">
-                <div class="stat"><span class="label">❤️ Health</span><span id="health" class="value">--</span></div>
-                <div class="stat"><span class="label">⭐ Score</span><span id="score" class="value">-- / 100</span></div>
+                <div class="stat health-stat">
+                    <span class="label">❤️ Health</span><span id="health" class="value">--</span>
+                    <div class="health-bar-track">
+                        <div id="health-bar" class="health-bar-fill" style="width: 100%;"></div>
+                    </div>
+                </div>
+                <div class="stat"><span class="label">⭐ Score</span><span id="score" class="value">-- / 100</span>
+                </div>
             </div>
             <div id="save-tools" class="hidden">
                 <button id="save-btn" class="primary-btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">Save
                     Game</button>
             </div>
         </header>
+
         <main>
+            <!-- Full-screen immersive loading overlay -->
             <div id="loading" class="hidden">
-                <div class="spinner"></div>
-                <p>Generating Fate...</p>
+                <div class="loading-backdrop"></div>
+                <div class="loading-content">
+                    <div class="rune-ring">
+                        <svg viewBox="0 0 120 120" class="rune-svg">
+                            <circle cx="60" cy="60" r="54" class="rune-track" />
+                            <circle cx="60" cy="60" r="54" class="rune-progress" />
+                            <circle cx="60" cy="60" r="42" class="rune-inner" />
+                        </svg>
+                        <div class="rune-glow-orb"></div>
+                    </div>
+                    <h2 class="loading-title">Generating Fate</h2>
+                    <div class="loading-dots"><span>.</span><span>.</span><span>.</span></div>
+                    <p class="loading-flavor" id="loading-flavor">The threads of destiny are being woven...</p>
+                </div>
             </div>
 
+            <!-- Full-screen D20 Dice Roll Overlay -->
             <div id="dice-container" class="hidden">
-                <div class="dice-scene">
-                    <div id="d20" class="cube">
-                        <div class="cube-face cube-front"><span id="dice-value">20</span></div>
+                <div class="dice-backdrop"></div>
+                <div class="dice-stage">
+                    <p class="dice-label">Skill Check</p>
+                    <h3 id="dice-target" class="dice-dc">Target DC: <span id="dc-value">15</span></h3>
+
+                    <div class="d20-wrapper">
+                        <div class="d20-glow"></div>
+                        <div id="d20" class="d20-body">
+                            <svg viewBox="0 0 200 200" class="d20-shape">
+                                <!-- D20 icosahedron outline -->
+                                <polygon points="100,10 190,75 160,170 40,170 10,75" class="d20-polygon" />
+                                <line x1="100" y1="10" x2="40" y2="170" class="d20-line" />
+                                <line x1="100" y1="10" x2="160" y2="170" class="d20-line" />
+                                <line x1="10" y1="75" x2="160" y2="170" class="d20-line" />
+                                <line x1="190" y1="75" x2="40" y2="170" class="d20-line" />
+                                <line x1="10" y1="75" x2="190" y2="75" class="d20-line" />
+                            </svg>
+                            <span id="dice-value" class="d20-number">20</span>
+                        </div>
+                        <div class="d20-ring"></div>
+                    </div>
+
+                    <h2 id="dice-result-text" class="hidden dice-result">SUCCESS!</h2>
+                    <div id="dice-particles" class="dice-particles"></div>
+                </div>
+            </div>
+
+            <!-- ===== START SCREEN: Theme Selection ===== -->
+            <div id="themes-container">
+                <div class="start-hero">
+                    <div class="hero-glow"></div>
+                    <h2 class="start-title">
+                        <span class="title-line-1">Choose Your</span>
+                        <span class="title-line-2">Destiny</span>
+                    </h2>
+                    <p class="start-subtitle">Every great story begins with a spark. What kind of adventure awaits?</p>
+                    <div class="title-ornament">
+                        <span></span><span>⚔</span><span></span>
                     </div>
                 </div>
-                <h3 id="dice-target">Target DC: <span id="dc-value">15</span></h3>
-                <h2 id="dice-result-text" class="hidden">SUCCESS!</h2>
-            </div>
-
-            <div id="themes-container">
-                <h2 id="themes-title">Choose Your Destiny</h2>
-                <p id="themes-subtitle">Every great story begins with a spark. What kind of adventure awaits?</p>
                 <div id="theme-cards" class="theme-grid">
                     <!-- Themes will be injected here -->
                 </div>
-
             </div>
 
+            <!-- ===== CHARACTER BUILDER ===== -->
             <div id="character-container" class="hidden">
-                <h2 id="themes-title">Forge Your Hero</h2>
-                <p id="themes-subtitle">Every legend needs a protagonist. Who will face this adventure?</p>
-
-                <h3 style="text-align: left; margin-bottom: 0.5rem; color: var(--accent);">Choose a Class:</h3>
-                <div id="class-grid" class="class-grid">
-                    <!-- Javascript injected classes -->
+                <div class="start-hero">
+                    <h2 class="start-title">
+                        <span class="title-line-1">Forge Your</span>
+                        <span class="title-line-2">Hero</span>
+                    </h2>
+                    <p class="start-subtitle">Every legend needs a protagonist. Who will face this adventure?</p>
+                    <div class="title-ornament">
+                        <span></span><span>🛡</span><span></span>
+                    </div>
                 </div>
 
-                <h3 style="text-align: left; margin-bottom: 0.5rem; color: var(--accent); margin-top: 1rem;">Choose
-                    a
-                    Trait/Quirk:</h3>
-                <div id="quirk-grid" class="class-grid">
-                    <!-- Javascript injected quirks -->
+                <div class="builder-section">
+                    <h3 class="builder-label">Choose a Class</h3>
+                    <div id="class-grid" class="class-grid">
+                        <!-- Javascript injected classes -->
+                    </div>
                 </div>
 
-                <div style="margin-top: 2rem;">
-                    <button id="start-adventure-btn" class="primary-btn"
-                        style="width: 100%; padding: 1.2rem; font-size: 1.1rem;" disabled>Begin Adventure</button>
+                <div class="builder-section">
+                    <h3 class="builder-label">Choose a Trait</h3>
+                    <div id="quirk-grid" class="class-grid">
+                        <!-- Javascript injected quirks -->
+                    </div>
+                </div>
+
+                <div class="begin-btn-wrapper">
+                    <button id="start-adventure-btn" class="begin-adventure-btn" disabled>
+                        <span class="begin-icon">⚔</span>
+                        Begin Adventure
+                    </button>
                 </div>
             </div>
 
+            <!-- ===== GAMEPLAY ===== -->
             <div id="story-container" class="hidden">
-                <div id="save-tools" class="hidden" style="text-align: right; margin-bottom: 1rem;">
-                    <button id="save-btn" class="primary-btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">Save
-                        Game</button>
-                </div>
-
                 <div class="story-layout">
                     <div class="story-image-pane">
                         <img id="scene-image" class="hidden" src="" alt="Scene Illustration"
@@ -103,6 +163,7 @@
                 </div>
             </div>
 
+            <!-- ===== PUBLISH / GAME OVER ===== -->
             <div id="publish-container" class="hidden">
                 <div style="text-align: center; margin-bottom: 2rem;">
                     <img id="finale-mural" class="hidden" src="" alt="Finale Mural"
@@ -110,6 +171,10 @@
                 </div>
                 <h3>Your journey has ended.</h3>
                 <p id="death-reason" class="hidden"></p>
+                <div id="achievements-display" class="hidden">
+                    <h4 class="achievements-heading">🏆 Achievements Earned</h4>
+                    <div id="achievements-list" class="achievements-list"></div>
+                </div>
                 <div class="publish-form">
                     <input type="text" id="author-name" placeholder="Enter your alias to publish..." maxlength="30" />
                     <button id="publish-btn" class="primary-btn">Publish Story to WordClaw</button>
@@ -121,19 +186,18 @@
         <footer id="app-footer">
             <div class="footer-content">
                 <div class="footer-actions">
-                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">Resume a Run</h4>
-                    <div style="display: flex; gap: 0.5rem; max-width: 400px;">
-                        <input type="text" id="load-session-input" placeholder="Enter Session ID..."
-                            style="flex:1; padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-panel); color: white;">
+                    <h4 class="footer-heading">Resume a Run</h4>
+                    <div class="footer-input-row">
+                        <input type="text" id="load-session-input" placeholder="Enter Session ID...">
                         <button id="load-session-btn" class="primary-btn" style="padding: 0.8rem 1.2rem;">Load
                             Game</button>
                     </div>
                 </div>
                 <div class="footer-links">
-                    <h4 style="color: var(--accent); margin-bottom: 0.5rem;">Explore</h4>
-                    <a href="/library.html" class="primary-btn"
-                        style="text-decoration:none; padding: 0.8rem 1.2rem; display:inline-block; background: linear-gradient(135deg, #10b981, #059669); border:none;">📖
-                        Read the Grand Archives</a>
+                    <h4 class="footer-heading">Explore</h4>
+                    <a href="/library.html" class="archives-link">
+                        <span>📖</span> Read the Grand Archives
+                    </a>
                 </div>
             </div>
             <div class="footer-bottom">
@@ -142,6 +206,61 @@
         </footer>
     </div>
     <script src="app.js"></script>
+    <script>
+        // Floating particle background
+        (function () {
+            const canvas = document.getElementById('particles-bg');
+            if (!canvas) return;
+            const ctx = document.createElement('canvas');
+            ctx.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:0.4';
+            canvas.appendChild(ctx);
+            const c = ctx.getContext('2d');
+            let w, h, particles = [];
+            function resize() { w = ctx.width = window.innerWidth; h = ctx.height = window.innerHeight; }
+            window.addEventListener('resize', resize);
+            resize();
+            for (let i = 0; i < 40; i++) {
+                particles.push({ x: Math.random() * w, y: Math.random() * h, r: Math.random() * 2 + 0.5, dx: (Math.random() - 0.5) * 0.3, dy: -Math.random() * 0.4 - 0.1, a: Math.random() * 0.5 + 0.2 });
+            }
+            function draw() {
+                c.clearRect(0, 0, w, h);
+                particles.forEach(p => {
+                    c.beginPath();
+                    c.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                    c.fillStyle = `rgba(245, 158, 11, ${p.a})`;
+                    c.fill();
+                    p.x += p.dx; p.y += p.dy;
+                    if (p.y < -10) { p.y = h + 10; p.x = Math.random() * w; }
+                    if (p.x < -10 || p.x > w + 10) { p.x = Math.random() * w; }
+                });
+                requestAnimationFrame(draw);
+            }
+            draw();
+        })();
+
+        // Cycling loading flavor text
+        (function () {
+            const flavors = [
+                'The threads of destiny are being woven...',
+                'Ancient runes illuminate the path ahead...',
+                'The oracle contemplates your choices...',
+                'Fate stirs in the depths of the unknown...',
+                'A new chapter unfolds from the void...',
+                'The stars align to reveal your journey...',
+                'Whispers of adventure echo through time...',
+                'The world reshapes itself around you...',
+            ];
+            let idx = 0;
+            setInterval(() => {
+                const el = document.getElementById('loading-flavor');
+                if (el && !document.getElementById('loading').classList.contains('hidden')) {
+                    idx = (idx + 1) % flavors.length;
+                    el.style.opacity = '0';
+                    setTimeout(() => { el.textContent = flavors[idx]; el.style.opacity = '1'; }, 400);
+                }
+            }, 3000);
+        })();
+    </script>
 </body>
 
 </html>

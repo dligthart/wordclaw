@@ -59,6 +59,30 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'delete_content_type' }
     },
     {
+        id: 'create_asset',
+        description: 'Upload an asset',
+        rest: { method: 'POST', path: '/assets' },
+        mcp: { tool: 'create_asset' }
+    },
+    {
+        id: 'list_assets',
+        description: 'List assets',
+        rest: { method: 'GET', path: '/assets' },
+        mcp: { tool: 'list_assets' }
+    },
+    {
+        id: 'get_asset',
+        description: 'Get asset by ID',
+        rest: { method: 'GET', path: '/assets/:id' },
+        mcp: { tool: 'get_asset' }
+    },
+    {
+        id: 'delete_asset',
+        description: 'Soft-delete an asset',
+        rest: { method: 'DELETE', path: '/assets/:id' },
+        mcp: { tool: 'delete_asset' }
+    },
+    {
         id: 'create_content_item',
         description: 'Create content item',
         rest: { method: 'POST', path: '/content-items' },
