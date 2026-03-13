@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/dligthart/wordclaw/compare/v1.13.0...v1.14.0) (2026-03-13)
+
+
+### Features
+
+* **assets:** add entitlement-gated asset delivery ([d47a04e](https://github.com/dligthart/wordclaw/commit/d47a04e7f834f4e7b145f61b47b74372652a65af))
+
 # [1.13.0](https://github.com/dligthart/wordclaw/compare/v1.12.0...v1.13.0) (2026-03-13)
 
 
