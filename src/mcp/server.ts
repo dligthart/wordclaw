@@ -3061,13 +3061,16 @@ server.prompt(
                 return `- ${profile.id} (${profile.label})\n   Actor type: ${profile.actorType}\n   Auth mode: ${profile.authMode}\n   Surfaces: ${profile.availableSurfaces.join(', ')}\n   Domain context: ${domainContext}\n   Actor IDs: ${actorExamples}\n   Notes: ${profile.notes.join(' ')}`;
             })
             .join('\n');
+        const reactiveFollowUp = recipe.reactiveFollowUp
+            ? `\n\nReactive follow-up:\nPurpose: ${recipe.reactiveFollowUp.purpose}\nRecipe: ${recipe.reactiveFollowUp.recipeId ?? 'none (explicit topics)'}\nTopics: ${recipe.reactiveFollowUp.topics.join(', ')}\nRecommended filters: ${recipe.reactiveFollowUp.recommendedFilters.join(', ') || 'none'}\nExample subscribe_events payload: ${JSON.stringify(recipe.reactiveFollowUp.example.arguments)}\nNote: ${recipe.reactiveFollowUp.note}`
+            : '';
 
         return {
             messages: [{
                 role: 'user',
                 content: {
                     type: 'text',
-                    text: `Task: ${recipe.id}\nGoal: ${recipe.goal}\nPreferred surface: ${recipe.preferredSurface}\nFallback surface: ${recipe.fallbackSurface ?? 'none'}\nRecommended auth: ${recipe.recommendedAuth}\nPreferred actor profile: ${recipe.preferredActorProfile}\nSupported actor profiles: ${recipe.supportedActorProfiles.join(', ')}\nRecommended API-key scopes: ${recipe.recommendedApiKeyScopes.join(', ') || 'none'}\nRequired modules: ${recipe.requiredModules.join(', ') || 'none'}\nDry-run recommended: ${recipe.dryRunRecommended ? 'yes' : 'no'}\n\nActor guidance:\n${actors}\n\nSteps:\n${steps}`
+                    text: `Task: ${recipe.id}\nGoal: ${recipe.goal}\nPreferred surface: ${recipe.preferredSurface}\nFallback surface: ${recipe.fallbackSurface ?? 'none'}\nRecommended auth: ${recipe.recommendedAuth}\nPreferred actor profile: ${recipe.preferredActorProfile}\nSupported actor profiles: ${recipe.supportedActorProfiles.join(', ')}\nRecommended API-key scopes: ${recipe.recommendedApiKeyScopes.join(', ') || 'none'}\nRequired modules: ${recipe.requiredModules.join(', ') || 'none'}\nDry-run recommended: ${recipe.dryRunRecommended ? 'yes' : 'no'}\n\nActor guidance:\n${actors}\n\nSteps:\n${steps}${reactiveFollowUp}`
                 }
             }]
         };

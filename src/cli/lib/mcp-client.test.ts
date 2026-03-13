@@ -153,6 +153,23 @@ describe('WordClawMcpClient over HTTP', () => {
                     }),
                 }),
             }),
+            agentGuidance: expect.objectContaining({
+                taskRecipes: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'author-content',
+                        reactiveFollowUp: expect.objectContaining({
+                            recipeId: 'content-lifecycle',
+                        }),
+                    }),
+                    expect.objectContaining({
+                        id: 'verify-provenance',
+                        reactiveFollowUp: expect.objectContaining({
+                            recipeId: null,
+                            topics: ['audit.*'],
+                        }),
+                    }),
+                ]),
+            }),
         }));
         expect(capabilities.currentActor).toEqual(expect.objectContaining({
             actorId: 'env_key:remote-admin',

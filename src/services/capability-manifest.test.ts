@@ -194,12 +194,31 @@ describe('buildCapabilityManifest', () => {
                     id: 'author-content',
                     dryRunRecommended: true,
                     recommendedApiKeyScopes: ['content:write'],
+                    reactiveFollowUp: expect.objectContaining({
+                        recipeId: 'content-lifecycle',
+                        recommendedFilters: ['contentTypeId'],
+                        example: expect.objectContaining({
+                            tool: 'subscribe_events',
+                        }),
+                    }),
+                }),
+                expect.objectContaining({
+                    id: 'manage-integrations',
+                    reactiveFollowUp: expect.objectContaining({
+                        recipeId: 'integration-admin',
+                        topics: expect.arrayContaining(['api_key.create', 'webhook.create']),
+                    }),
                 }),
                 expect.objectContaining({
                     id: 'verify-provenance',
                     preferredSurface: 'mcp',
                     preferredActorProfile: 'api-key',
                     recommendedApiKeyScopes: ['audit:read'],
+                    reactiveFollowUp: expect.objectContaining({
+                        recipeId: null,
+                        topics: ['audit.*'],
+                        recommendedFilters: expect.arrayContaining(['actorId', 'actorType', 'entityType', 'entityId', 'action']),
+                    }),
                 }),
             ]),
         );

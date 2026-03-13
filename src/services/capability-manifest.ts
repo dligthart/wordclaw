@@ -10,6 +10,7 @@ import {
     isExperimentalRevenueEnabled,
 } from '../config/runtime-features.js';
 import {
+    getReactiveSubscriptionRecipe,
     SUPPORTED_REACTIVE_FILTER_FIELDS,
     SUPPORTED_REACTIVE_EVENT_TOPICS,
     SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES,
@@ -134,6 +135,9 @@ export function buildCapabilityManifest() {
             ],
         },
     ];
+    const contentLifecycleRecipe = getReactiveSubscriptionRecipe('content-lifecycle');
+    const reviewDecisionsRecipe = getReactiveSubscriptionRecipe('review-decisions');
+    const integrationAdminRecipe = getReactiveSubscriptionRecipe('integration-admin');
     const agentGuidance = {
         routingHints: [
             {
@@ -306,6 +310,22 @@ export function buildCapabilityManifest() {
                         optional: true,
                     },
                 ],
+                reactiveFollowUp: {
+                    purpose: 'Keep the active schema in sync after content creation, revision, rollback, and publication events.',
+                    recipeId: contentLifecycleRecipe?.id ?? null,
+                    topics: contentLifecycleRecipe?.topics ?? [],
+                    recommendedFilters: ['contentTypeId'],
+                    example: {
+                        tool: 'subscribe_events',
+                        arguments: {
+                            recipeId: 'content-lifecycle',
+                            filters: {
+                                contentTypeId: '<resolved contentTypeId>',
+                            },
+                        },
+                    },
+                    note: 'Use guide_task author-content for a live actor-aware version once the target schema is known.',
+                },
             },
             {
                 id: 'review-workflow',
@@ -346,6 +366,22 @@ export function buildCapabilityManifest() {
                         purpose: 'Complete the supervised review step and settle the item state.',
                     },
                 ],
+                reactiveFollowUp: {
+                    purpose: 'Stay attached to approval and rejection outcomes while supervising or submitting review tasks.',
+                    recipeId: reviewDecisionsRecipe?.id ?? null,
+                    topics: reviewDecisionsRecipe?.topics ?? [],
+                    recommendedFilters: ['reviewTaskId'],
+                    example: {
+                        tool: 'subscribe_events',
+                        arguments: {
+                            recipeId: 'review-decisions',
+                            filters: {
+                                reviewTaskId: '<current reviewTaskId>',
+                            },
+                        },
+                    },
+                    note: 'Use guide_task review-workflow when you want the runtime to narrow the filter set to the current actionable task.',
+                },
             },
             {
                 id: 'manage-integrations',
@@ -380,6 +416,19 @@ export function buildCapabilityManifest() {
                         optional: true,
                     },
                 ],
+                reactiveFollowUp: {
+                    purpose: 'Observe API key and webhook mutations while provisioning, rotating, or auditing integration surfaces.',
+                    recipeId: integrationAdminRecipe?.id ?? null,
+                    topics: integrationAdminRecipe?.topics ?? [],
+                    recommendedFilters: [],
+                    example: {
+                        tool: 'subscribe_events',
+                        arguments: {
+                            recipeId: 'integration-admin',
+                        },
+                    },
+                    note: 'This follow-up requires admin-grade scopes; guide_task manage-integrations will suppress it for weaker actors.',
+                },
             },
             {
                 id: 'consume-paid-content',
@@ -451,6 +500,26 @@ export function buildCapabilityManifest() {
                         optional: true,
                     },
                 ],
+                reactiveFollowUp: {
+                    purpose: 'Track actor- or entity-scoped audit activity without polling the trail for every provenance check.',
+                    recipeId: null,
+                    topics: ['audit.*'],
+                    recommendedFilters: ['actorId', 'actorType', 'entityType', 'entityId', 'action'],
+                    example: {
+                        tool: 'subscribe_events',
+                        arguments: {
+                            topics: ['audit.*'],
+                            filters: {
+                                actorId: '<actorId>',
+                                actorType: '<actorType>',
+                                entityType: '<entityType>',
+                                entityId: '<entityId>',
+                                action: '<action>',
+                            },
+                        },
+                    },
+                    note: 'Use guide_task verify-provenance for a live recommendation that can upgrade this generic audit watch to a narrower recipe when the entity class is already known.',
+                },
             },
         ],
     };

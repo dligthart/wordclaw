@@ -451,6 +451,10 @@ describe('MCP HTTP transport', () => {
                     id: 'author-content',
                     preferredActorProfile: 'api-key',
                     recommendedApiKeyScopes: ['content:write'],
+                    reactiveFollowUp: expect.objectContaining({
+                        recipeId: 'content-lifecycle',
+                        recommendedFilters: ['contentTypeId'],
+                    }),
                 })
             ])
         }));
@@ -495,6 +499,9 @@ describe('MCP HTTP transport', () => {
         expect(taskPromptText).toContain('Supported actor profiles: api-key, env-key, mcp-local, supervisor-session');
         expect(taskPromptText).toContain('Actor type: api_key');
         expect(taskPromptText).toContain('Domain context: implicit-from-key');
+        expect(taskPromptText).toContain('Reactive follow-up:');
+        expect(taskPromptText).toContain('Recipe: content-lifecycle');
+        expect(taskPromptText).toContain('Example subscribe_events payload: {"recipeId":"content-lifecycle","filters":{"contentTypeId":"<resolved contentTypeId>"}}');
 
         const taskGuideText = extractFirstText(taskGuide.content as Array<{ type: string; text?: string }>);
         const resolvedWorkspaceTargetText = extractFirstText(resolvedWorkspaceTarget.content as Array<{ type: string; text?: string }>);

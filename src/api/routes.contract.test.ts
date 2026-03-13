@@ -214,6 +214,11 @@ describe('API Route Contracts', () => {
                             preferredActorProfile: string;
                             supportedActorProfiles: string[];
                             recommendedApiKeyScopes: string[];
+                            reactiveFollowUp?: {
+                                recipeId: string | null;
+                                topics: string[];
+                                recommendedFilters: string[];
+                            };
                         }>;
                     };
                     limitations: string[];
@@ -343,10 +348,21 @@ describe('API Route Contracts', () => {
                         recommendedApiKeyScopes: ['content:read'],
                     }),
                     expect.objectContaining({
+                        id: 'author-content',
+                        reactiveFollowUp: expect.objectContaining({
+                            recipeId: 'content-lifecycle',
+                            recommendedFilters: ['contentTypeId'],
+                        }),
+                    }),
+                    expect.objectContaining({
                         id: 'verify-provenance',
                         preferredSurface: 'mcp',
                         preferredActorProfile: 'api-key',
                         recommendedApiKeyScopes: ['audit:read'],
+                        reactiveFollowUp: expect.objectContaining({
+                            recipeId: null,
+                            topics: ['audit.*'],
+                        }),
                     }),
                 ]),
             );

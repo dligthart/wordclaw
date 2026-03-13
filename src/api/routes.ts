@@ -705,7 +705,22 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 operation: Type.String(),
                                 purpose: Type.String(),
                                 optional: Type.Optional(Type.Boolean())
-                            }))
+                            })),
+                            reactiveFollowUp: Type.Optional(Type.Object({
+                                purpose: Type.String(),
+                                recipeId: Type.Union([Type.String(), Type.Null()]),
+                                topics: Type.Array(Type.String()),
+                                recommendedFilters: Type.Array(Type.String()),
+                                example: Type.Object({
+                                    tool: Type.String(),
+                                    arguments: Type.Object({
+                                        recipeId: Type.Optional(Type.String()),
+                                        topics: Type.Optional(Type.Array(Type.String())),
+                                        filters: Type.Optional(Type.Record(Type.String(), Type.String())),
+                                    }),
+                                }),
+                                note: Type.String(),
+                            })),
                         }))
                     }),
                     capabilities: Type.Array(Type.Object({
