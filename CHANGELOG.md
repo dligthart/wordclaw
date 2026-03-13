@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/dligthart/wordclaw/compare/v1.14.0...v1.15.0) (2026-03-13)
+
+
+### Features
+
+* **adventure-game:** gameplay improvements (closes [#172](https://github.com/dligthart/wordclaw/issues/172)) ([ecc9764](https://github.com/dligthart/wordclaw/commit/ecc9764805ab81cce299aab8445cd89a7df02410))
+
 # [1.14.0](https://github.com/dligthart/wordclaw/compare/v1.13.0...v1.14.0) (2026-03-13)
 
 
