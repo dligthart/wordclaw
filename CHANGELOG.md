@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/dligthart/wordclaw/compare/v1.10.0...v1.11.0) (2026-03-13)
+
+
+### Features
+
+* **mcp:** add reactive task guidance ([45a0815](https://github.com/dligthart/wordclaw/commit/45a0815853a41fd819141acb1f52a5972e92aba7))
+
 # [1.10.0](https://github.com/dligthart/wordclaw/compare/v1.9.0...v1.10.0) (2026-03-12)
 
 
