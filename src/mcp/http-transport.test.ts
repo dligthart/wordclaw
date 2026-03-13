@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { eq, inArray } from 'drizzle-orm';
 
 const mocks = vi.hoisted(() => ({
     getWorkspaceContextSnapshotMock: vi.fn(),
@@ -14,6 +15,9 @@ vi.mock('../services/workspace-context.js', () => ({
 }));
 
 import { buildServer } from '../server.js';
+import { db } from '../db/index.js';
+import { assets } from '../db/schema.js';
+import { getAssetStorageProvider } from '../services/asset-storage.js';
 
 const originalAuthRequired = process.env.AUTH_REQUIRED;
 const originalApiKeys = process.env.API_KEYS;
@@ -67,11 +71,13 @@ function extractPromptUserText(
 describe('MCP HTTP transport', () => {
     let app: FastifyInstance | null = null;
     let client: Client | null = null;
+    let createdAssetIds: number[] = [];
 
     beforeEach(() => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'remote-admin=admin';
         process.env.ALLOW_INSECURE_LOCAL_ADMIN = 'false';
+        createdAssetIds = [];
         mocks.getWorkspaceContextSnapshotMock.mockImplementation(async (currentActor, options) => ({
             generatedAt: '2026-03-11T12:00:00.000Z',
             currentActor,
@@ -297,6 +303,20 @@ describe('MCP HTTP transport', () => {
             app = null;
         }
 
+        if (createdAssetIds.length > 0) {
+            const storage = getAssetStorageProvider();
+            const existingAssets = await db.select()
+                .from(assets)
+                .where(inArray(assets.id, createdAssetIds));
+
+            for (const asset of existingAssets) {
+                await storage.remove(asset.storageKey).catch(() => undefined);
+            }
+
+            await db.delete(assets).where(inArray(assets.id, createdAssetIds));
+            createdAssetIds = [];
+        }
+
         restoreEnv();
         mocks.getWorkspaceContextSnapshotMock.mockReset();
         mocks.resolveWorkspaceTargetMock.mockReset();
@@ -331,6 +351,7 @@ describe('MCP HTTP transport', () => {
         const filteredWorkspaceResource = await client.readResource({ uri: 'system://workspace-context/review/1' });
         const guidanceResource = await client.readResource({ uri: 'system://agent-guidance' });
         const actorResource = await client.readResource({ uri: 'system://current-actor' });
+        const assetsResource = await client.readResource({ uri: 'content://assets' });
         const taskPrompt = await client.getPrompt({
             name: 'task-guidance',
             arguments: {
@@ -381,11 +402,17 @@ describe('MCP HTTP transport', () => {
         expect(tools.tools.some((tool) => tool.name === 'evaluate_policy')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'guide_task')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'resolve_workspace_target')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'create_asset')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'list_assets')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'get_asset')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'get_asset_access')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'delete_asset')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://deployment-status')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://workspace-context')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://agent-guidance')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://current-actor')).toBe(true);
+        expect(resources.resources.some((resource) => resource.uri === 'content://assets')).toBe(true);
         expect(prompts.prompts.some((prompt) => prompt.name === 'task-guidance')).toBe(true);
 
         const manifestText = capabilityResource.contents.find((entry) => 'text' in entry)?.text;
@@ -403,10 +430,12 @@ describe('MCP HTTP transport', () => {
         const deploymentStatusText = deploymentStatusResource.contents.find((entry) => 'text' in entry)?.text;
         const workspaceText = workspaceResource.contents.find((entry) => 'text' in entry)?.text;
         const filteredWorkspaceText = filteredWorkspaceResource.contents.find((entry) => 'text' in entry)?.text;
+        const assetsText = assetsResource.contents.find((entry) => 'text' in entry)?.text;
         expect(typeof guidanceText).toBe('string');
         expect(typeof deploymentStatusText).toBe('string');
         expect(typeof workspaceText).toBe('string');
         expect(typeof filteredWorkspaceText).toBe('string');
+        expect(typeof assetsText).toBe('string');
         expect(JSON.parse(deploymentStatusText as string)).toEqual(expect.objectContaining({
             checks: expect.objectContaining({
                 database: expect.objectContaining({
@@ -458,6 +487,14 @@ describe('MCP HTTP transport', () => {
                 })
             ])
         }));
+        const assetsJson = JSON.parse(assetsText as string);
+        expect(assetsJson).toEqual(expect.objectContaining({
+            items: expect.any(Array),
+            total: expect.any(Number),
+            limit: expect.any(Number),
+            hasMore: expect.any(Boolean),
+        }));
+        expect(assetsJson).toHaveProperty('nextCursor');
         const taskPromptText = extractPromptUserText(
             taskPrompt.messages as Array<{ role: 'user' | 'assistant'; content: { type: string; text?: string } }>,
         );
@@ -502,6 +539,28 @@ describe('MCP HTTP transport', () => {
         expect(taskPromptText).toContain('Reactive follow-up:');
         expect(taskPromptText).toContain('Recipe: content-lifecycle');
         expect(taskPromptText).toContain('Example subscribe_events payload: {"recipeId":"content-lifecycle","filters":{"contentTypeId":"<resolved contentTypeId>"}}');
+        expect(JSON.parse(manifestText as string)).toEqual(expect.objectContaining({
+            modules: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'asset-storage',
+                    enabled: true,
+                }),
+            ]),
+            capabilities: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'create_asset',
+                    mcp: expect.objectContaining({
+                        tool: 'create_asset',
+                    }),
+                }),
+                expect.objectContaining({
+                    id: 'list_assets',
+                    mcp: expect.objectContaining({
+                        tool: 'list_assets',
+                    }),
+                }),
+            ]),
+        }));
 
         const taskGuideText = extractFirstText(taskGuide.content as Array<{ type: string; text?: string }>);
         const resolvedWorkspaceTargetText = extractFirstText(resolvedWorkspaceTarget.content as Array<{ type: string; text?: string }>);
@@ -613,6 +672,178 @@ describe('MCP HTTP transport', () => {
         expect(JSON.parse(decisionText)).toEqual(expect.objectContaining({
             outcome: 'allow'
         }));
+    });
+
+    it('supports MCP asset management while keeping byte delivery REST-first', async () => {
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-http-asset-test',
+            version: '1.0.0'
+        });
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'remote-admin'
+                }
+            }
+        });
+
+        await client.connect(transport);
+
+        const createPublicAsset = await client.callTool({
+            name: 'create_asset',
+            arguments: {
+                filename: 'mcp-public-asset.txt',
+                originalFilename: 'public-note.txt',
+                mimeType: 'text/plain',
+                contentBase64: Buffer.from('hello from mcp asset tool').toString('base64'),
+                accessMode: 'public',
+                metadata: {
+                    source: 'mcp-http-test'
+                }
+            }
+        });
+
+        const createEntitledAsset = await client.callTool({
+            name: 'create_asset',
+            arguments: {
+                filename: 'mcp-entitled-asset.txt',
+                originalFilename: 'licensed-note.txt',
+                mimeType: 'text/plain',
+                contentBase64: Buffer.from('licensed hello').toString('base64'),
+                accessMode: 'entitled',
+                entitlementScope: {
+                    type: 'subscription'
+                },
+                metadata: {
+                    source: 'mcp-http-test'
+                }
+            }
+        });
+
+        const publicAssetPayload = JSON.parse(
+            extractFirstText(createPublicAsset.content as Array<{ type: string; text?: string }>)
+        );
+        const entitledAssetPayload = JSON.parse(
+            extractFirstText(createEntitledAsset.content as Array<{ type: string; text?: string }>)
+        );
+
+        const publicAssetId = publicAssetPayload.asset.id as number;
+        const entitledAssetId = entitledAssetPayload.asset.id as number;
+        createdAssetIds.push(publicAssetId, entitledAssetId);
+
+        const listResult = await client.callTool({
+            name: 'list_assets',
+            arguments: {
+                q: 'mcp-',
+                limit: 10
+            }
+        });
+        const getResult = await client.callTool({
+            name: 'get_asset',
+            arguments: {
+                id: publicAssetId
+            }
+        });
+        const publicAccessResult = await client.callTool({
+            name: 'get_asset_access',
+            arguments: {
+                id: publicAssetId
+            }
+        });
+        const entitledAccessResult = await client.callTool({
+            name: 'get_asset_access',
+            arguments: {
+                id: entitledAssetId
+            }
+        });
+        const assetResource = await client.readResource({ uri: `content://assets/${publicAssetId}` });
+        const deleteResult = await client.callTool({
+            name: 'delete_asset',
+            arguments: {
+                id: publicAssetId
+            }
+        });
+
+        const listJson = JSON.parse(extractFirstText(listResult.content as Array<{ type: string; text?: string }>));
+        const getJson = JSON.parse(extractFirstText(getResult.content as Array<{ type: string; text?: string }>));
+        const publicAccessJson = JSON.parse(extractFirstText(publicAccessResult.content as Array<{ type: string; text?: string }>));
+        const entitledAccessJson = JSON.parse(extractFirstText(entitledAccessResult.content as Array<{ type: string; text?: string }>));
+        const deleteJson = JSON.parse(extractFirstText(deleteResult.content as Array<{ type: string; text?: string }>));
+        const assetResourceText = assetResource.contents.find((entry) => 'text' in entry)?.text;
+
+        expect(publicAssetPayload).toEqual(expect.objectContaining({
+            asset: expect.objectContaining({
+                id: expect.any(Number),
+                filename: 'mcp-public-asset.txt',
+                accessMode: 'public',
+                delivery: expect.objectContaining({
+                    readSurface: 'rest',
+                    requiresAuth: false,
+                    requiresEntitlement: false,
+                }),
+            }),
+        }));
+        expect(entitledAssetPayload).toEqual(expect.objectContaining({
+            asset: expect.objectContaining({
+                id: expect.any(Number),
+                accessMode: 'entitled',
+                entitlementScope: {
+                    type: 'subscription',
+                    ref: null,
+                },
+                delivery: expect.objectContaining({
+                    readSurface: 'rest',
+                    requiresAuth: true,
+                    requiresEntitlement: true,
+                }),
+            }),
+        }));
+        expect(listJson.items).toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: publicAssetId }),
+            expect.objectContaining({ id: entitledAssetId }),
+        ]));
+        expect(getJson).toEqual(expect.objectContaining({
+            id: publicAssetId,
+            originalFilename: 'public-note.txt',
+        }));
+        expect(publicAccessJson).toEqual(expect.objectContaining({
+            readSurface: 'rest',
+            access: expect.objectContaining({
+                auth: 'none',
+                path: `/api/assets/${publicAssetId}/content`,
+            }),
+            offers: [],
+        }));
+        expect(entitledAccessJson).toEqual(expect.objectContaining({
+            readSurface: 'rest',
+            access: expect.objectContaining({
+                auth: 'api-key-or-session',
+                entitlementHeader: 'x-entitlement-id',
+                path: `/api/assets/${entitledAssetId}/content`,
+                offersPath: `/api/assets/${entitledAssetId}/offers`,
+            }),
+            offers: [],
+        }));
+        expect(typeof assetResourceText).toBe('string');
+        expect(JSON.parse(assetResourceText as string)).toEqual(expect.objectContaining({
+            id: publicAssetId,
+            filename: 'mcp-public-asset.txt',
+        }));
+        expect(deleteJson).toEqual(expect.objectContaining({
+            asset: expect.objectContaining({
+                id: publicAssetId,
+                status: 'deleted',
+            }),
+        }));
+
+        const [deletedRecord] = await db.select()
+            .from(assets)
+            .where(eq(assets.id, publicAssetId));
+        expect(deletedRecord?.status).toBe('deleted');
     });
 
     it('returns actor-aware reactive recommendations in task guidance payloads', async () => {

@@ -608,6 +608,12 @@ export function buildCapabilityManifest() {
                 description: 'Schema-bound content type and content item operations.',
             },
             {
+                id: 'asset-storage',
+                tier: 'core',
+                enabled: true,
+                description: 'Schema-aware media asset storage, metadata, and delivery guidance.',
+            },
+            {
                 id: 'workflow-review',
                 tier: 'core',
                 enabled: true,

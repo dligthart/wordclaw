@@ -13,7 +13,15 @@ import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWe
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
-import { LicensingService } from '../services/licensing.js';
+import { LicensingService, type OfferReadScope } from '../services/licensing.js';
+import {
+    AssetListError,
+    createAsset,
+    getAsset,
+    getAssetEntitlementScope,
+    listAssets,
+    softDeleteAsset
+} from '../services/assets.js';
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
@@ -408,6 +416,114 @@ export function createServer(options: CreateMcpServerOptions = {}) {
         };
     }
 
+    function offerScopeRank(scopeType: string): number {
+        if (scopeType === 'item') return 0;
+        if (scopeType === 'type') return 1;
+        if (scopeType === 'subscription') return 2;
+        return 99;
+    }
+
+    function toOfferReadScope(assetEntitlementScope: ReturnType<typeof getAssetEntitlementScope>): OfferReadScope | null {
+        if (!assetEntitlementScope) {
+            return null;
+        }
+
+        if (assetEntitlementScope.type === 'subscription') {
+            return {
+                scopeType: 'subscription',
+                scopeRef: null
+            };
+        }
+
+        if (typeof assetEntitlementScope.ref !== 'number') {
+            return null;
+        }
+
+        return {
+            scopeType: assetEntitlementScope.type,
+            scopeRef: assetEntitlementScope.ref
+        };
+    }
+
+    function serializeAssetForMcp(asset: {
+        id: number;
+        filename: string;
+        originalFilename: string;
+        mimeType: string;
+        sizeBytes: number;
+        byteHash: string | null;
+        storageProvider: string;
+        accessMode: string;
+        entitlementScopeType: string | null;
+        entitlementScopeRef: number | null;
+        status: string;
+        metadata: unknown;
+        uploaderActorId: string | null;
+        uploaderActorType: string | null;
+        uploaderActorSource: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+    }) {
+        return {
+            id: asset.id,
+            filename: asset.filename,
+            originalFilename: asset.originalFilename,
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+            byteHash: asset.byteHash ?? null,
+            storageProvider: asset.storageProvider,
+            accessMode: asset.accessMode,
+            entitlementScope: getAssetEntitlementScope(asset),
+            status: asset.status,
+            metadata: asset.metadata && typeof asset.metadata === 'object'
+                ? asset.metadata as Record<string, unknown>
+                : {},
+            uploaderActorId: asset.uploaderActorId ?? null,
+            uploaderActorType: asset.uploaderActorType ?? null,
+            uploaderActorSource: asset.uploaderActorSource ?? null,
+            createdAt: asset.createdAt.toISOString(),
+            updatedAt: asset.updatedAt.toISOString(),
+            deletedAt: asset.deletedAt ? asset.deletedAt.toISOString() : null,
+            delivery: {
+                readSurface: 'rest',
+                contentPath: `/api/assets/${asset.id}/content`,
+                requiresAuth: asset.accessMode !== 'public',
+                requiresEntitlement: asset.accessMode === 'entitled',
+                offersPath: asset.accessMode === 'entitled' ? `/api/assets/${asset.id}/offers` : null
+            }
+        };
+    }
+
+    function buildAssetRestReadGuide(asset: ReturnType<typeof serializeAssetForMcp>) {
+        if (asset.accessMode === 'public') {
+            return {
+                method: 'GET',
+                path: asset.delivery.contentPath,
+                auth: 'none',
+                note: 'This asset is publicly readable over the REST content endpoint.'
+            };
+        }
+
+        if (asset.accessMode === 'signed') {
+            return {
+                method: 'GET',
+                path: asset.delivery.contentPath,
+                auth: 'api-key-or-session',
+                note: 'Signed/private asset delivery remains REST-first. Use an authenticated REST read for the current runtime.'
+            };
+        }
+
+        return {
+            method: 'GET',
+            path: asset.delivery.contentPath,
+            auth: 'api-key-or-session',
+            entitlementHeader: 'x-entitlement-id',
+            offersPath: asset.delivery.offersPath,
+            note: 'Entitlement-backed asset delivery remains REST-first. Discover offers, purchase one, and then read the content endpoint with an eligible entitlement.'
+        };
+    }
+
     function serializePendingReviewTaskForGuide(taskRow: Awaited<ReturnType<typeof WorkflowService.listPendingReviewTasks>>[number]) {
         return {
             task: {
@@ -704,6 +820,182 @@ server.tool(
         }
     }
     ));
+
+server.tool(
+    'create_asset',
+    'Upload a new media asset',
+    {
+        filename: z.string().describe('Storage filename for the asset'),
+        originalFilename: z.string().optional().describe('Original source filename'),
+        mimeType: z.string().describe('MIME type such as image/png'),
+        contentBase64: z.string().describe('Asset bytes encoded as base64'),
+        accessMode: z.enum(['public', 'signed', 'entitled']).optional().describe('Access mode for the asset'),
+        entitlementScope: z.object({
+            type: z.enum(['item', 'type', 'subscription']),
+            ref: z.number().optional()
+        }).optional().describe('Required when accessMode is entitled'),
+        metadata: z.record(z.string(), z.any()).optional().describe('Optional metadata object')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async (args, extra, domainId) => {
+        try {
+            const principal = resolveMcpPrincipal(extra);
+            const created = await createAsset({
+                domainId,
+                filename: args.filename,
+                originalFilename: args.originalFilename,
+                mimeType: args.mimeType,
+                contentBase64: args.contentBase64,
+                accessMode: args.accessMode,
+                entitlementScope: args.entitlementScope,
+                metadata: args.metadata,
+                actor: {
+                    actorId: principal.actorId,
+                    actorType: principal.actorType,
+                    actorSource: principal.actorSource
+                }
+            });
+
+            return okJson({
+                asset: serializeAssetForMcp(created),
+                recommendedNextAction: 'Use get_asset or get_asset_access to inspect delivery and attachment guidance.'
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
+
+            return err(`Error creating asset: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'list_assets',
+    'List assets with optional filters and cursor pagination',
+    {
+        q: z.string().optional().describe('Search by filename, original filename, mime type, or asset ID'),
+        accessMode: z.enum(['public', 'signed', 'entitled']).optional().describe('Filter by asset access mode'),
+        status: z.enum(['active', 'deleted']).optional().describe('Filter by asset status'),
+        limit: z.number().optional().describe('Page size (default 50, max 500)'),
+        offset: z.number().optional().describe('Row offset (default 0)'),
+        cursor: z.string().optional().describe('Cursor returned by a previous list_assets page')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ q, accessMode, status, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
+        try {
+            const result = await listAssets(domainId, {
+                q,
+                accessMode,
+                status,
+                limit: clampLimit(rawLimit),
+                offset: cursor ? rawOffset : clampOffset(rawOffset),
+                cursor
+            });
+
+            return okJson({
+                items: result.items.map((asset) => serializeAssetForMcp(asset)),
+                total: result.total,
+                limit: result.limit,
+                ...(result.offset !== undefined ? { offset: result.offset } : {}),
+                hasMore: result.hasMore,
+                nextCursor: result.nextCursor
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
+
+            return err(`Error listing assets: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'get_asset',
+    'Get a single asset by ID',
+    {
+        id: z.number().describe('Asset ID')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'asset', id: args.id }), async ({ id }, extra, domainId) => {
+        const asset = await getAsset(id, domainId);
+        if (!asset) {
+            return err(`ASSET_NOT_FOUND: Asset ${id} not found in the current domain.`);
+        }
+
+        return okJson(serializeAssetForMcp(asset));
+    })
+);
+
+server.tool(
+    'get_asset_access',
+    'Describe how the current asset should be read or licensed',
+    {
+        id: z.number().describe('Asset ID')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'asset', id: args.id }), async ({ id }, extra, domainId) => {
+        const asset = await getAsset(id, domainId);
+        if (!asset) {
+            return err(`ASSET_NOT_FOUND: Asset ${id} not found in the current domain.`);
+        }
+
+        const serializedAsset = serializeAssetForMcp(asset);
+        const access = buildAssetRestReadGuide(serializedAsset);
+        const entitlementScope = toOfferReadScope(getAssetEntitlementScope(asset));
+
+        if (serializedAsset.accessMode !== 'entitled') {
+            return okJson({
+                asset: serializedAsset,
+                readSurface: 'rest',
+                access,
+                offers: [],
+                note: serializedAsset.accessMode === 'public'
+                    ? 'The asset is readable directly from REST.'
+                    : 'The asset remains metadata-first over MCP; use the authenticated REST endpoint to fetch bytes.'
+            });
+        }
+
+        if (!entitlementScope) {
+            return err('ASSET_ENTITLEMENT_UNAVAILABLE: Configure a valid entitlement scope before using entitlement-backed asset delivery.');
+        }
+
+        const offers = await LicensingService.getActiveOffersForReadScope(domainId, entitlementScope);
+        offers.sort((left, right) => offerScopeRank(left.scopeType) - offerScopeRank(right.scopeType));
+
+        return okJson({
+            asset: serializedAsset,
+            readSurface: 'rest',
+            access,
+            offers,
+            note: offers.length > 0
+                ? 'Purchase an offer over REST and read the asset bytes through GET /api/assets/:id/content.'
+                : 'This asset is entitled, but no active offer currently matches its entitlement scope.'
+        });
+    })
+);
+
+server.tool(
+    'delete_asset',
+    'Soft-delete an asset so it can no longer be newly referenced',
+    {
+        id: z.number().describe('Asset ID')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'asset', id: args.id }), async ({ id }, extra, domainId) => {
+        const principal = resolveMcpPrincipal(extra);
+        const deleted = await softDeleteAsset(id, domainId, {
+            actorId: principal.actorId,
+            actorType: principal.actorType,
+            actorSource: principal.actorSource
+        });
+
+        if (!deleted) {
+            return err(`ASSET_NOT_FOUND: Asset ${id} not found in the current domain.`);
+        }
+
+        return okJson({
+            asset: serializeAssetForMcp(deleted),
+            recommendedNextAction: 'Historical content can still reference this asset, but new references should stop using it.'
+        });
+    })
+);
 
 server.tool(
     'create_api_key',
@@ -2895,6 +3187,70 @@ server.resource(
             contents: [{
                 uri: uri.href,
                 text: JSON.stringify(await getDeploymentStatusSnapshot(), null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
+    'assets',
+    'content://assets',
+    async (uri, extra) => {
+        const domainId = resolveMcpPrincipal(extra as McpRequestExtra | undefined).domainId;
+        const result = await listAssets(domainId, {
+            status: 'active',
+            limit: 100
+        });
+
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify({
+                    items: result.items.map((asset) => serializeAssetForMcp(asset)),
+                    total: result.total,
+                    limit: result.limit,
+                    hasMore: result.hasMore,
+                    nextCursor: result.nextCursor
+                }, null, 2)
+            }]
+        };
+    }
+);
+
+server.resource(
+    'asset',
+    new ResourceTemplate('content://assets/{id}', { list: undefined }),
+    async (uri, variables, extra) => {
+        const domainId = resolveMcpPrincipal(extra as McpRequestExtra | undefined).domainId;
+        const idValue = readResourceTemplateValue(variables.id);
+        const id = Number(idValue);
+
+        if (!Number.isInteger(id) || id <= 0) {
+            return {
+                contents: [{
+                    uri: uri.href,
+                    text: JSON.stringify({
+                        error: 'INVALID_ASSET_ID',
+                        remediation: 'Use content://assets/<positive integer id>.'
+                    }, null, 2)
+                }]
+            };
+        }
+
+        const asset = await getAsset(id, domainId);
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify(
+                    asset
+                        ? serializeAssetForMcp(asset)
+                        : {
+                            error: 'ASSET_NOT_FOUND',
+                            remediation: 'List content://assets to discover valid asset IDs in the current domain.'
+                        },
+                    null,
+                    2
+                )
             }]
         };
     }

@@ -128,7 +128,14 @@ describe('WordClawMcpClient over HTTP', () => {
         expect(capabilities.resources.some((resource) => resource.uri === 'system://deployment-status')).toBe(true);
         expect(capabilities.resources.some((resource) => resource.uri === 'system://current-actor')).toBe(true);
         expect(capabilities.resources.some((resource) => resource.uri === 'system://workspace-context')).toBe(true);
+        expect(capabilities.resources.some((resource) => resource.uri === 'content://assets')).toBe(true);
         expect(capabilities.manifest).toEqual(expect.objectContaining({
+            modules: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'asset-storage',
+                    enabled: true,
+                }),
+            ]),
             protocolSurfaces: expect.objectContaining({
                 mcp: expect.objectContaining({
                     endpoint: '/mcp',

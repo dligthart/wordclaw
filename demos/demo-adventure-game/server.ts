@@ -154,15 +154,28 @@ async function generateBranches(contextLog: string[], theme?: string, isFinale: 
 You are given a context of the story so far, including the player's character class, their quirk, and their current inventory.
 You MUST generate an array containing EXACTLY 3 distinct potential branching narratives representing what happens next.
 Because the player's choices impact their stats, you must provide a "health_delta" (e.g., -10 if they get hurt, +5 if they heal, 0 if nothing happens) and a "score_delta" (e.g. +50 for finding an item, +10 for progressing safely).
-The "inventory_changes" field MUST be an array of strings representing items gained or lost in this specific narrative beat (e.g. ["+Rusty Key", "-Gold Coin"]). If nothing changes, return an empty array [].
+The "inventory_changes" field MUST be an array of strings representing items gained or lost in this specific narrative beat (e.g. ["+Rusty Key", "-Gold Coin"]). If nothing changes, return an empty array []. TRY to include an inventory item every 2-3 scenes to keep the inventory alive.
+
+EACH of the 3 branches MUST provide EXACTLY 3 available_choices following this pattern:
+1. A RISKY choice with is_risky: true and a difficulty between 8-18 (a daring, bold action requiring a dice roll)
+2. A SAFE choice with is_risky: false (a cautious, sensible approach)
+3. A CLASS/QUIRK-FLAVORED choice with is_risky: false (an action uniquely suited to the player's character class or quirk — reference their class or quirk directly in the text)
+
+When setting difficulty values, consider the player's class:
+- Warrior: lower DC for combat/strength actions
+- Spellcaster: lower DC for magic/knowledge actions
+- Cyber-Hacker: lower DC for tech/hacking actions
+- Scoundrel: lower DC for stealth/deception actions
+- Ranger: lower DC for nature/survival actions
 
 EACH of the 3 branches must strictly follow this JSON schema structure:
 {
   "title": "Short title",
   "narrative_text": "Atmospheric description of what happens",
   "available_choices": [
-    { "text": "Choice A", "is_risky": true, "difficulty": 12 },
-    { "text": "Choice B", "is_risky": false, "difficulty": 0 }
+    { "text": "Choice A (bold action)", "is_risky": true, "difficulty": 12 },
+    { "text": "Choice B (safe approach)", "is_risky": false, "difficulty": 0 },
+    { "text": "Choice C (class-flavored)", "is_risky": false, "difficulty": 0 }
   ],
   "inventory_changes": [],
   "body": "Required string by the engine",
@@ -700,13 +713,13 @@ app.get('/api/stories', async (req, res) => {
             }
         });
 
+        const data = await fetchRes.json() as any;
+
         if (!fetchRes.ok) {
-            const err = await fetchRes.json();
-            console.error("Failed to fetch stories from WordClaw:", err);
+            console.error("Failed to fetch stories from WordClaw:", data);
             return res.status(500).json({ error: "Failed to fetch stories from WordClaw" });
         }
 
-        const data = await fetchRes.json() as any;
         const allItems = data.data || [];
 
         const filtered = allItems.filter((item: any) => item.contentTypeId === publishedStoryContentTypeId);

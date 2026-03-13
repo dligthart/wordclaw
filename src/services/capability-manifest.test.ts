@@ -100,6 +100,13 @@ describe('buildCapabilityManifest', () => {
         expect(manifest.protocolContract.required).toEqual(['rest', 'mcp']);
         expect(manifest.protocolContract.compatibility).toEqual(['graphql']);
         expect(manifest.paidContent.purchaseFlowSurface).toBe('rest');
+        expect(manifest.modules).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                id: 'asset-storage',
+                tier: 'core',
+                enabled: true,
+            }),
+        ]));
         expect(manifest.agentGuidance.routingHints).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -224,6 +231,9 @@ describe('buildCapabilityManifest', () => {
         );
         expect(
             manifest.capabilities.some((capability) => capability.id === 'create_content_item'),
+        ).toBe(true);
+        expect(
+            manifest.capabilities.some((capability) => capability.id === 'create_asset'),
         ).toBe(true);
     });
 
