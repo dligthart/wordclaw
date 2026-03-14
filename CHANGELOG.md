@@ -1,3 +1,10 @@
+# [1.17.0](https://github.com/dligthart/wordclaw/compare/v1.16.0...v1.17.0) (2026-03-14)
+
+
+### Features
+
+* **assets:** add restore and purge lifecycle ([93041ce](https://github.com/dligthart/wordclaw/commit/93041ce55e9a4bcd90cb1d6342d0ef922588ef1d))
+
 # [1.16.0](https://github.com/dligthart/wordclaw/compare/v1.15.0...v1.16.0) (2026-03-14)
 
 
