@@ -1,3 +1,10 @@
+## [1.17.2](https://github.com/dligthart/wordclaw/compare/v1.17.1...v1.17.2) (2026-03-14)
+
+
+### Bug Fixes
+
+* add error handling for OpenAI API failures in themes and branches ([aff7739](https://github.com/dligthart/wordclaw/commit/aff7739c43bdf6d0100d768b2427d263f10827b6))
+
 ## [1.17.1](https://github.com/dligthart/wordclaw/compare/v1.17.0...v1.17.1) (2026-03-14)
 
 
