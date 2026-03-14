@@ -1,10 +1,11 @@
-import { and, desc, eq, ilike, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, lt, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { assets, contentItems, contentTypes } from '../db/schema.js';
+import { assets, contentItems, contentItemVersions, contentTypes } from '../db/schema.js';
 import { logAudit } from './audit.js';
 import { getAssetStorageProvider } from './asset-storage.js';
 import type { AuditActor } from './actor-identity.js';
+import { extractAssetReferencesFromContent } from './content-schema.js';
 
 export type AssetAccessMode = 'public' | 'signed' | 'entitled';
 export type AssetStatus = 'active' | 'deleted';
@@ -52,14 +53,32 @@ export type ListAssetsResult = {
 export class AssetListError extends Error {
     code: string;
     remediation: string;
+    context?: Record<string, unknown>;
 
-    constructor(message: string, code: string, remediation: string) {
+    constructor(message: string, code: string, remediation: string, context?: Record<string, unknown>) {
         super(message);
         this.name = 'AssetListError';
         this.code = code;
         this.remediation = remediation;
+        this.context = context;
     }
 }
+
+export type AssetReferenceUsage = {
+    contentItemId: number;
+    contentTypeId: number;
+    contentTypeName: string;
+    contentTypeSlug: string;
+    path: string;
+    version: number;
+    status?: string;
+    contentItemVersionId?: number;
+};
+
+export type AssetUsageSummary = {
+    activeReferences: AssetReferenceUsage[];
+    historicalReferences: AssetReferenceUsage[];
+};
 
 function isPositiveInteger(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value > 0;
@@ -416,4 +435,200 @@ export async function softDeleteAsset(id: number, domainId: number, actor?: Audi
     );
 
     return deleted;
+}
+
+export async function restoreAsset(id: number, domainId: number, actor?: AuditActor) {
+    const existing = await getAsset(id, domainId, { includeDeleted: true });
+    if (!existing) {
+        return null;
+    }
+
+    if (existing.status !== 'deleted') {
+        throw new AssetListError(
+            'Asset is not deleted',
+            'ASSET_RESTORE_NOT_DELETED',
+            'Soft-delete the asset before attempting to restore it.'
+        );
+    }
+
+    const [restored] = await db.update(assets).set({
+        status: 'active',
+        deletedAt: null,
+        updatedAt: new Date()
+    }).where(and(
+        eq(assets.id, id),
+        eq(assets.domainId, domainId),
+        eq(assets.status, 'deleted')
+    )).returning();
+
+    if (!restored) {
+        return null;
+    }
+
+    await logAudit(
+        domainId,
+        'restore',
+        'asset',
+        restored.id,
+        {
+            filename: restored.filename,
+            accessMode: restored.accessMode
+        },
+        actor
+    );
+
+    return restored;
+}
+
+export async function findAssetUsage(domainId: number, assetId: number): Promise<AssetUsageSummary> {
+    const candidateTypes = await db.select({
+        id: contentTypes.id,
+        name: contentTypes.name,
+        slug: contentTypes.slug,
+        schema: contentTypes.schema
+    })
+        .from(contentTypes)
+        .where(and(
+            eq(contentTypes.domainId, domainId),
+            sql<boolean>`${contentTypes.schema} like '%x-wordclaw-field-kind%'`
+        ));
+
+    if (candidateTypes.length === 0) {
+        return {
+            activeReferences: [],
+            historicalReferences: []
+        };
+    }
+
+    const schemaByTypeId = new Map(candidateTypes.map((contentType) => [contentType.id, contentType]));
+    const contentTypeIds = candidateTypes.map((contentType) => contentType.id);
+
+    const currentRows = await db.select({
+        contentItemId: contentItems.id,
+        contentTypeId: contentItems.contentTypeId,
+        status: contentItems.status,
+        version: contentItems.version,
+        data: contentItems.data
+    })
+        .from(contentItems)
+        .where(and(
+            eq(contentItems.domainId, domainId),
+            inArray(contentItems.contentTypeId, contentTypeIds)
+        ));
+
+    const historicalRows = await db.select({
+        contentItemVersionId: contentItemVersions.id,
+        contentItemId: contentItemVersions.contentItemId,
+        version: contentItemVersions.version,
+        data: contentItemVersions.data,
+        contentTypeId: contentItems.contentTypeId
+    })
+        .from(contentItemVersions)
+        .innerJoin(contentItems, eq(contentItemVersions.contentItemId, contentItems.id))
+        .where(and(
+            eq(contentItems.domainId, domainId),
+            inArray(contentItems.contentTypeId, contentTypeIds)
+        ));
+
+    const activeReferences = currentRows.flatMap((row) => {
+        const contentType = schemaByTypeId.get(row.contentTypeId);
+        if (!contentType) {
+            return [];
+        }
+
+        return extractAssetReferencesFromContent(contentType.schema, row.data)
+            .filter((reference) => reference.assetId === assetId)
+            .map((reference) => ({
+                contentItemId: row.contentItemId,
+                contentTypeId: row.contentTypeId,
+                contentTypeName: contentType.name,
+                contentTypeSlug: contentType.slug,
+                path: reference.path,
+                version: row.version,
+                status: row.status
+            }));
+    });
+
+    const historicalReferences = historicalRows.flatMap((row) => {
+        const contentType = schemaByTypeId.get(row.contentTypeId);
+        if (!contentType) {
+            return [];
+        }
+
+        return extractAssetReferencesFromContent(contentType.schema, row.data)
+            .filter((reference) => reference.assetId === assetId)
+            .map((reference) => ({
+                contentItemId: row.contentItemId,
+                contentItemVersionId: row.contentItemVersionId,
+                contentTypeId: row.contentTypeId,
+                contentTypeName: contentType.name,
+                contentTypeSlug: contentType.slug,
+                path: reference.path,
+                version: row.version
+            }));
+    });
+
+    return {
+        activeReferences,
+        historicalReferences
+    };
+}
+
+export async function purgeAsset(id: number, domainId: number, actor?: AuditActor) {
+    const existing = await getAsset(id, domainId, { includeDeleted: true });
+    if (!existing) {
+        return null;
+    }
+
+    if (existing.status !== 'deleted') {
+        throw new AssetListError(
+            'Asset must be soft-deleted before purge',
+            'ASSET_PURGE_REQUIRES_SOFT_DELETE',
+            'Call DELETE /api/assets/:id first, then retry the purge.'
+        );
+    }
+
+    const usage = await findAssetUsage(domainId, id);
+    if (usage.activeReferences.length > 0 || usage.historicalReferences.length > 0) {
+        throw new AssetListError(
+            'Asset purge blocked by retained references',
+            'ASSET_PURGE_BLOCKED',
+            'Remove or archive current and historical content references before purging this asset.',
+            {
+                activeReferences: usage.activeReferences,
+                historicalReferences: usage.historicalReferences
+            }
+        );
+    }
+
+    const storage = getAssetStorageProvider();
+    await storage.remove(existing.storageKey);
+
+    const [purged] = await db.delete(assets).where(and(
+        eq(assets.id, id),
+        eq(assets.domainId, domainId),
+        eq(assets.status, 'deleted')
+    )).returning();
+
+    if (!purged) {
+        return null;
+    }
+
+    await logAudit(
+        domainId,
+        'purge',
+        'asset',
+        existing.id,
+        {
+            filename: existing.filename,
+            accessMode: existing.accessMode,
+            storageKey: existing.storageKey
+        },
+        actor
+    );
+
+    return {
+        asset: existing,
+        usage
+    };
 }

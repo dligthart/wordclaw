@@ -20,6 +20,8 @@ import {
     getAsset,
     getAssetEntitlementScope,
     listAssets,
+    purgeAsset,
+    restoreAsset,
     softDeleteAsset
 } from '../services/assets.js';
 
@@ -248,6 +250,10 @@ export function createServer(options: CreateMcpServerOptions = {}) {
             isError: true,
             content: [{ type: 'text', text }]
         };
+    }
+
+    function formatAssetError(error: AssetListError): string {
+        return `${error.code}: ${error.message}. ${error.remediation}${error.context ? ` Context: ${JSON.stringify(error.context)}` : ''}`;
     }
 
     function withMCPPolicy<T>(
@@ -861,7 +867,7 @@ server.tool(
             });
         } catch (error) {
             if (error instanceof AssetListError) {
-                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+                return err(formatAssetError(error));
             }
 
             return err(`Error creating asset: ${(error as Error).message}`);
@@ -901,7 +907,7 @@ server.tool(
             });
         } catch (error) {
             if (error instanceof AssetListError) {
-                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+                return err(formatAssetError(error));
             }
 
             return err(`Error listing assets: ${(error as Error).message}`);
@@ -994,6 +1000,81 @@ server.tool(
             asset: serializeAssetForMcp(deleted),
             recommendedNextAction: 'Historical content can still reference this asset, but new references should stop using it.'
         });
+    })
+);
+
+server.tool(
+    'restore_asset',
+    'Restore a soft-deleted asset back to active status',
+    {
+        id: z.number().describe('Asset ID')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'asset', id: args.id }), async ({ id }, extra, domainId) => {
+        try {
+            const principal = resolveMcpPrincipal(extra);
+            const restored = await restoreAsset(id, domainId, {
+                actorId: principal.actorId,
+                actorType: principal.actorType,
+                actorSource: principal.actorSource
+            });
+
+            if (!restored) {
+                return err(`ASSET_NOT_FOUND: Asset ${id} not found in the current domain.`);
+            }
+
+            return okJson({
+                asset: serializeAssetForMcp(restored),
+                recommendedNextAction: 'Inspect the restored asset or resume attaching it to content.'
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return err(formatAssetError(error));
+            }
+
+            return err(`Error restoring asset: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'purge_asset',
+    'Permanently remove a soft-deleted asset after confirming it is no longer referenced',
+    {
+        id: z.number().describe('Asset ID')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'asset', id: args.id }), async ({ id }, extra, domainId) => {
+        const principal = resolveMcpPrincipal(extra);
+        if (!principal.scopes.has('admin') && !principal.scopes.has('tenant:admin')) {
+            return err('ADMIN_REQUIRED: Use an actor with the admin scope before purging an asset.');
+        }
+
+        try {
+            const purged = await purgeAsset(id, domainId, {
+                actorId: principal.actorId,
+                actorType: principal.actorType,
+                actorSource: principal.actorSource
+            });
+
+            if (!purged) {
+                return err(`ASSET_NOT_FOUND: Asset ${id} not found in the current domain.`);
+            }
+
+            return okJson({
+                purged: true,
+                asset: serializeAssetForMcp(purged.asset),
+                referenceSummary: {
+                    activeReferenceCount: purged.usage.activeReferences.length,
+                    historicalReferenceCount: purged.usage.historicalReferences.length
+                },
+                recommendedNextAction: 'The asset bytes and metadata are permanently removed.'
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return err(formatAssetError(error));
+            }
+
+            return err(`Error purging asset: ${(error as Error).message}`);
+        }
     })
 );
 

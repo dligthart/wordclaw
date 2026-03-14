@@ -83,6 +83,18 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'delete_asset' }
     },
     {
+        id: 'restore_asset',
+        description: 'Restore a soft-deleted asset',
+        rest: { method: 'POST', path: '/assets/:id/restore' },
+        mcp: { tool: 'restore_asset' }
+    },
+    {
+        id: 'purge_asset',
+        description: 'Permanently remove a soft-deleted asset',
+        rest: { method: 'POST', path: '/assets/:id/purge' },
+        mcp: { tool: 'purge_asset' }
+    },
+    {
         id: 'create_content_item',
         description: 'Create content item',
         rest: { method: 'POST', path: '/content-items' },

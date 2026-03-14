@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
-import { accessEvents, agentProfiles, agentRunDefinitions, agentRuns, apiKeys, assets, domains, contentItems, contentTypes, entitlements, licensePolicies, offers, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
+import { accessEvents, agentProfiles, agentRunDefinitions, agentRuns, apiKeys, assets, contentItems, contentItemVersions, contentTypes, domains, entitlements, licensePolicies, offers, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
@@ -397,6 +397,120 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
         } finally {
             if (foreignAssetId) {
                 await db.delete(assets).where(eq(assets.id, foreignAssetId));
+            }
+            if (assetBackedTypeId) {
+                await db.delete(contentTypes).where(eq(contentTypes.id, assetBackedTypeId));
+            }
+        }
+    });
+
+    it('asset purge is blocked when current or historical content in the same tenant still references it', async () => {
+        let assetBackedTypeId: number | null = null;
+        let protectedAssetId: number | null = null;
+        let protectedItemId: number | null = null;
+
+        try {
+            const [assetBackedType] = await db.insert(contentTypes).values({
+                domainId: domain1Id,
+                name: 'Domain 1 Purge Guard Type',
+                slug: 'd1-purge-guard-' + crypto.randomUUID().slice(0, 8),
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: {
+                        title: { type: 'string' },
+                        heroImage: {
+                            type: 'object',
+                            'x-wordclaw-field-kind': 'asset',
+                            properties: {
+                                assetId: { type: 'integer' },
+                                alt: { type: 'string' }
+                            },
+                            required: ['assetId']
+                        }
+                    },
+                    required: ['title', 'heroImage']
+                }),
+                basePrice: 0
+            }).returning();
+            assetBackedTypeId = assetBackedType.id;
+
+            const [protectedAsset] = await db.insert(assets).values({
+                domainId: domain1Id,
+                filename: 'tenant-1-protected.png',
+                originalFilename: 'tenant-1-protected.png',
+                mimeType: 'image/png',
+                sizeBytes: 2048,
+                storageProvider: 'local',
+                storageKey: `tenant-${domain1Id}/asset-${crypto.randomUUID()}.png`,
+                accessMode: 'signed',
+                status: 'active',
+                metadata: {}
+            }).returning();
+            protectedAssetId = protectedAsset.id;
+
+            const [protectedItem] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: assetBackedTypeId,
+                data: JSON.stringify({
+                    title: 'Protected asset usage',
+                    heroImage: {
+                        assetId: protectedAssetId,
+                        alt: 'Protected current'
+                    }
+                }),
+                status: 'published',
+                version: 2
+            }).returning();
+            protectedItemId = protectedItem.id;
+
+            await db.insert(contentItemVersions).values({
+                contentItemId: protectedItemId,
+                version: 1,
+                status: 'draft',
+                data: JSON.stringify({
+                    title: 'Protected asset history',
+                    heroImage: {
+                        assetId: protectedAssetId,
+                        alt: 'Protected historical'
+                    }
+                })
+            });
+
+            const deleteResponse = await fastify.inject({
+                method: 'DELETE',
+                url: `/api/assets/${protectedAssetId}`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+
+            expect(deleteResponse.statusCode).toBe(200);
+
+            const purgeResponse = await fastify.inject({
+                method: 'POST',
+                url: `/api/assets/${protectedAssetId}/purge`,
+                headers: { 'x-api-key': rawKey1 }
+            });
+
+            expect(purgeResponse.statusCode).toBe(409);
+            const payload = JSON.parse(purgeResponse.payload) as {
+                code: string;
+                context?: {
+                    activeReferences?: Array<{ contentItemId: number; path: string }>;
+                    historicalReferences?: Array<{ contentItemVersionId?: number; contentItemId: number; path: string }>;
+                };
+            };
+            expect(payload.code).toBe('ASSET_PURGE_BLOCKED');
+            expect(payload.context?.activeReferences?.some((reference) =>
+                reference.contentItemId === protectedItemId && reference.path === '/heroImage'
+            )).toBe(true);
+            expect(payload.context?.historicalReferences?.some((reference) =>
+                reference.contentItemId === protectedItemId && reference.path === '/heroImage'
+            )).toBe(true);
+        } finally {
+            if (protectedItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, protectedItemId));
+            }
+            if (protectedAssetId) {
+                await db.delete(assets).where(eq(assets.id, protectedAssetId));
             }
             if (assetBackedTypeId) {
                 await db.delete(contentTypes).where(eq(contentTypes.id, assetBackedTypeId));

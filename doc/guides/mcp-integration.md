@@ -263,6 +263,8 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | `get_asset`        | Read a single asset metadata record                                  |
 | `get_asset_access` | Return REST delivery guidance, auth requirements, and available offers |
 | `delete_asset`     | Soft-delete an asset so it can no longer be newly referenced         |
+| `restore_asset`    | Restore a soft-deleted asset back to active status                   |
+| `purge_asset`      | Permanently remove a soft-deleted asset after reference checks       |
 
 ### API Key Tools
 

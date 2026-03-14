@@ -2598,6 +2598,203 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('restores a soft-deleted asset through the REST restore route', async () => {
+        const app = await buildServer();
+        const restoreSpy = vi.spyOn(assetService, 'restoreAsset').mockResolvedValue({
+            id: 62,
+            domainId: 1,
+            filename: 'diagram.svg',
+            originalFilename: 'diagram.svg',
+            mimeType: 'image/svg+xml',
+            sizeBytes: 512,
+            byteHash: 'hash-62',
+            storageProvider: 'local',
+            storageKey: '1/diagram.svg',
+            accessMode: 'signed',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
+            status: 'active',
+            metadata: {},
+            uploaderActorId: 'api_key:9',
+            uploaderActorType: 'api_key',
+            uploaderActorSource: 'db',
+            createdAt: new Date('2026-03-13T12:00:00.000Z'),
+            updatedAt: new Date('2026-03-13T13:05:00.000Z'),
+            deletedAt: null
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/62/restore'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as { data: { status: string; deletedAt: string | null } };
+            expect(body.data.status).toBe('active');
+            expect(body.data.deletedAt).toBeNull();
+            expect(restoreSpy).toHaveBeenCalledWith(62, 1, expect.objectContaining({
+                actorId: 'anonymous'
+            }));
+        } finally {
+            restoreSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns ASSET_RESTORE_NOT_DELETED when restoring an active asset', async () => {
+        const app = await buildServer();
+        const restoreSpy = vi.spyOn(assetService, 'restoreAsset').mockRejectedValue(new assetService.AssetListError(
+            'Asset is not deleted',
+            'ASSET_RESTORE_NOT_DELETED',
+            'Soft-delete the asset before attempting to restore it.'
+        ));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/62/restore'
+            });
+
+            expect(response.statusCode).toBe(409);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('ASSET_RESTORE_NOT_DELETED');
+        } finally {
+            restoreSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('purges a soft-deleted asset through the REST purge route', async () => {
+        const app = await buildServer();
+        const purgeSpy = vi.spyOn(assetService, 'purgeAsset').mockResolvedValue({
+            asset: {
+                id: 63,
+                domainId: 1,
+                filename: 'legacy.pdf',
+                originalFilename: 'legacy.pdf',
+                mimeType: 'application/pdf',
+                sizeBytes: 1024,
+                byteHash: 'hash-63',
+                storageProvider: 'local',
+                storageKey: '1/legacy.pdf',
+                accessMode: 'signed',
+                entitlementScopeType: null,
+                entitlementScopeRef: null,
+                status: 'deleted',
+                metadata: {},
+                uploaderActorId: 'api_key:9',
+                uploaderActorType: 'api_key',
+                uploaderActorSource: 'db',
+                createdAt: new Date('2026-03-13T12:00:00.000Z'),
+                updatedAt: new Date('2026-03-13T13:00:00.000Z'),
+                deletedAt: new Date('2026-03-13T13:00:00.000Z')
+            },
+            usage: {
+                activeReferences: [],
+                historicalReferences: []
+            }
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/63/purge'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    purged: boolean;
+                    referenceSummary: { activeReferenceCount: number; historicalReferenceCount: number };
+                };
+            };
+            expect(body.data.purged).toBe(true);
+            expect(body.data.referenceSummary).toEqual({
+                activeReferenceCount: 0,
+                historicalReferenceCount: 0
+            });
+            expect(purgeSpy).toHaveBeenCalledWith(63, 1, expect.objectContaining({
+                actorId: 'anonymous'
+            }));
+        } finally {
+            purgeSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns retained reference context when asset purge is blocked', async () => {
+        const app = await buildServer();
+        const purgeSpy = vi.spyOn(assetService, 'purgeAsset').mockRejectedValue(new assetService.AssetListError(
+            'Asset purge blocked by retained references',
+            'ASSET_PURGE_BLOCKED',
+            'Remove or archive current and historical content references before purging this asset.',
+            {
+                activeReferences: [{
+                    contentItemId: 501,
+                    contentTypeId: 9,
+                    contentTypeName: 'Post',
+                    contentTypeSlug: 'post',
+                    path: '$.heroImage',
+                    version: 3,
+                    status: 'published'
+                }],
+                historicalReferences: [{
+                    contentItemId: 501,
+                    contentItemVersionId: 77,
+                    contentTypeId: 9,
+                    contentTypeName: 'Post',
+                    contentTypeSlug: 'post',
+                    path: '$.heroImage',
+                    version: 2
+                }]
+            }
+        ));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/63/purge'
+            });
+
+            expect(response.statusCode).toBe(409);
+            const body = response.json() as ApiErrorBody & {
+                context?: {
+                    activeReferences?: Array<{ contentItemId: number }>;
+                    historicalReferences?: Array<{ contentItemVersionId: number }>;
+                };
+            };
+            expect(body.code).toBe('ASSET_PURGE_BLOCKED');
+            expect(body.context?.activeReferences?.[0]?.contentItemId).toBe(501);
+            expect(body.context?.historicalReferences?.[0]?.contentItemVersionId).toBe(77);
+        } finally {
+            purgeSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('requires admin scope to purge an asset', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'writer=content:write';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/63/purge',
+                headers: {
+                    'x-api-key': 'writer'
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('ADMIN_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns INVALID_WEBHOOK_EVENTS when webhook registration has empty events', async () => {
         const app = await buildServer();
 

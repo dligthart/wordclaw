@@ -20,7 +20,7 @@ const validatorCache = new Map<string, ReturnType<Ajv['compile']>>();
 
 type JsonObject = Record<string, unknown>;
 type AssetSchemaKind = 'asset' | 'asset-list';
-type AssetReference = {
+export type AssetReference = {
     assetId: number;
     path: string;
 };
@@ -330,6 +330,26 @@ export async function validateContentDataAgainstSchema(schemaText: string, dataT
             details: formatAjvErrors(compiled.validate.errors)
         }
     };
+}
+
+export function extractAssetReferencesFromContent(schemaText: string, dataText: string): AssetReference[] {
+    const compiled = compileSchema(schemaText);
+    if (!compiled.ok) {
+        return [];
+    }
+
+    const parsedData = parseJson(
+        dataText,
+        'INVALID_CONTENT_DATA_JSON',
+        'Invalid content data JSON',
+        'Provide valid JSON for the content item "data" field.'
+    );
+
+    if (!parsedData.ok) {
+        return [];
+    }
+
+    return collectAssetReferences(compiled.schema as JsonObject, parsedData.parsed);
 }
 
 export function redactPremiumFields(schemaText: string, dataText: string): string {

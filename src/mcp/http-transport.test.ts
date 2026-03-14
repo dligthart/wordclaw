@@ -407,6 +407,8 @@ describe('MCP HTTP transport', () => {
         expect(tools.tools.some((tool) => tool.name === 'get_asset')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'get_asset_access')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'delete_asset')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'restore_asset')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'purge_asset')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://capabilities')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://deployment-status')).toBe(true);
         expect(resources.resources.some((resource) => resource.uri === 'system://workspace-context')).toBe(true);
@@ -767,12 +769,33 @@ describe('MCP HTTP transport', () => {
                 id: publicAssetId
             }
         });
+        const restoreResult = await client.callTool({
+            name: 'restore_asset',
+            arguments: {
+                id: publicAssetId
+            }
+        });
+        const deleteAgainResult = await client.callTool({
+            name: 'delete_asset',
+            arguments: {
+                id: publicAssetId
+            }
+        });
+        const purgeResult = await client.callTool({
+            name: 'purge_asset',
+            arguments: {
+                id: publicAssetId
+            }
+        });
 
         const listJson = JSON.parse(extractFirstText(listResult.content as Array<{ type: string; text?: string }>));
         const getJson = JSON.parse(extractFirstText(getResult.content as Array<{ type: string; text?: string }>));
         const publicAccessJson = JSON.parse(extractFirstText(publicAccessResult.content as Array<{ type: string; text?: string }>));
         const entitledAccessJson = JSON.parse(extractFirstText(entitledAccessResult.content as Array<{ type: string; text?: string }>));
         const deleteJson = JSON.parse(extractFirstText(deleteResult.content as Array<{ type: string; text?: string }>));
+        const restoreJson = JSON.parse(extractFirstText(restoreResult.content as Array<{ type: string; text?: string }>));
+        const deleteAgainJson = JSON.parse(extractFirstText(deleteAgainResult.content as Array<{ type: string; text?: string }>));
+        const purgeJson = JSON.parse(extractFirstText(purgeResult.content as Array<{ type: string; text?: string }>));
         const assetResourceText = assetResource.contents.find((entry) => 'text' in entry)?.text;
 
         expect(publicAssetPayload).toEqual(expect.objectContaining({
@@ -839,11 +862,65 @@ describe('MCP HTTP transport', () => {
                 status: 'deleted',
             }),
         }));
+        expect(restoreJson).toEqual(expect.objectContaining({
+            asset: expect.objectContaining({
+                id: publicAssetId,
+                status: 'active',
+            }),
+        }));
+        expect(deleteAgainJson).toEqual(expect.objectContaining({
+            asset: expect.objectContaining({
+                id: publicAssetId,
+                status: 'deleted',
+            }),
+        }));
+        expect(purgeJson).toEqual(expect.objectContaining({
+            purged: true,
+            asset: expect.objectContaining({
+                id: publicAssetId,
+                status: 'deleted',
+            }),
+            referenceSummary: {
+                activeReferenceCount: 0,
+                historicalReferenceCount: 0,
+            },
+        }));
 
         const [deletedRecord] = await db.select()
             .from(assets)
             .where(eq(assets.id, publicAssetId));
-        expect(deletedRecord?.status).toBe('deleted');
+        expect(deletedRecord).toBeUndefined();
+    });
+
+    it('blocks purge_asset for non-admin actors', async () => {
+        process.env.API_KEYS = 'writer=content:write';
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-http-asset-admin-test',
+            version: '1.0.0'
+        });
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'writer'
+                }
+            }
+        });
+
+        await client.connect(transport);
+
+        const purgeResult = await client.callTool({
+            name: 'purge_asset',
+            arguments: {
+                id: 999999
+            }
+        });
+
+        expect(purgeResult.isError).toBe(true);
+        expect(extractFirstText(purgeResult.content as Array<{ type: string; text?: string }>)).toContain('ADMIN_REQUIRED');
     });
 
     it('returns actor-aware reactive recommendations in task guidance payloads', async () => {

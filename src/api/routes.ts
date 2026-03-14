@@ -38,7 +38,9 @@ import {
     getAssetEntitlementScope,
     getPublicAsset,
     listAssets,
+    purgeAsset,
     readAssetContent,
+    restoreAsset,
     softDeleteAsset
 } from '../services/assets.js';
 import {
@@ -150,6 +152,15 @@ const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
 
 function toErrorPayload(error: string, code: string, remediation: string): AIErrorPayload {
     return { error, code, remediation };
+}
+
+function toAssetErrorPayload(error: AssetListError): AIErrorPayload {
+    return {
+        error: error.message,
+        code: error.code,
+        remediation: error.remediation,
+        ...(error.context ? { context: error.context } : {})
+    };
 }
 
 function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
@@ -515,6 +526,11 @@ function toApiKeyIdFromRequest(request: RequestActorCarrier): number | undefined
     return resolveApiKeyId(request.authPrincipal);
 }
 
+function hasAdminScope(request: RequestActorCarrier): boolean {
+    const scopes = (request.authPrincipal as { scopes?: Set<string> } | undefined)?.scopes;
+    return Boolean(scopes?.has('admin') || scopes?.has('tenant:admin'));
+}
+
 function buildCurrentActorResponse(principal: ActorPrincipal) {
     const manifest = buildCapabilityManifest();
     const snapshot = buildCurrentActorSnapshot(principal);
@@ -573,6 +589,17 @@ const OfferResponseSchema = Type.Object({
     scopeRef: Type.Union([Type.Number(), Type.Null()]),
     priceSats: Type.Number(),
     active: Type.Boolean()
+});
+
+const AssetRestoreResponseSchema = AssetResponseSchema;
+
+const AssetPurgeResponseSchema = Type.Object({
+    purged: Type.Boolean(),
+    asset: AssetResponseSchema,
+    referenceSummary: Type.Object({
+        activeReferenceCount: Type.Number(),
+        historicalReferenceCount: Type.Number()
+    })
 });
 
 function serializeAsset(asset: {
@@ -2592,7 +2619,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             });
         } catch (error) {
             if (error instanceof AssetListError) {
-                return reply.status(400).send(toErrorPayload(error.message, error.code, error.remediation));
+                return reply.status(400).send(toAssetErrorPayload(error));
             }
             throw error;
         }
@@ -2646,7 +2673,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             });
         } catch (error) {
             if (error instanceof AssetListError) {
-                return reply.status(400).send(toErrorPayload(error.message, error.code, error.remediation));
+                return reply.status(400).send(toAssetErrorPayload(error));
             }
             throw error;
         }
@@ -2976,6 +3003,108 @@ export default async function apiRoutes(server: FastifyInstance) {
                 1
             )
         };
+    });
+
+    server.post('/assets/:id/restore', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(AssetRestoreResponseSchema),
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+
+        try {
+            const restored = await restoreAsset(
+                id,
+                getDomainId(request),
+                toAuditActorFromRequest(request as RequestActorCarrier)
+            );
+
+            if (!restored) {
+                return reply.status(404).send(notFoundAsset(id));
+            }
+
+            return {
+                data: serializeAsset(restored),
+                meta: buildMeta(
+                    'Inspect the restored asset or resume attaching it to content',
+                    ['GET /api/assets/:id', 'GET /api/assets/:id/content'],
+                    'low',
+                    1
+                )
+            };
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return reply.status(409).send(toAssetErrorPayload(error));
+            }
+
+            throw error;
+        }
+    });
+
+    server.post('/assets/:id/purge', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(AssetPurgeResponseSchema),
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+
+        if (!hasAdminScope(request as RequestActorCarrier)) {
+            return reply.status(403).send(toErrorPayload(
+                'Admin scope required',
+                'ADMIN_REQUIRED',
+                'Use an API key with the admin scope before purging an asset.'
+            ));
+        }
+
+        try {
+            const purged = await purgeAsset(
+                id,
+                getDomainId(request),
+                toAuditActorFromRequest(request as RequestActorCarrier)
+            );
+
+            if (!purged) {
+                return reply.status(404).send(notFoundAsset(id));
+            }
+
+            return {
+                data: {
+                    purged: true,
+                    asset: serializeAsset(purged.asset),
+                    referenceSummary: {
+                        activeReferenceCount: purged.usage.activeReferences.length,
+                        historicalReferenceCount: purged.usage.historicalReferences.length
+                    }
+                },
+                meta: buildMeta(
+                    'The asset bytes and metadata were permanently removed',
+                    ['GET /api/assets', 'POST /api/assets'],
+                    'medium',
+                    1
+                )
+            };
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return reply.status(409).send(toAssetErrorPayload(error));
+            }
+
+            throw error;
+        }
     });
 
     const globalL402Middleware = l402Middleware(globalL402Options);
