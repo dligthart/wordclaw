@@ -227,7 +227,11 @@ Return ONLY a JSON array containing the 3 objects. Do not include markdown block
         })
     });
 
-    const body = await completion.json();
+    const body = await completion.json() as any;
+    if (!body.choices || !body.choices[0]) {
+        console.error("OpenAI API error in generateBranches:", JSON.stringify(body));
+        return [];
+    }
     const content = body.choices[0].message.content;
 
     try {
@@ -452,6 +456,10 @@ Return ONLY the JSON array. Do not include markdown blocks.`
         });
 
         const body = await completion.json() as any;
+        if (!body.choices || !body.choices[0]) {
+            console.error("OpenAI API error response:", JSON.stringify(body));
+            return res.status(500).json({ error: body.error?.message || "OpenAI API returned an error. Check your API key and quota." });
+        }
         const content = body.choices[0].message.content;
         const cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(cleaned);
