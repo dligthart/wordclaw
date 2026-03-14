@@ -797,6 +797,19 @@ input[type="text"]:focus {
     transform: translateY(-1px);
 }
 
+.inventory-pill.inventory-empty {
+    background: rgba(148, 163, 184, 0.08);
+    border-color: rgba(148, 163, 184, 0.2);
+    color: var(--text-muted);
+    font-style: italic;
+    font-weight: 400;
+}
+
+/* Scene image smooth fade-in */
+#scene-image {
+    transition: opacity 0.6s ease-in;
+}
+
 /* ==================== D20 DICE ROLL ==================== */
 #dice-container {
     position: fixed;

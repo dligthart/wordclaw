@@ -146,10 +146,22 @@ async function setupWordclawSchemas() {
 }
 
 // Interacting with the OpenAI API
-async function generateBranches(contextLog: string[], theme?: string, isFinale: boolean = false) {
-    const contextPrompt = contextLog.length > 0
+async function generateBranches(
+    contextLog: string[],
+    theme?: string,
+    isFinale: boolean = false,
+    characterClass?: string,
+    quirk?: string,
+    inventory?: string[]
+) {
+    let contextPrompt = contextLog.length > 0
         ? `Here is what has happened so far:\n${contextLog.join('\n')}\n\nBased on the player's last choice, generate the next immediate result.`
         : `Generate the very first opening scene for a ${theme || 'dark fantasy'} interactive text adventure.`;
+
+    // Inject character context so the LLM knows the actual class, quirk, and inventory
+    if (characterClass || quirk || inventory) {
+        contextPrompt += `\n\nPLAYER CHARACTER:\n- Class: ${characterClass || 'Adventurer'}\n- Quirk: ${quirk || 'None'}\n- Current Inventory: ${inventory && inventory.length > 0 ? inventory.join(', ') : 'Empty'}`;
+    }
 
     let systemPrompt = `You are an interactive fiction engine that strictly outputs JSON. 
 You are given a context of the story so far, including the player's character class, their quirk, and their current inventory.
@@ -160,7 +172,10 @@ The "inventory_changes" field MUST be an array of strings representing items gai
 EACH of the 3 branches MUST provide EXACTLY 3 available_choices following this pattern:
 1. A RISKY choice with is_risky: true and a difficulty between 8-18 (a daring, bold action requiring a dice roll)
 2. A SAFE choice with is_risky: false (a cautious, sensible approach)
-3. A CLASS/QUIRK-FLAVORED choice with is_risky: false (an action uniquely suited to the player's character class or quirk — reference their class or quirk directly in the text)
+3. A CLASS/QUIRK-FLAVORED choice with is_risky: false (an action uniquely suited to the player's SPECIFIC character class or quirk — reference their actual class abilities in the text)
+
+IMPORTANT: The player's class is "${characterClass || 'Adventurer'}". The third choice MUST reference this specific class's abilities. Do NOT reference other classes.
+IMPORTANT: Do NOT include meta-labels like "(bold action)", "(safe approach)", or "(class-flavored)" in the choice text. Write natural, immersive choice descriptions only.
 
 When setting difficulty values, consider the player's class:
 - Warrior: lower DC for combat/strength actions
@@ -174,9 +189,9 @@ EACH of the 3 branches must strictly follow this JSON schema structure:
   "title": "Short title",
   "narrative_text": "Atmospheric description of what happens",
   "available_choices": [
-    { "text": "Choice A (bold action)", "is_risky": true, "difficulty": 12 },
-    { "text": "Choice B (safe approach)", "is_risky": false, "difficulty": 0 },
-    { "text": "Choice C (class-flavored)", "is_risky": false, "difficulty": 0 }
+    { "text": "Charge headlong into the fray", "is_risky": true, "difficulty": 12 },
+    { "text": "Carefully observe before acting", "is_risky": false, "difficulty": 0 },
+    { "text": "Cast a revealing spell to uncover the truth", "is_risky": false, "difficulty": 0 }
   ],
   "inventory_changes": [],
   "body": "Required string by the engine",
@@ -463,7 +478,7 @@ app.post('/api/start', async (req, res) => {
         scene_images: []
     };
 
-    const branches = await generateBranches([], sessions[sessionId].theme);
+    const branches = await generateBranches([], sessions[sessionId].theme, false, sessions[sessionId].characterClass, sessions[sessionId].quirk, sessions[sessionId].inventory);
     const validBranch = await validateAndSaveBranch(branches, storyNodeContentTypeId!);
 
     if (!validBranch) {
@@ -541,7 +556,7 @@ app.post('/api/choose', async (req, res) => {
     }
 
     const isFinale = choice === "Claim your destiny to conclude the story!";
-    const branches = await generateBranches(session.history, session.theme, isFinale);
+    const branches = await generateBranches(session.history, session.theme, isFinale, session.characterClass, session.quirk, session.inventory);
     const validBranch = await validateAndSaveBranch(branches, storyNodeContentTypeId!);
 
     if (!validBranch) {

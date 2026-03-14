@@ -2,6 +2,7 @@ let sessionId = null;
 let selectedTheme = null;
 let selectedClass = null;
 let selectedQuirk = null;
+let currentScene = 0;
 
 const healthEl = document.getElementById('health');
 const healthBar = document.getElementById('health-bar');
@@ -41,6 +42,8 @@ const loadSessionBtn = document.getElementById('load-session-btn');
 const avatarImage = document.getElementById('avatar-image');
 const sceneImage = document.getElementById('scene-image');
 const finaleMural = document.getElementById('finale-mural');
+const sceneCounterWrap = document.getElementById('scene-counter-wrap');
+const sceneCounterEl = document.getElementById('scene-counter');
 
 const CLASSES = ['Warrior', 'Spellcaster', 'Cyber-Hacker', 'Scoundrel', 'Ranger'];
 const QUIRKS = ['Optimistic', 'Clumsy', 'Ruthless', 'Charming', 'Paranoid'];
@@ -314,12 +317,15 @@ function performDiceRoll(choiceText, difficulty) {
 }
 
 function renderInventory(inventory) {
-    if (!inventory || inventory.length === 0) {
-        inventoryDisplay.classList.add('hidden');
-        return;
-    }
     inventoryDisplay.classList.remove('hidden');
     inventoryPills.innerHTML = '';
+    if (!inventory || inventory.length === 0) {
+        const empty = document.createElement('span');
+        empty.className = 'inventory-pill inventory-empty';
+        empty.innerText = 'No items yet';
+        inventoryPills.appendChild(empty);
+        return;
+    }
     inventory.forEach(item => {
         const pill = document.createElement('span');
         pill.className = 'inventory-pill';
@@ -376,7 +382,10 @@ async function startGame(themeString, characterClass, quirk) {
         if (data.error) throw new Error(data.error);
 
         sessionId = data.sessionId;
+        currentScene = 1;
         saveTools.classList.remove('hidden');
+        sceneCounterWrap.classList.remove('hidden');
+        sceneCounterEl.innerText = currentScene;
 
         if (data.heroImageUrl) {
             avatarImage.src = data.heroImageUrl;
@@ -384,8 +393,10 @@ async function startGame(themeString, characterClass, quirk) {
         }
 
         if (data.sceneImageUrl) {
+            sceneImage.style.opacity = '0';
             sceneImage.src = data.sceneImageUrl;
             sceneImage.classList.remove('hidden');
+            sceneImage.onload = () => { sceneImage.style.opacity = '1'; };
         }
 
         updateStats(data.health, data.score);
@@ -419,14 +430,18 @@ async function makeChoice(choiceText, rollObj = null) {
         if (data.error) throw new Error(data.error);
 
         if (data.node) {
+            currentScene++;
+            sceneCounterEl.innerText = currentScene;
             renderNode(data.node);
             updateStats(data.health, data.score);
             renderInventory(data.inventory);
         }
 
         if (data.sceneImageUrl) {
+            sceneImage.style.opacity = '0';
             sceneImage.src = data.sceneImageUrl;
             sceneImage.classList.remove('hidden');
+            sceneImage.onload = () => { sceneImage.style.opacity = '1'; };
         }
 
         if (data.death) {
