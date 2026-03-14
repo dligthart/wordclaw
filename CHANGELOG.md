@@ -1,3 +1,10 @@
+## [1.17.1](https://github.com/dligthart/wordclaw/compare/v1.17.0...v1.17.1) (2026-03-14)
+
+
+### Bug Fixes
+
+* **adventure-game:** gameplay improvements round 2 ([67d6f3a](https://github.com/dligthart/wordclaw/commit/67d6f3af4262ebbfdad0800e43083f2b4ce1205e)), closes [#173](https://github.com/dligthart/wordclaw/issues/173)
+
 # [1.17.0](https://github.com/dligthart/wordclaw/compare/v1.16.0...v1.17.0) (2026-03-14)
 
 
