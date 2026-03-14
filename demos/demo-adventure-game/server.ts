@@ -3,6 +3,7 @@ import fetch from 'node-fetch';
 import * as dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 
 // Load environment variables
 dotenv.config({ path: '../../.env' });
@@ -292,10 +293,118 @@ const sessions: Record<string, {
     log: any[];
     scene_images: string[];
     heroImageUrl?: string | null;
+    heroImageBase64?: string | null;
+    characterVisualDesc?: string | null;
     sceneImageUrl?: string | null;
     finaleImageUrl?: string | null;
     achievements?: string[];
 }> = {};
+
+// Generate a detailed, reusable visual description of the hero character
+async function generateCharacterVisualDesc(characterClass: string, quirk: string, theme: string): Promise<string> {
+    try {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: [{
+                    role: "system",
+                    content: `You are a character designer. Generate a detailed visual description of a fantasy hero for consistent use in AI image generation. The description should be 2-3 sentences covering: physical appearance (hair color/style, skin tone, build, eye color), clothing/armor style, and one distinctive visual feature (scar, tattoo, unique accessory). Make it specific and vivid so the character looks the same across multiple images. Do NOT include any actions or story — only describe what the character LOOKS like. Return ONLY the description, no preamble.`
+                }, {
+                    role: "user",
+                    content: `Class: ${characterClass}, Personality: ${quirk}, Setting: ${theme}`
+                }],
+                temperature: 0.7
+            })
+        });
+        const body = await res.json() as any;
+        const desc = body.choices[0].message.content.trim();
+        console.log(`🎨 Character visual description: ${desc}`);
+        return desc;
+    } catch (e) {
+        console.error("Failed to generate character visual description", e);
+        return `A ${quirk} ${characterClass}`;
+    }
+}
+
+// Download an image URL and return as raw base64 string (no data URI prefix)
+async function downloadImageAsBase64(imageUrl: string): Promise<string | null> {
+    try {
+        // If it's a local file path, read from disk
+        if (imageUrl.startsWith('/generated/')) {
+            const filePath = path.join(__dirname, 'public', imageUrl);
+            const buffer = fs.readFileSync(filePath);
+            return buffer.toString('base64');
+        }
+        const res = await fetch(imageUrl);
+        if (!res.ok) return null;
+        const buffer = await res.arrayBuffer();
+        return Buffer.from(buffer).toString('base64');
+    } catch (e) {
+        console.error("Failed to download image as base64", e);
+        return null;
+    }
+}
+
+// Ensure the generated images directory exists
+const generatedDir = path.join(__dirname, 'public', 'generated');
+if (!fs.existsSync(generatedDir)) {
+    fs.mkdirSync(generatedDir, { recursive: true });
+}
+
+// Generate an image using gpt-image-1
+// Character consistency is achieved via detailed visual descriptions in the prompt
+// Returns a local URL path like /generated/img_xxx.webp
+async function generateSceneImage(prompt: string): Promise<string | null> {
+    try {
+        const body: any = {
+            model: "gpt-image-1",
+            prompt: prompt,
+            n: 1,
+            size: "1024x1024",
+            output_format: "webp"
+        };
+
+        const res = await fetch('https://api.openai.com/v1/images/generations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (res.ok) {
+            const imgBody = await res.json() as any;
+            const b64Data = imgBody.data[0].b64_json;
+
+            if (!b64Data) {
+                console.error("No b64_json in response", JSON.stringify(imgBody).substring(0, 200));
+                return null;
+            }
+
+            // Save to disk
+            const filename = `img_${crypto.randomBytes(8).toString('hex')}.webp`;
+            const filePath = path.join(generatedDir, filename);
+            fs.writeFileSync(filePath, Buffer.from(b64Data, 'base64'));
+
+            const localUrl = `/generated/${filename}`;
+            console.log(`🖼️  Image saved: ${localUrl}`);
+            return localUrl;
+        } else {
+            const errorText = await res.text();
+            console.error("Image generation failed:", errorText);
+            return null;
+        }
+    } catch (e) {
+        console.error("Failed to generate image", e);
+        return null;
+    }
+}
 
 app.get('/api/themes', async (req, res) => {
     try {
@@ -361,59 +470,38 @@ app.post('/api/start', async (req, res) => {
         return res.status(500).json({ error: "Failed to generate valid opening scene." });
     }
 
-    // Generate Hero Portrait and Scene Image in parallel
+    // Step 1: Generate a detailed visual character description for consistency
+    const session = sessions[sessionId];
+    session.characterVisualDesc = await generateCharacterVisualDesc(
+        session.characterClass, session.quirk, session.theme
+    );
+
+    // Step 2: Generate Hero Portrait using gpt-image-1
     let heroImageUrl: string | null = null;
     let sceneImageUrl: string | null = null;
 
     try {
-        const [heroRes, sceneRes] = await Promise.all([
-            fetch('https://api.openai.com/v1/images/generations', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`
-                },
-                body: JSON.stringify({
-                    model: "dall-e-3",
-                    prompt: `A beautiful, majestic, epic fantasy portrait of a ${sessions[sessionId].quirk} ${sessions[sessionId].characterClass}. The setting and style should be heavily inspired by the following theme: ${sessions[sessionId].theme}. High quality digital art style, highly detailed.`,
-                    n: 1,
-                    size: "1024x1024"
-                })
-            }),
-            fetch('https://api.openai.com/v1/images/generations', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`
-                },
-                body: JSON.stringify({
-                    model: "dall-e-3",
-                    prompt: `A highly detailed, epic fantasy digital painting illustrating the following scene: "${validBranch.narrative_text}". The scene features our hero: a ${sessions[sessionId].quirk} ${sessions[sessionId].characterClass} in the setting: ${sessions[sessionId].theme}. Style: Immersive, dramatic, high fantasy concept art. Keep the artwork entirely safe, abstracting any violence, gore, or sensitive themes to adhere strictly to safety policies.`,
-                    n: 1,
-                    size: "1024x1024"
-                })
-            })
-        ]);
+        const heroPrompt = `A beautiful, majestic, epic fantasy character portrait. ${session.characterVisualDesc} The setting and style should be heavily inspired by the following theme: ${session.theme}. High quality digital art style, highly detailed. Show the character from chest up, facing the viewer.`;
+        heroImageUrl = await generateSceneImage(heroPrompt);
 
-        if (heroRes.ok) {
-            const imgBody = await heroRes.json() as any;
-            heroImageUrl = imgBody.data[0].url;
-            sessions[sessionId].heroImageUrl = heroImageUrl;
-        } else {
-            console.error("DALL-E Hero generation failed", await heroRes.text());
+        if (heroImageUrl) {
+            session.heroImageUrl = heroImageUrl;
+
+            // Step 3: Download hero portrait as base64 for reference in future images
+            session.heroImageBase64 = await downloadImageAsBase64(heroImageUrl);
+            console.log(`📸 Hero portrait saved as base64 reference (${session.heroImageBase64 ? 'success' : 'failed'})`);
         }
 
-        if (sceneRes.ok) {
-            const imgBody = await sceneRes.json() as any;
-            sceneImageUrl = imgBody.data[0].url;
-            sessions[sessionId].sceneImageUrl = sceneImageUrl;
-            sessions[sessionId].scene_images.push(sceneImageUrl as string);
-        } else {
-            console.error("DALL-E Scene generation failed", await sceneRes.text());
-        }
+        // Step 4: Generate scene image with hero reference for character consistency
+        const scenePrompt = `A highly detailed, epic digital painting illustrating the following scene: "${validBranch.narrative_text}". The scene features this specific hero: ${session.characterVisualDesc}. Setting: ${session.theme}. Style: Immersive, dramatic, high fantasy concept art. The hero must look exactly as described. Keep the artwork entirely safe.`;
+        sceneImageUrl = await generateSceneImage(scenePrompt);
 
+        if (sceneImageUrl) {
+            session.sceneImageUrl = sceneImageUrl;
+            session.scene_images.push(sceneImageUrl);
+        }
     } catch (e) {
-        console.error("Failed to generate DALL-E images", e);
+        console.error("Failed to generate images", e);
     }
 
     sessions[sessionId].history.push(`Scene: ${validBranch.narrative_text}`);
@@ -492,25 +580,13 @@ app.post('/api/choose', async (req, res) => {
     if (session.health <= 0 || isFinale) {
         try {
             const promptOutcome = session.health <= 0
-                ? `A dramatic, highly detailed illustration showing the tragic defeat of the hero. They were a ${session.quirk} ${session.characterClass}. Setting: ${session.theme}. Style: Dramatic, melancholic, epic digital art. Keep the artwork entirely safe, abstracting any violence or gore.`
-                : `A glorious, triumphant, highly detailed illustration showing the hero achieving their ultimate destiny in victory. They are a ${session.quirk} ${session.characterClass}. Setting: ${session.theme}. Style: Bright, heroic, epic digital art. Keep the artwork entirely safe, avoiding any explicit content.`;
+                ? `A dramatic, highly detailed illustration showing the tragic defeat of the hero. The hero is: ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Style: Dramatic, melancholic, epic digital art. The hero must look exactly as described. Keep the artwork entirely safe, abstracting any violence or gore.`
+                : `A glorious, triumphant, highly detailed illustration showing the hero achieving their ultimate destiny in victory. The hero is: ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Style: Bright, heroic, epic digital art. The hero must look exactly as described. Keep the artwork entirely safe, avoiding any explicit content.`;
 
             const achievementPrompt = `Based on the following adventure history, invent exactly 3 creative, short string achievements the player has earned during this run. \nHistory: ${session.history.join('. ')}\nReturn ONLY a raw JSON array of 3 strings. Example: ["Slayer of the Beast", "Master Thief", "Narrow Escape"]`;
 
-            const [imageRes, achRes] = await Promise.all([
-                fetch('https://api.openai.com/v1/images/generations', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${OPENAI_API_KEY}`
-                    },
-                    body: JSON.stringify({
-                        model: "dall-e-3",
-                        prompt: promptOutcome,
-                        n: 1,
-                        size: "1024x1024"
-                    })
-                }),
+            const [finaleImageUrl, achRes] = await Promise.all([
+                generateSceneImage(promptOutcome),
                 fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -525,11 +601,8 @@ app.post('/api/choose', async (req, res) => {
                 })
             ]);
 
-            if (imageRes.ok) {
-                const imgBody = await imageRes.json() as any;
-                session.finaleImageUrl = imgBody.data[0].url;
-            } else {
-                console.error("DALL-E Finale generation failed", await imageRes.text());
+            if (finaleImageUrl) {
+                session.finaleImageUrl = finaleImageUrl;
             }
 
             if (achRes.ok) {
@@ -558,27 +631,13 @@ app.post('/api/choose', async (req, res) => {
             achievements: session.achievements
         });
     } else {
-        // Generate a scene image for normal progression
+        // Generate a scene image for normal progression with character consistency
         try {
-            const imageRes = await fetch('https://api.openai.com/v1/images/generations', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`
-                },
-                body: JSON.stringify({
-                    model: "dall-e-3",
-                    prompt: `A highly detailed, epic fantasy digital painting illustrating the following scene: "${validBranch.narrative_text}". The scene features our hero: a ${session.quirk} ${session.characterClass} in the setting: ${session.theme}. Style: Immersive, dramatic, high fantasy concept art. Keep the artwork entirely safe, abstracting any violence, gore, or sensitive themes to adhere strictly to safety policies.`,
-                    n: 1,
-                    size: "1024x1024"
-                })
-            });
-            if (imageRes.ok) {
-                const imgBody = await imageRes.json() as any;
-                sceneImageUrl = imgBody.data[0].url;
-                session.scene_images.push(sceneImageUrl as string);
-            } else {
-                console.error("DALL-E Scene generation failed", await imageRes.text());
+            const scenePrompt = `A highly detailed, epic digital painting illustrating the following scene: "${validBranch.narrative_text}". The scene features this specific hero: ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Style: Immersive, dramatic, high fantasy concept art. The hero must look exactly as described. Keep the artwork entirely safe.`;
+            sceneImageUrl = await generateSceneImage(scenePrompt);
+
+            if (sceneImageUrl) {
+                session.scene_images.push(sceneImageUrl);
             }
         } catch (e) {
             console.error("Failed to generate scene image", e);
