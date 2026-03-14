@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/dligthart/wordclaw/compare/v1.15.0...v1.16.0) (2026-03-14)
+
+
+### Features
+
+* **adventure-game:** add character consistency via gpt-image-1 ([e7b0502](https://github.com/dligthart/wordclaw/commit/e7b0502fac688f321e6097609d7fe457877c3c10))
+
 # [1.15.0](https://github.com/dligthart/wordclaw/compare/v1.14.0...v1.15.0) (2026-03-13)
 
 
