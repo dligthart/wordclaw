@@ -469,15 +469,52 @@ async function downloadImageAsBase64(imageUrl: string): Promise<string | null> {
     }
 }
 
-// Ensure the generated images directory exists
+// Ensure the generated images directory exists (local cache fallback)
 const generatedDir = path.join(__dirname, 'public', 'generated');
 if (!fs.existsSync(generatedDir)) {
     fs.mkdirSync(generatedDir, { recursive: true });
 }
 
+// Upload image bytes to WordClaw asset storage via REST API
+// Returns the proxied asset content URL or null on failure
+async function uploadToAssetStorage(b64Data: string, filename: string): Promise<string | null> {
+    try {
+        const res = await fetch(`${WORDCLAW_API_URL}/assets`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': WORDCLAW_API_KEY!
+            },
+            body: JSON.stringify({
+                filename,
+                mimeType: 'image/webp',
+                contentBase64: b64Data,
+                accessMode: 'public',
+                metadata: { source: 'adventure-game', generator: 'gpt-image-1' }
+            })
+        });
+
+        if (res.ok) {
+            const body = await res.json() as any;
+            const assetId = body.data?.id;
+            if (assetId) {
+                const assetUrl = `/wc-assets/${assetId}/content`;
+                console.log(`📦 Asset uploaded to WordClaw: ID ${assetId} → ${assetUrl}`);
+                return assetUrl;
+            }
+        }
+
+        const errorText = await res.text();
+        console.error('Asset upload to WordClaw failed:', errorText);
+        return null;
+    } catch (e) {
+        console.error('Failed to upload asset to WordClaw:', e);
+        return null;
+    }
+}
+
 // Generate an image using gpt-image-1
-// Character consistency is achieved via detailed visual descriptions in the prompt
-// Returns a local URL path like /generated/img_xxx.webp
+// Uploads to WordClaw asset storage with local disk fallback
 async function generateSceneImage(prompt: string): Promise<string | null> {
     try {
         const body: any = {
@@ -506,13 +543,21 @@ async function generateSceneImage(prompt: string): Promise<string | null> {
                 return null;
             }
 
-            // Save to disk
+            // Save to local disk as cache/fallback
             const filename = `img_${crypto.randomBytes(8).toString('hex')}.webp`;
             const filePath = path.join(generatedDir, filename);
             fs.writeFileSync(filePath, Buffer.from(b64Data, 'base64'));
-
             const localUrl = `/generated/${filename}`;
-            console.log(`🖼️  Image saved: ${localUrl}`);
+            console.log(`🖼️  Image saved locally: ${localUrl}`);
+
+            // Upload to WordClaw asset storage
+            const assetUrl = await uploadToAssetStorage(b64Data, filename);
+            if (assetUrl) {
+                return assetUrl;
+            }
+
+            // Fallback to local URL if asset upload fails
+            console.log(`⚠️  Using local fallback: ${localUrl}`);
             return localUrl;
         } else {
             const errorText = await res.text();
@@ -524,6 +569,30 @@ async function generateSceneImage(prompt: string): Promise<string | null> {
         return null;
     }
 }
+
+// Proxy route: serve WordClaw asset content through the game server
+// This avoids CORS issues when the browser loads images from WordClaw
+app.get('/wc-assets/:id/content', async (req, res) => {
+    try {
+        const assetId = req.params.id;
+        const assetRes = await fetch(`${WORDCLAW_API_URL}/assets/${assetId}/content`, {
+            headers: { 'x-api-key': WORDCLAW_API_KEY! }
+        });
+
+        if (assetRes.ok) {
+            const contentType = assetRes.headers.get('content-type') || 'image/webp';
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            const buffer = Buffer.from(await assetRes.arrayBuffer());
+            res.send(buffer);
+        } else {
+            res.status(assetRes.status).json({ error: 'Asset not found' });
+        }
+    } catch (e) {
+        console.error('Failed to proxy asset content:', e);
+        res.status(500).json({ error: 'Failed to fetch asset' });
+    }
+});
 
 app.get('/api/themes', async (req, res) => {
     try {
