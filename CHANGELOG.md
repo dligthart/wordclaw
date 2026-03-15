@@ -1,3 +1,10 @@
+# [1.22.0](https://github.com/dligthart/wordclaw/compare/v1.21.0...v1.22.0) (2026-03-15)
+
+
+### Features
+
+* **cli:** add asset commands ([8220f8b](https://github.com/dligthart/wordclaw/commit/8220f8b5d7ab40d24dc0fe29cf37c60c65f34605))
+
 # [1.21.0](https://github.com/dligthart/wordclaw/compare/v1.20.0...v1.21.0) (2026-03-15)
 
 
