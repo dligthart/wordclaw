@@ -314,13 +314,24 @@ const sessions: Record<string, {
     heroImageUrl?: string | null;
     heroImageBase64?: string | null;
     characterVisualDesc?: string | null;
+    characterProfile?: CharacterProfile | null;
     sceneImageUrl?: string | null;
     finaleImageUrl?: string | null;
     achievements?: string[];
 }> = {};
 
-// Generate a detailed, reusable visual description of the hero character
-async function generateCharacterVisualDesc(characterClass: string, quirk: string, theme: string): Promise<string> {
+// Structured character profile for image consistency
+interface CharacterProfile {
+    characterId: string;
+    identityAnchors: string;
+    wardrobeAnchors: string;
+    styleAnchors: string;
+    invarianceRules: string;
+    negativeConstraints: string;
+}
+
+// Generate a structured character profile for consistent image generation
+async function generateCharacterVisualDesc(characterClass: string, quirk: string, theme: string): Promise<{ desc: string, profile: CharacterProfile }> {
     try {
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -332,22 +343,111 @@ async function generateCharacterVisualDesc(characterClass: string, quirk: string
                 model: "gpt-4o-mini",
                 messages: [{
                     role: "system",
-                    content: `You are a character designer. Generate a detailed visual description of a fantasy hero for consistent use in AI image generation. The description should be 2-3 sentences covering: physical appearance (hair color/style, skin tone, build, eye color), clothing/armor style, and one distinctive visual feature (scar, tattoo, unique accessory). Make it specific and vivid so the character looks the same across multiple images. Do NOT include any actions or story — only describe what the character LOOKS like. Return ONLY the description, no preamble.`
+                    content: `You are a character designer for AI image generation. Generate a STRUCTURED character profile as a JSON object with these exact fields:
+
+{
+  "identityAnchors": "same person in every image, [gender], [age range], [face shape], [cheekbone structure], [nose shape], [eye shape and color], [eyebrow style], [skin tone with texture detail], [hair length/style/color and parting], [expression type]",
+  "wardrobeAnchors": "[primary garment with material and color], [secondary garment], [accessories - be specific], [footwear if relevant]",
+  "styleAnchors": "digital fantasy concept art, painterly realism, cinematic lighting, natural skin texture, accurate facial proportions, consistent facial geometry, realistic fabric texture, high-detail fantasy illustration"
+}
+
+Make the identity anchors EXTREMELY specific — exact eye color, exact hair description, exact skin tone, distinct facial features. The wardrobe should suit a ${characterClass} class hero with a ${quirk} personality in a ${theme} setting. Include one distinctive visual feature (scar, tattoo, unique accessory, magical marking).
+
+Return ONLY the JSON object, no markdown.`
                 }, {
                     role: "user",
-                    content: `Class: ${characterClass}, Personality: ${quirk}, Setting: ${theme}`
+                    content: `Create a character profile for: Class: ${characterClass}, Personality: ${quirk}, Setting: ${theme}`
                 }],
                 temperature: 0.7
             })
         });
         const body = await res.json() as any;
-        const desc = body.choices[0].message.content.trim();
-        console.log(`🎨 Character visual description: ${desc}`);
-        return desc;
+        if (!body.choices || !body.choices[0]) {
+            console.error("OpenAI API error in generateCharacterVisualDesc:", JSON.stringify(body));
+            const fallbackDesc = `A ${quirk} ${characterClass}`;
+            return {
+                desc: fallbackDesc,
+                profile: {
+                    characterId: 'HERO-FALLBACK',
+                    identityAnchors: `same person in every image, fantasy ${characterClass}`,
+                    wardrobeAnchors: `typical ${characterClass} attire`,
+                    styleAnchors: 'digital fantasy concept art, painterly realism, cinematic lighting',
+                    invarianceRules: 'keep the exact same face, same age, same hair, same outfit',
+                    negativeConstraints: 'no identity drift, no costume changes unless specified'
+                }
+            };
+        }
+
+        const content = body.choices[0].message.content.trim();
+        const cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+
+        const profile: CharacterProfile = {
+            characterId: `HERO-${Date.now().toString(36).toUpperCase()}`,
+            identityAnchors: parsed.identityAnchors || `same person in every image, fantasy ${characterClass}`,
+            wardrobeAnchors: parsed.wardrobeAnchors || `typical ${characterClass} attire`,
+            styleAnchors: parsed.styleAnchors || 'digital fantasy concept art, painterly realism, cinematic lighting, consistent facial geometry',
+            invarianceRules: 'keep the exact same face, same age, same hair color and hairstyle, same eyebrow shape, same skin tone, same body proportions, same wardrobe unless explicitly changed, same overall visual identity',
+            negativeConstraints: 'do not change identity, no different face, no different hairstyle, no extra accessories unless specified, no beauty filter skin, no cartoon stylization, no warped hands, no distorted eyes, no identity drift'
+        };
+
+        // Also create a flat description string for backward compatibility
+        const desc = `${profile.identityAnchors}. ${profile.wardrobeAnchors}`;
+
+        console.log(`🎨 Character profile generated:`);
+        console.log(`   ID: ${profile.characterId}`);
+        console.log(`   Identity: ${profile.identityAnchors}`);
+        console.log(`   Wardrobe: ${profile.wardrobeAnchors}`);
+
+        return { desc, profile };
     } catch (e) {
-        console.error("Failed to generate character visual description", e);
-        return `A ${quirk} ${characterClass}`;
+        console.error("Failed to generate character profile", e);
+        const fallbackDesc = `A ${quirk} ${characterClass}`;
+        return {
+            desc: fallbackDesc,
+            profile: {
+                characterId: 'HERO-FALLBACK',
+                identityAnchors: `same person in every image, fantasy ${characterClass}`,
+                wardrobeAnchors: `typical ${characterClass} attire`,
+                styleAnchors: 'digital fantasy concept art, painterly realism, cinematic lighting',
+                invarianceRules: 'keep the exact same face, same age, same hair, same outfit',
+                negativeConstraints: 'no identity drift, no costume changes unless specified'
+            }
+        };
     }
+}
+
+// Build an image prompt using the structured character profile
+// Separates CONSTANT identity from PER-SCENE variables
+function buildImagePrompt(profile: CharacterProfile, scene: {
+    pose?: string;
+    action?: string;
+    setting?: string;
+    lighting?: string;
+    camera?: string;
+    mood?: string;
+}): string {
+    const parts = [
+        // CONSTANT — Character Identity (never changes)
+        `[CHARACTER ID: ${profile.characterId}]`,
+        `[IDENTITY ANCHORS]: ${profile.identityAnchors}`,
+        `[WARDROBE ANCHORS]: ${profile.wardrobeAnchors}`,
+        `[STYLE ANCHORS]: ${profile.styleAnchors}`,
+
+        // PER-SCENE — These change every image
+        scene.pose ? `[POSE / ACTION]: ${scene.pose}` : '',
+        scene.action ? `[SCENE ACTION]: ${scene.action}` : '',
+        scene.camera ? `[CAMERA]: ${scene.camera}` : '[CAMERA]: Medium shot, eye-level',
+        scene.lighting ? `[LIGHTING]: ${scene.lighting}` : '[LIGHTING]: Dramatic cinematic lighting',
+        scene.setting ? `[SCENE]: ${scene.setting}` : '',
+        scene.mood ? `[MOOD]: ${scene.mood}` : '',
+
+        // CONSTANT — Consistency Rules (never changes)
+        `[INVARIANCE RULES]: ${profile.invarianceRules}`,
+        `[NEGATIVE CONSTRAINTS]: ${profile.negativeConstraints}`
+    ];
+
+    return parts.filter(p => p.length > 0).join('\n');
 }
 
 // Download an image URL and return as raw base64 string (no data URI prefix)
@@ -493,30 +593,43 @@ app.post('/api/start', async (req, res) => {
         return res.status(500).json({ error: "Failed to generate valid opening scene." });
     }
 
-    // Step 1: Generate a detailed visual character description for consistency
+    // Step 1: Generate structured character profile for consistency
     const session = sessions[sessionId];
-    session.characterVisualDesc = await generateCharacterVisualDesc(
+    const { desc, profile } = await generateCharacterVisualDesc(
         session.characterClass, session.quirk, session.theme
     );
+    session.characterVisualDesc = desc;
+    session.characterProfile = profile;
 
-    // Step 2: Generate Hero Portrait using gpt-image-1
+    // Step 2: Generate Hero Portrait using gpt-image-1 + structured template
     let heroImageUrl: string | null = null;
     let sceneImageUrl: string | null = null;
 
     try {
-        const heroPrompt = `A beautiful, majestic, epic fantasy character portrait. ${session.characterVisualDesc} The setting and style should be heavily inspired by the following theme: ${session.theme}. High quality digital art style, highly detailed. Show the character from chest up, facing the viewer.`;
+        const heroPrompt = buildImagePrompt(profile, {
+            pose: 'Standing heroically, facing the viewer, confident stance',
+            camera: 'Close-up portrait, chest up, slightly low angle',
+            lighting: 'Dramatic rim lighting, warm key light on face',
+            setting: session.theme,
+            mood: 'Majestic, epic, ready for adventure'
+        });
         heroImageUrl = await generateSceneImage(heroPrompt);
 
         if (heroImageUrl) {
             session.heroImageUrl = heroImageUrl;
 
-            // Step 3: Download hero portrait as base64 for reference in future images
+            // Step 3: Download hero portrait as base64 for reference
             session.heroImageBase64 = await downloadImageAsBase64(heroImageUrl);
             console.log(`📸 Hero portrait saved as base64 reference (${session.heroImageBase64 ? 'success' : 'failed'})`);
         }
 
-        // Step 4: Generate scene image with hero reference for character consistency
-        const scenePrompt = `A highly detailed, epic digital painting illustrating the following scene: "${validBranch.narrative_text}". The scene features this specific hero: ${session.characterVisualDesc}. Setting: ${session.theme}. Style: Immersive, dramatic, high fantasy concept art. The hero must look exactly as described. Keep the artwork entirely safe.`;
+        // Step 4: Generate scene image with structured character consistency
+        const scenePrompt = buildImagePrompt(profile, {
+            action: validBranch.narrative_text,
+            setting: session.theme,
+            camera: 'Wide shot showing character and environment',
+            lighting: 'Cinematic, atmospheric, matching the scene mood'
+        });
         sceneImageUrl = await generateSceneImage(scenePrompt);
 
         if (sceneImageUrl) {
@@ -602,9 +715,24 @@ app.post('/api/choose', async (req, res) => {
 
     if (session.health <= 0 || isFinale) {
         try {
-            const promptOutcome = session.health <= 0
-                ? `A dramatic, highly detailed illustration showing the tragic defeat of the hero. The hero is: ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Style: Dramatic, melancholic, epic digital art. The hero must look exactly as described. Keep the artwork entirely safe, abstracting any violence or gore.`
-                : `A glorious, triumphant, highly detailed illustration showing the hero achieving their ultimate destiny in victory. The hero is: ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Style: Bright, heroic, epic digital art. The hero must look exactly as described. Keep the artwork entirely safe, avoiding any explicit content.`;
+            const finaleProfile = session.characterProfile;
+            const promptOutcome = finaleProfile
+                ? buildImagePrompt(finaleProfile, session.health <= 0 ? {
+                    pose: 'Fallen, defeated, kneeling or collapsed',
+                    setting: session.theme,
+                    lighting: 'Dim, melancholic, fading light',
+                    mood: 'Tragic defeat, somber, dramatic. Abstract any violence. Keep artwork safe.',
+                    camera: 'Wide cinematic shot'
+                } : {
+                    pose: 'Triumphant, standing tall, arms raised or weapon held high',
+                    setting: session.theme,
+                    lighting: 'Bright golden light, victorious glow, sunrise or divine rays',
+                    mood: 'Glorious victory, triumph, ultimate destiny achieved. Keep artwork safe.',
+                    camera: 'Epic wide shot, slightly low angle'
+                })
+                : (session.health <= 0
+                    ? `A dramatic illustration showing the tragic defeat of ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Melancholic, safe artwork.`
+                    : `A triumphant illustration of ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`} achieving victory. Setting: ${session.theme}. Heroic, safe artwork.`);
 
             const achievementPrompt = `Based on the following adventure history, invent exactly 3 creative, short string achievements the player has earned during this run. \nHistory: ${session.history.join('. ')}\nReturn ONLY a raw JSON array of 3 strings. Example: ["Slayer of the Beast", "Master Thief", "Narrow Escape"]`;
 
@@ -656,7 +784,15 @@ app.post('/api/choose', async (req, res) => {
     } else {
         // Generate a scene image for normal progression with character consistency
         try {
-            const scenePrompt = `A highly detailed, epic digital painting illustrating the following scene: "${validBranch.narrative_text}". The scene features this specific hero: ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Style: Immersive, dramatic, high fantasy concept art. The hero must look exactly as described. Keep the artwork entirely safe.`;
+            const sceneProfile = session.characterProfile;
+            const scenePrompt = sceneProfile
+                ? buildImagePrompt(sceneProfile, {
+                    action: validBranch.narrative_text,
+                    setting: session.theme,
+                    camera: 'Wide shot showing character and environment',
+                    lighting: 'Cinematic, atmospheric, matching the scene mood'
+                })
+                : `A highly detailed epic digital painting: "${validBranch.narrative_text}". Hero: ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Style: Immersive fantasy concept art. Keep artwork safe.`;
             sceneImageUrl = await generateSceneImage(scenePrompt);
 
             if (sceneImageUrl) {

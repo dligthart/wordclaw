@@ -445,10 +445,8 @@ async function makeChoice(choiceText, rollObj = null) {
         }
 
         if (data.death) {
-            sceneImage.classList.add('hidden');
             showEndGame(true, data.reason, data.finaleImageUrl, data.achievements);
         } else if (!data.node.available_choices || data.node.available_choices.length === 0) {
-            sceneImage.classList.add('hidden');
             showEndGame(false, null, data.finaleImageUrl, data.achievements);
         }
 
