@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/dligthart/wordclaw/compare/v1.17.2...v1.18.0) (2026-03-15)
+
+
+### Features
+
+* **adventure-game:** structured character consistency template ([df352c0](https://github.com/dligthart/wordclaw/commit/df352c0fa371b8b33735ba919a7b8a0dca25e806))
+
 ## [1.17.2](https://github.com/dligthart/wordclaw/compare/v1.17.1...v1.17.2) (2026-03-14)
 
 
