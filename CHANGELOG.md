@@ -1,3 +1,10 @@
+# [1.21.0](https://github.com/dligthart/wordclaw/compare/v1.20.0...v1.21.0) (2026-03-15)
+
+
+### Features
+
+* **assets:** publish asset discovery contract ([1702d8d](https://github.com/dligthart/wordclaw/commit/1702d8d870c0e8224d872ec496d13d818bb5b20c))
+
 # [1.20.0](https://github.com/dligthart/wordclaw/compare/v1.19.0...v1.20.0) (2026-03-15)
 
 
