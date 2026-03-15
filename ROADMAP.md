@@ -6,7 +6,12 @@ WordClaw is evolving from a headless CMS into a secure governance runtime for AI
 
 We promote one major flagship feature per minor version release to ensure stability and focus.
 
-### v0.2: Production-Ready L402 Flows (Current)
+### v0.3: Schema-Aware Media Assets (Current)
+* **Goal**: Make media files a first-class part of the core runtime instead of pushing agents toward ad hoc external URLs.
+* **Status**: Rolling out. Local storage, schema-level asset references, multipart upload, signed and entitlement-gated delivery, MCP/CLI asset tooling, and restore/purge lifecycle are live on `main`. Remaining work is focused on remote object-storage providers and supervisor UI asset controls.
+* **Documentation**: See [RFC 0023](/doc/rfc/proposed/0023-media-asset-storage.md).
+
+### v0.2: Production-Ready L402 Flows (Shipped)
 * **Goal**: Provide an end-to-end, secure payment path for machine-to-machine transactions.
 * **Status**: Shipped. Agents can now natively purchase and redeem Lightning network macaroons (L402) for premium content access.
 * **Documentation**: See [L402 Protocol](/doc/concepts/l402-protocol.md).
@@ -33,9 +38,9 @@ These features are currently in active development or polishing phases for upcom
 - **Status**: In progress.
 - **Description**: Standardizing error payloads across both GraphQL and REST, ensuring AI agents receive consistent, actionable `recommendedNextAction` directives when validations fail.
 
-### 4. Media Asset Storage (RFC 0023)
-- **Status**: Proposed.
-- **Description**: Adding native `StorageAdapter` abstractions (Local/S3/R2) to securely track and serve uploaded media files associated with content items, gated by tenant `domainId`.
+### 4. Remote Asset Providers & Operator UX (RFC 0023)
+- **Status**: In progress.
+- **Description**: The core asset runtime is now live. The remaining rollout work is expanding beyond the local provider (`S3`/`R2`-style adapters) and exposing asset lifecycle controls in the supervisor UI so operators do not need the CLI for day-to-day asset management.
 
 ### 5. Performance & Scalability (RFC 0024)
 - **Status**: Proposed.

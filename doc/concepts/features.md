@@ -8,6 +8,7 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 
 - **Content Types** — Define reusable JSON schemas that content items must conform to. Schemas are validated on creation and enforced on every content write.
 - **Content Items** — Versioned content entities with `draft`, `published`, and `archived` status. Every update auto-increments the version and stores an immutable snapshot.
+- **Media Assets** — Domain-scoped asset records with schema-aware references, multipart upload, `public`/`signed`/`entitled` delivery modes, and restore/purge lifecycle controls.
 - **Batch Operations** — Create, update, or delete multiple items in a single call in atomic or partial mode.
 - **Version History and Rollback** — Browse the full history of any content item and restore prior versions without losing auditability.
 

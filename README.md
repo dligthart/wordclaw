@@ -9,7 +9,7 @@
 
 [![Node.js CI](https://github.com/dligthart/wordclaw/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dligthart/wordclaw/actions/workflows/test.yml)
 
-**WordClaw** is a safe content runtime for AI agents and human supervisors. It combines structured content contracts, approval-aware workflows, dry-run safety, auditability, and agent-native access patterns so autonomous systems can operate on content without losing governance.
+**WordClaw** is a safe content runtime for AI agents and human supervisors. It combines structured content contracts, schema-aware media assets, approval-aware workflows, dry-run safety, auditability, and agent-native access patterns so autonomous systems can operate on content without losing governance.
 
 For a look ahead at what is in active development versus what is experimental, check out the [ROADMAP](ROADMAP.md).
 
@@ -18,6 +18,7 @@ For a look ahead at what is in active development versus what is experimental, c
 ### Core Today
 
 -   **Structured Content**: JSON schema-based content types with runtime validation, version history, and rollback.
+-   **Schema-Aware Media Assets**: First-class asset records with schema-level references, multipart uploads, public/signed/entitled delivery modes, and safe restore/purge lifecycle controls.
 -   **Agent-Friendly API**: REST responses include `recommendedNextAction`, `availableActions`, and `actionPriority` to guide automated clients.
 -   **REST + MCP Surfaces**: Primary agent access paths with strong content and governance semantics.
 -   **Governance by Default**: Dry-run support, approval workflows, audit logs, idempotency, and multi-tenant isolation.
@@ -69,6 +70,9 @@ For a look ahead at what is in active development versus what is experimental, c
     ENABLE_EXPERIMENTAL_AGENT_RUNS=false
     AGENT_RUN_WORKER_INTERVAL_MS=1000
     AGENT_RUN_WORKER_BATCH_SIZE=25
+    ASSET_STORAGE_PROVIDER=local
+    ASSET_STORAGE_ROOT=./storage/assets
+    ASSET_SIGNED_TTL_SECONDS=300
     PAYMENT_PROVIDER=lnbits
     LNBITS_BASE_URL=
     LNBITS_ADMIN_KEY=
@@ -159,11 +163,14 @@ npx tsx src/cli/index.ts audit guide --entity-type content_item --entity-id 123
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
+npx tsx src/cli/index.ts assets list --access-mode public --limit 10
+npx tsx src/cli/index.ts assets create --content-file ./hero.png --mime-type image/png --access-mode signed
 
 # Or build first and run the compiled CLI
 npm run build
 node dist/cli/index.js mcp smoke
 node dist/cli/index.js l402 offers --item 123
+node dist/cli/index.js assets access --id 44 --ttl-seconds 120
 
 # Or install the compiled binary locally
 npm run build
@@ -175,6 +182,7 @@ wordclaw content guide --help
 The CLI is JSON-first so agents can script it reliably, and `--raw` is available when you want only the response body or MCP text. It supports:
 - MCP discovery, direct tool calls, prompt reads, resource reads, and smoke testing
 - REST content type and content item CRUD
+- REST asset upload, metadata inspection, signed-access issuance, offer lookup, and restore/purge lifecycle operations
 - actor-aware content authoring guidance for a target schema
 - actor-aware integration guidance for API keys and webhooks
 - actor-aware provenance guidance for audit-trail inspection

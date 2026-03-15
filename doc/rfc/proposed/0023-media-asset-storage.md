@@ -1,8 +1,9 @@
 ---
 title: Media Asset Storage
-status: proposed
+status: rolling-out
 author: WordClaw Team
 date: 2026-03-13
+updated: 2026-03-15
 ---
 
 # RFC 0023: Media Asset Storage
@@ -19,6 +20,27 @@ Today many schemas still rely on plain string fields such as `imageUrl`, `thumbn
 - rollback and historical versions can break when external files disappear
 
 This RFC proposes a native asset system with schema-aware references, managed storage, and delivery modes that align with the current WordClaw runtime.
+
+## 1.1 Current Status
+
+As of 2026-03-15, RFC 0023 is actively rolling out and the core asset runtime is already live on `main`.
+
+Implemented so far:
+
+- first-class `assets` persistence with domain scoping and canonical actor attribution
+- schema-aware asset references via `x-wordclaw-field-kind: "asset"` and `"asset-list"`
+- REST asset routes for create, list, get, offers, signed-access issuance, content delivery, soft delete, restore, and purge
+- multipart and JSON/base64 upload paths
+- `public`, `signed`, and `entitled` delivery modes
+- MCP asset tools and asset discovery resources
+- capability/deployment discovery for asset provider, upload modes, delivery modes, and lifecycle support
+- CLI asset commands for list/get/create/offers/access/delete/restore/purge
+
+Still pending:
+
+- remote object-storage providers beyond `local`
+- supervisor UI asset lifecycle and authoring controls
+- direct provider upload flows and optional asset derivatives
 
 ## 2. Motivation
 
@@ -242,17 +264,14 @@ V1 REST endpoints:
   - return asset metadata and derived delivery information
 - `GET /api/assets/:id/content`
   - stream or redirect according to access mode and caller permissions
+- `POST /api/assets/:id/access`
+  - issue short-lived signed access for `signed` assets
 - `DELETE /api/assets/:id`
   - soft-delete the asset
 - `POST /api/assets/:id/restore`
   - restore a soft-deleted asset
 - `POST /api/assets/:id/purge`
   - admin-only hard purge after safety checks
-
-Possible later expansion:
-
-- `POST /api/assets/:id/access`
-  - explicit signed URL or delivery token issuance
 
 ### 4.6. Pagination Contract
 
@@ -281,6 +300,7 @@ Recommended initial mapping:
   - list asset metadata
   - inspect asset metadata
   - access allowed public or signed assets
+  - inspect offer metadata for entitled assets
 - `admin`
   - hard purge assets
   - provider configuration and operational override paths
@@ -299,12 +319,18 @@ Assets are part of the agent runtime and must be discoverable via MCP.
 
 V1 MCP tools should include:
 
-- `upload_asset`
+- `create_asset`
 - `list_assets`
 - `get_asset`
 - `delete_asset`
 - `restore_asset`
-- `get_asset_content` or `get_asset_access`
+- `purge_asset`
+- `issue_asset_access`
+
+Current MCP resources:
+
+- `content://assets`
+- `content://assets/{id}`
 
 The capability manifest and deployment status surfaces should advertise:
 
@@ -357,6 +383,7 @@ Because content versions point to durable asset records instead of raw URLs, rol
 - cursor-paginated REST listing
 - public and signed delivery
 - MCP upload/list/get/delete support
+- Status: shipped
 
 ### Phase 2
 
@@ -364,12 +391,14 @@ Because content versions point to durable asset records instead of raw URLs, rol
 - asset reference tracking across content versions
 - restore and purge safety flow
 - CLI and demo coverage
+- Status: shipped for the core runtime; supervisor UI coverage remains open
 
 ### Phase 3
 
 - remote object storage providers
 - direct signed upload flows
 - optional derivatives and transformations
+- Status: in progress
 
 ## 7. Drawbacks
 
