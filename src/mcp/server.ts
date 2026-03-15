@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { getAssetSignedTtlSeconds } from '../config/assets.js';
 import { isExperimentalAgentRunsEnabled, isExperimentalRevenueEnabled } from '../config/runtime-features.js';
 import { db } from '../db/index.js';
 import { agentProfiles, auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
@@ -36,6 +37,7 @@ import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
 import { buildL402Guide } from '../cli/lib/l402-guide.js';
 import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
+import { issueSignedAssetAccess } from '../services/asset-access.js';
 import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import {
@@ -494,9 +496,11 @@ export function createServer(options: CreateMcpServerOptions = {}) {
             delivery: {
                 readSurface: 'rest',
                 contentPath: `/api/assets/${asset.id}/content`,
+                accessPath: asset.accessMode === 'signed' ? `/api/assets/${asset.id}/access` : null,
                 requiresAuth: asset.accessMode !== 'public',
                 requiresEntitlement: asset.accessMode === 'entitled',
-                offersPath: asset.accessMode === 'entitled' ? `/api/assets/${asset.id}/offers` : null
+                offersPath: asset.accessMode === 'entitled' ? `/api/assets/${asset.id}/offers` : null,
+                signedTokenTtlSeconds: asset.accessMode === 'signed' ? getAssetSignedTtlSeconds() : null
             }
         };
     }
@@ -513,10 +517,11 @@ export function createServer(options: CreateMcpServerOptions = {}) {
 
         if (asset.accessMode === 'signed') {
             return {
-                method: 'GET',
-                path: asset.delivery.contentPath,
+                method: 'POST',
+                path: asset.delivery.accessPath,
                 auth: 'api-key-or-session',
-                note: 'Signed/private asset delivery remains REST-first. Use an authenticated REST read for the current runtime.'
+                issueTool: 'issue_asset_access',
+                note: 'Issue a short-lived signed URL over REST or MCP before reading the asset bytes without a long-lived credential.'
             };
         }
 
@@ -974,6 +979,62 @@ server.tool(
             note: offers.length > 0
                 ? 'Purchase an offer over REST and read the asset bytes through GET /api/assets/:id/content.'
                 : 'This asset is entitled, but no active offer currently matches its entitlement scope.'
+        });
+    })
+);
+
+server.tool(
+    'issue_asset_access',
+    'Issue a short-lived signed access URL for signed assets, or return direct guidance for public assets',
+    {
+        id: z.number().describe('Asset ID'),
+        ttlSeconds: z.number().optional().describe('Optional token lifetime in seconds (30-3600)')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'asset', id: args.id }), async ({ id, ttlSeconds }, _extra, domainId) => {
+        const asset = await getAsset(id, domainId);
+        if (!asset) {
+            return err(`ASSET_NOT_FOUND: Asset ${id} not found in the current domain.`);
+        }
+
+        const serializedAsset = serializeAssetForMcp(asset);
+        if (asset.accessMode === 'public') {
+            return okJson({
+                asset: serializedAsset,
+                access: {
+                    mode: 'public',
+                    method: 'GET',
+                    contentPath: serializedAsset.delivery.contentPath,
+                    signedUrl: null,
+                    token: null,
+                    expiresAt: null,
+                    ttlSeconds: null,
+                    note: 'This asset is already publicly readable over REST.'
+                }
+            });
+        }
+
+        if (asset.accessMode !== 'signed') {
+            return err(`ASSET_ACCESS_ISSUE_UNSUPPORTED: Asset ${id} uses ${asset.accessMode} delivery. Use get_asset_access for entitlement guidance instead.`);
+        }
+
+        const issued = issueSignedAssetAccess({
+            assetId: asset.id,
+            domainId: asset.domainId,
+            ttlSeconds
+        });
+
+        return okJson({
+            asset: serializedAsset,
+            access: {
+                mode: 'signed',
+                method: 'GET',
+                contentPath: serializedAsset.delivery.contentPath,
+                signedUrl: `${serializedAsset.delivery.contentPath}?token=${encodeURIComponent(issued.token)}`,
+                token: issued.token,
+                expiresAt: issued.expiresAt.toISOString(),
+                ttlSeconds: issued.ttlSeconds,
+                note: 'Use the signed URL before it expires. The token is scoped to this asset and domain.'
+            }
         });
     })
 );

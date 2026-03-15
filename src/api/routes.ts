@@ -2,8 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { and, asc, desc, eq, gte, ilike, inArray, lte, or, lt, sql } from 'drizzle-orm';
 
+import { getAssetSignedTtlSeconds } from '../config/assets.js';
 import { db } from '../db/index.js';
-import { auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
+import { assets, auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import {
     isExperimentalAgentRunsEnabled,
@@ -30,6 +31,7 @@ import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
+import { issueSignedAssetAccess, verifySignedAssetAccess } from '../services/asset-access.js';
 import {
     AssetListError,
     type AssetEntitlementScope,
@@ -574,9 +576,11 @@ const AssetResponseSchema = Type.Object({
     deletedAt: Type.Union([Type.String(), Type.Null()]),
     delivery: Type.Object({
         contentPath: Type.String(),
+        accessPath: Type.Union([Type.String(), Type.Null()]),
         requiresAuth: Type.Boolean(),
         requiresEntitlement: Type.Boolean(),
-        offersPath: Type.Union([Type.String(), Type.Null()])
+        offersPath: Type.Union([Type.String(), Type.Null()]),
+        signedTokenTtlSeconds: Type.Union([Type.Number(), Type.Null()])
     })
 });
 
@@ -592,6 +596,27 @@ const OfferResponseSchema = Type.Object({
 });
 
 const AssetRestoreResponseSchema = AssetResponseSchema;
+
+const AssetAccessResponseSchema = Type.Object({
+    asset: AssetResponseSchema,
+    access: Type.Object({
+        mode: Type.Union([
+            Type.Literal('public'),
+            Type.Literal('signed')
+        ]),
+        method: Type.Literal('GET'),
+        contentPath: Type.String(),
+        auth: Type.Union([
+            Type.Literal('none'),
+            Type.Literal('api-key-or-session')
+        ]),
+        signedUrl: Type.Union([Type.String(), Type.Null()]),
+        token: Type.Union([Type.String(), Type.Null()]),
+        expiresAt: Type.Union([Type.String(), Type.Null()]),
+        ttlSeconds: Type.Union([Type.Number(), Type.Null()]),
+        note: Type.String()
+    })
+});
 
 const AssetPurgeResponseSchema = Type.Object({
     purged: Type.Boolean(),
@@ -642,9 +667,11 @@ function serializeAsset(asset: {
         deletedAt: asset.deletedAt ? asset.deletedAt.toISOString() : null,
         delivery: {
             contentPath: `/api/assets/${asset.id}/content`,
+            accessPath: asset.accessMode === 'signed' ? `/api/assets/${asset.id}/access` : null,
             requiresAuth: asset.accessMode !== 'public',
             requiresEntitlement: asset.accessMode === 'entitled',
-            offersPath: asset.accessMode === 'entitled' ? `/api/assets/${asset.id}/offers` : null
+            offersPath: asset.accessMode === 'entitled' ? `/api/assets/${asset.id}/offers` : null,
+            signedTokenTtlSeconds: asset.accessMode === 'signed' ? getAssetSignedTtlSeconds() : null
         }
     };
 }
@@ -2781,10 +2808,103 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
+    server.post('/assets/:id/access', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Union([
+                Type.Object({
+                    ttlSeconds: Type.Optional(Type.Number({ minimum: 30, maximum: 3600 }))
+                }),
+                Type.Null()
+            ]),
+            response: {
+                200: createAIResponse(AssetAccessResponseSchema),
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const { ttlSeconds } = (request.body as { ttlSeconds?: number } | undefined) ?? {};
+        const asset = await getAsset(id, getDomainId(request));
+
+        if (!asset) {
+            return reply.status(404).send(notFoundAsset(id));
+        }
+
+        const serialized = serializeAsset(asset);
+        if (asset.accessMode === 'public') {
+            return {
+                data: {
+                    asset: serialized,
+                    access: {
+                        mode: 'public',
+                        method: 'GET',
+                        contentPath: serialized.delivery.contentPath,
+                        auth: 'none',
+                        signedUrl: null,
+                        token: null,
+                        expiresAt: null,
+                        ttlSeconds: null,
+                        note: 'This asset is already publicly readable over the REST content endpoint.'
+                    }
+                },
+                meta: buildMeta(
+                    'Read the public asset bytes directly',
+                    ['GET /api/assets/:id/content'],
+                    'low',
+                    0
+                )
+            };
+        }
+
+        if (asset.accessMode !== 'signed') {
+            return reply.status(409).send(toErrorPayload(
+                'Signed access issuance unavailable',
+                'ASSET_ACCESS_ISSUE_UNSUPPORTED',
+                `This asset uses ${asset.accessMode} access. Use GET /api/assets/${id}/offers or GET /api/assets/${id}/content with the appropriate entitlement flow instead.`
+            ));
+        }
+
+        const issued = issueSignedAssetAccess({
+            assetId: asset.id,
+            domainId: asset.domainId,
+            ttlSeconds
+        });
+
+        return {
+            data: {
+                asset: serialized,
+                access: {
+                    mode: 'signed',
+                    method: 'GET',
+                    contentPath: serialized.delivery.contentPath,
+                    auth: 'none',
+                    signedUrl: `${serialized.delivery.contentPath}?token=${encodeURIComponent(issued.token)}`,
+                    token: issued.token,
+                    expiresAt: issued.expiresAt.toISOString(),
+                    ttlSeconds: issued.ttlSeconds,
+                    note: 'Use the signed URL before it expires. The token is scoped to this asset and domain.'
+                }
+            },
+            meta: buildMeta(
+                'Fetch the signed asset bytes with the issued short-lived token',
+                ['GET /api/assets/:id/content?token=...'],
+                'low',
+                0
+            )
+        };
+    });
+
     server.get('/assets/:id/content', {
         schema: {
             params: Type.Object({
                 id: Type.Number()
+            }),
+            querystring: Type.Object({
+                token: Type.Optional(Type.String({ minLength: 1 }))
             }),
             response: {
                 400: AIErrorResponse,
@@ -2797,7 +2917,35 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
+        const token = ((request.query as { token?: string } | undefined)?.token || '').trim();
         let asset = await getPublicAsset(id);
+
+        if (!asset && token) {
+            const signedAsset = await db.select().from(assets).where(and(
+                eq(assets.id, id),
+                eq(assets.status, 'active'),
+                eq(assets.accessMode, 'signed')
+            )).limit(1);
+            const candidate = signedAsset[0] ?? null;
+
+            if (!candidate) {
+                return reply.status(404).send(notFoundAsset(id));
+            }
+
+            const verification = verifySignedAssetAccess(token, {
+                assetId: candidate.id,
+                domainId: candidate.domainId
+            });
+            if (!verification.ok) {
+                return reply.status(403).send(toErrorPayload(
+                    verification.code === 'ASSET_ACCESS_TOKEN_EXPIRED' ? 'Signed asset token expired' : 'Invalid signed asset token',
+                    verification.code,
+                    verification.remediation
+                ));
+            }
+
+            asset = candidate;
+        }
 
         if (!asset) {
             const auth = await authorizeApiRequest(request.method, request.url.split('?')[0], request.headers);

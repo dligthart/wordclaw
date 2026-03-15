@@ -2533,6 +2533,108 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('issues signed asset access over the REST access route', async () => {
+        const app = await buildServer();
+        const getAssetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
+            id: 78,
+            domainId: 1,
+            filename: 'private.pdf',
+            originalFilename: 'private.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 2048,
+            byteHash: 'hash-78',
+            storageProvider: 'local',
+            storageKey: '1/private.pdf',
+            accessMode: 'signed',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
+            status: 'active',
+            metadata: {},
+            uploaderActorId: 'api_key:1',
+            uploaderActorType: 'api_key',
+            uploaderActorSource: 'db',
+            createdAt: new Date('2026-03-14T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-14T10:00:00.000Z'),
+            deletedAt: null
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/78/access',
+                payload: {
+                    ttlSeconds: 120
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    asset: { id: number; accessMode: string };
+                    access: {
+                        mode: string;
+                        signedUrl: string | null;
+                        token: string | null;
+                        expiresAt: string | null;
+                        ttlSeconds: number | null;
+                    };
+                };
+            };
+            expect(body.data.asset).toEqual(expect.objectContaining({
+                id: 78,
+                accessMode: 'signed'
+            }));
+            expect(body.data.access.mode).toBe('signed');
+            expect(body.data.access.ttlSeconds).toBe(120);
+            expect(body.data.access.token).toEqual(expect.any(String));
+            expect(body.data.access.signedUrl).toContain('/api/assets/78/content?token=');
+            expect(body.data.access.expiresAt).toEqual(expect.any(String));
+        } finally {
+            getAssetSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns ASSET_ACCESS_ISSUE_UNSUPPORTED when issuing access for an entitled asset', async () => {
+        const app = await buildServer();
+        const getAssetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
+            id: 79,
+            domainId: 1,
+            filename: 'premium.pdf',
+            originalFilename: 'premium.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 512,
+            byteHash: 'hash-79',
+            storageProvider: 'local',
+            storageKey: '1/premium.pdf',
+            accessMode: 'entitled',
+            entitlementScopeType: 'subscription',
+            entitlementScopeRef: null,
+            status: 'active',
+            metadata: {},
+            uploaderActorId: 'api_key:1',
+            uploaderActorType: 'api_key',
+            uploaderActorSource: 'db',
+            createdAt: new Date('2026-03-14T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-14T10:00:00.000Z'),
+            deletedAt: null
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/79/access'
+            });
+
+            expect(response.statusCode).toBe(409);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('ASSET_ACCESS_ISSUE_UNSUPPORTED');
+        } finally {
+            getAssetSpy.mockRestore();
+            await app.close();
+        }
+    });
+
     it('requires auth for signed asset content', async () => {
         process.env.AUTH_REQUIRED = 'true';
         const app = await buildServer();

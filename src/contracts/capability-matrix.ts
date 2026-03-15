@@ -77,6 +77,12 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'get_asset' }
     },
     {
+        id: 'issue_asset_access',
+        description: 'Issue signed asset access or direct delivery guidance',
+        rest: { method: 'POST', path: '/assets/:id/access' },
+        mcp: { tool: 'issue_asset_access' }
+    },
+    {
         id: 'delete_asset',
         description: 'Soft-delete an asset',
         rest: { method: 'DELETE', path: '/assets/:id' },

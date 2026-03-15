@@ -18,6 +18,7 @@ Asset discovery is available in-band too:
 - `content://assets` lists the current domain asset catalog snapshot
 - `content://assets/{id}` returns a single asset metadata snapshot
 - `get_asset_access` explains which REST path to read, whether auth is required, and whether an entitlement-backed offer applies
+- `issue_asset_access` issues a short-lived signed asset URL for `signed` assets, or returns direct public-read guidance when the asset is already public
 
 Recommended remote MCP preflight:
 
@@ -262,6 +263,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | `list_assets`      | List assets with optional filters and cursor paging                  |
 | `get_asset`        | Read a single asset metadata record                                  |
 | `get_asset_access` | Return REST delivery guidance, auth requirements, and available offers |
+| `issue_asset_access` | Issue a short-lived signed asset URL or direct public delivery guidance |
 | `delete_asset`     | Soft-delete an asset so it can no longer be newly referenced         |
 | `restore_asset`    | Restore a soft-deleted asset back to active status                   |
 | `purge_asset`      | Permanently remove a soft-deleted asset after reference checks       |

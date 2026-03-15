@@ -65,6 +65,9 @@ export function resolveRestOperation(method: string, routePath: string): string 
     if (routePath.startsWith('/api/payments')) {
         return 'payment.read';
     }
+    if (/^\/api\/assets\/[^/]+\/access$/.test(routePath)) {
+        return 'content.read';
+    }
     if (routePath.startsWith('/api/policy/evaluate')) {
         return 'policy.read';
     }

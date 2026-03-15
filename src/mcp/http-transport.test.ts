@@ -406,6 +406,7 @@ describe('MCP HTTP transport', () => {
         expect(tools.tools.some((tool) => tool.name === 'list_assets')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'get_asset')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'get_asset_access')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'issue_asset_access')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'delete_asset')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'restore_asset')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'purge_asset')).toBe(true);
@@ -725,6 +726,19 @@ describe('MCP HTTP transport', () => {
                 }
             }
         });
+        const createSignedAsset = await client.callTool({
+            name: 'create_asset',
+            arguments: {
+                filename: 'mcp-signed-asset.txt',
+                originalFilename: 'private-note.txt',
+                mimeType: 'text/plain',
+                contentBase64: Buffer.from('signed hello').toString('base64'),
+                accessMode: 'signed',
+                metadata: {
+                    source: 'mcp-http-test'
+                }
+            }
+        });
 
         const publicAssetPayload = JSON.parse(
             extractFirstText(createPublicAsset.content as Array<{ type: string; text?: string }>)
@@ -732,10 +746,14 @@ describe('MCP HTTP transport', () => {
         const entitledAssetPayload = JSON.parse(
             extractFirstText(createEntitledAsset.content as Array<{ type: string; text?: string }>)
         );
+        const signedAssetPayload = JSON.parse(
+            extractFirstText(createSignedAsset.content as Array<{ type: string; text?: string }>)
+        );
 
         const publicAssetId = publicAssetPayload.asset.id as number;
         const entitledAssetId = entitledAssetPayload.asset.id as number;
-        createdAssetIds.push(publicAssetId, entitledAssetId);
+        const signedAssetId = signedAssetPayload.asset.id as number;
+        createdAssetIds.push(publicAssetId, entitledAssetId, signedAssetId);
 
         const listResult = await client.callTool({
             name: 'list_assets',
@@ -760,6 +778,13 @@ describe('MCP HTTP transport', () => {
             name: 'get_asset_access',
             arguments: {
                 id: entitledAssetId
+            }
+        });
+        const issueSignedAccessResult = await client.callTool({
+            name: 'issue_asset_access',
+            arguments: {
+                id: signedAssetId,
+                ttlSeconds: 120
             }
         });
         const assetResource = await client.readResource({ uri: `content://assets/${publicAssetId}` });
@@ -792,11 +817,13 @@ describe('MCP HTTP transport', () => {
         const getJson = JSON.parse(extractFirstText(getResult.content as Array<{ type: string; text?: string }>));
         const publicAccessJson = JSON.parse(extractFirstText(publicAccessResult.content as Array<{ type: string; text?: string }>));
         const entitledAccessJson = JSON.parse(extractFirstText(entitledAccessResult.content as Array<{ type: string; text?: string }>));
+        const signedAccessJson = JSON.parse(extractFirstText(issueSignedAccessResult.content as Array<{ type: string; text?: string }>));
         const deleteJson = JSON.parse(extractFirstText(deleteResult.content as Array<{ type: string; text?: string }>));
         const restoreJson = JSON.parse(extractFirstText(restoreResult.content as Array<{ type: string; text?: string }>));
         const deleteAgainJson = JSON.parse(extractFirstText(deleteAgainResult.content as Array<{ type: string; text?: string }>));
         const purgeJson = JSON.parse(extractFirstText(purgeResult.content as Array<{ type: string; text?: string }>));
         const assetResourceText = assetResource.contents.find((entry) => 'text' in entry)?.text;
+        const signedReadResponse = await fetch(new URL(signedAccessJson.access.signedUrl as string, `${baseUrl}/`));
 
         expect(publicAssetPayload).toEqual(expect.objectContaining({
             asset: expect.objectContaining({
@@ -825,9 +852,21 @@ describe('MCP HTTP transport', () => {
                 }),
             }),
         }));
+        expect(signedAssetPayload).toEqual(expect.objectContaining({
+            asset: expect.objectContaining({
+                id: expect.any(Number),
+                accessMode: 'signed',
+                delivery: expect.objectContaining({
+                    accessPath: `/api/assets/${signedAssetId}/access`,
+                    requiresAuth: true,
+                    requiresEntitlement: false,
+                }),
+            }),
+        }));
         expect(listJson.items).toEqual(expect.arrayContaining([
             expect.objectContaining({ id: publicAssetId }),
             expect.objectContaining({ id: entitledAssetId }),
+            expect.objectContaining({ id: signedAssetId }),
         ]));
         expect(getJson).toEqual(expect.objectContaining({
             id: publicAssetId,
@@ -851,6 +890,21 @@ describe('MCP HTTP transport', () => {
             }),
             offers: [],
         }));
+        expect(signedAccessJson).toEqual(expect.objectContaining({
+            asset: expect.objectContaining({
+                id: signedAssetId,
+                accessMode: 'signed',
+            }),
+            access: expect.objectContaining({
+                mode: 'signed',
+                contentPath: `/api/assets/${signedAssetId}/content`,
+                signedUrl: expect.stringContaining(`/api/assets/${signedAssetId}/content?token=`),
+                token: expect.any(String),
+                ttlSeconds: 120,
+            }),
+        }));
+        expect(signedReadResponse.status).toBe(200);
+        expect(await signedReadResponse.text()).toBe('signed hello');
         expect(typeof assetResourceText).toBe('string');
         expect(JSON.parse(assetResourceText as string)).toEqual(expect.objectContaining({
             id: publicAssetId,
