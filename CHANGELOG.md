@@ -1,3 +1,10 @@
+# [1.19.0](https://github.com/dligthart/wordclaw/compare/v1.18.0...v1.19.0) (2026-03-15)
+
+
+### Features
+
+* **assets:** add signed asset access issuance ([11c044d](https://github.com/dligthart/wordclaw/commit/11c044ddc213a29fee72978217873512e34f3c75))
+
 # [1.18.0](https://github.com/dligthart/wordclaw/compare/v1.17.2...v1.18.0) (2026-03-15)
 
 
