@@ -1,3 +1,10 @@
+# [1.20.0](https://github.com/dligthart/wordclaw/compare/v1.19.0...v1.20.0) (2026-03-15)
+
+
+### Features
+
+* **assets:** add multipart upload support ([7330b06](https://github.com/dligthart/wordclaw/commit/7330b06079bfb97d2c7120d4658303402a006152))
+
 # [1.19.0](https://github.com/dligthart/wordclaw/compare/v1.18.0...v1.19.0) (2026-03-15)
 
 
