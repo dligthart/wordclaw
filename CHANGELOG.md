@@ -1,3 +1,10 @@
+# [1.23.0](https://github.com/dligthart/wordclaw/compare/v1.22.0...v1.23.0) (2026-03-15)
+
+
+### Features
+
+* integrate WordClaw asset storage for adventure game images ([69402a3](https://github.com/dligthart/wordclaw/commit/69402a31cd5af0d99971b560476f60bfd4623dd3))
+
 # [1.22.0](https://github.com/dligthart/wordclaw/compare/v1.21.0...v1.22.0) (2026-03-15)
 
 
