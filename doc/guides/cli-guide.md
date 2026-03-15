@@ -4,6 +4,7 @@ The WordClaw CLI is a JSON-first command-line interface for agents and operators
 
 - `MCP` for local tool discovery or remote MCP attachment
 - `REST` for content operations, workflows, and L402 purchase/entitlement flows
+- `REST` for content operations, asset storage, workflows, and L402 purchase/entitlement flows
 
 Use the CLI when you want a scriptable interface without writing a custom MCP client or hand-rolling HTTP requests.
 
@@ -225,7 +226,9 @@ Usability details:
 - unknown commands and subcommands return nearest-match suggestions, for example `mcp inspec` suggests `inspect`
 - `content-types ls` is a shorthand for `content-types list`
 - `content ls` is a shorthand for `content list`
+- `assets ls` is a shorthand for `assets list`
 - top-level aliases `ct` and `wf` expand to `content-types` and `workflow`
+- top-level alias `asset` expands to `assets`
 
 ### Generic REST
 
@@ -436,6 +439,51 @@ The guide tells you:
 - an example draft payload shape
 - whether an active review workflow exists
 - the recommended dry-run, create, and submit-for-review commands
+
+### Assets
+
+Use the asset commands when an agent or operator needs to upload binaries, inspect delivery policy, or manage asset lifecycle without falling back to raw REST calls:
+
+```bash
+node dist/cli/index.js assets list --access-mode public --limit 20
+node dist/cli/index.js assets list --status deleted --limit 20 --cursor <nextCursor>
+node dist/cli/index.js asset ls --raw
+node dist/cli/index.js assets get --id 44
+node dist/cli/index.js assets create \
+  --content-file ./hero.png \
+  --mime-type image/png \
+  --access-mode signed \
+  --metadata-json '{"alt":"Homepage hero"}'
+node dist/cli/index.js assets create \
+  --filename price-sheet.pdf \
+  --mime-type application/pdf \
+  --content-base64-file ./payloads/price-sheet.base64 \
+  --access-mode entitled \
+  --entitlement-scope-json '{"type":"type","ref":12}'
+node dist/cli/index.js assets offers --id 44
+node dist/cli/index.js assets access --id 44 --ttl-seconds 120
+node dist/cli/index.js assets delete --id 44
+node dist/cli/index.js assets restore --id 44
+node dist/cli/index.js assets purge --id 44
+```
+
+Supported features:
+
+- filtered list views with cursor pagination
+- asset metadata reads
+- multipart upload from `--content-file`
+- JSON/base64 upload from `--content-base64` or `--content-base64-file`
+- delivery policy inspection for `public`, `signed`, and `entitled` assets
+- offer discovery for entitlement-gated assets
+- signed access issuance for short-lived asset reads
+- soft delete, restore, and admin-only purge lifecycle operations
+
+Recommended usage:
+
+- use `assets create --content-file ...` when the bytes already exist on disk
+- use `assets access --id ...` when a signed asset needs a short-lived read token
+- use `assets offers --id ...` to inspect the purchase path for entitled assets before attempting a read
+- use `assets list --status deleted` before `assets restore` or `assets purge`
 
 ### Workflow and Review
 

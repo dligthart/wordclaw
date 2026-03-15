@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 import {
     getNumberFlag,
     getStringFlag,
     hasFlag,
     loadJsonFlag,
+    loadTextFlag,
     optionalPositional,
     parseArgs,
     requirePositional,
@@ -72,6 +76,7 @@ const TOP_LEVEL_COMMANDS = [
     'integrations',
     'content-types',
     'content',
+    'assets',
     'workflow',
     'l402',
 ] as const;
@@ -84,12 +89,14 @@ const REST_SUBCOMMANDS = ['request'] as const;
 const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
 const CONTENT_SUBCOMMANDS = ['list', 'guide', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
+const ASSETS_SUBCOMMANDS = ['list', 'get', 'create', 'offers', 'access', 'delete', 'restore', 'purge'] as const;
 const WORKFLOW_SUBCOMMANDS = ['active', 'guide', 'submit', 'tasks', 'decide'] as const;
 const L402_SUBCOMMANDS = ['offers', 'guide', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
 
 const TOP_LEVEL_ALIASES: Record<string, string> = {
     caps: 'capabilities',
     ct: 'content-types',
+    asset: 'assets',
     wf: 'workflow',
     interactive: 'repl',
 };
@@ -97,6 +104,9 @@ const CONTENT_TYPES_SUBCOMMAND_ALIASES: Record<string, string> = {
     ls: 'list',
 };
 const CONTENT_SUBCOMMAND_ALIASES: Record<string, string> = {
+    ls: 'list',
+};
+const ASSETS_SUBCOMMAND_ALIASES: Record<string, string> = {
     ls: 'list',
 };
 let currentRuntimeOptions: CliRuntimeOptions | null = null;
@@ -1236,6 +1246,187 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
     printResponse(args, response);
 }
 
+async function handleAssets(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'assets subcommand',
+        ASSETS_SUBCOMMANDS,
+        ASSETS_SUBCOMMAND_ALIASES,
+    );
+
+    if (action === 'list') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/assets',
+            query: {
+                q: getStringFlag(args, 'q'),
+                accessMode: getStringFlag(args, 'access-mode'),
+                status: getStringFlag(args, 'status'),
+                limit: maybeNumber(getNumberFlag(args, 'limit')),
+                offset: getStringFlag(args, 'cursor') ? undefined : maybeNumber(getNumberFlag(args, 'offset')),
+                cursor: getStringFlag(args, 'cursor'),
+            },
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'get') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('assets get requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: `/assets/${id}`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'create') {
+        const metadata = await loadJsonFlag(args, 'metadata-json', 'metadata-file');
+        const entitlementScope = await loadJsonFlag(args, 'entitlement-scope-json', 'entitlement-scope-file');
+        const contentBase64 = await loadTextFlag(args, 'content-base64', 'content-base64-file');
+        const contentFile = getStringFlag(args, 'content-file');
+        const filenameFlag = getStringFlag(args, 'filename');
+        const originalFilenameFlag = getStringFlag(args, 'original-filename');
+        const mimeType = requireStringFlag(args, 'mime-type');
+        const accessMode = getStringFlag(args, 'access-mode');
+
+        if (contentBase64 !== undefined && contentFile) {
+            throw new Error('assets create accepts either --content-file or --content-base64/--content-base64-file, not both.');
+        }
+
+        let response: RestCliResponse;
+        if (contentFile) {
+            const fileBytes = await fs.readFile(contentFile);
+            const derivedFilename = filenameFlag ?? path.basename(contentFile);
+            const derivedOriginalFilename = originalFilenameFlag ?? path.basename(contentFile);
+            const form = new FormData();
+
+            form.append('filename', derivedFilename);
+            form.append('originalFilename', derivedOriginalFilename);
+            form.append('mimeType', mimeType);
+            if (accessMode) {
+                form.append('accessMode', accessMode);
+            }
+            if (metadata !== undefined) {
+                form.append('metadata', JSON.stringify(metadata));
+            }
+            if (entitlementScope !== undefined) {
+                form.append('entitlementScope', JSON.stringify(entitlementScope));
+            }
+            form.append('file', new Blob([fileBytes], { type: mimeType }), derivedOriginalFilename);
+
+            response = await client.request({
+                method: 'POST',
+                path: '/assets',
+                body: form,
+                acceptStatuses: [201],
+            });
+        } else {
+            if (contentBase64 === undefined) {
+                throw new Error('assets create requires --content-file or --content-base64/--content-base64-file.');
+            }
+
+            const filename = filenameFlag ?? originalFilenameFlag;
+            if (!filename) {
+                throw new Error('assets create requires --filename when uploading inline base64 content.');
+            }
+
+            response = await client.request({
+                method: 'POST',
+                path: '/assets',
+                body: omitUndefined({
+                    filename,
+                    originalFilename: originalFilenameFlag,
+                    mimeType,
+                    contentBase64,
+                    accessMode,
+                    entitlementScope,
+                    metadata,
+                }),
+                acceptStatuses: [201],
+            });
+        }
+
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'offers') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('assets offers requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: `/assets/${id}/offers`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'access') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('assets access requires --id.');
+        }
+
+        const ttlSeconds = getNumberFlag(args, 'ttl-seconds');
+        const response = await client.request({
+            method: 'POST',
+            path: `/assets/${id}/access`,
+            body: ttlSeconds === undefined ? null : { ttlSeconds },
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'delete') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('assets delete requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'DELETE',
+            path: `/assets/${id}`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'restore') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('assets restore requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'POST',
+            path: `/assets/${id}/restore`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    const id = getNumberFlag(args, 'id');
+    if (id === undefined) {
+        throw new Error('assets purge requires --id.');
+    }
+
+    const response = await client.request({
+        method: 'POST',
+        path: `/assets/${id}/purge`,
+    });
+    printResponse(args, response);
+}
+
 async function handleWorkflow(client: RestCliClient, args: ParsedArgs) {
     const action = resolveSupportedSubcommand(
         args,
@@ -1589,6 +1780,10 @@ async function main(args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
     }
     if (command === 'content') {
         await handleContent(client, args);
+        return;
+    }
+    if (command === 'assets') {
+        await handleAssets(client, args);
         return;
     }
     if (command === 'workflow') {

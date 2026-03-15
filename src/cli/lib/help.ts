@@ -35,6 +35,14 @@ const USAGE_LINES = [
     'content versions --id <n>',
     'content rollback --id <n> --version <n> [--dry-run]',
     'content delete --id <n> [--dry-run]',
+    'assets list [--q <value>] [--access-mode public|signed|entitled] [--status active|deleted] [--limit <n>] [--offset <n>] [--cursor <value>]',
+    'assets get --id <n>',
+    'assets create [--filename <value>] [--original-filename <value>] --mime-type <value> [--content-file <path>|--content-base64 <value>|--content-base64-file <path>] [--access-mode public|signed|entitled] [--metadata-json <json>|--metadata-file <path>] [--entitlement-scope-json <json>|--entitlement-scope-file <path>]',
+    'assets offers --id <n>',
+    'assets access --id <n> [--ttl-seconds <n>]',
+    'assets delete --id <n>',
+    'assets restore --id <n>',
+    'assets purge --id <n>',
     'workflow active --content-type-id <n>',
     'workflow guide [--task <n>]',
     'workflow submit --id <n> --transition <n> [--assignee <value>]',
@@ -76,6 +84,11 @@ const EXAMPLES: Record<string, string[]> = {
     'content': [
         'wordclaw content guide --content-type-id 12',
         'wordclaw content create --content-type-id 12 --data-file item.json --dry-run',
+    ],
+    'assets': [
+        'wordclaw assets list --access-mode public --limit 10',
+        'wordclaw assets create --content-file ./hero.png --mime-type image/png --access-mode signed',
+        'wordclaw assets access --id 44 --ttl-seconds 120',
     ],
     'workflow': [
         'wordclaw workflow guide',
@@ -151,10 +164,12 @@ ${examples.map((line) => `  ${line}`).join('\n')}
 Aliases:
   caps -> capabilities
   ct -> content-types
+  asset -> assets
   wf -> workflow
   interactive -> repl
   content-types ls -> content-types list
   content ls -> content list
+  assets ls -> assets list
 
 Global options:
   --raw               Print plain body/text without the CLI envelope when possible

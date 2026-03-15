@@ -118,16 +118,27 @@ export class RestCliClient {
             requestHeaders['x-api-key'] = this.apiKey;
         }
 
-        let body: string | undefined;
+        let body: unknown;
         if (options.body !== undefined) {
-            requestHeaders['content-type'] = requestHeaders['content-type'] ?? 'application/json';
-            body = JSON.stringify(options.body);
+            if (
+                typeof options.body === 'string'
+                || options.body instanceof URLSearchParams
+                || options.body instanceof FormData
+                || options.body instanceof Blob
+                || options.body instanceof ArrayBuffer
+                || ArrayBuffer.isView(options.body)
+            ) {
+                body = options.body;
+            } else {
+                requestHeaders['content-type'] = requestHeaders['content-type'] ?? 'application/json';
+                body = JSON.stringify(options.body);
+            }
         }
 
         const response = await fetch(url, {
             method,
             headers: requestHeaders,
-            body,
+            body: body as never,
         });
         const rawBody = await response.text();
         const payload: RestCliResponse = {

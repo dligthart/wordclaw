@@ -12,8 +12,10 @@ describe('buildUsage', () => {
         expect(usage).toContain('script run --file <path> [--continue-on-error]');
         expect(usage).toContain('mcp openai-tools');
         expect(usage).toContain('workspace resolve --intent authoring|review|workflow|paid');
+        expect(usage).toContain('assets create [--filename <value>] [--original-filename <value>] --mime-type <value>');
         expect(usage).toContain('--config <path>');
         expect(usage).toContain('--format <type>');
+        expect(usage).toContain('asset -> assets');
         expect(usage).toContain('interactive -> repl');
     });
 
@@ -24,6 +26,16 @@ describe('buildUsage', () => {
         expect(usage).toContain('wordclaw content <subcommand> [options]');
         expect(usage).toContain('content guide --content-type-id <n>');
         expect(usage).not.toContain('workflow decide --id <n> --decision approved|rejected');
+    });
+
+    it('builds scoped assets command help', () => {
+        const usage = buildUsage({ command: 'assets' });
+
+        expect(usage).toContain('WordClaw CLI: assets');
+        expect(usage).toContain('wordclaw assets <subcommand> [options]');
+        expect(usage).toContain('assets list [--q <value>] [--access-mode public|signed|entitled]');
+        expect(usage).toContain('wordclaw assets create --content-file ./hero.png --mime-type image/png --access-mode signed');
+        expect(usage).not.toContain('content guide --content-type-id <n>');
     });
 
     it('builds scoped subcommand help', () => {
