@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { Type } from '@sinclair/typebox';
 import { and, asc, desc, eq, gte, ilike, inArray, lte, or, lt, sql } from 'drizzle-orm';
 
@@ -94,6 +94,9 @@ type CreateAssetBody = {
     };
     metadata?: Record<string, unknown>;
 };
+type CreateAssetMultipartBody = Omit<CreateAssetBody, 'contentBase64'> & {
+    contentBytes: Buffer;
+};
 type PaginationQuery = {
     limit?: number;
     offset?: number;
@@ -162,6 +165,234 @@ function toAssetErrorPayload(error: AssetListError): AIErrorPayload {
         code: error.code,
         remediation: error.remediation,
         ...(error.context ? { context: error.context } : {})
+    };
+}
+
+function parseAssetAccessMode(raw: string): 'public' | 'signed' | 'entitled' {
+    if (raw === 'public' || raw === 'signed' || raw === 'entitled') {
+        return raw;
+    }
+
+    throw new AssetListError(
+        'Invalid asset access mode',
+        'INVALID_ASSET_ACCESS_MODE',
+        'Use accessMode of "public", "signed", or "entitled".'
+    );
+}
+
+function parseMultipartJsonObjectField(raw: string, fieldName: string): Record<string, unknown> {
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error('not-object');
+        }
+
+        return parsed as Record<string, unknown>;
+    } catch {
+        throw new AssetListError(
+            `Invalid ${fieldName} JSON`,
+            `INVALID_ASSET_${fieldName.toUpperCase()}_JSON`,
+            `Provide ${fieldName} as a valid JSON object string in the multipart request.`
+        );
+    }
+}
+
+function parseMultipartEntitlementScopeField(raw: string): AssetEntitlementScope {
+    const parsed = parseMultipartJsonObjectField(raw, 'entitlement_scope') as {
+        type?: unknown;
+        ref?: unknown;
+    };
+
+    if (parsed.type !== 'item' && parsed.type !== 'type' && parsed.type !== 'subscription') {
+        throw new AssetListError(
+            'Invalid entitlement scope type',
+            'ASSET_ENTITLEMENT_SCOPE_INVALID',
+            'Use entitlementScope.type of "item", "type", or "subscription".'
+        );
+    }
+
+    if (parsed.ref !== undefined && parsed.ref !== null && typeof parsed.ref !== 'number') {
+        throw new AssetListError(
+            'Invalid entitlement scope reference',
+            'ASSET_ENTITLEMENT_SCOPE_INVALID',
+            'Provide entitlementScope.ref as a number when present.'
+        );
+    }
+
+    return {
+        type: parsed.type,
+        ref: parsed.ref as number | undefined
+    };
+}
+
+async function parseMultipartAssetCreateBody(request: FastifyRequest): Promise<CreateAssetMultipartBody> {
+    let fileBytes: Buffer | null = null;
+    let fileFilename: string | undefined;
+    let fileMimeType: string | undefined;
+    let filename: string | undefined;
+    let originalFilename: string | undefined;
+    let mimeType: string | undefined;
+    let accessMode: 'public' | 'signed' | 'entitled' | undefined;
+    let entitlementScope: AssetEntitlementScope | undefined;
+    let metadata: Record<string, unknown> | undefined;
+
+    for await (const part of request.parts()) {
+        if (part.type === 'file') {
+            if (fileBytes) {
+                throw new AssetListError(
+                    'Only one asset file can be uploaded per request',
+                    'ASSET_MULTIPART_TOO_MANY_FILES',
+                    'Send a single multipart file part when creating an asset.'
+                );
+            }
+
+            fileFilename = part.filename;
+            fileMimeType = part.mimetype;
+            fileBytes = await part.toBuffer();
+            continue;
+        }
+
+        const value = typeof part.value === 'string' ? part.value.trim() : String(part.value ?? '').trim();
+        if (part.fieldname === 'filename' && value) {
+            filename = value;
+        } else if (part.fieldname === 'originalFilename' && value) {
+            originalFilename = value;
+        } else if (part.fieldname === 'mimeType' && value) {
+            mimeType = value;
+        } else if (part.fieldname === 'accessMode' && value) {
+            accessMode = parseAssetAccessMode(value);
+        } else if (part.fieldname === 'metadata' && value) {
+            metadata = parseMultipartJsonObjectField(value, 'metadata');
+        } else if (part.fieldname === 'entitlementScope' && value) {
+            entitlementScope = parseMultipartEntitlementScopeField(value);
+        }
+    }
+
+    if (!fileBytes) {
+        throw new AssetListError(
+            'Multipart asset upload requires a file part',
+            'ASSET_MULTIPART_FILE_REQUIRED',
+            'Attach exactly one multipart file part with the asset bytes.'
+        );
+    }
+
+    const resolvedFilename = filename || fileFilename;
+    const resolvedMimeType = mimeType || fileMimeType;
+
+    if (!resolvedFilename || resolvedFilename.trim().length === 0) {
+        throw new AssetListError(
+            'Asset filename is required',
+            'ASSET_FILENAME_REQUIRED',
+            'Provide a multipart filename field or upload a file with a filename.'
+        );
+    }
+
+    if (!resolvedMimeType || resolvedMimeType.trim().length === 0) {
+        throw new AssetListError(
+            'Asset mime type is required',
+            'ASSET_MIME_TYPE_REQUIRED',
+            'Provide a multipart mimeType field or a file part with Content-Type.'
+        );
+    }
+
+    return {
+        filename: resolvedFilename,
+        originalFilename: originalFilename || fileFilename || resolvedFilename,
+        mimeType: resolvedMimeType,
+        contentBytes: fileBytes,
+        accessMode,
+        entitlementScope: entitlementScope ? {
+            type: entitlementScope.type,
+            ref: entitlementScope.ref ?? undefined
+        } : undefined,
+        metadata
+    };
+}
+
+function parseJsonAssetCreateBody(body: unknown): CreateAssetBody {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw new AssetListError(
+            'Invalid asset upload body',
+            'INVALID_ASSET_UPLOAD_BODY',
+            'Provide a JSON object or multipart/form-data when creating an asset.'
+        );
+    }
+
+    const candidate = body as Record<string, unknown>;
+    if (typeof candidate.filename !== 'string' || candidate.filename.trim().length === 0) {
+        throw new AssetListError(
+            'Asset filename is required',
+            'ASSET_FILENAME_REQUIRED',
+            'Provide filename as a non-empty string.'
+        );
+    }
+
+    if (typeof candidate.mimeType !== 'string' || candidate.mimeType.trim().length === 0) {
+        throw new AssetListError(
+            'Asset mime type is required',
+            'ASSET_MIME_TYPE_REQUIRED',
+            'Provide mimeType as a non-empty string.'
+        );
+    }
+
+    if (typeof candidate.contentBase64 !== 'string' || candidate.contentBase64.trim().length === 0) {
+        throw new AssetListError(
+            'Asset content is required',
+            'ASSET_CONTENT_REQUIRED',
+            'Provide contentBase64 as a non-empty string or use multipart/form-data.'
+        );
+    }
+
+    if (candidate.originalFilename !== undefined && (typeof candidate.originalFilename !== 'string' || candidate.originalFilename.trim().length === 0)) {
+        throw new AssetListError(
+            'Asset original filename must be a non-empty string',
+            'ASSET_ORIGINAL_FILENAME_INVALID',
+            'Provide originalFilename as a non-empty string when present.'
+        );
+    }
+
+    const accessMode = candidate.accessMode === undefined
+        ? undefined
+        : typeof candidate.accessMode === 'string'
+            ? parseAssetAccessMode(candidate.accessMode)
+            : (() => {
+                throw new AssetListError(
+                    'Invalid asset access mode',
+                    'INVALID_ASSET_ACCESS_MODE',
+                    'Use accessMode of "public", "signed", or "entitled".'
+                );
+            })();
+
+    if (
+        candidate.metadata !== undefined
+        && (!candidate.metadata || typeof candidate.metadata !== 'object' || Array.isArray(candidate.metadata))
+    ) {
+        throw new AssetListError(
+            'Invalid metadata object',
+            'INVALID_ASSET_METADATA_JSON',
+            'Provide metadata as a JSON object.'
+        );
+    }
+
+    if (
+        candidate.entitlementScope !== undefined
+        && (!candidate.entitlementScope || typeof candidate.entitlementScope !== 'object' || Array.isArray(candidate.entitlementScope))
+    ) {
+        throw new AssetListError(
+            'Invalid entitlement scope object',
+            'INVALID_ASSET_ENTITLEMENT_SCOPE_JSON',
+            'Provide entitlementScope as a JSON object.'
+        );
+    }
+
+    return {
+        filename: candidate.filename.trim(),
+        originalFilename: candidate.originalFilename?.trim(),
+        mimeType: candidate.mimeType.trim(),
+        contentBase64: candidate.contentBase64.trim(),
+        accessMode,
+        entitlementScope: candidate.entitlementScope as CreateAssetBody['entitlementScope'],
+        metadata: candidate.metadata as Record<string, unknown> | undefined
     };
 }
 
@@ -2603,33 +2834,25 @@ export default async function apiRoutes(server: FastifyInstance) {
 
     server.post('/assets', {
         schema: {
-            body: Type.Object({
-                filename: Type.String({ minLength: 1 }),
-                originalFilename: Type.Optional(Type.String({ minLength: 1 })),
-                mimeType: Type.String({ minLength: 1 }),
-                contentBase64: Type.String({ minLength: 1 }),
-                accessMode: Type.Optional(Type.Union([
-                    Type.Literal('public'),
-                    Type.Literal('signed'),
-                    Type.Literal('entitled')
-                ])),
-                entitlementScope: Type.Optional(Type.Object({
-                    type: Type.Union([
-                        Type.Literal('item'),
-                        Type.Literal('type'),
-                        Type.Literal('subscription')
-                    ]),
-                    ref: Type.Optional(Type.Number({ minimum: 1 }))
-                })),
-                metadata: Type.Optional(Type.Object({}, { additionalProperties: true }))
-            }),
+            consumes: ['application/json', 'multipart/form-data'],
+            body: Type.Any(),
             response: {
                 201: createAIResponse(AssetResponseSchema),
                 400: AIErrorResponse
             }
         }
     }, async (request, reply) => {
-        const body = request.body as CreateAssetBody;
+        let body: CreateAssetBody | CreateAssetMultipartBody;
+        try {
+            body = request.isMultipart()
+                ? await parseMultipartAssetCreateBody(request)
+                : parseJsonAssetCreateBody(request.body);
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return reply.status(400).send(toAssetErrorPayload(error));
+            }
+            throw error;
+        }
 
         let created;
         try {
@@ -2638,7 +2861,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                 filename: body.filename,
                 originalFilename: body.originalFilename,
                 mimeType: body.mimeType,
-                contentBase64: body.contentBase64,
+                contentBase64: 'contentBase64' in body ? body.contentBase64 : undefined,
+                contentBytes: 'contentBytes' in body ? body.contentBytes : undefined,
                 accessMode: body.accessMode,
                 entitlementScope: body.entitlementScope,
                 metadata: body.metadata,

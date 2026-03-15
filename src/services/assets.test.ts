@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../db/index.js', () => ({
+    db: {},
+}));
 
 import {
     decodeAssetContentBase64,
     decodeAssetsCursor,
     encodeAssetsCursor,
     getAssetEntitlementScope,
-    AssetListError
+    AssetListError,
+    resolveAssetContentBytes
 } from './assets.js';
 
 describe('decodeAssetContentBase64', () => {
@@ -16,6 +21,23 @@ describe('decodeAssetContentBase64', () => {
 
     it('rejects malformed base64 content', () => {
         expect(() => decodeAssetContentBase64('bad!')).toThrowError(AssetListError);
+    });
+});
+
+describe('resolveAssetContentBytes', () => {
+    it('returns raw bytes when provided directly', () => {
+        const bytes = resolveAssetContentBytes({
+            contentBytes: Buffer.from('hello')
+        });
+
+        expect(bytes.toString('utf8')).toBe('hello');
+    });
+
+    it('rejects requests that provide both bytes and base64 content', () => {
+        expect(() => resolveAssetContentBytes({
+            contentBase64: Buffer.from('hello').toString('base64'),
+            contentBytes: Buffer.from('hello')
+        })).toThrowError(AssetListError);
     });
 });
 

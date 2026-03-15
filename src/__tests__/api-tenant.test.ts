@@ -1,3 +1,4 @@
+import fastifyMultipart from '@fastify/multipart';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
@@ -26,6 +27,11 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
     beforeAll(async () => {
         fastify = Fastify({ logger: false });
         fastify.setErrorHandler(errorHandler);
+        await fastify.register(fastifyMultipart, {
+            limits: {
+                files: 1
+            }
+        });
         await fastify.register(apiRoutes, { prefix: '/api' });
 
         // 1. Ensure domains exist

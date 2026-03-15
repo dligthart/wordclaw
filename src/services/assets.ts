@@ -20,7 +20,8 @@ export type CreateAssetInput = {
     filename: string;
     originalFilename?: string;
     mimeType: string;
-    contentBase64: string;
+    contentBase64?: string;
+    contentBytes?: Buffer;
     accessMode?: AssetAccessMode;
     entitlementScope?: AssetEntitlementScope;
     metadata?: Record<string, unknown>;
@@ -197,6 +198,42 @@ export function decodeAssetContentBase64(contentBase64: string): Buffer {
     return bytes;
 }
 
+export function resolveAssetContentBytes(input: Pick<CreateAssetInput, 'contentBase64' | 'contentBytes'>): Buffer {
+    const hasBase64 = typeof input.contentBase64 === 'string' && input.contentBase64.trim().length > 0;
+    const contentBytes = Buffer.isBuffer(input.contentBytes) ? input.contentBytes : null;
+    const hasBytes = contentBytes !== null;
+
+    if (hasBase64 && hasBytes) {
+        throw new AssetListError(
+            'Provide either raw asset bytes or base64 asset content, not both',
+            'ASSET_CONTENT_CONFLICT',
+            'Send multipart file bytes or contentBase64 in JSON, but not both in the same request.'
+        );
+    }
+
+    if (hasBytes) {
+        if (contentBytes.byteLength === 0) {
+            throw new AssetListError(
+                'Empty asset content',
+                'EMPTY_ASSET_CONTENT',
+                'Provide non-empty asset bytes.'
+            );
+        }
+
+        return contentBytes;
+    }
+
+    if (hasBase64) {
+        return decodeAssetContentBase64(input.contentBase64!);
+    }
+
+    throw new AssetListError(
+        'Asset content is required',
+        'ASSET_CONTENT_REQUIRED',
+        'Provide contentBase64 in JSON uploads or attach a file in multipart uploads.'
+    );
+}
+
 export function encodeAssetsCursor(createdAt: Date, id: number): string {
     return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id }), 'utf8').toString('base64url');
 }
@@ -229,7 +266,7 @@ export function decodeAssetsCursor(cursor: string): AssetCursor | null {
 export async function createAsset(input: CreateAssetInput) {
     const accessMode = input.accessMode || 'public';
     const entitlementScope = await normalizeEntitlementScope(input.domainId, accessMode, input.entitlementScope);
-    const bytes = decodeAssetContentBase64(input.contentBase64);
+    const bytes = resolveAssetContentBytes(input);
     const storage = getAssetStorageProvider();
     const stored = await storage.put(input.domainId, input.filename, bytes);
 

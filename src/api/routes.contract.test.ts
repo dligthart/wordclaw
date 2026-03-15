@@ -1,3 +1,4 @@
+import fastifyMultipart from '@fastify/multipart';
 import Fastify, { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -52,8 +53,41 @@ type ApiErrorBody = {
 async function buildServer(): Promise<FastifyInstance> {
     const app = Fastify({ logger: false });
     app.setErrorHandler(errorHandler);
+    await app.register(fastifyMultipart, {
+        limits: {
+            files: 1
+        }
+    });
     await app.register(apiRoutes, { prefix: '/api' });
     return app;
+}
+
+function buildMultipartPayload(
+    boundary: string,
+    fields: Record<string, string>,
+    file: { fieldName: string; filename: string; contentType: string; content: Buffer }
+): Buffer {
+    const chunks: Buffer[] = [];
+
+    for (const [name, value] of Object.entries(fields)) {
+        chunks.push(Buffer.from(
+            `--${boundary}\r\n`
+            + `Content-Disposition: form-data; name="${name}"\r\n\r\n`
+            + `${value}\r\n`,
+            'utf8'
+        ));
+    }
+
+    chunks.push(Buffer.from(
+        `--${boundary}\r\n`
+        + `Content-Disposition: form-data; name="${file.fieldName}"; filename="${file.filename}"\r\n`
+        + `Content-Type: ${file.contentType}\r\n\r\n`,
+        'utf8'
+    ));
+    chunks.push(file.content);
+    chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'));
+
+    return Buffer.concat(chunks);
 }
 
 function resetMocks() {
@@ -2350,6 +2384,77 @@ describe('API Route Contracts', () => {
                 mimeType: 'image/png',
                 accessMode: 'public'
             }));
+        } finally {
+            createSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('creates an asset through the REST multipart upload route', async () => {
+        const app = await buildServer();
+        const createSpy = vi.spyOn(assetService, 'createAsset').mockResolvedValue({
+            id: 19,
+            domainId: 1,
+            filename: 'hero.jpg',
+            originalFilename: 'hero-original.jpg',
+            mimeType: 'image/jpeg',
+            sizeBytes: 256,
+            byteHash: 'def456',
+            storageProvider: 'local',
+            storageKey: '1/test-hero.jpg',
+            accessMode: 'signed',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
+            status: 'active',
+            metadata: { width: 1600, height: 900 },
+            uploaderActorId: 'anonymous',
+            uploaderActorType: 'anonymous',
+            uploaderActorSource: 'anonymous',
+            createdAt: new Date('2026-03-15T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-15T10:00:00.000Z'),
+            deletedAt: null
+        });
+
+        const boundary = '----wordclaw-test-boundary';
+        const payload = buildMultipartPayload(
+            boundary,
+            {
+                accessMode: 'signed',
+                metadata: JSON.stringify({ width: 1600, height: 900 }),
+                originalFilename: 'hero-original.jpg'
+            },
+            {
+                fieldName: 'file',
+                filename: 'hero.jpg',
+                contentType: 'image/jpeg',
+                content: Buffer.from('jpg-bytes')
+            }
+        );
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets',
+                headers: {
+                    'content-type': `multipart/form-data; boundary=${boundary}`
+                },
+                payload
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(createSpy).toHaveBeenCalledTimes(1);
+            expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({
+                domainId: 1,
+                filename: 'hero.jpg',
+                originalFilename: 'hero-original.jpg',
+                mimeType: 'image/jpeg',
+                accessMode: 'signed',
+                metadata: { width: 1600, height: 900 },
+                contentBytes: expect.any(Buffer)
+            }));
+
+            const createArgs = createSpy.mock.calls[0]?.[0];
+            expect(createArgs?.contentBytes?.toString('utf8')).toBe('jpg-bytes');
         } finally {
             createSpy.mockRestore();
             await app.close();

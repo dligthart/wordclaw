@@ -7,6 +7,7 @@ import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import fastifyJwt from '@fastify/jwt';
 import fastifyCookie from '@fastify/cookie';
+import fastifyMultipart from '@fastify/multipart';
 import mercurius from 'mercurius';
 import crypto from 'crypto';
 import { sql } from 'drizzle-orm';
@@ -194,6 +195,11 @@ export async function buildServer(): Promise<FastifyInstance> {
 
     server.register(cors);
     server.register(idempotencyPlugin, { ttlMs: 5 * 60 * 1000 });
+    server.register(fastifyMultipart, {
+        limits: {
+            files: 1
+        }
+    });
     server.setErrorHandler(errorHandler);
 
     const enableDocs = process.env.ENABLE_DOCS === 'true' || process.env.NODE_ENV !== 'production';
