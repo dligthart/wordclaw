@@ -13,6 +13,13 @@ WordClaw now exposes MCP in two ways:
 
 For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption. The MCP section now also includes a reactive contract block describing whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which session header is used, which filter fields are supported, and which topics are currently supported. The agent-guidance task recipes now also expose static `reactiveFollowUp` examples so an agent can discover likely subscription recipes and filters before it asks for a live `guide_task` refinement. For the live readiness layer, read `system://deployment-status`. That snapshot mirrors the reactive MCP status with the active transport, notification method, supported filter fields, and supported topic count. For the authenticated workspace layer, read `system://workspace-context`. That workspace snapshot now also groups the strongest authoring, workflow, review, and paid-content targets for the active actor. If you already know the task class and want the best schema plus the next concrete work target immediately, use `system://workspace-target/<intent>` or the `resolve_workspace_target` tool. That resolution now prioritizes the strongest actionable candidate across the active workspace rather than only picking the busiest schema first. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
 
+The same discovery surfaces now expose the asset contract too:
+
+- configured versus effective asset storage provider
+- supported upload modes over REST and MCP
+- supported delivery modes (`public`, `signed`, `entitled`)
+- signed asset issuance path/tool plus the default token TTL
+
 Asset discovery is available in-band too:
 
 - `content://assets` lists the current domain asset catalog snapshot

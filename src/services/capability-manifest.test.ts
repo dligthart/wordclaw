@@ -6,6 +6,8 @@ const originalExperimentalRevenue = process.env.ENABLE_EXPERIMENTAL_REVENUE;
 const originalExperimentalDelegation = process.env.ENABLE_EXPERIMENTAL_DELEGATION;
 const originalExperimentalAgentRuns = process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
 const originalNodeEnv = process.env.NODE_ENV;
+const originalAssetStorageProvider = process.env.ASSET_STORAGE_PROVIDER;
+const originalAssetSignedTtl = process.env.ASSET_SIGNED_TTL_SECONDS;
 
 function restoreEnv() {
     if (originalExperimentalRevenue === undefined) {
@@ -31,6 +33,18 @@ function restoreEnv() {
     } else {
         process.env.NODE_ENV = originalNodeEnv;
     }
+
+    if (originalAssetStorageProvider === undefined) {
+        delete process.env.ASSET_STORAGE_PROVIDER;
+    } else {
+        process.env.ASSET_STORAGE_PROVIDER = originalAssetStorageProvider;
+    }
+
+    if (originalAssetSignedTtl === undefined) {
+        delete process.env.ASSET_SIGNED_TTL_SECONDS;
+    } else {
+        process.env.ASSET_SIGNED_TTL_SECONDS = originalAssetSignedTtl;
+    }
 }
 
 describe('buildCapabilityManifest', () => {
@@ -42,6 +56,7 @@ describe('buildCapabilityManifest', () => {
         delete process.env.ENABLE_EXPERIMENTAL_REVENUE;
         delete process.env.ENABLE_EXPERIMENTAL_DELEGATION;
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        process.env.ASSET_SIGNED_TTL_SECONDS = '420';
 
         const manifest = buildCapabilityManifest();
 
@@ -107,6 +122,40 @@ describe('buildCapabilityManifest', () => {
                 enabled: true,
             }),
         ]));
+        expect(manifest.assetStorage).toEqual(expect.objectContaining({
+            enabled: true,
+            configuredProvider: 'local',
+            effectiveProvider: 'local',
+            fallbackApplied: false,
+            supportedProviders: ['local'],
+            upload: expect.objectContaining({
+                rest: {
+                    path: '/api/assets',
+                    modes: ['json-base64', 'multipart-form-data'],
+                },
+                mcp: {
+                    tool: 'create_asset',
+                    modes: ['inline-base64'],
+                },
+            }),
+            delivery: expect.objectContaining({
+                supportedModes: ['public', 'signed', 'entitled'],
+                signed: expect.objectContaining({
+                    issuePath: '/api/assets/:id/access',
+                    issueTool: 'issue_asset_access',
+                    defaultTtlSeconds: 420,
+                }),
+                entitled: expect.objectContaining({
+                    offersPath: '/api/assets/:id/offers',
+                    contentPath: '/api/assets/:id/content',
+                }),
+            }),
+            lifecycle: {
+                softDelete: true,
+                restore: true,
+                purge: true,
+            },
+        }));
         expect(manifest.agentGuidance.routingHints).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -235,6 +284,16 @@ describe('buildCapabilityManifest', () => {
         expect(
             manifest.capabilities.some((capability) => capability.id === 'create_asset'),
         ).toBe(true);
+    });
+
+    it('surfaces unsupported asset provider fallbacks in the manifest', () => {
+        process.env.ASSET_STORAGE_PROVIDER = 's3';
+
+        const manifest = buildCapabilityManifest();
+
+        expect(manifest.assetStorage.configuredProvider).toBe('s3');
+        expect(manifest.assetStorage.effectiveProvider).toBe('local');
+        expect(manifest.assetStorage.fallbackApplied).toBe(true);
     });
 
     it('reflects feature flag state for incubator modules', () => {

@@ -10,6 +10,13 @@ import {
     isExperimentalRevenueEnabled,
 } from '../config/runtime-features.js';
 import {
+    getAssetSignedTtlSeconds,
+    resolveAssetStorageProviderConfig,
+    SUPPORTED_ASSET_DELIVERY_MODES,
+    SUPPORTED_ASSET_UPLOAD_MODES,
+    SUPPORTED_MCP_ASSET_UPLOAD_MODES,
+} from '../config/assets.js';
+import {
     getReactiveSubscriptionRecipe,
     SUPPORTED_REACTIVE_FILTER_FIELDS,
     SUPPORTED_REACTIVE_EVENT_TOPICS,
@@ -138,6 +145,7 @@ export function buildCapabilityManifest() {
     const contentLifecycleRecipe = getReactiveSubscriptionRecipe('content-lifecycle');
     const reviewDecisionsRecipe = getReactiveSubscriptionRecipe('review-decisions');
     const integrationAdminRecipe = getReactiveSubscriptionRecipe('integration-admin');
+    const assetStorage = resolveAssetStorageProviderConfig();
     const agentGuidance = {
         routingHints: [
             {
@@ -661,6 +669,44 @@ export function buildCapabilityManifest() {
             purchaseFlowSurface: 'rest',
             entitlementReadSurface: 'rest',
             note: 'MCP is suitable for discovery and management; paid-content settlement and entitlement reads remain REST-first.',
+        },
+        assetStorage: {
+            enabled: true,
+            configuredProvider: assetStorage.configuredProvider,
+            effectiveProvider: assetStorage.effectiveProvider,
+            fallbackApplied: assetStorage.fallbackApplied,
+            supportedProviders: [...assetStorage.supportedProviders],
+            upload: {
+                rest: {
+                    path: '/api/assets',
+                    modes: [...SUPPORTED_ASSET_UPLOAD_MODES],
+                },
+                mcp: {
+                    tool: 'create_asset',
+                    modes: [...SUPPORTED_MCP_ASSET_UPLOAD_MODES],
+                },
+            },
+            delivery: {
+                supportedModes: [...SUPPORTED_ASSET_DELIVERY_MODES],
+                public: {
+                    contentPath: '/api/assets/:id/content',
+                },
+                signed: {
+                    contentPath: '/api/assets/:id/content',
+                    issuePath: '/api/assets/:id/access',
+                    issueTool: 'issue_asset_access',
+                    defaultTtlSeconds: getAssetSignedTtlSeconds(),
+                },
+                entitled: {
+                    contentPath: '/api/assets/:id/content',
+                    offersPath: '/api/assets/:id/offers',
+                },
+            },
+            lifecycle: {
+                softDelete: true,
+                restore: true,
+                purge: true,
+            },
         },
         agentGuidance,
         capabilities: capabilityMatrix.map((capability) => ({

@@ -5,11 +5,34 @@ export const ASSET_STORAGE_ROOT_ENV = 'ASSET_STORAGE_ROOT';
 export const ASSET_SIGNING_SECRET_ENV = 'ASSET_SIGNING_SECRET';
 export const ASSET_SIGNED_TTL_SECONDS_ENV = 'ASSET_SIGNED_TTL_SECONDS';
 
-export type AssetStorageProviderName = 'local';
+export const SUPPORTED_ASSET_STORAGE_PROVIDERS = ['local'] as const;
+export const SUPPORTED_ASSET_UPLOAD_MODES = ['json-base64', 'multipart-form-data'] as const;
+export const SUPPORTED_MCP_ASSET_UPLOAD_MODES = ['inline-base64'] as const;
+export const SUPPORTED_ASSET_DELIVERY_MODES = ['public', 'signed', 'entitled'] as const;
+
+export type AssetStorageProviderName = (typeof SUPPORTED_ASSET_STORAGE_PROVIDERS)[number];
+
+export type AssetStorageProviderResolution = {
+    configuredProvider: string;
+    effectiveProvider: AssetStorageProviderName;
+    fallbackApplied: boolean;
+    supportedProviders: AssetStorageProviderName[];
+};
+
+export function resolveAssetStorageProviderConfig(): AssetStorageProviderResolution {
+    const configuredProvider = (process.env[ASSET_STORAGE_PROVIDER_ENV] || 'local').trim().toLowerCase();
+    const effectiveProvider: AssetStorageProviderName = configuredProvider === 'local' ? 'local' : 'local';
+
+    return {
+        configuredProvider,
+        effectiveProvider,
+        fallbackApplied: configuredProvider !== effectiveProvider,
+        supportedProviders: [...SUPPORTED_ASSET_STORAGE_PROVIDERS]
+    };
+}
 
 export function getAssetStorageProviderName(): AssetStorageProviderName {
-    const provider = (process.env[ASSET_STORAGE_PROVIDER_ENV] || 'local').trim().toLowerCase();
-    return provider === 'local' ? 'local' : 'local';
+    return resolveAssetStorageProviderConfig().effectiveProvider;
 }
 
 export function getAssetStorageRoot(): string {

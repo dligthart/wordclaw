@@ -109,6 +109,8 @@ const originalAllowInsecureLocalAdmin = process.env.ALLOW_INSECURE_LOCAL_ADMIN;
 const originalExperimentalRevenue = process.env.ENABLE_EXPERIMENTAL_REVENUE;
 const originalExperimentalDelegation = process.env.ENABLE_EXPERIMENTAL_DELEGATION;
 const originalExperimentalAgentRuns = process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
+const originalAssetStorageProvider = process.env.ASSET_STORAGE_PROVIDER;
+const originalAssetSignedTtl = process.env.ASSET_SIGNED_TTL_SECONDS;
 
 function restoreAuthEnv() {
     if (originalAuthRequired === undefined) {
@@ -146,6 +148,18 @@ function restoreAuthEnv() {
     } else {
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = originalExperimentalAgentRuns;
     }
+
+    if (originalAssetStorageProvider === undefined) {
+        delete process.env.ASSET_STORAGE_PROVIDER;
+    } else {
+        process.env.ASSET_STORAGE_PROVIDER = originalAssetStorageProvider;
+    }
+
+    if (originalAssetSignedTtl === undefined) {
+        delete process.env.ASSET_SIGNED_TTL_SECONDS;
+    } else {
+        process.env.ASSET_SIGNED_TTL_SECONDS = originalAssetSignedTtl;
+    }
 }
 
 describe('API Route Contracts', () => {
@@ -167,6 +181,7 @@ describe('API Route Contracts', () => {
         process.env.ENABLE_EXPERIMENTAL_REVENUE = 'false';
         process.env.ENABLE_EXPERIMENTAL_DELEGATION = 'false';
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        process.env.ASSET_SIGNED_TTL_SECONDS = '480';
         const app = await buildServer();
 
         try {
@@ -230,6 +245,30 @@ describe('API Route Contracts', () => {
                         id: string;
                         enabled: boolean;
                     }>;
+                    assetStorage: {
+                        configuredProvider: string;
+                        effectiveProvider: string;
+                        fallbackApplied: boolean;
+                        supportedProviders: string[];
+                        upload: {
+                            rest: {
+                                path: string;
+                                modes: string[];
+                            };
+                            mcp: {
+                                tool: string;
+                                modes: string[];
+                            };
+                        };
+                        delivery: {
+                            supportedModes: string[];
+                            signed: {
+                                issuePath: string;
+                                issueTool: string;
+                                defaultTtlSeconds: number;
+                            };
+                        };
+                    };
                     agentGuidance: {
                         routingHints: Array<{
                             intent: string;
@@ -318,6 +357,30 @@ describe('API Route Contracts', () => {
                     expect.objectContaining({ id: 'agent-runs', enabled: false }),
                 ]),
             );
+            expect(body.data.assetStorage).toEqual(expect.objectContaining({
+                configuredProvider: 'local',
+                effectiveProvider: 'local',
+                fallbackApplied: false,
+                supportedProviders: ['local'],
+                upload: expect.objectContaining({
+                    rest: {
+                        path: '/api/assets',
+                        modes: ['json-base64', 'multipart-form-data'],
+                    },
+                    mcp: {
+                        tool: 'create_asset',
+                        modes: ['inline-base64'],
+                    },
+                }),
+                delivery: expect.objectContaining({
+                    supportedModes: ['public', 'signed', 'entitled'],
+                    signed: expect.objectContaining({
+                        issuePath: '/api/assets/:id/access',
+                        issueTool: 'issue_asset_access',
+                        defaultTtlSeconds: 480,
+                    }),
+                }),
+            }));
             expect(body.data.agentGuidance.routingHints).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({
@@ -410,6 +473,7 @@ describe('API Route Contracts', () => {
     it('exposes a public deployment status snapshot without requiring auth', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        process.env.ASSET_SIGNED_TTL_SECONDS = '510';
         const app = await buildServer();
 
         try {
@@ -440,6 +504,23 @@ describe('API Route Contracts', () => {
                                 supportedFilterFields: string[];
                             };
                         };
+                        assetStorage: {
+                            status: string;
+                            enabled: boolean;
+                            configuredProvider: string;
+                            effectiveProvider: string;
+                            fallbackApplied: boolean;
+                            supportedProviders: string[];
+                            restUploadModes: string[];
+                            mcpUploadModes: string[];
+                            deliveryModes: string[];
+                            signedAccess: {
+                                enabled: boolean;
+                                defaultTtlSeconds: number;
+                                issuePath: string;
+                                issueTool: string;
+                            };
+                        };
                         agentRuns: { status: string; enabled: boolean };
                     };
                     warnings: string[];
@@ -464,6 +545,23 @@ describe('API Route Contracts', () => {
                     notificationMethod: 'notifications/wordclaw/event',
                     supportedRecipeCount: 5,
                     supportedFilterFields: expect.arrayContaining(['contentTypeId', 'entityId', 'actorType']),
+                }),
+            }));
+            expect(body.data.checks.assetStorage).toEqual(expect.objectContaining({
+                status: 'ready',
+                enabled: true,
+                configuredProvider: 'local',
+                effectiveProvider: 'local',
+                fallbackApplied: false,
+                supportedProviders: ['local'],
+                restUploadModes: ['json-base64', 'multipart-form-data'],
+                mcpUploadModes: ['inline-base64'],
+                deliveryModes: ['public', 'signed', 'entitled'],
+                signedAccess: expect.objectContaining({
+                    enabled: true,
+                    defaultTtlSeconds: 510,
+                    issuePath: '/api/assets/:id/access',
+                    issueTool: 'issue_asset_access',
                 }),
             }));
             expect(body.data.checks.agentRuns).toEqual(expect.objectContaining({

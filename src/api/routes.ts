@@ -1106,6 +1106,44 @@ export default async function apiRoutes(server: FastifyInstance) {
                         entitlementReadSurface: Type.String(),
                         note: Type.String()
                     }),
+                    assetStorage: Type.Object({
+                        enabled: Type.Boolean(),
+                        configuredProvider: Type.String(),
+                        effectiveProvider: Type.String(),
+                        fallbackApplied: Type.Boolean(),
+                        supportedProviders: Type.Array(Type.String()),
+                        upload: Type.Object({
+                            rest: Type.Object({
+                                path: Type.String(),
+                                modes: Type.Array(Type.String()),
+                            }),
+                            mcp: Type.Object({
+                                tool: Type.String(),
+                                modes: Type.Array(Type.String()),
+                            }),
+                        }),
+                        delivery: Type.Object({
+                            supportedModes: Type.Array(Type.String()),
+                            public: Type.Object({
+                                contentPath: Type.String(),
+                            }),
+                            signed: Type.Object({
+                                contentPath: Type.String(),
+                                issuePath: Type.String(),
+                                issueTool: Type.String(),
+                                defaultTtlSeconds: Type.Number(),
+                            }),
+                            entitled: Type.Object({
+                                contentPath: Type.String(),
+                                offersPath: Type.String(),
+                            }),
+                        }),
+                        lifecycle: Type.Object({
+                            softDelete: Type.Boolean(),
+                            restore: Type.Boolean(),
+                            purge: Type.Boolean(),
+                        }),
+                    }),
                     agentGuidance: Type.Object({
                         routingHints: Type.Array(Type.Object({
                             intent: Type.String(),
@@ -1247,6 +1285,29 @@ export default async function apiRoutes(server: FastifyInstance) {
                             lastErrorMessage: Type.Union([Type.String(), Type.Null()]),
                             note: Type.String(),
                         }),
+                        assetStorage: Type.Object({
+                            status: Type.String(),
+                            enabled: Type.Boolean(),
+                            configuredProvider: Type.String(),
+                            effectiveProvider: Type.String(),
+                            fallbackApplied: Type.Boolean(),
+                            supportedProviders: Type.Array(Type.String()),
+                            restUploadModes: Type.Array(Type.String()),
+                            mcpUploadModes: Type.Array(Type.String()),
+                            deliveryModes: Type.Array(Type.String()),
+                            signedAccess: Type.Object({
+                                enabled: Type.Boolean(),
+                                defaultTtlSeconds: Type.Number(),
+                                issuePath: Type.String(),
+                                issueTool: Type.String(),
+                            }),
+                            entitlementDelivery: Type.Object({
+                                enabled: Type.Boolean(),
+                                offersPath: Type.String(),
+                                contentPath: Type.String(),
+                            }),
+                            note: Type.String(),
+                        }),
                     }),
                     warnings: Type.Array(Type.String()),
                 })),
@@ -1286,6 +1347,29 @@ export default async function apiRoutes(server: FastifyInstance) {
                             sweepInProgress: Type.Boolean(),
                             lastSweepCompletedAt: Type.Union([Type.String(), Type.Null()]),
                             lastErrorMessage: Type.Union([Type.String(), Type.Null()]),
+                            note: Type.String(),
+                        }),
+                        assetStorage: Type.Object({
+                            status: Type.String(),
+                            enabled: Type.Boolean(),
+                            configuredProvider: Type.String(),
+                            effectiveProvider: Type.String(),
+                            fallbackApplied: Type.Boolean(),
+                            supportedProviders: Type.Array(Type.String()),
+                            restUploadModes: Type.Array(Type.String()),
+                            mcpUploadModes: Type.Array(Type.String()),
+                            deliveryModes: Type.Array(Type.String()),
+                            signedAccess: Type.Object({
+                                enabled: Type.Boolean(),
+                                defaultTtlSeconds: Type.Number(),
+                                issuePath: Type.String(),
+                                issueTool: Type.String(),
+                            }),
+                            entitlementDelivery: Type.Object({
+                                enabled: Type.Boolean(),
+                                offersPath: Type.String(),
+                                contentPath: Type.String(),
+                            }),
                             note: Type.String(),
                         }),
                     }),

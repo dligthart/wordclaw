@@ -421,6 +421,24 @@ describe('MCP HTTP transport', () => {
         const manifestText = capabilityResource.contents.find((entry) => 'text' in entry)?.text;
         expect(typeof manifestText).toBe('string');
         expect(JSON.parse(manifestText as string)).toEqual(expect.objectContaining({
+            assetStorage: expect.objectContaining({
+                configuredProvider: 'local',
+                effectiveProvider: 'local',
+                upload: expect.objectContaining({
+                    rest: expect.objectContaining({
+                        modes: ['json-base64', 'multipart-form-data'],
+                    }),
+                    mcp: expect.objectContaining({
+                        modes: ['inline-base64'],
+                    }),
+                }),
+                delivery: expect.objectContaining({
+                    supportedModes: ['public', 'signed', 'entitled'],
+                    signed: expect.objectContaining({
+                        issueTool: 'issue_asset_access',
+                    }),
+                }),
+            }),
             protocolSurfaces: expect.objectContaining({
                 mcp: expect.objectContaining({
                     endpoint: '/mcp',
@@ -449,6 +467,14 @@ describe('MCP HTTP transport', () => {
                     attachable: true,
                     endpoint: '/mcp',
                     transports: ['stdio', 'streamable-http'],
+                }),
+                assetStorage: expect.objectContaining({
+                    enabled: true,
+                    configuredProvider: 'local',
+                    effectiveProvider: 'local',
+                    restUploadModes: ['json-base64', 'multipart-form-data'],
+                    mcpUploadModes: ['inline-base64'],
+                    deliveryModes: ['public', 'signed', 'entitled'],
                 }),
             }),
         }));

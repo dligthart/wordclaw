@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 
 import { isExperimentalAgentRunsEnabled } from '../config/runtime-features.js';
+import { getAssetSignedTtlSeconds } from '../config/assets.js';
 import { db } from '../db/index.js';
 import { buildCapabilityManifest } from './capability-manifest.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
@@ -33,6 +34,29 @@ export type DeploymentStatusSnapshot = {
                 supportedTopicCount: number;
                 supportedRecipeCount: number;
                 supportedFilterFields: string[];
+            };
+            note: string;
+        };
+        assetStorage: {
+            status: DeploymentCheckLevel;
+            enabled: boolean;
+            configuredProvider: string;
+            effectiveProvider: string;
+            fallbackApplied: boolean;
+            supportedProviders: string[];
+            restUploadModes: string[];
+            mcpUploadModes: string[];
+            deliveryModes: string[];
+            signedAccess: {
+                enabled: boolean;
+                defaultTtlSeconds: number;
+                issuePath: string;
+                issueTool: string;
+            };
+            entitlementDelivery: {
+                enabled: boolean;
+                offersPath: string;
+                contentPath: string;
             };
             note: string;
         };
@@ -105,6 +129,39 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
         };
     }
 
+    const assetStorageStatus: DeploymentStatusSnapshot['checks']['assetStorage'] = {
+        status: manifest.assetStorage.fallbackApplied ? 'degraded' : 'ready',
+        enabled: manifest.assetStorage.enabled,
+        configuredProvider: manifest.assetStorage.configuredProvider,
+        effectiveProvider: manifest.assetStorage.effectiveProvider,
+        fallbackApplied: manifest.assetStorage.fallbackApplied,
+        supportedProviders: [...manifest.assetStorage.supportedProviders],
+        restUploadModes: [...manifest.assetStorage.upload.rest.modes],
+        mcpUploadModes: [...manifest.assetStorage.upload.mcp.modes],
+        deliveryModes: [...manifest.assetStorage.delivery.supportedModes],
+        signedAccess: {
+            enabled: true,
+            defaultTtlSeconds: getAssetSignedTtlSeconds(),
+            issuePath: manifest.assetStorage.delivery.signed.issuePath,
+            issueTool: manifest.assetStorage.delivery.signed.issueTool,
+        },
+        entitlementDelivery: {
+            enabled: true,
+            offersPath: manifest.assetStorage.delivery.entitled.offersPath,
+            contentPath: manifest.assetStorage.delivery.entitled.contentPath,
+        },
+        note: manifest.assetStorage.fallbackApplied
+            ? `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unsupported; the runtime is using "${manifest.assetStorage.effectiveProvider}" instead.`
+            : `Asset storage is enabled with the "${manifest.assetStorage.effectiveProvider}" provider.`,
+    };
+
+    if (manifest.assetStorage.fallbackApplied) {
+        overallStatus = 'degraded';
+        warnings.push(
+            `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unsupported; the runtime fell back to "${manifest.assetStorage.effectiveProvider}".`
+        );
+    }
+
     return {
         generatedAt: new Date().toISOString(),
         overallStatus,
@@ -133,6 +190,7 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                     ? 'MCP supports both local stdio and remote streamable HTTP, including session-backed reactive subscriptions.'
                     : 'MCP is only available through local process attachment.',
             },
+            assetStorage: assetStorageStatus,
             agentRuns: agentRunsStatus,
         },
         warnings,
