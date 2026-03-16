@@ -219,6 +219,7 @@ describe('Capability Parity Matrix', () => {
         expect(contentItemsRouteBlock?.includes('fieldOp: Type.Optional(Type.Union([')).toBe(true);
         expect(contentItemsRouteBlock?.includes('fieldValue: Type.Optional(Type.String())')).toBe(true);
         expect(contentItemsRouteBlock?.includes('sortField: Type.Optional(Type.String())')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('includeArchived: Type.Optional(Type.Boolean())')).toBe(true);
         expect(contentItemsRouteBlock?.includes('limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 }))')).toBe(true);
         expect(contentItemsRouteBlock?.includes('offset: Type.Optional(Type.Number({ minimum: 0 }))')).toBe(true);
         expect(contentItemsRouteBlock?.includes('cursor: Type.Optional(Type.String())')).toBe(true);
@@ -232,6 +233,7 @@ describe('Capability Parity Matrix', () => {
         expect(contentItemsToolBlock?.includes('fieldOp: z.enum([')).toBe(true);
         expect(contentItemsToolBlock?.includes('fieldValue: z.string().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('sortField: z.string().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('includeArchived: z.boolean().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('limit: z.number().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('offset: z.number().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('cursor: z.string().optional()')).toBe(true);
@@ -245,6 +247,7 @@ describe('Capability Parity Matrix', () => {
         expect(queryArgNames?.has('fieldOp')).toBe(true);
         expect(queryArgNames?.has('fieldValue')).toBe(true);
         expect(queryArgNames?.has('sortField')).toBe(true);
+        expect(queryArgNames?.has('includeArchived')).toBe(true);
         expect(queryArgNames?.has('limit')).toBe(true);
         expect(queryArgNames?.has('offset')).toBe(true);
         expect(queryArgNames?.has('cursor')).toBe(true);
@@ -261,6 +264,7 @@ describe('Capability Parity Matrix', () => {
         expect(projectionRouteBlock?.includes('metricField: Type.Optional(Type.String())')).toBe(true);
         expect(projectionRouteBlock?.includes("Type.Literal('value')")).toBe(true);
         expect(projectionRouteBlock?.includes("Type.Literal('group')")).toBe(true);
+        expect(projectionRouteBlock?.includes('includeArchived: Type.Optional(Type.Boolean())')).toBe(true);
 
         const projectionToolBlock = getMcpToolBlock(mcpSource, 'project_content_items');
         expect(projectionToolBlock?.includes('contentTypeId: z.number()')).toBe(true);
@@ -271,6 +275,7 @@ describe('Capability Parity Matrix', () => {
         expect(projectionToolBlock?.includes("metric: z.enum(['count', 'sum', 'avg', 'min', 'max']).optional()")).toBe(true);
         expect(projectionToolBlock?.includes('metricField: z.string().optional()')).toBe(true);
         expect(projectionToolBlock?.includes("orderBy: z.enum(['value', 'group']).optional()")).toBe(true);
+        expect(projectionToolBlock?.includes('includeArchived: z.boolean().optional()')).toBe(true);
 
         const queryArgNames = graphqlSurface.queryArgs.get('contentItemProjection');
         expect(queryArgNames?.has('contentTypeId')).toBe(true);
@@ -282,6 +287,7 @@ describe('Capability Parity Matrix', () => {
         expect(queryArgNames?.has('metricField')).toBe(true);
         expect(queryArgNames?.has('orderBy')).toBe(true);
         expect(queryArgNames?.has('orderDir')).toBe(true);
+        expect(queryArgNames?.has('includeArchived')).toBe(true);
         expect(queryArgNames?.has('limit')).toBe(true);
     });
 

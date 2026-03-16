@@ -22,11 +22,18 @@ type JsonObject = Record<string, unknown>;
 type AssetSchemaKind = 'asset' | 'asset-list';
 type ContentSchemaKind = 'content-ref' | 'content-ref-list';
 export type PublicWriteOperation = 'create' | 'update';
+export type ContentLifecycleClock = 'createdAt' | 'updatedAt';
 export type PublicWriteSchemaConfig = {
     enabled: true;
     subjectField: string;
     allowedOperations: PublicWriteOperation[];
     requiredStatus: string;
+};
+export type ContentLifecycleSchemaConfig = {
+    enabled: true;
+    ttlSeconds: number;
+    archiveStatus: string;
+    clock: ContentLifecycleClock;
 };
 export type AssetReference = {
     assetId: number;
@@ -46,6 +53,8 @@ export type QueryableContentField = {
 
 const PUBLIC_WRITE_EXTENSION_KEY = 'x-wordclaw-public-write';
 const PUBLIC_WRITE_EXTENSION_CODE = 'INVALID_CONTENT_SCHEMA_PUBLIC_WRITE_EXTENSION';
+const LIFECYCLE_EXTENSION_KEY = 'x-wordclaw-lifecycle';
+const LIFECYCLE_EXTENSION_CODE = 'INVALID_CONTENT_SCHEMA_LIFECYCLE_EXTENSION';
 
 function formatAjvErrors(errors: ErrorObject[] | null | undefined): string {
     if (!errors || errors.length === 0) {
@@ -230,6 +239,91 @@ function normalizePublicWriteOperations(value: unknown): PublicWriteOperation[] 
     return [...new Set(normalized)];
 }
 
+function normalizeLifecycleClock(value: unknown): ContentLifecycleClock | null {
+    if (value === undefined) {
+        return 'updatedAt';
+    }
+
+    if (value === 'createdAt' || value === 'updatedAt') {
+        return value;
+    }
+
+    return null;
+}
+
+function validateLifecycleExtension(schemaNode: JsonObject, path: string): ValidationFailure | null {
+    const rawConfig = schemaNode[LIFECYCLE_EXTENSION_KEY];
+    if (rawConfig === undefined) {
+        return null;
+    }
+
+    if (!isObject(rawConfig)) {
+        return {
+            error: 'Invalid lifecycle schema extension',
+            code: LIFECYCLE_EXTENSION_CODE,
+            remediation: 'x-wordclaw-lifecycle must be an object when declared on a content type schema.',
+            context: {
+                details: `${path}/${LIFECYCLE_EXTENSION_KEY} must be a JSON object.`
+            }
+        };
+    }
+
+    if (rawConfig.enabled === false) {
+        return null;
+    }
+
+    if (schemaNode.type !== 'object' || !isObject(schemaNode.properties)) {
+        return {
+            error: 'Invalid lifecycle schema extension',
+            code: LIFECYCLE_EXTENSION_CODE,
+            remediation: 'Lifecycle-managed content requires a top-level object schema with addressable properties.',
+            context: {
+                details: `${path} must declare type "object" with properties before enabling x-wordclaw-lifecycle.`
+            }
+        };
+    }
+
+    const ttlSeconds = rawConfig.ttlSeconds;
+    if (typeof ttlSeconds !== 'number' || !Number.isInteger(ttlSeconds) || ttlSeconds < 60 || ttlSeconds > 31_536_000) {
+        return {
+            error: 'Invalid lifecycle schema extension',
+            code: LIFECYCLE_EXTENSION_CODE,
+            remediation: 'ttlSeconds must be an integer between 60 and 31536000.',
+            context: {
+                details: `${path}/${LIFECYCLE_EXTENSION_KEY}/ttlSeconds must be an integer between 60 and 31536000.`
+            }
+        };
+    }
+
+    if (
+        rawConfig.archiveStatus !== undefined
+        && (typeof rawConfig.archiveStatus !== 'string' || rawConfig.archiveStatus.trim().length === 0)
+    ) {
+        return {
+            error: 'Invalid lifecycle schema extension',
+            code: LIFECYCLE_EXTENSION_CODE,
+            remediation: 'archiveStatus must be a non-empty string when provided.',
+            context: {
+                details: `${path}/${LIFECYCLE_EXTENSION_KEY}/archiveStatus must be a non-empty string.`
+            }
+        };
+    }
+
+    const clock = normalizeLifecycleClock(rawConfig.clock);
+    if (!clock) {
+        return {
+            error: 'Invalid lifecycle schema extension',
+            code: LIFECYCLE_EXTENSION_CODE,
+            remediation: 'clock must be either "createdAt" or "updatedAt" when provided.',
+            context: {
+                details: `${path}/${LIFECYCLE_EXTENSION_KEY}/clock must be "createdAt" or "updatedAt".`
+            }
+        };
+    }
+
+    return null;
+}
+
 function validatePublicWriteExtension(schemaNode: JsonObject, path: string): ValidationFailure | null {
     const rawConfig = schemaNode[PUBLIC_WRITE_EXTENSION_KEY];
     if (rawConfig === undefined) {
@@ -330,6 +424,11 @@ function validateSchemaExtensions(schemaNode: unknown, path = '/'): ValidationFa
     }
 
     if (path === '/') {
+        const lifecycleFailure = validateLifecycleExtension(schemaNode, path);
+        if (lifecycleFailure) {
+            return lifecycleFailure;
+        }
+
         const publicWriteFailure = validatePublicWriteExtension(schemaNode, path);
         if (publicWriteFailure) {
             return publicWriteFailure;
@@ -610,6 +709,39 @@ export function getPublicWriteSchemaConfig(schemaText: string): PublicWriteSchem
         requiredStatus: typeof rawConfig.requiredStatus === 'string' && rawConfig.requiredStatus.trim().length > 0
             ? rawConfig.requiredStatus.trim()
             : 'draft'
+    };
+}
+
+export function getContentLifecycleSchemaConfig(schemaText: string): ContentLifecycleSchemaConfig | null {
+    const compiled = compileSchema(schemaText);
+    if (!compiled.ok) {
+        return null;
+    }
+
+    const schema = compiled.schema as JsonObject;
+    const rawConfig = isObject(schema[LIFECYCLE_EXTENSION_KEY]) ? schema[LIFECYCLE_EXTENSION_KEY] : null;
+    if (!rawConfig || rawConfig.enabled === false) {
+        return null;
+    }
+
+    const clock = normalizeLifecycleClock(rawConfig.clock);
+    if (
+        typeof rawConfig.ttlSeconds !== 'number'
+        || !Number.isInteger(rawConfig.ttlSeconds)
+        || rawConfig.ttlSeconds < 60
+        || rawConfig.ttlSeconds > 31_536_000
+        || !clock
+    ) {
+        return null;
+    }
+
+    return {
+        enabled: true,
+        ttlSeconds: rawConfig.ttlSeconds,
+        archiveStatus: typeof rawConfig.archiveStatus === 'string' && rawConfig.archiveStatus.trim().length > 0
+            ? rawConfig.archiveStatus.trim()
+            : 'archived',
+        clock,
     };
 }
 

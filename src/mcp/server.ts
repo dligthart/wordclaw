@@ -44,6 +44,7 @@ import {
     listContentItems,
     projectContentItems
 } from '../services/content-item.service.js';
+import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import {
     canSubscribeToReactiveTopic,
@@ -1632,11 +1633,12 @@ server.tool(
         fieldOp: z.enum(['eq', 'contains', 'gte', 'lte']).optional().describe('Comparison operator for fieldName (default eq)'),
         fieldValue: z.string().optional().describe('Filter value for fieldName'),
         sortField: z.string().optional().describe('Top-level scalar field from the selected content type schema to sort by'),
+        includeArchived: z.boolean().optional().describe('Include lifecycle-archived items when the content type defines x-wordclaw-lifecycle'),
         limit: z.number().optional().describe('Page size (default 50, max 500)'),
         offset: z.number().optional().describe('Row offset (default 0)'),
         cursor: z.string().optional().describe('Cursor returned by a previous get_content_items page')
     },
-    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, createdAfter, createdBefore, fieldName, fieldOp, fieldValue, sortField, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, createdAfter, createdBefore, fieldName, fieldOp, fieldValue, sortField, includeArchived, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
         try {
             const result = await listContentItems(domainId, {
                 contentTypeId,
@@ -1647,6 +1649,7 @@ server.tool(
                 fieldOp,
                 fieldValue,
                 sortField,
+                includeArchived,
                 limit: clampLimit(rawLimit),
                 offset: cursor ? rawOffset : clampOffset(rawOffset),
                 cursor,
@@ -1687,6 +1690,7 @@ server.tool(
         metricField: z.string().optional().describe('Numeric top-level scalar field used by sum, avg, min, or max'),
         orderBy: z.enum(['value', 'group']).optional().describe('Sort grouped buckets by metric value or group label'),
         orderDir: z.enum(['asc', 'desc']).optional().describe('Projection sort direction (default desc)'),
+        includeArchived: z.boolean().optional().describe('Include lifecycle-archived items when the content type defines x-wordclaw-lifecycle'),
         limit: z.number().optional().describe('Bucket limit (default 50, max 500)')
     },
     withMCPPolicy('content.read', () => ({ type: 'system' }), async ({
@@ -1702,6 +1706,7 @@ server.tool(
         metricField,
         orderBy,
         orderDir,
+        includeArchived,
         limit: rawLimit
     }, extra, domainId) => {
         try {
@@ -1718,6 +1723,7 @@ server.tool(
                 metricField,
                 orderBy,
                 orderDir,
+                includeArchived,
                 limit: clampLimit(rawLimit)
             });
 
@@ -1749,7 +1755,8 @@ server.tool(
     withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, extra, domainId) => {
         const [row] = await db.select({
             item: contentItems,
-            basePrice: contentTypes.basePrice
+            basePrice: contentTypes.basePrice,
+            schema: contentTypes.schema
         })
             .from(contentItems)
             .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
@@ -1763,7 +1770,7 @@ server.tool(
             return err('PAYMENT_REQUIRED: This content item is paywalled. You must use the REST API /api/content-items/:id to fulfill the L402 payment challenge.');
         }
 
-        return okJson(row.item);
+        return okJson(await ensureContentItemLifecycleState(row.item, row.schema));
     }
     ));
 

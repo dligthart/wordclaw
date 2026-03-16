@@ -46,6 +46,13 @@ export type DeploymentStatusSnapshot = {
                 tokenHeader: string;
                 requiresSchemaPolicy: boolean;
             };
+            lifecycle: {
+                supported: boolean;
+                triggerMode: string;
+                schemaExtension: string;
+                includeArchivedFlag: string;
+                defaultArchiveStatus: string;
+            };
             note: string;
         };
         mcp: {
@@ -224,7 +231,14 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                     tokenHeader: manifest.contentRuntime.publicWriteLane.tokenHeader,
                     requiresSchemaPolicy: manifest.contentRuntime.publicWriteLane.requiresSchemaPolicy,
                 },
-                note: 'Content runtime supports schema-aware field queries, grouped projections, and bounded public write lanes for session-like content.',
+                lifecycle: {
+                    supported: manifest.contentRuntime.lifecycle.supported,
+                    triggerMode: manifest.contentRuntime.lifecycle.triggerMode,
+                    schemaExtension: manifest.contentRuntime.lifecycle.schemaExtension,
+                    includeArchivedFlag: manifest.contentRuntime.lifecycle.includeArchivedFlag,
+                    defaultArchiveStatus: manifest.contentRuntime.lifecycle.defaultArchiveStatus,
+                },
+                note: 'Content runtime supports schema-aware field queries, grouped projections, bounded public write lanes, and lazy archival for TTL-managed session content.',
             },
             mcp: {
                 status: 'ready',

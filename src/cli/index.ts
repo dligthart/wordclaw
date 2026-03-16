@@ -1026,6 +1026,7 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
                 sortField: getStringFlag(args, 'sort-field'),
                 sortBy: getStringFlag(args, 'sort-by'),
                 sortDir: getStringFlag(args, 'sort-dir'),
+                includeArchived: hasFlag(args, 'include-archived') ? true : undefined,
                 limit: maybeNumber(getNumberFlag(args, 'limit')),
                 offset: getStringFlag(args, 'cursor') ? undefined : maybeNumber(getNumberFlag(args, 'offset')),
                 cursor: getStringFlag(args, 'cursor'),
@@ -1063,6 +1064,7 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
                 metricField: getStringFlag(args, 'metric-field'),
                 orderBy: getStringFlag(args, 'order-by'),
                 orderDir: getStringFlag(args, 'order-dir'),
+                includeArchived: hasFlag(args, 'include-archived') ? true : undefined,
                 limit: maybeNumber(getNumberFlag(args, 'limit')),
             },
         });

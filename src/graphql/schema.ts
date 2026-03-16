@@ -362,6 +362,7 @@ ${agentRunTypeDefs}
       fieldOp: String,
       fieldValue: String,
       sortField: String,
+      includeArchived: Boolean,
       limit: Int = 50,
       offset: Int = 0,
       cursor: String
@@ -380,6 +381,7 @@ ${agentRunTypeDefs}
       metricField: String,
       orderBy: String = "value",
       orderDir: String = "desc",
+      includeArchived: Boolean,
       limit: Int = 50
     ): [ContentProjectionBucket!]!
     """Get one content item by id."""

@@ -1,8 +1,14 @@
 import { db } from '../db/index.js';
 import { contentItems, contentItemVersions, contentTypes } from '../db/schema.js';
-import { and, asc, desc, eq, gte, ilike, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { logAudit } from './audit.js';
-import { listQueryableContentFields, type QueryableContentFieldType, redactPremiumFields } from './content-schema.js';
+import {
+    getContentLifecycleSchemaConfig,
+    listQueryableContentFields,
+    type QueryableContentFieldType,
+    redactPremiumFields
+} from './content-schema.js';
+import { archiveExpiredContentItemsForSchema, ensureContentItemLifecycleState } from './content-lifecycle.js';
 
 // --- Types ---
 
@@ -31,6 +37,7 @@ export type ListContentItemsInput = {
     sortField?: string;
     sortBy?: 'updatedAt' | 'createdAt' | 'version';
     sortDir?: 'asc' | 'desc';
+    includeArchived?: boolean;
     limit?: number;
     offset?: number;
     cursor?: string;
@@ -66,6 +73,7 @@ export type ProjectContentItemsInput = {
     metricField?: string;
     orderBy?: ContentProjectionOrderBy;
     orderDir?: 'asc' | 'desc';
+    includeArchived?: boolean;
     limit?: number;
 };
 
@@ -311,6 +319,7 @@ export async function listContentItems(domainId: number, input: ListContentItems
         sortField,
         sortBy,
         sortDir,
+        includeArchived = false,
         limit = 50,
         offset,
         cursor
@@ -361,14 +370,15 @@ export async function listContentItems(domainId: number, input: ListContentItems
     const searchPattern = searchQuery ? `%${searchQuery}%` : null;
 
     let queryableFields = new Map<string, QueryableContentFieldType>();
-    if (contentTypeId !== undefined && (fieldName || sortField)) {
+    let lifecycleArchiveStatus: string | null = null;
+    if (contentTypeId !== undefined) {
         const [contentType] = await db.select({
             schema: contentTypes.schema
         })
             .from(contentTypes)
             .where(and(eq(contentTypes.domainId, domainId), eq(contentTypes.id, contentTypeId)));
 
-        if (!contentType) {
+        if (!contentType && (fieldName || sortField)) {
             throw new ContentItemListError(
                 'Content type not found for field-aware query',
                 'CONTENT_ITEMS_FIELD_QUERY_CONTENT_TYPE_NOT_FOUND',
@@ -376,7 +386,14 @@ export async function listContentItems(domainId: number, input: ListContentItems
             );
         }
 
-        queryableFields = normalizeQueryableFieldMap(contentType.schema);
+        if (contentType) {
+            queryableFields = normalizeQueryableFieldMap(contentType.schema);
+            const lifecycleConfig = getContentLifecycleSchemaConfig(contentType.schema);
+            if (lifecycleConfig) {
+                await archiveExpiredContentItemsForSchema(domainId, contentTypeId, contentType.schema);
+                lifecycleArchiveStatus = lifecycleConfig.archiveStatus;
+            }
+        }
     }
 
     const normalizedFieldOp = fieldOp ?? 'eq';
@@ -404,6 +421,7 @@ export async function listContentItems(domainId: number, input: ListContentItems
         eq(contentItems.domainId, domainId),
         contentTypeId !== undefined ? eq(contentItems.contentTypeId, contentTypeId) : undefined,
         status ? eq(contentItems.status, status) : undefined,
+        !status && !includeArchived && lifecycleArchiveStatus ? ne(contentItems.status, lifecycleArchiveStatus) : undefined,
         searchPattern
             ? or(
                 ilike(contentItems.data, searchPattern),
@@ -512,6 +530,7 @@ export async function projectContentItems(domainId: number, input: ProjectConten
         metricField,
         orderBy = 'value',
         orderDir = 'desc',
+        includeArchived = false,
         limit = 50
     } = input;
 
@@ -546,6 +565,10 @@ export async function projectContentItems(domainId: number, input: ProjectConten
     }
 
     const queryableFields = normalizeQueryableFieldMap(contentType.schema);
+    const lifecycleConfig = getContentLifecycleSchemaConfig(contentType.schema);
+    if (lifecycleConfig) {
+        await archiveExpiredContentItemsForSchema(domainId, contentTypeId, contentType.schema);
+    }
 
     if (!queryableFields.has(groupBy)) {
         throw new ContentItemProjectionError(
@@ -596,6 +619,7 @@ export async function projectContentItems(domainId: number, input: ProjectConten
         eq(contentItems.domainId, domainId),
         eq(contentItems.contentTypeId, contentTypeId),
         status ? eq(contentItems.status, status) : undefined,
+        !status && !includeArchived && lifecycleConfig ? ne(contentItems.status, lifecycleConfig.archiveStatus) : undefined,
         createdAfter ? gte(contentItems.createdAt, createdAfter) : undefined,
         createdBefore ? lte(contentItems.createdAt, createdBefore) : undefined,
         fieldCondition
@@ -635,8 +659,19 @@ export async function projectContentItems(domainId: number, input: ProjectConten
 }
 
 export async function getContentItem(id: number, domainId: number) {
-    const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
-    return item ?? null;
+    const [row] = await db.select({
+        item: contentItems,
+        schema: contentTypes.schema
+    })
+        .from(contentItems)
+        .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
+        .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
+
+    if (!row) {
+        return null;
+    }
+
+    return ensureContentItemLifecycleState(row.item, row.schema);
 }
 
 /**

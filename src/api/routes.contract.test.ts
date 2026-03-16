@@ -429,6 +429,15 @@ describe('API Route Contracts', () => {
                     updatePath: '/api/public/content-items/:id',
                     tokenHeader: 'x-public-write-token',
                 }),
+                lifecycle: expect.objectContaining({
+                    supported: true,
+                    requiresSchemaPolicy: true,
+                    triggerMode: 'lazy-on-touch',
+                    schemaExtension: 'x-wordclaw-lifecycle',
+                    defaultClock: 'updatedAt',
+                    defaultArchiveStatus: 'archived',
+                    includeArchivedFlag: 'includeArchived',
+                }),
             }));
             expect(body.data.assetStorage).toEqual(expect.objectContaining({
                 configuredProvider: 'local',
@@ -656,6 +665,13 @@ describe('API Route Contracts', () => {
                     updatePath: '/api/public/content-items/:id',
                     tokenHeader: 'x-public-write-token',
                     requiresSchemaPolicy: true,
+                }),
+                lifecycle: expect.objectContaining({
+                    supported: true,
+                    triggerMode: 'lazy-on-touch',
+                    schemaExtension: 'x-wordclaw-lifecycle',
+                    includeArchivedFlag: 'includeArchived',
+                    defaultArchiveStatus: 'archived',
                 }),
             }));
             expect(body.data.checks.mcp).toEqual(expect.objectContaining({
@@ -2611,6 +2627,119 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('locks the public write lane once lifecycle-managed content auto-archives', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+        process.env.PUBLIC_WRITE_SECRET = 'public-write-secret';
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 91,
+                        domainId: 1,
+                        contentTypeId: 7,
+                        data: JSON.stringify({
+                            sessionId: 'session-123',
+                            body: 'before'
+                        }),
+                        status: 'draft',
+                        version: 2,
+                        createdAt: new Date('2026-03-16T11:00:00.000Z'),
+                        updatedAt: new Date('2026-03-16T11:00:00.000Z')
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        domainId: 1,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                sessionId: { type: 'string' },
+                                body: { type: 'string' }
+                            },
+                            required: ['sessionId', 'body'],
+                            'x-wordclaw-public-write': {
+                                enabled: true,
+                                subjectField: 'sessionId',
+                                allowedOperations: ['create', 'update'],
+                                requiredStatus: 'draft'
+                            },
+                            'x-wordclaw-lifecycle': {
+                                ttlSeconds: 60
+                            }
+                        })
+                    }]),
+                }),
+            }));
+
+        mocks.dbMock.transaction.mockImplementation(async (callback: (tx: typeof mocks.dbMock) => Promise<unknown>) => {
+            const tx = {
+                insert: vi.fn().mockReturnValue({
+                    values: vi.fn().mockResolvedValue(undefined)
+                }),
+                update: vi.fn().mockReturnValue({
+                    set: vi.fn().mockReturnValue({
+                        where: vi.fn().mockReturnValue({
+                            returning: vi.fn().mockResolvedValue([{
+                                id: 91,
+                                domainId: 1,
+                                contentTypeId: 7,
+                                data: JSON.stringify({
+                                    sessionId: 'session-123',
+                                    body: 'before'
+                                }),
+                                status: 'archived',
+                                version: 3,
+                                createdAt: new Date('2026-03-16T11:00:00.000Z'),
+                                updatedAt: new Date('2026-03-16T12:00:00.000Z')
+                            }])
+                        })
+                    })
+                })
+            } as unknown as typeof mocks.dbMock;
+
+            return callback(tx);
+        });
+
+        const issued = issuePublicWriteToken({
+            domainId: 1,
+            contentTypeId: 7,
+            subjectField: 'sessionId',
+            subject: 'session-123',
+            allowedOperations: ['update'],
+            requiredStatus: 'draft'
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/public/content-items/91',
+                headers: {
+                    authorization: `Bearer ${issued.token}`
+                },
+                payload: {
+                    data: {
+                        sessionId: 'session-123',
+                        body: 'after'
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(409);
+            expect(response.json()).toMatchObject({
+                code: 'PUBLIC_WRITE_STATUS_LOCKED'
+            });
+            expect(mocks.dbMock.transaction).toHaveBeenCalledTimes(1);
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns INVALID_CREATED_AFTER for malformed content-item filter date', async () => {
         const app = await buildServer();
 
@@ -2700,6 +2829,18 @@ describe('API Route Contracts', () => {
         mocks.dbMock.select
             .mockImplementationOnce(() => ({
                 from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                title: { type: 'string' }
+                            }
+                        })
+                    }])
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
                     where: countWhereMock
                 }),
             }))
@@ -2781,6 +2922,18 @@ describe('API Route Contracts', () => {
         const whereMock = vi.fn(() => ({ orderBy: orderByMock }));
 
         mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                title: { type: 'string' }
+                            }
+                        })
+                    }])
+                }),
+            }))
             .mockImplementationOnce(() => ({
                 from: () => ({
                     where: countWhereMock

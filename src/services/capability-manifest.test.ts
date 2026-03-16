@@ -151,6 +151,15 @@ describe('buildCapabilityManifest', () => {
                 updatePath: '/api/public/content-items/:id',
                 tokenHeader: 'x-public-write-token',
             }),
+            lifecycle: expect.objectContaining({
+                supported: true,
+                requiresSchemaPolicy: true,
+                triggerMode: 'lazy-on-touch',
+                schemaExtension: 'x-wordclaw-lifecycle',
+                defaultClock: 'updatedAt',
+                defaultArchiveStatus: 'archived',
+                includeArchivedFlag: 'includeArchived',
+            }),
         }));
         expect(manifest.assetStorage).toEqual(expect.objectContaining({
             enabled: true,

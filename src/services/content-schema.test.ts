@@ -17,6 +17,7 @@ vi.mock('../db/index.js', () => ({
 }));
 
 import {
+    getContentLifecycleSchemaConfig,
     getPublicWriteSchemaConfig,
     getPublicWriteSubjectValue,
     listQueryableContentFields,
@@ -185,6 +186,29 @@ describe('validateContentTypeSchema', () => {
         });
     });
 
+    it('accepts a valid top-level lifecycle extension', () => {
+        const schemaText = JSON.stringify({
+            type: 'object',
+            properties: {
+                sessionId: { type: 'string' },
+                body: { type: 'string' }
+            },
+            'x-wordclaw-lifecycle': {
+                ttlSeconds: 600,
+                archiveStatus: 'expired',
+                clock: 'updatedAt'
+            }
+        });
+
+        expect(validateContentTypeSchema(schemaText)).toBeNull();
+        expect(getContentLifecycleSchemaConfig(schemaText)).toEqual({
+            enabled: true,
+            ttlSeconds: 600,
+            archiveStatus: 'expired',
+            clock: 'updatedAt'
+        });
+    });
+
     it('rejects malformed public-write schema extensions', () => {
         const failure = validateContentTypeSchema(JSON.stringify({
             type: 'object',
@@ -202,6 +226,23 @@ describe('validateContentTypeSchema', () => {
 
         expect(failure).toMatchObject({
             code: 'INVALID_CONTENT_SCHEMA_PUBLIC_WRITE_EXTENSION'
+        });
+    });
+
+    it('rejects malformed lifecycle schema extensions', () => {
+        const failure = validateContentTypeSchema(JSON.stringify({
+            type: 'object',
+            properties: {
+                sessionId: { type: 'string' }
+            },
+            'x-wordclaw-lifecycle': {
+                ttlSeconds: 30,
+                clock: 'lastSeenAt'
+            }
+        }));
+
+        expect(failure).toMatchObject({
+            code: 'INVALID_CONTENT_SCHEMA_LIFECYCLE_EXTENSION'
         });
     });
 });

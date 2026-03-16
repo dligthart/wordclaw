@@ -19,6 +19,7 @@ import {
     listContentItems,
     projectContentItems
 } from '../services/content-item.service.js';
+import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 import { toAuditActor, type AuditActor } from '../services/actor-identity.js';
 
@@ -276,6 +277,7 @@ type OptionalContentTypeArg = {
     fieldOp?: string;
     fieldValue?: string;
     sortField?: string;
+    includeArchived?: boolean;
     limit?: number;
     offset?: number;
     cursor?: string;
@@ -293,6 +295,7 @@ type ContentProjectionArgs = {
     metricField?: string;
     orderBy?: string;
     orderDir?: string;
+    includeArchived?: boolean;
     limit?: number;
 };
 type ContentTypesArgs = {
@@ -927,6 +930,7 @@ export const resolvers = {
             fieldOp,
             fieldValue,
             sortField,
+            includeArchived,
             limit: rawLimit,
             offset: rawOffset,
             cursor
@@ -942,6 +946,7 @@ export const resolvers = {
                     fieldOp: fieldOp as 'eq' | 'contains' | 'gte' | 'lte' | undefined,
                     fieldValue,
                     sortField,
+                    includeArchived,
                     limit: clampLimit(rawLimit),
                     offset: cursor ? rawOffset : clampOffset(rawOffset),
                     cursor
@@ -969,6 +974,7 @@ export const resolvers = {
             metricField,
             orderBy,
             orderDir,
+            includeArchived,
             limit: rawLimit
         }: ContentProjectionArgs, context: unknown) => {
             try {
@@ -985,6 +991,7 @@ export const resolvers = {
                     metricField,
                     orderBy: orderBy as 'value' | 'group' | undefined,
                     orderDir: orderDir as 'asc' | 'desc' | undefined,
+                    includeArchived,
                     limit: clampLimit(rawLimit)
                 });
 
@@ -1001,7 +1008,8 @@ export const resolvers = {
             const numericId = parseId(id);
             const [row] = await db.select({
                 item: contentItems,
-                basePrice: contentTypes.basePrice
+                basePrice: contentTypes.basePrice,
+                schema: contentTypes.schema
             })
                 .from(contentItems)
                 .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
@@ -1015,7 +1023,7 @@ export const resolvers = {
                     'This content item is paywalled. You must use the REST API /api/content-items/:id to fulfill the L402 payment challenge.'
                 );
             }
-            return row.item;
+            return ensureContentItemLifecycleState(row.item, row.schema);
         }),
 
         contentItemVersions: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {

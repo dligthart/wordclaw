@@ -13,6 +13,7 @@ import {
 } from '../config/runtime-features.js';
 import {
     getPublicWriteSchemaConfig,
+    getContentLifecycleSchemaConfig,
     getPublicWriteSubjectValue,
     type PublicWriteOperation,
     validateContentDataAgainstSchema,
@@ -71,6 +72,7 @@ import { buildCapabilityManifest } from '../services/capability-manifest.js';
 import { getDeploymentStatusSnapshot } from '../services/deployment-status.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import { issuePublicWriteToken, verifyPublicWriteToken } from '../services/public-write.js';
+import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -88,6 +90,7 @@ type ContentItemsQuery = {
     sortField?: string;
     sortBy?: 'updatedAt' | 'createdAt' | 'version';
     sortDir?: 'asc' | 'desc';
+    includeArchived?: boolean;
     limit?: number;
     offset?: number;
     cursor?: string;
@@ -105,6 +108,7 @@ type ContentItemsProjectionQuery = {
     metricField?: string;
     orderBy?: 'value' | 'group';
     orderDir?: 'asc' | 'desc';
+    includeArchived?: boolean;
     limit?: number;
 };
 type AssetsQuery = {
@@ -1218,6 +1222,22 @@ export default async function apiRoutes(server: FastifyInstance) {
                             allowedOperations: Type.Array(Type.String()),
                             note: Type.String(),
                         }),
+                        lifecycle: Type.Object({
+                            supported: Type.Boolean(),
+                            requiresSchemaPolicy: Type.Boolean(),
+                            triggerMode: Type.String(),
+                            schemaExtension: Type.String(),
+                            defaultClock: Type.String(),
+                            defaultArchiveStatus: Type.String(),
+                            restListPath: Type.String(),
+                            restProjectionPath: Type.String(),
+                            mcpListTool: Type.String(),
+                            mcpProjectionTool: Type.String(),
+                            graphqlListField: Type.String(),
+                            graphqlProjectionField: Type.String(),
+                            includeArchivedFlag: Type.String(),
+                            note: Type.String(),
+                        }),
                     }),
                     paidContent: Type.Object({
                         l402Enabled: Type.Boolean(),
@@ -1403,6 +1423,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 updatePath: Type.String(),
                                 tokenHeader: Type.String(),
                                 requiresSchemaPolicy: Type.Boolean(),
+                            }),
+                            lifecycle: Type.Object({
+                                supported: Type.Boolean(),
+                                triggerMode: Type.String(),
+                                schemaExtension: Type.String(),
+                                includeArchivedFlag: Type.String(),
+                                defaultArchiveStatus: Type.String(),
                             }),
                             note: Type.String(),
                         }),
@@ -4057,7 +4084,11 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        if (existing.status !== publicWriteConfig.requiredStatus) {
+        const lifecycleAwareExisting = getContentLifecycleSchemaConfig(contentType.schema)
+            ? await ensureContentItemLifecycleState(existing, contentType.schema)
+            : existing;
+
+        if (lifecycleAwareExisting.status !== publicWriteConfig.requiredStatus) {
             return reply.status(409).send(toErrorPayload(
                 'Content item is outside the public write lane',
                 'PUBLIC_WRITE_STATUS_LOCKED',
@@ -4065,7 +4096,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
-        const existingSubject = getPublicWriteSubjectValue(contentType.schema, existing.data);
+        const existingSubject = getPublicWriteSubjectValue(contentType.schema, lifecycleAwareExisting.data);
         if (existingSubject !== verification.subject) {
             return reply.status(403).send(toErrorPayload(
                 'Public write token does not own this content item',
@@ -4091,17 +4122,17 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         const updated = await db.transaction(async (tx) => {
             await tx.insert(contentItemVersions).values({
-                contentItemId: existing.id,
-                version: existing.version,
-                data: existing.data,
-                status: existing.status,
-                createdAt: existing.updatedAt
+                contentItemId: lifecycleAwareExisting.id,
+                version: lifecycleAwareExisting.version,
+                data: lifecycleAwareExisting.data,
+                status: lifecycleAwareExisting.status,
+                createdAt: lifecycleAwareExisting.updatedAt
             });
 
             const [result] = await tx.update(contentItems)
                 .set({
                     data: dataStr,
-                    version: existing.version + 1,
+                    version: lifecycleAwareExisting.version + 1,
                     updatedAt: new Date()
                 })
                 .where(and(
@@ -4400,6 +4431,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     Type.Literal('asc'),
                     Type.Literal('desc')
                 ])),
+                includeArchived: Type.Optional(Type.Boolean()),
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
                 offset: Type.Optional(Type.Number({ minimum: 0 })),
                 cursor: Type.Optional(Type.String())
@@ -4431,6 +4463,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             sortField,
             sortBy,
             sortDir,
+            includeArchived,
             limit: rawLimit,
             offset: rawOffset,
             cursor
@@ -4470,6 +4503,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 sortField,
                 sortBy,
                 sortDir,
+                includeArchived,
                 limit,
                 offset: cursor ? rawOffset : clampOffset(rawOffset),
                 cursor
@@ -4532,6 +4566,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     Type.Literal('asc'),
                     Type.Literal('desc')
                 ])),
+                includeArchived: Type.Optional(Type.Boolean()),
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 }))
             }),
             response: {
@@ -4557,6 +4592,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             metricField,
             orderBy,
             orderDir,
+            includeArchived,
             limit: rawLimit
         } = request.query as ContentItemsProjectionQuery;
 
@@ -4592,6 +4628,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 metricField,
                 orderBy,
                 orderDir,
+                includeArchived,
                 limit: clampLimit(rawLimit)
             });
 
@@ -4649,11 +4686,19 @@ export default async function apiRoutes(server: FastifyInstance) {
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
         const domainId = getDomainId(request);
-        const [item] = await db.select().from(contentItems).where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
+        const [row] = await db.select({
+            item: contentItems,
+            schema: contentTypes.schema
+        })
+            .from(contentItems)
+            .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
+            .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
 
-        if (!item) {
+        if (!row) {
             return reply.status(404).send(notFoundContentItem(id));
         }
+
+        const item = await ensureContentItemLifecycleState(row.item, row.schema);
 
         const matchingOffers = await LicensingService.getActiveOffersForItemRead(domainId, id, item.contentTypeId);
         if (matchingOffers.length > 0) {
