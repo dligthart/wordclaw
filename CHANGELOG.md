@@ -1,3 +1,10 @@
+# [1.30.0](https://github.com/dligthart/wordclaw/compare/v1.29.0...v1.30.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add public write lanes ([2577ead](https://github.com/dligthart/wordclaw/commit/2577ead60e9455a1dbfd7bfe60c0889760137a05))
+
 # [1.29.0](https://github.com/dligthart/wordclaw/compare/v1.28.0...v1.29.0) (2026-03-16)
 
 
