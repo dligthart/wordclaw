@@ -1,3 +1,10 @@
+# [1.27.0](https://github.com/dligthart/wordclaw/compare/v1.26.0...v1.27.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add schema-aware content field queries ([c80ef7b](https://github.com/dligthart/wordclaw/commit/c80ef7b4716a717dd33ffb183afac865a62686aa))
+
 # [1.26.0](https://github.com/dligthart/wordclaw/compare/v1.25.0...v1.26.0) (2026-03-16)
 
 
