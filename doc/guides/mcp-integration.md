@@ -17,6 +17,7 @@ The same discovery surfaces now expose the asset contract too:
 
 - configured versus effective asset storage provider
 - supported upload modes over REST and MCP
+- whether direct provider upload is currently available, plus the issue/complete paths
 - supported delivery modes (`public`, `signed`, `entitled`)
 - signed asset issuance path/tool plus the default token TTL
 
@@ -25,6 +26,8 @@ Asset discovery is available in-band too:
 - `content://assets` lists the current domain asset catalog snapshot
 - `content://assets/{id}` returns a single asset metadata snapshot
 - `get_asset_access` explains which REST path to read, whether auth is required, and whether an entitlement-backed offer applies
+- `issue_direct_asset_upload` returns a provider upload URL plus a completion token for S3-compatible direct upload flows
+- `complete_direct_asset_upload` finalizes the uploaded object into a first-class asset record after the provider write succeeds
 - `issue_asset_access` issues a short-lived signed asset URL for `signed` assets, or returns direct public-read guidance when the asset is already public
 
 Recommended remote MCP preflight:
@@ -268,6 +271,8 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | Tool               | Description                                                          |
 |--------------------|----------------------------------------------------------------------|
 | `create_asset`     | Upload an asset with public, signed, or entitled access mode         |
+| `issue_direct_asset_upload` | Issue a provider upload URL and completion token for direct asset upload |
+| `complete_direct_asset_upload` | Finalize a previously issued direct asset upload into an asset record |
 | `list_assets`      | List assets with optional filters and cursor paging                  |
 | `get_asset`        | Read a single asset metadata record                                  |
 | `get_asset_access` | Return REST delivery guidance, auth requirements, and available offers |

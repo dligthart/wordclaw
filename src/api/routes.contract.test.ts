@@ -298,6 +298,13 @@ describe('API Route Contracts', () => {
                             rest: {
                                 path: string;
                                 modes: string[];
+                                directProviderUpload: {
+                                    enabled: boolean;
+                                    issuePath: string;
+                                    completePath: string;
+                                    method: string;
+                                    providers: string[];
+                                };
                             };
                             mcp: {
                                 tool: string;
@@ -448,6 +455,13 @@ describe('API Route Contracts', () => {
                     rest: {
                         path: '/api/assets',
                         modes: ['json-base64', 'multipart-form-data'],
+                        directProviderUpload: {
+                            enabled: false,
+                            issuePath: '/api/assets/direct-upload',
+                            completePath: '/api/assets/direct-upload/complete',
+                            method: 'PUT',
+                            providers: ['s3'],
+                        },
                     },
                     mcp: {
                         tool: 'create_asset',
@@ -621,6 +635,13 @@ describe('API Route Contracts', () => {
                             supportedProviders: string[];
                             restUploadModes: string[];
                             mcpUploadModes: string[];
+                            directProviderUpload: {
+                                enabled: boolean;
+                                issuePath: string;
+                                completePath: string;
+                                method: string;
+                                providers: string[];
+                            };
                             deliveryModes: string[];
                             signedAccess: {
                                 enabled: boolean;
@@ -697,6 +718,13 @@ describe('API Route Contracts', () => {
                 supportedProviders: ['local', 's3'],
                 restUploadModes: ['json-base64', 'multipart-form-data'],
                 mcpUploadModes: ['inline-base64'],
+                directProviderUpload: {
+                    enabled: false,
+                    issuePath: '/api/assets/direct-upload',
+                    completePath: '/api/assets/direct-upload/complete',
+                    method: 'PUT',
+                    providers: ['s3'],
+                },
                 deliveryModes: ['public', 'signed', 'entitled'],
                 signedAccess: expect.objectContaining({
                     enabled: true,
@@ -3250,6 +3278,130 @@ describe('API Route Contracts', () => {
             expect(createArgs?.contentBytes?.toString('utf8')).toBe('jpg-bytes');
         } finally {
             createSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('issues a direct asset upload session through REST', async () => {
+        const app = await buildServer();
+        const issueSpy = vi.spyOn(assetService, 'issueDirectAssetUpload').mockResolvedValue({
+            provider: 's3',
+            upload: {
+                provider: 's3',
+                storageKey: '1/direct-hero.png',
+                method: 'PUT',
+                uploadUrl: 'https://storage.example.com/wordclaw-assets/1/direct-hero.png?X-Amz-Signature=test',
+                uploadHeaders: {
+                    'content-type': 'image/png',
+                },
+                expiresAt: new Date('2026-03-16T12:05:00.000Z'),
+                ttlSeconds: 300,
+            },
+            finalize: {
+                path: '/api/assets/direct-upload/complete',
+                token: 'direct-upload-token',
+                expiresAt: new Date('2026-03-16T12:05:00.000Z'),
+            },
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/direct-upload',
+                payload: {
+                    filename: 'hero.png',
+                    mimeType: 'image/png',
+                    accessMode: 'signed',
+                    metadata: { alt: 'Hero' },
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    provider: string;
+                    upload: { method: string; uploadUrl: string; uploadHeaders: Record<string, string>; ttlSeconds: number };
+                    finalize: { path: string; token: string };
+                };
+            };
+            expect(body.data).toMatchObject({
+                provider: 's3',
+                upload: {
+                    method: 'PUT',
+                    uploadUrl: 'https://storage.example.com/wordclaw-assets/1/direct-hero.png?X-Amz-Signature=test',
+                    uploadHeaders: {
+                        'content-type': 'image/png',
+                    },
+                    ttlSeconds: 300,
+                },
+                finalize: {
+                    path: '/api/assets/direct-upload/complete',
+                    token: 'direct-upload-token',
+                }
+            });
+            expect(issueSpy).toHaveBeenCalledWith(expect.objectContaining({
+                domainId: 1,
+                filename: 'hero.png',
+                mimeType: 'image/png',
+                accessMode: 'signed',
+                metadata: { alt: 'Hero' },
+            }));
+        } finally {
+            issueSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('completes a direct asset upload through REST', async () => {
+        const app = await buildServer();
+        const completeSpy = vi.spyOn(assetService, 'completeDirectAssetUpload').mockResolvedValue({
+            id: 20,
+            domainId: 1,
+            filename: 'hero.png',
+            originalFilename: 'hero.png',
+            mimeType: 'image/png',
+            sizeBytes: 512,
+            byteHash: null,
+            storageProvider: 's3',
+            storageKey: '1/direct-hero.png',
+            accessMode: 'signed',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
+            status: 'active',
+            metadata: { alt: 'Hero' },
+            uploaderActorId: 'anonymous',
+            uploaderActorType: 'anonymous',
+            uploaderActorSource: 'anonymous',
+            createdAt: new Date('2026-03-16T12:00:00.000Z'),
+            updatedAt: new Date('2026-03-16T12:00:00.000Z'),
+            deletedAt: null
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/assets/direct-upload/complete',
+                payload: {
+                    token: 'direct-upload-token'
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            const body = response.json() as {
+                data: { id: number; storageProvider: string; delivery: { accessPath: string | null } };
+            };
+            expect(body.data).toMatchObject({
+                id: 20,
+                storageProvider: 's3',
+                delivery: {
+                    accessPath: '/api/assets/20/access',
+                }
+            });
+            expect(completeSpy).toHaveBeenCalledWith('direct-upload-token', 1, expect.objectContaining({
+                actorId: 'anonymous',
+            }));
+        } finally {
+            completeSpy.mockRestore();
             await app.close();
         }
     });

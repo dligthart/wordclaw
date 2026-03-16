@@ -17,9 +17,11 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 import { LicensingService, type OfferReadScope } from '../services/licensing.js';
 import {
     AssetListError,
+    completeDirectAssetUpload,
     createAsset,
     getAsset,
     getAssetEntitlementScope,
+    issueDirectAssetUpload,
     listAssets,
     purgeAsset,
     restoreAsset,
@@ -886,6 +888,95 @@ server.tool(
             }
 
             return err(`Error creating asset: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'issue_direct_asset_upload',
+    'Issue a direct provider upload URL for S3-compatible asset storage and return a completion token',
+    {
+        filename: z.string().describe('Storage filename for the asset'),
+        originalFilename: z.string().optional().describe('Original source filename'),
+        mimeType: z.string().describe('MIME type such as image/png'),
+        accessMode: z.enum(['public', 'signed', 'entitled']).optional().describe('Access mode for the asset'),
+        entitlementScope: z.object({
+            type: z.enum(['item', 'type', 'subscription']),
+            ref: z.number().optional()
+        }).optional().describe('Required when accessMode is entitled'),
+        metadata: z.record(z.string(), z.any()).optional().describe('Optional metadata object'),
+        ttlSeconds: z.number().optional().describe('Optional direct upload lifetime in seconds (60-3600)')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async (args, _extra, domainId) => {
+        try {
+            const issued = await issueDirectAssetUpload({
+                domainId,
+                filename: args.filename,
+                originalFilename: args.originalFilename,
+                mimeType: args.mimeType,
+                accessMode: args.accessMode,
+                entitlementScope: args.entitlementScope,
+                metadata: args.metadata,
+                ttlSeconds: args.ttlSeconds,
+            });
+
+            return okJson({
+                provider: issued.provider,
+                upload: {
+                    method: issued.upload.method,
+                    uploadUrl: issued.upload.uploadUrl,
+                    uploadHeaders: issued.upload.uploadHeaders,
+                    expiresAt: issued.upload.expiresAt.toISOString(),
+                    ttlSeconds: issued.upload.ttlSeconds,
+                },
+                finalize: {
+                    path: issued.finalize.path,
+                    token: issued.finalize.token,
+                    expiresAt: issued.finalize.expiresAt.toISOString(),
+                },
+                recommendedNextAction: 'Upload the bytes to the provider URL, then call complete_direct_asset_upload with the returned token.'
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return err(formatAssetError(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
+
+            return err(`Error issuing direct asset upload: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'complete_direct_asset_upload',
+    'Finalize a previously issued direct provider upload and materialize the asset record',
+    {
+        token: z.string().describe('Completion token returned by issue_direct_asset_upload')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ token }, extra, domainId) => {
+        try {
+            const principal = resolveMcpPrincipal(extra);
+            const completed = await completeDirectAssetUpload(token, domainId, {
+                actorId: principal.actorId,
+                actorType: principal.actorType,
+                actorSource: principal.actorSource
+            });
+
+            return okJson({
+                asset: serializeAssetForMcp(completed),
+                recommendedNextAction: 'Use get_asset or get_asset_access to inspect delivery and attachment guidance.'
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return err(formatAssetError(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
+
+            return err(`Error completing direct asset upload: ${(error as Error).message}`);
         }
     })
 );

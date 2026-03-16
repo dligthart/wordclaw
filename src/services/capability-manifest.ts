@@ -735,6 +735,13 @@ export function buildCapabilityManifest() {
                 rest: {
                     path: '/api/assets',
                     modes: [...SUPPORTED_ASSET_UPLOAD_MODES],
+                    directProviderUpload: {
+                        enabled: assetStorage.effectiveProvider === 's3',
+                        issuePath: '/api/assets/direct-upload',
+                        completePath: '/api/assets/direct-upload/complete',
+                        method: 'PUT',
+                        providers: ['s3'],
+                    },
                 },
                 mcp: {
                     tool: 'create_asset',

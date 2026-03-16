@@ -171,6 +171,13 @@ describe('buildCapabilityManifest', () => {
                 rest: {
                     path: '/api/assets',
                     modes: ['json-base64', 'multipart-form-data'],
+                    directProviderUpload: {
+                        enabled: false,
+                        issuePath: '/api/assets/direct-upload',
+                        completePath: '/api/assets/direct-upload/complete',
+                        method: 'PUT',
+                        providers: ['s3'],
+                    },
                 },
                 mcp: {
                     tool: 'create_asset',

@@ -17,6 +17,20 @@ export type StoredAssetDescriptor = {
     byteHash: string;
 };
 
+export type AssetObjectStat = {
+    sizeBytes: number;
+    byteHash: string | null;
+};
+
+export type IssuedDirectAssetUpload = {
+    provider: AssetStorageProviderName;
+    storageKey: string;
+    method: 'PUT';
+    uploadUrl: string;
+    uploadHeaders: Record<string, string>;
+    expiresAt: Date;
+};
+
 export class AssetStorageError extends Error {
     code: string;
     remediation: string;
@@ -35,6 +49,8 @@ export interface AssetStorageProvider {
     put(domainId: number, filename: string, bytes: Buffer): Promise<StoredAssetDescriptor>;
     read(storageKey: string): Promise<Buffer>;
     remove(storageKey: string): Promise<void>;
+    stat(storageKey: string): Promise<AssetObjectStat>;
+    issueDirectUpload(domainId: number, filename: string, mimeType: string, expiresAt: Date): Promise<IssuedDirectAssetUpload>;
 }
 
 function sha256Hex(value: Buffer | string): string {
@@ -95,9 +111,67 @@ function buildS3ObjectUrl(config: S3AssetStorageConfig, storageKey: string): URL
     return base;
 }
 
+function encodeS3QueryComponent(value: string): string {
+    return encodeURIComponent(value).replace(/[!*'()]/g, (char) =>
+        `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
+}
+
+function buildS3PresignedPutUrl(
+    config: S3AssetStorageConfig,
+    storageKey: string,
+    expiresAt: Date,
+    timestamp = new Date(),
+): string {
+    const url = buildS3ObjectUrl(config, storageKey);
+    const { amzDate, dateStamp } = formatAmzDate(timestamp);
+    const expiresInSeconds = Math.max(1, Math.min(Math.trunc((expiresAt.getTime() - timestamp.getTime()) / 1000), 3600));
+    const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
+    const queryEntries = Object.entries({
+        'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+        'X-Amz-Credential': `${config.accessKeyId}/${credentialScope}`,
+        'X-Amz-Date': amzDate,
+        'X-Amz-Expires': String(expiresInSeconds),
+        'X-Amz-SignedHeaders': 'host',
+    }).sort(([left], [right]) => left.localeCompare(right));
+    const canonicalQuery = queryEntries
+        .map(([key, value]) => `${encodeS3QueryComponent(key)}=${encodeS3QueryComponent(value)}`)
+        .join('&');
+    const canonicalRequest = [
+        'PUT',
+        url.pathname,
+        canonicalQuery,
+        `host:${url.host}\n`,
+        'host',
+        'UNSIGNED-PAYLOAD',
+    ].join('\n');
+    const stringToSign = [
+        'AWS4-HMAC-SHA256',
+        amzDate,
+        credentialScope,
+        sha256Hex(canonicalRequest),
+    ].join('\n');
+    const signingKey = hmacBuffer(
+        hmacBuffer(
+            hmacBuffer(
+                hmacBuffer(`AWS4${config.secretAccessKey}`, dateStamp),
+                config.region,
+            ),
+            's3',
+        ),
+        'aws4_request',
+    );
+    const signature = createHmac('sha256', signingKey)
+        .update(stringToSign, 'utf8')
+        .digest('hex');
+
+    url.search = `${canonicalQuery}&X-Amz-Signature=${signature}`;
+    return url.toString();
+}
+
 function buildSignedS3Headers(
     config: S3AssetStorageConfig,
-    method: 'PUT' | 'GET' | 'DELETE',
+    method: 'PUT' | 'GET' | 'DELETE' | 'HEAD',
     url: URL,
     payload: Buffer,
     timestamp = new Date(),
@@ -186,6 +260,24 @@ export class LocalDiskAssetStorage implements AssetStorageProvider {
         const absolutePath = this.toAbsolutePath(storageKey);
         await fs.rm(absolutePath, { force: true });
     }
+
+    async stat(storageKey: string): Promise<AssetObjectStat> {
+        const absolutePath = this.toAbsolutePath(storageKey);
+        const bytes = await fs.readFile(absolutePath);
+        return {
+            sizeBytes: bytes.byteLength,
+            byteHash: sha256Hex(bytes),
+        };
+    }
+
+    async issueDirectUpload(_domainId: number, _filename: string, _mimeType: string, _expiresAt: Date): Promise<IssuedDirectAssetUpload> {
+        throw new AssetStorageError(
+            'Direct provider upload is not supported for the local asset storage provider',
+            'ASSET_DIRECT_UPLOAD_UNSUPPORTED',
+            'Use POST /api/assets with multipart/form-data or switch the runtime to the s3 asset provider before requesting direct uploads.',
+            409,
+        );
+    }
 }
 
 export class S3AssetStorage implements AssetStorageProvider {
@@ -197,7 +289,7 @@ export class S3AssetStorage implements AssetStorageProvider {
     }
 
     private async perform(
-        method: 'PUT' | 'GET' | 'DELETE',
+        method: 'PUT' | 'GET' | 'DELETE' | 'HEAD',
         storageKey: string,
         payload: Buffer,
     ): Promise<Response> {
@@ -213,7 +305,7 @@ export class S3AssetStorage implements AssetStorageProvider {
             return response;
         }
 
-        if (method === 'GET' && response.status === 404) {
+        if ((method === 'GET' || method === 'HEAD') && response.status === 404) {
             throw new AssetStorageError(
                 'Asset content not found in S3 storage',
                 'ASSET_CONTENT_NOT_FOUND',
@@ -253,6 +345,31 @@ export class S3AssetStorage implements AssetStorageProvider {
 
     async remove(storageKey: string): Promise<void> {
         await this.perform('DELETE', storageKey, Buffer.alloc(0));
+    }
+
+    async stat(storageKey: string): Promise<AssetObjectStat> {
+        const response = await this.perform('HEAD', storageKey, Buffer.alloc(0));
+        const sizeHeader = response.headers.get('content-length');
+        const sizeBytes = Number(sizeHeader ?? 0);
+
+        return {
+            sizeBytes: Number.isFinite(sizeBytes) && sizeBytes >= 0 ? sizeBytes : 0,
+            byteHash: null,
+        };
+    }
+
+    async issueDirectUpload(domainId: number, filename: string, mimeType: string, expiresAt: Date): Promise<IssuedDirectAssetUpload> {
+        const storageKey = this.buildStorageKey(domainId, filename);
+        return {
+            provider: 's3',
+            storageKey,
+            method: 'PUT',
+            uploadUrl: buildS3PresignedPutUrl(this.config, storageKey, expiresAt),
+            uploadHeaders: {
+                'content-type': mimeType,
+            },
+            expiresAt,
+        };
     }
 }
 

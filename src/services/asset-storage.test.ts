@@ -90,6 +90,26 @@ describe('LocalDiskAssetStorage', () => {
         await expect(storage.read(stored.storageKey)).rejects.toThrow();
     });
 
+    it('returns object stats for local assets and rejects direct uploads', async () => {
+        const root = mkdtempSync(path.join(os.tmpdir(), 'wordclaw-assets-'));
+        tempRoots.push(root);
+        const storage = new LocalDiskAssetStorage(root);
+
+        const stored = await storage.put(3, 'hero image.png', Buffer.from('asset bytes'));
+        const stats = await storage.stat(stored.storageKey);
+        expect(stats).toEqual({
+            sizeBytes: 11,
+            byteHash: stored.byteHash,
+        });
+
+        await expect(
+            storage.issueDirectUpload(3, 'hero image.png', 'image/png', new Date(Date.now() + 300_000))
+        ).rejects.toMatchObject({
+            code: 'ASSET_DIRECT_UPLOAD_UNSUPPORTED',
+            statusCode: 409,
+        });
+    });
+
     it('rejects storage path escapes on read', async () => {
         const root = mkdtempSync(path.join(os.tmpdir(), 'wordclaw-assets-'));
         tempRoots.push(root);
@@ -159,5 +179,48 @@ describe('LocalDiskAssetStorage', () => {
 
         await storage.remove(stored.storageKey);
         expect((fetchMock.mock.calls[2][1] as RequestInit).method).toBe('DELETE');
+    });
+
+    it('issues direct upload urls and object stats for the s3 provider', async () => {
+        process.env.ASSET_STORAGE_PROVIDER = 's3';
+        process.env.ASSET_S3_BUCKET = 'wordclaw-assets';
+        process.env.ASSET_S3_REGION = 'eu-west-1';
+        process.env.ASSET_S3_ACCESS_KEY_ID = 'test-access-key';
+        process.env.ASSET_S3_SECRET_ACCESS_KEY = 'test-secret-key';
+        process.env.ASSET_S3_ENDPOINT = 'https://storage.example.com';
+        process.env.ASSET_S3_FORCE_PATH_STYLE = 'true';
+
+        const fetchMock = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(new Response(null, {
+                status: 200,
+                headers: {
+                    'content-length': '42',
+                },
+            }));
+        global.fetch = fetchMock;
+
+        const storage = getAssetStorageProvider();
+        const expiresAt = new Date('2026-03-16T12:05:00.000Z');
+        const issued = await storage.issueDirectUpload(9, 'hero image.png', 'image/png', expiresAt);
+
+        expect(issued).toMatchObject({
+            provider: 's3',
+            method: 'PUT',
+            expiresAt,
+            uploadHeaders: {
+                'content-type': 'image/png',
+            },
+        });
+        expect(issued.storageKey).toContain('9/');
+        expect(issued.uploadUrl).toContain('X-Amz-Algorithm=AWS4-HMAC-SHA256');
+        expect(issued.uploadUrl).toContain('X-Amz-Signature=');
+
+        const stats = await storage.stat(issued.storageKey);
+        expect(stats).toEqual({
+            sizeBytes: 42,
+            byteHash: null,
+        });
+        expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('HEAD');
     });
 });

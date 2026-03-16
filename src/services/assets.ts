@@ -2,9 +2,11 @@ import { and, desc, eq, ilike, inArray, lt, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { assets, contentItems, contentItemVersions, contentTypes } from '../db/schema.js';
+import { getAssetDirectUploadTtlSeconds } from '../config/assets.js';
 import { logAudit } from './audit.js';
-import { getAssetStorageProvider } from './asset-storage.js';
+import { getAssetStorageProvider, type AssetObjectStat, type IssuedDirectAssetUpload } from './asset-storage.js';
 import type { AuditActor } from './actor-identity.js';
+import { issueDirectAssetUploadToken, verifyDirectAssetUploadToken } from './asset-direct-upload.js';
 import { extractAssetReferencesFromContent } from './content-schema.js';
 
 export type AssetAccessMode = 'public' | 'signed' | 'entitled';
@@ -26,6 +28,29 @@ export type CreateAssetInput = {
     entitlementScope?: AssetEntitlementScope;
     metadata?: Record<string, unknown>;
     actor?: AuditActor;
+};
+
+export type IssueDirectAssetUploadInput = {
+    domainId: number;
+    filename: string;
+    originalFilename?: string;
+    mimeType: string;
+    accessMode?: AssetAccessMode;
+    entitlementScope?: AssetEntitlementScope;
+    metadata?: Record<string, unknown>;
+    ttlSeconds?: number;
+};
+
+export type IssuedDirectAssetUploadFlow = {
+    provider: string;
+    upload: IssuedDirectAssetUpload & {
+        ttlSeconds: number;
+    };
+    finalize: {
+        path: string;
+        token: string;
+        expiresAt: Date;
+    };
 };
 
 export type ListAssetsInput = {
@@ -79,6 +104,21 @@ export type AssetReferenceUsage = {
 export type AssetUsageSummary = {
     activeReferences: AssetReferenceUsage[];
     historicalReferences: AssetReferenceUsage[];
+};
+
+type PersistAssetRecordInput = {
+    domainId: number;
+    filename: string;
+    originalFilename: string;
+    mimeType: string;
+    stored: {
+        provider: string;
+        storageKey: string;
+    } & AssetObjectStat;
+    accessMode: AssetAccessMode;
+    entitlementScope: { type: AssetEntitlementScopeType | null; ref: number | null };
+    metadata: Record<string, unknown>;
+    actor?: AuditActor;
 };
 
 function isPositiveInteger(value: unknown): value is number {
@@ -263,6 +303,46 @@ export function decodeAssetsCursor(cursor: string): AssetCursor | null {
     }
 }
 
+async function persistAssetRecord(input: PersistAssetRecordInput) {
+    const [created] = await db.insert(assets).values({
+        domainId: input.domainId,
+        filename: input.filename,
+        originalFilename: input.originalFilename,
+        mimeType: input.mimeType,
+        sizeBytes: input.stored.sizeBytes,
+        byteHash: input.stored.byteHash,
+        storageProvider: input.stored.provider,
+        storageKey: input.stored.storageKey,
+        accessMode: input.accessMode,
+        entitlementScopeType: input.entitlementScope.type,
+        entitlementScopeRef: input.entitlementScope.ref,
+        status: 'active',
+        metadata: input.metadata,
+        uploaderActorId: input.actor?.actorId ?? null,
+        uploaderActorType: input.actor?.actorType ?? null,
+        uploaderActorSource: input.actor?.actorSource ?? null,
+    }).returning();
+
+    await logAudit(
+        input.domainId,
+        'create',
+        'asset',
+        created.id,
+        {
+            filename: created.filename,
+            mimeType: created.mimeType,
+            sizeBytes: created.sizeBytes,
+            accessMode: created.accessMode,
+            entitlementScopeType: created.entitlementScopeType,
+            entitlementScopeRef: created.entitlementScopeRef,
+            storageProvider: created.storageProvider,
+        },
+        input.actor
+    );
+
+    return created;
+}
+
 export async function createAsset(input: CreateAssetInput) {
     const accessMode = input.accessMode || 'public';
     const entitlementScope = await normalizeEntitlementScope(input.domainId, accessMode, input.entitlementScope);
@@ -271,46 +351,100 @@ export async function createAsset(input: CreateAssetInput) {
     const stored = await storage.put(input.domainId, input.filename, bytes);
 
     try {
-        const [created] = await db.insert(assets).values({
+        return await persistAssetRecord({
             domainId: input.domainId,
             filename: input.filename,
             originalFilename: input.originalFilename || input.filename,
             mimeType: input.mimeType,
-            sizeBytes: stored.sizeBytes,
-            byteHash: stored.byteHash,
-            storageProvider: stored.provider,
-            storageKey: stored.storageKey,
+            stored,
             accessMode,
-            entitlementScopeType: entitlementScope.type,
-            entitlementScopeRef: entitlementScope.ref,
-            status: 'active',
+            entitlementScope,
             metadata: input.metadata || {},
-            uploaderActorId: input.actor?.actorId ?? null,
-            uploaderActorType: input.actor?.actorType ?? null,
-            uploaderActorSource: input.actor?.actorSource ?? null,
-        }).returning();
-
-        await logAudit(
-            input.domainId,
-            'create',
-            'asset',
-            created.id,
-            {
-                filename: created.filename,
-                mimeType: created.mimeType,
-                sizeBytes: created.sizeBytes,
-                accessMode: created.accessMode,
-                entitlementScopeType: created.entitlementScopeType,
-                entitlementScopeRef: created.entitlementScopeRef
-            },
-            input.actor
-        );
-
-        return created;
+            actor: input.actor,
+        });
     } catch (error) {
         await storage.remove(stored.storageKey).catch(() => undefined);
         throw error;
     }
+}
+
+export async function issueDirectAssetUpload(input: IssueDirectAssetUploadInput): Promise<IssuedDirectAssetUploadFlow> {
+    const accessMode = input.accessMode || 'public';
+    const entitlementScope = await normalizeEntitlementScope(input.domainId, accessMode, input.entitlementScope);
+    const provider = getAssetStorageProvider();
+    const ttlSeconds = Math.max(60, Math.min(Math.trunc(input.ttlSeconds ?? getAssetDirectUploadTtlSeconds()), 3600));
+    const issued = await provider.issueDirectUpload(input.domainId, input.filename, input.mimeType, new Date(Date.now() + ttlSeconds * 1000));
+    const completion = issueDirectAssetUploadToken({
+        domainId: input.domainId,
+        storageProvider: issued.provider,
+        storageKey: issued.storageKey,
+        filename: input.filename,
+        originalFilename: input.originalFilename || input.filename,
+        mimeType: input.mimeType,
+        accessMode,
+        entitlementScopeType: entitlementScope.type,
+        entitlementScopeRef: entitlementScope.ref,
+        metadata: input.metadata || {},
+        ttlSeconds,
+    });
+
+    return {
+        provider: issued.provider,
+        upload: {
+            ...issued,
+            ttlSeconds: completion.ttlSeconds,
+        },
+        finalize: {
+            path: '/api/assets/direct-upload/complete',
+            token: completion.token,
+            expiresAt: completion.expiresAt,
+        },
+    };
+}
+
+export async function completeDirectAssetUpload(token: string, domainId: number, actor?: AuditActor) {
+    const verification = verifyDirectAssetUploadToken(token, domainId);
+    if (!verification.ok) {
+        throw new AssetListError(
+            verification.code === 'DIRECT_ASSET_UPLOAD_TOKEN_EXPIRED'
+                ? 'Direct upload token expired'
+                : 'Invalid direct upload token',
+            verification.code,
+            verification.remediation,
+        );
+    }
+
+    const [existing] = await db.select().from(assets).where(and(
+        eq(assets.domainId, verification.domainId),
+        eq(assets.storageProvider, verification.storageProvider),
+        eq(assets.storageKey, verification.storageKey),
+    )).limit(1);
+    if (existing) {
+        return existing;
+    }
+
+    const storage = getAssetStorageProvider(verification.storageProvider);
+    const objectStats = await storage.stat(verification.storageKey);
+
+    return persistAssetRecord({
+        domainId: verification.domainId,
+        filename: verification.filename,
+        originalFilename: verification.originalFilename,
+        mimeType: verification.mimeType,
+        stored: {
+            provider: verification.storageProvider,
+            storageKey: verification.storageKey,
+            sizeBytes: objectStats.sizeBytes,
+            byteHash: objectStats.byteHash,
+        },
+        accessMode: verification.accessMode,
+        entitlementScope: {
+            type: verification.entitlementScopeType,
+            ref: verification.entitlementScopeRef,
+        },
+        metadata: verification.metadata,
+        actor,
+    });
 }
 
 export async function listAssets(domainId: number, input: ListAssetsInput = {}): Promise<ListAssetsResult> {

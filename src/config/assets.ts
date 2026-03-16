@@ -10,6 +10,7 @@ export const ASSET_S3_ENDPOINT_ENV = 'ASSET_S3_ENDPOINT';
 export const ASSET_S3_FORCE_PATH_STYLE_ENV = 'ASSET_S3_FORCE_PATH_STYLE';
 export const ASSET_SIGNING_SECRET_ENV = 'ASSET_SIGNING_SECRET';
 export const ASSET_SIGNED_TTL_SECONDS_ENV = 'ASSET_SIGNED_TTL_SECONDS';
+export const ASSET_DIRECT_UPLOAD_TTL_SECONDS_ENV = 'ASSET_DIRECT_UPLOAD_TTL_SECONDS';
 
 export const SUPPORTED_ASSET_STORAGE_PROVIDERS = ['local', 's3'] as const;
 export const SUPPORTED_ASSET_UPLOAD_MODES = ['json-base64', 'multipart-form-data'] as const;
@@ -138,4 +139,13 @@ export function getAssetSignedTtlSeconds(): number {
     }
 
     return Math.max(30, Math.min(Math.trunc(raw), 3600));
+}
+
+export function getAssetDirectUploadTtlSeconds(): number {
+    const raw = Number(process.env[ASSET_DIRECT_UPLOAD_TTL_SECONDS_ENV] || 900);
+    if (!Number.isFinite(raw)) {
+        return 900;
+    }
+
+    return Math.max(60, Math.min(Math.trunc(raw), 3600));
 }

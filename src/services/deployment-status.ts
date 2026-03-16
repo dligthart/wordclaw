@@ -80,6 +80,13 @@ export type DeploymentStatusSnapshot = {
             supportedProviders: string[];
             restUploadModes: string[];
             mcpUploadModes: string[];
+            directProviderUpload: {
+                enabled: boolean;
+                issuePath: string;
+                completePath: string;
+                method: string;
+                providers: string[];
+            };
             deliveryModes: string[];
             signedAccess: {
                 enabled: boolean;
@@ -172,6 +179,13 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
         supportedProviders: [...manifest.assetStorage.supportedProviders],
         restUploadModes: [...manifest.assetStorage.upload.rest.modes],
         mcpUploadModes: [...manifest.assetStorage.upload.mcp.modes],
+        directProviderUpload: {
+            enabled: manifest.assetStorage.upload.rest.directProviderUpload.enabled,
+            issuePath: manifest.assetStorage.upload.rest.directProviderUpload.issuePath,
+            completePath: manifest.assetStorage.upload.rest.directProviderUpload.completePath,
+            method: manifest.assetStorage.upload.rest.directProviderUpload.method,
+            providers: [...manifest.assetStorage.upload.rest.directProviderUpload.providers],
+        },
         deliveryModes: [...manifest.assetStorage.delivery.supportedModes],
         signedAccess: {
             enabled: true,
@@ -185,14 +199,14 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
             contentPath: manifest.assetStorage.delivery.entitled.contentPath,
         },
         note: manifest.assetStorage.fallbackApplied
-            ? `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unsupported; the runtime is using "${manifest.assetStorage.effectiveProvider}" instead.`
+            ? `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unavailable; the runtime is using "${manifest.assetStorage.effectiveProvider}" instead.`
             : `Asset storage is enabled with the "${manifest.assetStorage.effectiveProvider}" provider.`,
     };
 
     if (manifest.assetStorage.fallbackApplied) {
         overallStatus = 'degraded';
         warnings.push(
-            `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unsupported; the runtime fell back to "${manifest.assetStorage.effectiveProvider}".`
+            `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unavailable; the runtime fell back to "${manifest.assetStorage.effectiveProvider}".`
         );
     }
 

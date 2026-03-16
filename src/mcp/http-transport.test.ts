@@ -427,6 +427,11 @@ describe('MCP HTTP transport', () => {
                 upload: expect.objectContaining({
                     rest: expect.objectContaining({
                         modes: ['json-base64', 'multipart-form-data'],
+                        directProviderUpload: expect.objectContaining({
+                            enabled: false,
+                            issuePath: '/api/assets/direct-upload',
+                            completePath: '/api/assets/direct-upload/complete',
+                        }),
                     }),
                     mcp: expect.objectContaining({
                         modes: ['inline-base64'],
@@ -474,6 +479,11 @@ describe('MCP HTTP transport', () => {
                     effectiveProvider: 'local',
                     restUploadModes: ['json-base64', 'multipart-form-data'],
                     mcpUploadModes: ['inline-base64'],
+                    directProviderUpload: expect.objectContaining({
+                        enabled: false,
+                        issuePath: '/api/assets/direct-upload',
+                        completePath: '/api/assets/direct-upload/complete',
+                    }),
                     deliveryModes: ['public', 'signed', 'entitled'],
                 }),
             }),

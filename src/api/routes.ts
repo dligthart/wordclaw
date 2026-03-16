@@ -49,10 +49,12 @@ import { issueSignedAssetAccess, verifySignedAssetAccess } from '../services/ass
 import {
     AssetListError,
     type AssetEntitlementScope,
+    completeDirectAssetUpload,
     createAsset,
     getAsset,
     getAssetEntitlementScope,
     getPublicAsset,
+    issueDirectAssetUpload,
     listAssets,
     purgeAsset,
     readAssetContent,
@@ -938,6 +940,24 @@ const AssetAccessResponseSchema = Type.Object({
     })
 });
 
+const AssetDirectUploadResponseSchema = Type.Object({
+    provider: Type.String(),
+    upload: Type.Object({
+        method: Type.Literal('PUT'),
+        uploadUrl: Type.String(),
+        uploadHeaders: Type.Record(Type.String(), Type.String()),
+        expiresAt: Type.String(),
+        ttlSeconds: Type.Number(),
+        note: Type.String()
+    }),
+    finalize: Type.Object({
+        path: Type.String(),
+        token: Type.String(),
+        expiresAt: Type.String(),
+        note: Type.String()
+    })
+});
+
 const AssetPurgeResponseSchema = Type.Object({
     purged: Type.Boolean(),
     asset: AssetResponseSchema,
@@ -1264,6 +1284,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             rest: Type.Object({
                                 path: Type.String(),
                                 modes: Type.Array(Type.String()),
+                                directProviderUpload: Type.Object({
+                                    enabled: Type.Boolean(),
+                                    issuePath: Type.String(),
+                                    completePath: Type.String(),
+                                    method: Type.String(),
+                                    providers: Type.Array(Type.String()),
+                                }),
                             }),
                             mcp: Type.Object({
                                 tool: Type.String(),
@@ -1476,6 +1503,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             supportedProviders: Type.Array(Type.String()),
                             restUploadModes: Type.Array(Type.String()),
                             mcpUploadModes: Type.Array(Type.String()),
+                            directProviderUpload: Type.Object({
+                                enabled: Type.Boolean(),
+                                issuePath: Type.String(),
+                                completePath: Type.String(),
+                                method: Type.String(),
+                                providers: Type.Array(Type.String()),
+                            }),
                             deliveryModes: Type.Array(Type.String()),
                             signedAccess: Type.Object({
                                 enabled: Type.Boolean(),
@@ -1567,6 +1601,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             supportedProviders: Type.Array(Type.String()),
                             restUploadModes: Type.Array(Type.String()),
                             mcpUploadModes: Type.Array(Type.String()),
+                            directProviderUpload: Type.Object({
+                                enabled: Type.Boolean(),
+                                issuePath: Type.String(),
+                                completePath: Type.String(),
+                                method: Type.String(),
+                                providers: Type.Array(Type.String()),
+                            }),
                             deliveryModes: Type.Array(Type.String()),
                             signedAccess: Type.Object({
                                 enabled: Type.Boolean(),
@@ -3287,6 +3328,140 @@ export default async function apiRoutes(server: FastifyInstance) {
                 1
             )
         });
+    });
+
+    server.post('/assets/direct-upload', {
+        schema: {
+            body: Type.Object({
+                filename: Type.String({ minLength: 1 }),
+                originalFilename: Type.Optional(Type.String({ minLength: 1 })),
+                mimeType: Type.String({ minLength: 1 }),
+                accessMode: Type.Optional(Type.Union([
+                    Type.Literal('public'),
+                    Type.Literal('signed'),
+                    Type.Literal('entitled')
+                ])),
+                entitlementScope: Type.Optional(Type.Object({
+                    type: Type.Union([
+                        Type.Literal('item'),
+                        Type.Literal('type'),
+                        Type.Literal('subscription')
+                    ]),
+                    ref: Type.Optional(Type.Number())
+                })),
+                metadata: Type.Optional(Type.Object({}, { additionalProperties: true })),
+                ttlSeconds: Type.Optional(Type.Number({ minimum: 60, maximum: 3600 }))
+            }),
+            response: {
+                200: createAIResponse(AssetDirectUploadResponseSchema),
+                400: AIErrorResponse,
+                409: AIErrorResponse,
+                503: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as {
+            filename: string;
+            originalFilename?: string;
+            mimeType: string;
+            accessMode?: 'public' | 'signed' | 'entitled';
+            entitlementScope?: AssetEntitlementScope;
+            metadata?: Record<string, unknown>;
+            ttlSeconds?: number;
+        };
+
+        try {
+            const issued = await issueDirectAssetUpload({
+                domainId: getDomainId(request),
+                filename: body.filename,
+                originalFilename: body.originalFilename,
+                mimeType: body.mimeType,
+                accessMode: body.accessMode,
+                entitlementScope: body.entitlementScope,
+                metadata: body.metadata,
+                ttlSeconds: body.ttlSeconds
+            });
+
+            return {
+                data: {
+                    provider: issued.provider,
+                    upload: {
+                        method: issued.upload.method,
+                        uploadUrl: issued.upload.uploadUrl,
+                        uploadHeaders: issued.upload.uploadHeaders,
+                        expiresAt: issued.upload.expiresAt.toISOString(),
+                        ttlSeconds: issued.upload.ttlSeconds,
+                        note: 'Upload the raw bytes directly to the storage provider before completing the asset creation step.'
+                    },
+                    finalize: {
+                        path: issued.finalize.path,
+                        token: issued.finalize.token,
+                        expiresAt: issued.finalize.expiresAt.toISOString(),
+                        note: 'Call POST /api/assets/direct-upload/complete with this token after the provider upload succeeds.'
+                    }
+                },
+                meta: buildMeta(
+                    'Complete the direct upload after the provider PUT succeeds',
+                    ['POST /api/assets/direct-upload/complete'],
+                    'low',
+                    1
+                )
+            };
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return reply.status(400).send(toAssetErrorPayload(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 409 | 503).send(toAssetStorageErrorPayload(error));
+            }
+            throw error;
+        }
+    });
+
+    server.post('/assets/direct-upload/complete', {
+        schema: {
+            body: Type.Object({
+                token: Type.String({ minLength: 1 })
+            }),
+            response: {
+                201: createAIResponse(AssetResponseSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+                503: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as { token: string };
+
+        try {
+            const completed = await completeDirectAssetUpload(
+                body.token,
+                getDomainId(request),
+                toAuditActorFromRequest(request as RequestActorCarrier)
+            );
+
+            return reply.status(201).send({
+                data: serializeAsset(completed),
+                meta: buildMeta(
+                    'Inspect the uploaded asset or attach it to content',
+                    ['GET /api/assets/:id', 'GET /api/assets/:id/content'],
+                    'low',
+                    1
+                )
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                const statusCode = error.code === 'INVALID_DIRECT_ASSET_UPLOAD_TOKEN' || error.code === 'DIRECT_ASSET_UPLOAD_TOKEN_EXPIRED'
+                    ? 400
+                    : 409;
+                return reply.status(statusCode).send(toAssetErrorPayload(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 404 | 409 | 503).send(toAssetStorageErrorPayload(error));
+            }
+            throw error;
+        }
     });
 
     server.get('/assets', {

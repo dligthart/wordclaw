@@ -29,8 +29,8 @@ Implemented so far:
 
 - first-class `assets` persistence with domain scoping and canonical actor attribution
 - schema-aware asset references via `x-wordclaw-field-kind: "asset"` and `"asset-list"`
-- REST asset routes for create, list, get, offers, signed-access issuance, content delivery, soft delete, restore, and purge
-- multipart and JSON/base64 upload paths
+- REST asset routes for create, direct-upload issue/complete, list, get, offers, signed-access issuance, content delivery, soft delete, restore, and purge
+- multipart, JSON/base64, and provider-issued direct upload paths
 - local and S3-compatible object storage providers, with explicit fallback-to-local reporting when remote configuration is incomplete
 - `public`, `signed`, and `entitled` delivery modes
 - MCP asset tools and asset discovery resources
@@ -40,7 +40,7 @@ Implemented so far:
 
 Still pending:
 
-- direct provider upload flows and optional asset derivatives
+- optional asset derivatives
 - additional remote providers beyond the current `local` + S3-compatible adapter if product demand justifies them
 
 ## 2. Motivation
@@ -327,6 +327,8 @@ Assets are part of the agent runtime and must be discoverable via MCP.
 V1 MCP tools should include:
 
 - `create_asset`
+- `issue_direct_asset_upload`
+- `complete_direct_asset_upload`
 - `list_assets`
 - `get_asset`
 - `delete_asset`
@@ -406,7 +408,7 @@ Because content versions point to durable asset records instead of raw URLs, rol
 - S3-compatible remote object storage providers
 - direct signed upload flows
 - optional derivatives and transformations
-- Status: in progress; S3-compatible storage is shipped, while direct uploads and derivatives remain open
+- Status: in progress; S3-compatible storage and direct uploads are shipped, while derivatives remain open
 
 ## 7. Drawbacks
 

@@ -8,7 +8,7 @@ We promote one major flagship feature per minor version release to ensure stabil
 
 ### v0.3: Schema-Aware Media Assets (Current)
 * **Goal**: Make media files a first-class part of the core runtime instead of pushing agents toward ad hoc external URLs.
-* **Status**: Rolling out. Local and S3-compatible storage, schema-level asset references, multipart upload, signed and entitlement-gated delivery, MCP/CLI tooling, supervisor asset controls, and restore/purge lifecycle are live on `main`. Remaining work is focused on direct provider upload flows and optional asset derivatives.
+* **Status**: Rolling out. Local and S3-compatible storage, schema-level asset references, multipart and direct-provider upload flows, signed and entitlement-gated delivery, MCP/CLI tooling, supervisor asset controls, and restore/purge lifecycle are live on `main`. Remaining work is focused on optional asset derivatives and any extra providers beyond the current S3-compatible adapter.
 * **Documentation**: See [RFC 0023](/doc/rfc/proposed/0023-media-asset-storage.md).
 
 ### v0.2: Production-Ready L402 Flows (Shipped)
@@ -40,7 +40,7 @@ These features are currently in active development or polishing phases for upcom
 
 ### 4. Remote Asset Providers & Operator UX (RFC 0023)
 - **Status**: In progress.
-- **Description**: The core asset runtime now supports local and S3-compatible storage plus day-to-day supervisor lifecycle controls. The remaining rollout work is focused on direct provider upload flows and optional derivatives so large media pipelines do not need to proxy all bytes through the API node.
+- **Description**: The core asset runtime now supports local and S3-compatible storage, provider-issued direct upload flows, and day-to-day supervisor lifecycle controls. The remaining rollout work is focused on optional derivatives and any additional providers the product actually needs beyond the current S3-compatible adapter.
 
 ### 5. Performance & Scalability (RFC 0024)
 - **Status**: Proposed.
