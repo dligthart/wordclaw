@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/dligthart/wordclaw/compare/v1.27.0...v1.28.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add grouped content projections ([e004907](https://github.com/dligthart/wordclaw/commit/e0049079a7a3f4854e1750c8ba87bb86742b37b8))
+
 # [1.27.0](https://github.com/dligthart/wordclaw/compare/v1.26.0...v1.27.0) (2026-03-16)
 
 
