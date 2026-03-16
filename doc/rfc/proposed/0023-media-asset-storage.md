@@ -3,7 +3,7 @@ title: Media Asset Storage
 status: rolling-out
 author: WordClaw Team
 date: 2026-03-13
-updated: 2026-03-15
+updated: 2026-03-16
 ---
 
 # RFC 0023: Media Asset Storage
@@ -23,7 +23,7 @@ This RFC proposes a native asset system with schema-aware references, managed st
 
 ## 1.1 Current Status
 
-As of 2026-03-15, RFC 0023 is actively rolling out and the core asset runtime is already live on `main`.
+As of 2026-03-16, RFC 0023 is actively rolling out and the core asset runtime is already live on `main`.
 
 Implemented so far:
 
@@ -31,16 +31,17 @@ Implemented so far:
 - schema-aware asset references via `x-wordclaw-field-kind: "asset"` and `"asset-list"`
 - REST asset routes for create, list, get, offers, signed-access issuance, content delivery, soft delete, restore, and purge
 - multipart and JSON/base64 upload paths
+- local and S3-compatible object storage providers, with explicit fallback-to-local reporting when remote configuration is incomplete
 - `public`, `signed`, and `entitled` delivery modes
 - MCP asset tools and asset discovery resources
 - capability/deployment discovery for asset provider, upload modes, delivery modes, and lifecycle support
 - CLI asset commands for list/get/create/offers/access/delete/restore/purge
+- supervisor UI asset inventory, inspector, upload, preview, signed access, and lifecycle controls
 
 Still pending:
 
-- remote object-storage providers beyond `local`
-- supervisor UI asset lifecycle and authoring controls
 - direct provider upload flows and optional asset derivatives
+- additional remote providers beyond the current `local` + S3-compatible adapter if product demand justifies them
 
 ## 2. Motivation
 
@@ -157,20 +158,26 @@ Future providers:
 
 The active provider remains deployment-configured.
 
-Example:
+Current example:
 
 ```env
-STORAGE_PROVIDER=local
-STORAGE_LOCAL_ROOT=./storage/assets
+ASSET_STORAGE_PROVIDER=local
+ASSET_STORAGE_ROOT=./storage/assets
 ```
 
-Future examples:
+Remote example:
 
 ```env
-STORAGE_PROVIDER=s3
-STORAGE_S3_BUCKET=my-wordclaw-assets
-STORAGE_S3_REGION=us-east-1
+ASSET_STORAGE_PROVIDER=s3
+ASSET_S3_BUCKET=my-wordclaw-assets
+ASSET_S3_REGION=us-east-1
+ASSET_S3_ACCESS_KEY_ID=...
+ASSET_S3_SECRET_ACCESS_KEY=...
+ASSET_S3_ENDPOINT=
+ASSET_S3_FORCE_PATH_STYLE=false
 ```
+
+`ASSET_STORAGE_PROVIDER=s3` activates the S3-compatible adapter when the bucket, region, and credentials are present. `ASSET_S3_ENDPOINT` and `ASSET_S3_FORCE_PATH_STYLE=true` support R2, MinIO, and similar gateways. If S3 is selected without a complete configuration, the runtime falls back to `local` and surfaces that fallback through `/api/capabilities` and `/api/deployment-status`.
 
 Provider responsibilities:
 
@@ -391,14 +398,15 @@ Because content versions point to durable asset records instead of raw URLs, rol
 - asset reference tracking across content versions
 - restore and purge safety flow
 - CLI and demo coverage
-- Status: shipped for the core runtime; supervisor UI coverage remains open
+- supervisor UI coverage
+- Status: shipped
 
 ### Phase 3
 
-- remote object storage providers
+- S3-compatible remote object storage providers
 - direct signed upload flows
 - optional derivatives and transformations
-- Status: in progress
+- Status: in progress; S3-compatible storage is shipped, while direct uploads and derivatives remain open
 
 ## 7. Drawbacks
 

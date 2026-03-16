@@ -25,6 +25,7 @@ import {
     restoreAsset,
     softDeleteAsset
 } from '../services/assets.js';
+import { AssetStorageError } from '../services/asset-storage.js';
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
@@ -879,6 +880,9 @@ server.tool(
         } catch (error) {
             if (error instanceof AssetListError) {
                 return err(formatAssetError(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
             }
 
             return err(`Error creating asset: ${(error as Error).message}`);

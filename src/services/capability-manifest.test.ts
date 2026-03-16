@@ -166,7 +166,7 @@ describe('buildCapabilityManifest', () => {
             configuredProvider: 'local',
             effectiveProvider: 'local',
             fallbackApplied: false,
-            supportedProviders: ['local'],
+            supportedProviders: ['local', 's3'],
             upload: expect.objectContaining({
                 rest: {
                     path: '/api/assets',

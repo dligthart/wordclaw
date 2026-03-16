@@ -443,7 +443,7 @@ describe('API Route Contracts', () => {
                 configuredProvider: 'local',
                 effectiveProvider: 'local',
                 fallbackApplied: false,
-                supportedProviders: ['local'],
+                supportedProviders: ['local', 's3'],
                 upload: expect.objectContaining({
                     rest: {
                         path: '/api/assets',
@@ -694,7 +694,7 @@ describe('API Route Contracts', () => {
                 configuredProvider: 'local',
                 effectiveProvider: 'local',
                 fallbackApplied: false,
-                supportedProviders: ['local'],
+                supportedProviders: ['local', 's3'],
                 restUploadModes: ['json-base64', 'multipart-form-data'],
                 mcpUploadModes: ['inline-base64'],
                 deliveryModes: ['public', 'signed', 'entitled'],

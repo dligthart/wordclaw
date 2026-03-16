@@ -59,6 +59,7 @@ import {
     restoreAsset,
     softDeleteAsset
 } from '../services/assets.js';
+import { AssetStorageError } from '../services/asset-storage.js';
 import {
     buildCurrentActorSnapshot,
     buildSupervisorPrincipal,
@@ -210,6 +211,14 @@ function toAssetErrorPayload(error: AssetListError): AIErrorPayload {
         code: error.code,
         remediation: error.remediation,
         ...(error.context ? { context: error.context } : {})
+    };
+}
+
+function toAssetStorageErrorPayload(error: AssetStorageError): AIErrorPayload {
+    return {
+        error: error.message,
+        code: error.code,
+        remediation: error.remediation
     };
 }
 
@@ -3228,7 +3237,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             body: Type.Any(),
             response: {
                 201: createAIResponse(AssetResponseSchema),
-                400: AIErrorResponse
+                400: AIErrorResponse,
+                503: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -3240,6 +3250,9 @@ export default async function apiRoutes(server: FastifyInstance) {
         } catch (error) {
             if (error instanceof AssetListError) {
                 return reply.status(400).send(toAssetErrorPayload(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 503).send(toAssetStorageErrorPayload(error));
             }
             throw error;
         }
@@ -3526,6 +3539,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 402: AIErrorResponse,
                 403: AIErrorResponse,
                 404: AIErrorResponse,
+                503: AIErrorResponse,
                 409: AIErrorResponse
             }
         }
@@ -3712,7 +3726,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         try {
-            const content = await readAssetContent(asset.storageKey);
+            const content = await readAssetContent(asset);
             reply.header('content-type', asset.mimeType);
             reply.header('content-length', String(content.byteLength));
             reply.header('content-disposition', `inline; filename="${asset.originalFilename}"`);
@@ -3725,6 +3739,9 @@ export default async function apiRoutes(server: FastifyInstance) {
 
             return reply.send(content);
         } catch (error) {
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 404 | 503).send(toAssetStorageErrorPayload(error));
+            }
             request.log.warn({ err: error, assetId: id }, 'Failed to read asset content');
             return reply.status(404).send(toErrorPayload(
                 'Asset content not found',
@@ -3775,7 +3792,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             response: {
                 200: createAIResponse(AssetRestoreResponseSchema),
                 404: AIErrorResponse,
-                409: AIErrorResponse
+                409: AIErrorResponse,
+                503: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -3805,6 +3823,9 @@ export default async function apiRoutes(server: FastifyInstance) {
             if (error instanceof AssetListError) {
                 return reply.status(409).send(toAssetErrorPayload(error));
             }
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 503).send(toAssetStorageErrorPayload(error));
+            }
 
             throw error;
         }
@@ -3819,7 +3840,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                 200: createAIResponse(AssetPurgeResponseSchema),
                 403: AIErrorResponse,
                 404: AIErrorResponse,
-                409: AIErrorResponse
+                409: AIErrorResponse,
+                503: AIErrorResponse
             }
         }
     }, async (request, reply) => {

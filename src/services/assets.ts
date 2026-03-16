@@ -440,8 +440,11 @@ export function getAssetEntitlementScope(asset: {
     return null;
 }
 
-export async function readAssetContent(storageKey: string) {
-    return getAssetStorageProvider().read(storageKey);
+export async function readAssetContent(asset: {
+    storageKey: string;
+    storageProvider: string;
+}) {
+    return getAssetStorageProvider(asset.storageProvider).read(asset.storageKey);
 }
 
 export async function softDeleteAsset(id: number, domainId: number, actor?: AuditActor) {
@@ -638,7 +641,7 @@ export async function purgeAsset(id: number, domainId: number, actor?: AuditActo
         );
     }
 
-    const storage = getAssetStorageProvider();
+    const storage = getAssetStorageProvider(existing.storageProvider);
     await storage.remove(existing.storageKey);
 
     const [purged] = await db.delete(assets).where(and(

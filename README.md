@@ -18,7 +18,7 @@ For a look ahead at what is in active development versus what is experimental, c
 ### Core Today
 
 -   **Structured Content**: JSON schema-based content types with runtime validation, version history, and rollback.
--   **Schema-Aware Media Assets**: First-class asset records with schema-level references, multipart uploads, public/signed/entitled delivery modes, and safe restore/purge lifecycle controls.
+-   **Schema-Aware Media Assets**: First-class asset records with schema-level references, multipart uploads, local or S3-compatible storage backends, public/signed/entitled delivery modes, and safe restore/purge lifecycle controls.
 -   **Agent-Friendly API**: REST responses include `recommendedNextAction`, `availableActions`, and `actionPriority` to guide automated clients.
 -   **REST + MCP Surfaces**: Primary agent access paths with strong content and governance semantics.
 -   **Governance by Default**: Dry-run support, approval workflows, audit logs, idempotency, and multi-tenant isolation.
@@ -72,12 +72,20 @@ For a look ahead at what is in active development versus what is experimental, c
     AGENT_RUN_WORKER_BATCH_SIZE=25
     ASSET_STORAGE_PROVIDER=local
     ASSET_STORAGE_ROOT=./storage/assets
+    ASSET_S3_BUCKET=
+    ASSET_S3_REGION=
+    ASSET_S3_ACCESS_KEY_ID=
+    ASSET_S3_SECRET_ACCESS_KEY=
+    ASSET_S3_ENDPOINT=
+    ASSET_S3_FORCE_PATH_STYLE=false
     ASSET_SIGNED_TTL_SECONDS=300
     PAYMENT_PROVIDER=lnbits
     LNBITS_BASE_URL=
     LNBITS_ADMIN_KEY=
     ```
-    `OPENAI_API_KEY` is optional but highly recommended. Supplying it automatically enables native Vector RAG (embeddings and semantic search). `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth. 
+    `OPENAI_API_KEY` is optional but highly recommended. Supplying it automatically enables native Vector RAG (embeddings and semantic search). `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth.
+
+    Asset storage defaults to `local`. To use a remote object store, set `ASSET_STORAGE_PROVIDER=s3` plus the bucket, region, and credentials shown above. `ASSET_S3_ENDPOINT` and `ASSET_S3_FORCE_PATH_STYLE=true` support S3-compatible providers such as Cloudflare R2, MinIO, or self-hosted gateways. If `s3` is configured without the required settings, WordClaw falls back to the local provider and reports the fallback through `GET /api/capabilities` and `GET /api/deployment-status`.
     
     ### L402 / Lightning Provisioning
     By default, WordClaw uses a mocked Lightning network locally. If you run WordClaw in `NODE_ENV=production`, it requires a real Lightning backend. To provision a self-hosted Lightning node, set `PAYMENT_PROVIDER=lnbits` and configure the `LNBITS_BASE_URL` (e.g. `https://your-lnbits-domain.com`) and your `LNBITS_ADMIN_KEY`.
@@ -185,7 +193,7 @@ The CLI is JSON-first so agents can script it reliably, and `--raw` is available
 - MCP discovery, direct tool calls, prompt reads, resource reads, and smoke testing
 - REST content type and content item CRUD
 - schema-aware field queries, grouped content projections, and TTL lifecycle handling for session-like content
-- REST asset upload, metadata inspection, signed-access issuance, offer lookup, and restore/purge lifecycle operations
+- REST asset upload, metadata inspection, signed-access issuance, offer lookup, restore/purge lifecycle operations, and storage-provider discovery
 - actor-aware content authoring guidance for a target schema
 - actor-aware integration guidance for API keys and webhooks
 - actor-aware provenance guidance for audit-trail inspection
