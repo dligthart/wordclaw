@@ -1,3 +1,10 @@
+# [1.26.0](https://github.com/dligthart/wordclaw/compare/v1.25.0...v1.26.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add schema-aware content references ([1b326e8](https://github.com/dligthart/wordclaw/commit/1b326e8cf34c8ea78a066fe4c41a00b5574bbfe3))
+
 # [1.25.0](https://github.com/dligthart/wordclaw/compare/v1.24.0...v1.25.0) (2026-03-16)
 
 
