@@ -18,6 +18,7 @@
         Home,
         ClipboardDocumentList,
         Folder,
+        ArchiveBox,
         CircleStack,
         Key,
         CheckCircle,
@@ -68,6 +69,12 @@
             href: "/ui/content",
             icon: Folder,
             match: (p: string) => p.includes("/content"),
+        },
+        {
+            name: "Assets",
+            href: "/ui/assets",
+            icon: ArchiveBox,
+            match: (p: string) => p.includes("/assets"),
         },
         {
             name: "Schema Manager",
