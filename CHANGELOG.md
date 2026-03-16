@@ -1,3 +1,10 @@
+# [1.25.0](https://github.com/dligthart/wordclaw/compare/v1.24.0...v1.25.0) (2026-03-16)
+
+
+### Features
+
+* **adventure-game:** organize images into session-specific folders ([e65900a](https://github.com/dligthart/wordclaw/commit/e65900a6b5afa530994b81e13f1b6bbdecb0d0c4))
+
 # [1.24.0](https://github.com/dligthart/wordclaw/compare/v1.23.0...v1.24.0) (2026-03-16)
 
 
