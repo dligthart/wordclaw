@@ -1,3 +1,10 @@
+# [1.24.0](https://github.com/dligthart/wordclaw/compare/v1.23.0...v1.24.0) (2026-03-16)
+
+
+### Features
+
+* **ui:** add supervisor asset lifecycle page ([789f80c](https://github.com/dligthart/wordclaw/commit/789f80c1d1a415eb0df4e4b12840966ab56e17bf))
+
 # [1.23.0](https://github.com/dligthart/wordclaw/compare/v1.22.0...v1.23.0) (2026-03-15)
 
 
