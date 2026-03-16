@@ -51,6 +51,26 @@
         createdAt: string;
     };
 
+    type QueryableFieldType = "string" | "number" | "boolean";
+
+    type QueryableField = {
+        name: string;
+        label: string;
+        type: QueryableFieldType;
+    };
+
+    type LifecycleSchemaConfig = {
+        ttlSeconds: number;
+        archiveStatus: string;
+        clock: "createdAt" | "updatedAt";
+    };
+
+    type PublicWriteSchemaConfig = {
+        subjectField: string;
+        allowedOperations: Array<"create" | "update">;
+        requiredStatus: string | null;
+    };
+
     type WorkflowTransition = {
         id: number;
         workflowId: number;
@@ -84,8 +104,8 @@
         hasMore: boolean;
     };
 
-    type ItemSortKey = "updatedAt" | "createdAt" | "version";
     type ItemSortDir = "asc" | "desc";
+    type FieldFilterOperator = "eq" | "contains" | "gte" | "lte";
 
     type DiffEntry = {
         key: string;
@@ -104,6 +124,15 @@
 
     const PAGE_SIZE = 20;
     const STATUS_OPTIONS = ["draft", "in_review", "published", "archived"];
+    const FIELD_FILTER_OPERATORS: Array<{
+        value: FieldFilterOperator;
+        label: string;
+    }> = [
+        { value: "eq", label: "Equals" },
+        { value: "contains", label: "Contains" },
+        { value: "gte", label: "At least" },
+        { value: "lte", label: "At most" },
+    ];
     const PRIMARY_LABEL_FIELDS = ["title", "name", "headline", "slug"];
     const SUMMARY_FIELDS = [
         "summary",
@@ -141,8 +170,12 @@
     let filterStatus = $state("");
     let createdAfter = $state("");
     let createdBefore = $state("");
-    let sortBy = $state<ItemSortKey>("updatedAt");
+    let fieldFilterName = $state("");
+    let fieldFilterOp = $state<FieldFilterOperator>("eq");
+    let fieldFilterValue = $state("");
+    let sortSelection = $state("updatedAt");
     let sortDir = $state<ItemSortDir>("desc");
+    let includeArchived = $state(false);
     let itemsMeta = $state<ContentListMeta>({ ...DEFAULT_ITEMS_META });
 
     let selectedVersionForDiff = $state<number | null>(null);
@@ -174,23 +207,36 @@
     let currentRangeEnd = $derived(
         items.length === 0 ? 0 : itemsMeta.offset + items.length,
     );
+    let hasFieldFilter = $derived(
+        Boolean(fieldFilterName && fieldFilterValue.trim().length > 0),
+    );
     let hasActiveFilters = $derived(
         Boolean(
             itemSearch.trim() ||
                 filterStatus ||
                 createdAfter ||
                 createdBefore ||
-                sortBy !== "updatedAt" ||
+                hasFieldFilter ||
+                includeArchived ||
+                sortSelection !== "updatedAt" ||
                 sortDir !== "desc",
         ),
     );
     let hasAdvancedFilters = $derived(
-        Boolean(filterStatus || createdAfter || createdBefore),
+        Boolean(
+            filterStatus ||
+                createdAfter ||
+                createdBefore ||
+                fieldFilterName ||
+                includeArchived,
+        ),
     );
     let activeAdvancedFilterCount = $derived(
         (filterStatus ? 1 : 0) +
+            (hasFieldFilter ? 1 : 0) +
             (createdAfter ? 1 : 0) +
-            (createdBefore ? 1 : 0),
+            (createdBefore ? 1 : 0) +
+            (includeArchived ? 1 : 0),
     );
     let selectedDiffVersion = $derived(
         selectedVersionForDiff === null
@@ -236,6 +282,47 @@
             ? resolveSchemaMetrics(selectedType)
             : { fieldCount: 0, requiredCount: 0 },
     );
+    let selectedTypeQueryableFields = $derived.by(() =>
+        selectedType ? resolveQueryableFields(selectedType) : [],
+    );
+    let selectedTypeLifecycle = $derived.by(() =>
+        selectedType ? resolveLifecycleSchemaConfig(selectedType) : null,
+    );
+    let selectedTypePublicWrite = $derived.by(() =>
+        selectedType ? resolvePublicWriteSchemaConfig(selectedType) : null,
+    );
+    let selectedFieldFilterMeta = $derived.by(
+        () =>
+            selectedTypeQueryableFields.find(
+                (field) => field.name === fieldFilterName,
+            ) ?? null,
+    );
+    let availableFieldFilterOperators = $derived.by(() => {
+        if (selectedFieldFilterMeta?.type === "number") {
+            return FIELD_FILTER_OPERATORS.filter(
+                (option) => option.value !== "contains",
+            );
+        }
+
+        if (selectedFieldFilterMeta?.type === "boolean") {
+            return FIELD_FILTER_OPERATORS.filter(
+                (option) => option.value === "eq",
+            );
+        }
+
+        return FIELD_FILTER_OPERATORS.filter(
+            (option) => option.value === "eq" || option.value === "contains",
+        );
+    });
+    let schemaSortOptions = $derived.by(() => [
+        { value: "updatedAt", label: "Updated" },
+        { value: "createdAt", label: "Created" },
+        { value: "version", label: "Version" },
+        ...selectedTypeQueryableFields.map((field) => ({
+            value: `field:${field.name}`,
+            label: `${field.label} (${field.type})`,
+        })),
+    ]);
     let schemaOverview = $derived.by(() => ({
         totalSchemas: contentTypes.length,
         schemasWithContent: contentTypes.filter(
@@ -551,6 +638,218 @@
         }
     }
 
+    function parseSchemaDocument(
+        type: ContentType,
+    ): Record<string, unknown> | null {
+        try {
+            const parsed = JSON.parse(type.schema);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                return null;
+            }
+            return parsed as Record<string, unknown>;
+        } catch {
+            return null;
+        }
+    }
+
+    function humanizeFieldName(value: string): string {
+        return value
+            .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+            .replace(/[_-]+/g, " ")
+            .replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
+    function resolveQueryableFields(type: ContentType): QueryableField[] {
+        const schema = parseSchemaDocument(type);
+        const properties =
+            schema?.properties &&
+            typeof schema.properties === "object" &&
+            !Array.isArray(schema.properties)
+                ? (schema.properties as Record<string, unknown>)
+                : null;
+
+        if (!properties) {
+            return [];
+        }
+
+        return Object.entries(properties).flatMap(([name, rawField]) => {
+            if (
+                !rawField ||
+                typeof rawField !== "object" ||
+                Array.isArray(rawField)
+            ) {
+                return [];
+            }
+
+            const field = rawField as Record<string, unknown>;
+            const rawType =
+                typeof field.type === "string" ? field.type : undefined;
+            const typeLabel =
+                rawType === "string"
+                    ? "string"
+                    : rawType === "integer" || rawType === "number"
+                      ? "number"
+                      : rawType === "boolean"
+                        ? "boolean"
+                        : null;
+
+            if (!typeLabel) {
+                return [];
+            }
+
+            return [
+                {
+                    name,
+                    label: humanizeFieldName(name),
+                    type: typeLabel,
+                },
+            ];
+        });
+    }
+
+    function resolveLifecycleSchemaConfig(
+        type: ContentType,
+    ): LifecycleSchemaConfig | null {
+        const schema = parseSchemaDocument(type);
+        const rawConfig = schema?.["x-wordclaw-lifecycle"];
+
+        if (
+            !rawConfig ||
+            typeof rawConfig !== "object" ||
+            Array.isArray(rawConfig)
+        ) {
+            return null;
+        }
+
+        const config = rawConfig as Record<string, unknown>;
+        if (config.enabled === false || typeof config.ttlSeconds !== "number") {
+            return null;
+        }
+
+        return {
+            ttlSeconds: config.ttlSeconds,
+            archiveStatus:
+                typeof config.archiveStatus === "string" &&
+                config.archiveStatus.trim()
+                    ? config.archiveStatus
+                    : "archived",
+            clock: config.clock === "createdAt" ? "createdAt" : "updatedAt",
+        };
+    }
+
+    function resolvePublicWriteSchemaConfig(
+        type: ContentType,
+    ): PublicWriteSchemaConfig | null {
+        const schema = parseSchemaDocument(type);
+        const rawConfig = schema?.["x-wordclaw-public-write"];
+
+        if (
+            !rawConfig ||
+            typeof rawConfig !== "object" ||
+            Array.isArray(rawConfig)
+        ) {
+            return null;
+        }
+
+        const config = rawConfig as Record<string, unknown>;
+        const subjectField =
+            typeof config.subjectField === "string"
+                ? config.subjectField.trim()
+                : "";
+        const allowedOperations = Array.isArray(config.allowedOperations)
+            ? config.allowedOperations.filter(
+                  (operation): operation is "create" | "update" =>
+                      operation === "create" || operation === "update",
+              )
+            : [];
+
+        if (config.enabled === false || !subjectField || !allowedOperations.length) {
+            return null;
+        }
+
+        return {
+            subjectField,
+            allowedOperations,
+            requiredStatus:
+                typeof config.requiredStatus === "string" &&
+                config.requiredStatus.trim().length > 0
+                    ? config.requiredStatus
+                    : null,
+        };
+    }
+
+    function formatTtlDuration(seconds: number): string {
+        if (seconds % 86_400 === 0) {
+            const days = seconds / 86_400;
+            return `${days}d`;
+        }
+
+        if (seconds % 3_600 === 0) {
+            const hours = seconds / 3_600;
+            return `${hours}h`;
+        }
+
+        if (seconds % 60 === 0) {
+            const minutes = seconds / 60;
+            return `${minutes}m`;
+        }
+
+        return `${seconds}s`;
+    }
+
+    function resolveFieldFilterPlaceholder(field: QueryableField | undefined) {
+        if (!field) {
+            return "Enter a value";
+        }
+
+        if (field.type === "boolean") {
+            return "true or false";
+        }
+
+        if (field.type === "number") {
+            return "Numeric value";
+        }
+
+        return `Match ${field.label.toLowerCase()}`;
+    }
+
+    function syncSchemaAwareControls(type: ContentType | null) {
+        const fields = type ? resolveQueryableFields(type) : [];
+        const fieldNames = new Set(fields.map((field) => field.name));
+        const numericFieldNames = new Set(
+            fields
+                .filter((field) => field.type === "number")
+                .map((field) => field.name),
+        );
+
+        if (fieldFilterName && !fieldNames.has(fieldFilterName)) {
+            fieldFilterName = "";
+            fieldFilterOp = "eq";
+            fieldFilterValue = "";
+        }
+
+        if (
+            sortSelection.startsWith("field:") &&
+            !fieldNames.has(sortSelection.slice("field:".length))
+        ) {
+            sortSelection = "updatedAt";
+        }
+
+        if (!numericFieldNames.size && fieldFilterOp !== "eq" && fieldFilterOp !== "contains") {
+            fieldFilterOp = "eq";
+        }
+
+        const selectedField =
+            fields.find((field) => field.name === fieldFilterName) ?? null;
+        if (selectedField?.type === "number" && fieldFilterOp === "contains") {
+            fieldFilterOp = "eq";
+        }
+
+        if (selectedField?.type === "boolean" && fieldFilterOp !== "eq") {
+            fieldFilterOp = "eq";
+        }
+    }
+
     function toDateBoundary(date: string, boundary: "start" | "end"): string {
         return boundary === "start"
             ? `${date}T00:00:00.000Z`
@@ -626,9 +925,14 @@
             contentTypeId: String(selectedType.id),
             limit: String(PAGE_SIZE),
             offset: String(offset),
-            sortBy,
             sortDir,
         });
+
+        if (sortSelection.startsWith("field:")) {
+            params.set("sortField", sortSelection.slice("field:".length));
+        } else {
+            params.set("sortBy", sortSelection);
+        }
 
         if (itemSearch.trim()) {
             params.set("q", itemSearch.trim());
@@ -644,6 +948,16 @@
 
         if (createdBefore) {
             params.set("createdBefore", toDateBoundary(createdBefore, "end"));
+        }
+
+        if (hasFieldFilter) {
+            params.set("fieldName", fieldFilterName);
+            params.set("fieldOp", fieldFilterOp);
+            params.set("fieldValue", fieldFilterValue.trim());
+        }
+
+        if (includeArchived) {
+            params.set("includeArchived", "true");
         }
 
         return params.toString();
@@ -662,8 +976,12 @@
         filterStatus = "";
         createdAfter = "";
         createdBefore = "";
-        sortBy = "updatedAt";
+        fieldFilterName = "";
+        fieldFilterOp = "eq";
+        fieldFilterValue = "";
+        sortSelection = "updatedAt";
         sortDir = "desc";
+        includeArchived = false;
     }
 
     async function loadContentTypes() {
@@ -682,6 +1000,7 @@
                 selectedType =
                     nextTypes.find((type) => type.id === selectedTypeId) ??
                     null;
+                syncSchemaAwareControls(selectedType);
                 if (!selectedType) {
                     items = [];
                     itemsMeta = { ...DEFAULT_ITEMS_META };
@@ -753,6 +1072,7 @@
 
     async function selectType(type: ContentType) {
         selectedType = type;
+        syncSchemaAwareControls(type);
         activeWorkflow = null;
         resetFilters();
         itemsMeta = { ...DEFAULT_ITEMS_META };
@@ -1038,7 +1358,13 @@
     }
 
     function clearFilterChip(
-        filter: "search" | "status" | "createdAfter" | "createdBefore",
+        filter:
+            | "search"
+            | "status"
+            | "createdAfter"
+            | "createdBefore"
+            | "field"
+            | "archived",
     ) {
         if (filter === "search") {
             itemSearch = "";
@@ -1048,6 +1374,12 @@
             createdAfter = "";
         } else if (filter === "createdBefore") {
             createdBefore = "";
+        } else if (filter === "field") {
+            fieldFilterName = "";
+            fieldFilterOp = "eq";
+            fieldFilterValue = "";
+        } else if (filter === "archived") {
+            includeArchived = false;
         }
 
         if (!selectedType) return;
@@ -1331,6 +1663,28 @@
                         </Button>
                     </div>
 
+                    {#if selectedTypeLifecycle || selectedTypePublicWrite}
+                        <div class="flex flex-wrap gap-2">
+                            {#if selectedTypeLifecycle}
+                                <Badge variant="outline">
+                                    TTL {formatTtlDuration(
+                                        selectedTypeLifecycle.ttlSeconds,
+                                    )} on {selectedTypeLifecycle.clock ===
+                                    "createdAt"
+                                        ? "create"
+                                        : "update"}
+                                </Badge>
+                            {/if}
+                            {#if selectedTypePublicWrite}
+                                <Badge variant="info">
+                                    Public write · {selectedTypePublicWrite.allowedOperations.join(
+                                        " / ",
+                                    )}
+                                </Badge>
+                            {/if}
+                        </div>
+                    {/if}
+
                     <div class="grid gap-3">
                         <Surface tone="subtle" class="p-4">
                             <p
@@ -1482,6 +1836,22 @@
                     <Badge variant="outline">
                         {resolveSchemaSummary(selectedType)}
                     </Badge>
+                    {#if selectedTypeLifecycle}
+                        <Badge variant="outline">
+                            TTL {formatTtlDuration(
+                                selectedTypeLifecycle.ttlSeconds,
+                            )} · {formatStatusLabel(
+                                selectedTypeLifecycle.archiveStatus,
+                            )}
+                        </Badge>
+                    {/if}
+                    {#if selectedTypePublicWrite}
+                        <Badge variant="info">
+                            Public write · {humanizeFieldName(
+                                selectedTypePublicWrite.subjectField,
+                            )}
+                        </Badge>
+                    {/if}
                     {#if selectedTypeStatusSummary.length > 0}
                         <Badge variant="muted">
                             {formatStatusLabel(
@@ -2052,7 +2422,7 @@
                                 />
                             </div>
                             <div
-                                class="grid gap-3 sm:grid-cols-2 min-[1180px]:w-[22rem]"
+                                class="grid gap-3 sm:grid-cols-2 min-[1180px]:w-[24rem]"
                             >
                                 <div>
                                     <label
@@ -2061,14 +2431,15 @@
                                     >
                                         Sort
                                     </label>
-                                    <Select id="sort-by" bind:value={sortBy}>
-                                        <option value="updatedAt"
-                                            >Updated</option
-                                        >
-                                        <option value="createdAt"
-                                            >Created</option
-                                        >
-                                        <option value="version">Version</option>
+                                    <Select
+                                        id="sort-by"
+                                        bind:value={sortSelection}
+                                    >
+                                        {#each schemaSortOptions as option}
+                                            <option value={option.value}
+                                                >{option.label}</option
+                                            >
+                                        {/each}
                                     </Select>
                                 </div>
                                 <div>
@@ -2171,6 +2542,73 @@
                                         {/each}
                                     </div>
                                 </div>
+                                {#if selectedTypeQueryableFields.length > 0}
+                                    <div class="lg:col-span-3">
+                                        <p
+                                            class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                                        >
+                                            Schema field query
+                                        </p>
+                                        <div
+                                            class="mt-2 grid gap-3 md:grid-cols-[minmax(0,1.1fr)_160px_minmax(0,1fr)_auto]"
+                                        >
+                                            <Select
+                                                bind:value={fieldFilterName}
+                                                onchange={() =>
+                                                    syncSchemaAwareControls(
+                                                        selectedType,
+                                                    )}
+                                            >
+                                                <option value="">
+                                                    No field filter
+                                                </option>
+                                                {#each selectedTypeQueryableFields as field}
+                                                    <option value={field.name}
+                                                        >{field.label} ({field.type})</option
+                                                    >
+                                                {/each}
+                                            </Select>
+                                            <Select bind:value={fieldFilterOp}>
+                                                {#each availableFieldFilterOperators as option}
+                                                    <option value={option.value}
+                                                        >{option.label}</option
+                                                    >
+                                                {/each}
+                                            </Select>
+                                            <Input
+                                                bind:value={fieldFilterValue}
+                                                placeholder={resolveFieldFilterPlaceholder(
+                                                    selectedFieldFilterMeta ??
+                                                        undefined,
+                                                )}
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant={includeArchived
+                                                    ? "secondary"
+                                                    : "outline"}
+                                                onclick={() => {
+                                                    includeArchived =
+                                                        !includeArchived;
+                                                }}
+                                            >
+                                                {includeArchived
+                                                    ? "Including archived"
+                                                    : "Hide archived"}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                {:else}
+                                    <div class="lg:col-span-3">
+                                        <div
+                                            class="rounded-xl border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                                        >
+                                            This schema has no top-level scalar
+                                            fields available for field-aware
+                                            queries yet.
+                                        </div>
+                                    </div>
+                                {/if}
                                 <div>
                                     <label
                                         for="created-after"
@@ -2238,6 +2676,21 @@
                                             <span aria-hidden="true">×</span>
                                         </button>
                                     {/if}
+                                    {#if hasFieldFilter}
+                                        <button
+                                            type="button"
+                                            onclick={() =>
+                                                clearFilterChip("field")}
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
+                                        >
+                                            <span
+                                                >Field: {humanizeFieldName(
+                                                    fieldFilterName,
+                                                )} {fieldFilterOp} "{fieldFilterValue.trim()}"</span
+                                            >
+                                            <span aria-hidden="true">×</span>
+                                        </button>
+                                    {/if}
                                     {#if createdAfter}
                                         <button
                                             type="button"
@@ -2267,6 +2720,17 @@
                                                     `${createdBefore}T00:00:00.000Z`,
                                                 )}</span
                                             >
+                                            <span aria-hidden="true">×</span>
+                                        </button>
+                                    {/if}
+                                    {#if includeArchived}
+                                        <button
+                                            type="button"
+                                            onclick={() =>
+                                                clearFilterChip("archived")}
+                                            class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-200"
+                                        >
+                                            <span>Including archived</span>
                                             <span aria-hidden="true">×</span>
                                         </button>
                                     {/if}
@@ -2304,6 +2768,23 @@
                                         ? `Filtered results inside ${selectedType.name}.`
                                         : `All content stored against ${selectedType.name}. Select an item to inspect its history.`}
                                 </p>
+                                {#if selectedTypeLifecycle}
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        <Badge variant="outline">
+                                            TTL {formatTtlDuration(
+                                                selectedTypeLifecycle.ttlSeconds,
+                                            )} on {selectedTypeLifecycle.clock ===
+                                            "createdAt"
+                                                ? "create"
+                                                : "update"}
+                                        </Badge>
+                                        {#if includeArchived}
+                                            <Badge variant="muted">
+                                                Archived rows included
+                                            </Badge>
+                                        {/if}
+                                    </div>
+                                {/if}
                             </div>
                             {#if activeWorkflow}
                                 <div
@@ -2651,17 +3132,17 @@
                         <p
                             class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
                         >
-                            Fields
+                            Queryable fields
                         </p>
                         <p
                             class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
                         >
-                            {selectedTypeMetrics.fieldCount}
+                            {selectedTypeQueryableFields.length}
                         </p>
                         <p
                             class="mt-1 text-xs text-slate-500 dark:text-slate-400"
                         >
-                            {selectedTypeMetrics.requiredCount} required
+                            Top-level scalar fields
                         </p>
                     </Surface>
                     <Surface tone="subtle" class="p-4">
@@ -2685,18 +3166,39 @@
                         <p
                             class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
                         >
-                            Schema shape
+                            Lifecycle
                         </p>
-                        <p
-                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
-                        >
-                            {selectedTypeMetrics.fieldCount}
-                        </p>
-                        <p
-                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
-                        >
-                            {selectedTypeMetrics.requiredCount} required field(s)
-                        </p>
+                        {#if selectedTypeLifecycle}
+                            <p
+                                class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50"
+                            >
+                                {formatTtlDuration(
+                                    selectedTypeLifecycle.ttlSeconds,
+                                )} to {formatStatusLabel(
+                                    selectedTypeLifecycle.archiveStatus,
+                                )}
+                            </p>
+                            <p
+                                class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                            >
+                                Ages from {selectedTypeLifecycle.clock ===
+                                "createdAt"
+                                    ? "creation"
+                                    : "last update"} and hides archived rows by
+                                default
+                            </p>
+                        {:else}
+                            <p
+                                class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50"
+                            >
+                                Inactive
+                            </p>
+                            <p
+                                class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                            >
+                                No TTL archival policy on this schema
+                            </p>
+                        {/if}
                     </Surface>
                     <Surface tone="subtle" class="p-4">
                         <p
@@ -2743,6 +3245,43 @@
                                 ? `${activeWorkflow.transitions.length} transition(s) available`
                                 : "Items keep their current status until a workflow is assigned"}
                         </p>
+                    </Surface>
+                    <Surface tone="subtle" class="p-4">
+                        <p
+                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        >
+                            Public write
+                        </p>
+                        {#if selectedTypePublicWrite}
+                            <p
+                                class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50"
+                            >
+                                {selectedTypePublicWrite.allowedOperations.join(
+                                    " / ",
+                                )}
+                            </p>
+                            <p
+                                class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                            >
+                                Subject: {humanizeFieldName(
+                                    selectedTypePublicWrite.subjectField,
+                                )}{#if selectedTypePublicWrite.requiredStatus}
+                                    · only {formatStatusLabel(
+                                        selectedTypePublicWrite.requiredStatus,
+                                    )}{/if}
+                            </p>
+                        {:else}
+                            <p
+                                class="mt-2 text-base font-semibold text-slate-900 dark:text-slate-50"
+                            >
+                                Disabled
+                            </p>
+                            <p
+                                class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                            >
+                                No public session write lane on this schema
+                            </p>
+                        {/if}
                     </Surface>
                 </div>
 
