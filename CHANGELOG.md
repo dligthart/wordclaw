@@ -1,3 +1,10 @@
+# [1.32.0](https://github.com/dligthart/wordclaw/compare/v1.31.0...v1.32.0) (2026-03-16)
+
+
+### Features
+
+* **ui:** surface content runtime query controls ([fe86a49](https://github.com/dligthart/wordclaw/commit/fe86a49ad85e6c2ac4396154741f54d4f54b081e))
+
 # [1.31.0](https://github.com/dligthart/wordclaw/compare/v1.30.0...v1.31.0) (2026-03-16)
 
 
