@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { assets, contentItems, contentTypes } from '../db/schema.js';
+
 const mocks = vi.hoisted(() => {
     const dbMock = {
         select: vi.fn()
@@ -16,12 +18,26 @@ vi.mock('../db/index.js', () => ({
 
 import { validateContentDataAgainstSchema, validateContentTypeSchema } from './content-schema.js';
 
-function mockAssetLookup(rows: Array<{ id: number }>) {
-    mocks.dbMock.select.mockReturnValue({
-        from: () => ({
-            where: vi.fn().mockResolvedValue(rows)
+type LookupState = {
+    assets?: Array<{ id: number }>;
+    contentItems?: Array<{ id: number; contentTypeId: number }>;
+    contentTypes?: Array<{ id: number; slug: string }>;
+};
+
+function mockLookupState(state: LookupState) {
+    mocks.dbMock.select.mockImplementation(() => ({
+        from: (table: unknown) => ({
+            where: vi.fn().mockResolvedValue(
+                table === assets
+                    ? (state.assets ?? [])
+                    : table === contentItems
+                        ? (state.contentItems ?? [])
+                        : table === contentTypes
+                            ? (state.contentTypes ?? [])
+                            : []
+            )
         })
-    });
+    }));
 }
 
 describe('validateContentTypeSchema', () => {
@@ -66,6 +82,46 @@ describe('validateContentTypeSchema', () => {
 
         expect(failure).toBeNull();
     });
+
+    it('rejects malformed content-ref schema extensions', () => {
+        const failure = validateContentTypeSchema(JSON.stringify({
+            type: 'object',
+            properties: {
+                linkedStory: {
+                    type: 'string',
+                    'x-wordclaw-field-kind': 'content-ref'
+                }
+            }
+        }));
+
+        expect(failure).toMatchObject({
+            code: 'INVALID_CONTENT_SCHEMA_CONTENT_REFERENCE_EXTENSION'
+        });
+    });
+
+    it('accepts valid content-ref-list schema extensions with type constraints', () => {
+        const failure = validateContentTypeSchema(JSON.stringify({
+            type: 'object',
+            properties: {
+                relatedStories: {
+                    type: 'array',
+                    'x-wordclaw-field-kind': 'content-ref-list',
+                    items: {
+                        type: 'object',
+                        'x-wordclaw-field-kind': 'content-ref',
+                        allowedContentTypeSlugs: ['story', 'quest'],
+                        properties: {
+                            contentItemId: { type: 'integer' },
+                            label: { type: 'string' }
+                        },
+                        required: ['contentItemId']
+                    }
+                }
+            }
+        }));
+
+        expect(failure).toBeNull();
+    });
 });
 
 describe('validateContentDataAgainstSchema', () => {
@@ -74,7 +130,9 @@ describe('validateContentDataAgainstSchema', () => {
     });
 
     it('accepts valid asset references in the current domain', async () => {
-        mockAssetLookup([{ id: 7 }]);
+        mockLookupState({
+            assets: [{ id: 7 }]
+        });
 
         const failure = await validateContentDataAgainstSchema(
             JSON.stringify({
@@ -105,7 +163,7 @@ describe('validateContentDataAgainstSchema', () => {
     });
 
     it('rejects missing or cross-domain asset references', async () => {
-        mockAssetLookup([]);
+        mockLookupState({});
 
         const failure = await validateContentDataAgainstSchema(
             JSON.stringify({
@@ -137,7 +195,9 @@ describe('validateContentDataAgainstSchema', () => {
     });
 
     it('reports missing asset references inside asset lists', async () => {
-        mockAssetLookup([{ id: 3 }]);
+        mockLookupState({
+            assets: [{ id: 3 }]
+        });
 
         const failure = await validateContentDataAgainstSchema(
             JSON.stringify({
@@ -170,5 +230,145 @@ describe('validateContentDataAgainstSchema', () => {
         });
         expect(failure?.context?.details).toContain('/gallery/1');
         expect(failure?.context?.details).toContain('4');
+    });
+
+    it('accepts valid content references in the current domain', async () => {
+        mockLookupState({
+            contentItems: [{ id: 42, contentTypeId: 9 }]
+        });
+
+        const failure = await validateContentDataAgainstSchema(
+            JSON.stringify({
+                type: 'object',
+                properties: {
+                    nextStory: {
+                        type: 'object',
+                        'x-wordclaw-field-kind': 'content-ref',
+                        properties: {
+                            contentItemId: { type: 'integer' },
+                            label: { type: 'string' }
+                        },
+                        required: ['contentItemId']
+                    }
+                }
+            }),
+            JSON.stringify({
+                nextStory: {
+                    contentItemId: 42,
+                    label: 'Continue'
+                }
+            }),
+            1
+        );
+
+        expect(failure).toBeNull();
+        expect(mocks.dbMock.select).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects missing or cross-domain content references', async () => {
+        mockLookupState({});
+
+        const failure = await validateContentDataAgainstSchema(
+            JSON.stringify({
+                type: 'object',
+                properties: {
+                    nextStory: {
+                        type: 'object',
+                        'x-wordclaw-field-kind': 'content-ref',
+                        properties: {
+                            contentItemId: { type: 'integer' }
+                        },
+                        required: ['contentItemId']
+                    }
+                }
+            }),
+            JSON.stringify({
+                nextStory: {
+                    contentItemId: 84
+                }
+            }),
+            1
+        );
+
+        expect(failure).toMatchObject({
+            code: 'CONTENT_REFERENCE_INVALID'
+        });
+        expect(failure?.context?.details).toContain('/nextStory');
+        expect(failure?.context?.details).toContain('84');
+    });
+
+    it('rejects content references that violate allowed content type ids', async () => {
+        mockLookupState({
+            contentItems: [{ id: 42, contentTypeId: 9 }]
+        });
+
+        const failure = await validateContentDataAgainstSchema(
+            JSON.stringify({
+                type: 'object',
+                properties: {
+                    nextStory: {
+                        type: 'object',
+                        'x-wordclaw-field-kind': 'content-ref',
+                        allowedContentTypeIds: [7],
+                        properties: {
+                            contentItemId: { type: 'integer' }
+                        },
+                        required: ['contentItemId']
+                    }
+                }
+            }),
+            JSON.stringify({
+                nextStory: {
+                    contentItemId: 42
+                }
+            }),
+            1
+        );
+
+        expect(failure).toMatchObject({
+            code: 'CONTENT_REFERENCE_TYPE_MISMATCH'
+        });
+        expect(failure?.context?.details).toContain('/nextStory');
+        expect(failure?.context?.details).toContain('id:7');
+    });
+
+    it('rejects content references that violate allowed content type slugs', async () => {
+        mockLookupState({
+            contentItems: [{ id: 42, contentTypeId: 9 }],
+            contentTypes: [{ id: 7, slug: 'story' }]
+        });
+
+        const failure = await validateContentDataAgainstSchema(
+            JSON.stringify({
+                type: 'object',
+                properties: {
+                    relatedStories: {
+                        type: 'array',
+                        'x-wordclaw-field-kind': 'content-ref-list',
+                        items: {
+                            type: 'object',
+                            'x-wordclaw-field-kind': 'content-ref',
+                            allowedContentTypeSlugs: ['story'],
+                            properties: {
+                                contentItemId: { type: 'integer' }
+                            },
+                            required: ['contentItemId']
+                        }
+                    }
+                }
+            }),
+            JSON.stringify({
+                relatedStories: [
+                    { contentItemId: 42 }
+                ]
+            }),
+            1
+        );
+
+        expect(failure).toMatchObject({
+            code: 'CONTENT_REFERENCE_TYPE_MISMATCH'
+        });
+        expect(failure?.context?.details).toContain('/relatedStories/0');
+        expect(failure?.context?.details).toContain('slug:story');
     });
 });
