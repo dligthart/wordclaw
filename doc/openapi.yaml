@@ -2736,6 +2736,10 @@ paths:
             enum:
               - asc
               - desc
+        - type: boolean
+          required: false
+          in: query
+          name: includeArchived
         - minimum: 1
           maximum: 500
           type: number
@@ -3248,6 +3252,10 @@ paths:
           required: false
           in: query
           name: orderDir
+        - type: boolean
+          required: false
+          in: query
+          name: includeArchived
         - type: number
           required: false
           in: query

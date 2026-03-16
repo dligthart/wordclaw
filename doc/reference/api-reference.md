@@ -6,7 +6,7 @@ import SwaggerUI from '../.vitepress/components/SwaggerUI.vue'
 
 This document covers WordClaw's primary HTTP surface: the REST API. MCP is the primary agent-native companion surface; see [mcp-integration.md](../guides/mcp-integration). GraphQL remains available at `/graphql` as a compatibility layer. Experimental revenue, payout, delegation, and agent-run endpoints are intentionally hidden from the default API reference unless an operator explicitly enables those incubator modules in runtime configuration.
 
-For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, and task-oriented agent recipes in one machine-readable document. It now also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. It now also publishes the content-runtime query contract: field-aware listing constraints, queryable scalar field kinds, and grouped projection support for lightweight leaderboard and analytics-style read models. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, REST/MCP availability, content-runtime query surfaces, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
+For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, and task-oriented agent recipes in one machine-readable document. It now also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. It now also publishes the content-runtime query contract: field-aware listing constraints, queryable scalar field kinds, grouped projection support for lightweight leaderboard and analytics-style read models, and TTL lifecycle semantics for session-like content via `x-wordclaw-lifecycle` plus the `includeArchived` override on list/projection reads. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, REST/MCP availability, content-runtime query surfaces, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
 
 The fastest task-oriented preflight sequence is:
 
@@ -167,6 +167,33 @@ curl -H "x-api-key: writer" \
     "limit": 5
   }
 }
+```
+
+### 5. TTL-Managed Session Content
+
+For ephemeral session-like models, declare a lifecycle policy in the content type schema and let the runtime lazily archive stale rows on touch. List and projection reads exclude those archived rows by default; operators can opt back in with `includeArchived=true`.
+
+**Schema excerpt:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "sessionId": { "type": "string" },
+    "body": { "type": "string" }
+  },
+  "required": ["sessionId", "body"],
+  "x-wordclaw-lifecycle": {
+    "ttlSeconds": 900,
+    "archiveStatus": "archived",
+    "clock": "updatedAt"
+  }
+}
+```
+
+**List including archived rows:**
+```bash
+curl -H "x-api-key: writer" \
+  "http://localhost:4000/api/content-items?contentTypeId=15&includeArchived=true&limit=20"
 ```
 
 ### 5. Uploading an Asset

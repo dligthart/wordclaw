@@ -164,6 +164,7 @@ npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
 npx tsx src/cli/index.ts content project --content-type-id 1 --group-by category --metric count
+npx tsx src/cli/index.ts content list --content-type-id 1 --include-archived
 npx tsx src/cli/index.ts assets list --access-mode public --limit 10
 npx tsx src/cli/index.ts assets create --content-file ./hero.png --mime-type image/png --access-mode signed
 
@@ -183,7 +184,7 @@ wordclaw content guide --help
 The CLI is JSON-first so agents can script it reliably, and `--raw` is available when you want only the response body or MCP text. It supports:
 - MCP discovery, direct tool calls, prompt reads, resource reads, and smoke testing
 - REST content type and content item CRUD
-- schema-aware field queries and grouped content projections for lightweight leaderboard and analytics-style views
+- schema-aware field queries, grouped content projections, and TTL lifecycle handling for session-like content
 - REST asset upload, metadata inspection, signed-access issuance, offer lookup, and restore/purge lifecycle operations
 - actor-aware content authoring guidance for a target schema
 - actor-aware integration guidance for API keys and webhooks
