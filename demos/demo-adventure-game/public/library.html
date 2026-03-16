@@ -4,68 +4,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WordClaw Adventure - Library</title>
+    <title>WordClaw Adventure - The Grand Archives</title>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:ital,wght@0,600;1,600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="library.css">
 </head>
 
 <body>
-    <div class="container">
+    <div id="app">
         <header>
             <h1 class="logo">WordClaw Adventure</h1>
-            <nav style="margin-top: 1rem;">
+            <nav>
                 <a href="/" class="primary-btn"
                     style="text-decoration:none; padding: 0.5rem 1rem; display: inline-block;">Back to Game</a>
             </nav>
         </header>
+
         <main>
             <div id="loading" class="hidden">
                 <div class="spinner"></div>
                 <p>Loading the Archives...</p>
             </div>
 
-            <div id="library-container">
-                <h2 id="themes-title">The Grand Archives</h2>
-                <p id="themes-subtitle">Read the legendary tales of past adventurers.</p>
-                <div id="story-list" class="theme-grid">
-                    <!-- Stories will be injected here -->
+            <section id="library-container">
+                <div class="archives-header">
+                    <h2 class="archives-title">The Grand Archives</h2>
+                    <p class="archives-subtitle">Legendary tales of past adventurers, preserved for eternity.</p>
                 </div>
-            </div>
+                <div id="story-list" class="story-grid"></div>
+            </section>
 
-            <!-- Modal for reading the full story -->
-            <div id="story-modal" class="hidden"
-                style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; overflow-y:auto; padding:2rem; display:flex; align-items:flex-start; justify-content:center;">
-                <div
-                    style="background:var(--bg-panel); border:1px solid var(--border); border-radius:16px; width:100%; max-width:800px; padding:2.5rem; position:relative; box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
-                    <button id="close-modal"
-                        style="position:absolute; top:1.5rem; right:1.5rem; background:transparent; border:none; color:var(--text-main); font-size:2rem; cursor:pointer;">&times;</button>
-                    <h2 id="modal-title"
-                        style="font-family:'Playfair Display',serif; color:var(--accent); font-size: 2rem; margin-bottom:0.5rem; margin-right: 2rem;">
-                        Title</h2>
-                    <p id="modal-author" style="color:var(--text-muted); margin-bottom:1rem; font-size: 1.1rem;">By
-                        Author</p>
-                    <p id="modal-score"
-                        style="color:var(--score); font-weight:bold; margin-bottom:1rem; font-size: 1.2rem;">Score: 0
-                    </p>
-                    <div id="modal-achievements"
-                        style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem; min-height: 28px;"></div>
-                    <div id="modal-inventory"
-                        style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:2rem; min-height: 28px;"></div>
-                    <div id="modal-content"
-                        style="white-space:pre-wrap; color:var(--text-main); line-height:1.8; font-size: 1.05rem;">
-                        Content</div>
-                    <h3 id="modal-gallery-heading" class="hidden"
-                        style="margin-top:2rem; margin-bottom:1rem; color:var(--text-muted); font-family: 'Playfair Display', serif;">
-                        Scene Highlights</h3>
-                    <div id="modal-gallery"
-                        style="display:flex; gap:1rem; overflow-x:auto; padding-bottom:1rem; scroll-snap-type:x mandatory;">
+            <!-- Story Reader Modal -->
+            <div id="story-modal" class="modal-overlay hidden">
+                <div class="modal-panel">
+                    <div class="modal-top-actions">
+                        <button id="download-pdf-btn" class="pdf-btn" title="Download PDF">📄 PDF</button>
+                        <button id="close-modal" class="modal-close">&times;</button>
+                    </div>
+
+                    <div class="modal-hero" id="modal-hero"></div>
+
+                    <div class="modal-body">
+                        <h2 id="modal-title" class="modal-story-title">Title</h2>
+                        <div class="modal-meta">
+                            <span id="modal-author" class="meta-author">By Author</span>
+                            <span id="modal-score" class="meta-score">Score: 0</span>
+                        </div>
+
+                        <div id="modal-achievements" class="badges-row"></div>
+                        <div id="modal-inventory" class="badges-row"></div>
+
+                        <div id="modal-content" class="story-chapters">
+                            Content
+                        </div>
                     </div>
                 </div>
             </div>
         </main>
     </div>
+    <script src="jspdf.umd.min.js"></script>
     <script src="library.js"></script>
 </body>
 

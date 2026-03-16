@@ -1,0 +1,414 @@
+/* ============================================
+   Grand Archives – Dedicated Stylesheet
+   ============================================ */
+
+/* --- Archives Header --- */
+.archives-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+}
+
+.archives-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.6rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #f59e0b, #fbbf24, #f59e0b);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: goldShimmer 4s linear infinite;
+    margin-bottom: 0.5rem;
+}
+
+.archives-subtitle {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    font-style: italic;
+}
+
+@keyframes goldShimmer {
+    to {
+        background-position: 200% center;
+    }
+}
+
+/* --- Story Card Grid --- */
+.story-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.story-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.story-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--accent);
+    box-shadow: 0 14px 35px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--accent);
+}
+
+.story-card-image {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    display: block;
+}
+
+.story-card-image-placeholder {
+    width: 100%;
+    height: 180px;
+    background: linear-gradient(135deg, #1e293b, #334155);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    opacity: 0.5;
+}
+
+.story-card-body {
+    padding: 1.2rem 1.4rem;
+}
+
+.story-card-body h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2rem;
+    color: var(--text-main);
+    margin-bottom: 0.4rem;
+}
+
+.story-card-body .card-author {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: 0.3rem;
+}
+
+.story-card-body .card-score {
+    font-weight: 800;
+    font-size: 0.95rem;
+}
+
+.story-card-body .card-class {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.story-card-body .card-fate {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.story-card-body .card-date {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+}
+
+/* --- Modal Overlay --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(6px);
+    z-index: 100;
+    overflow-y: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2rem 1rem;
+}
+
+.modal-panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 860px;
+    position: relative;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+}
+
+/* --- Modal Top Actions (close + PDF) --- */
+.modal-top-actions {
+    position: absolute;
+    top: 1rem;
+    right: 1.2rem;
+    z-index: 10;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.modal-close {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-main);
+    font-size: 1.6rem;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.modal-close:hover {
+    background: rgba(239, 68, 68, 0.6);
+}
+
+.pdf-btn {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 0.45rem 0.85rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 0.3px;
+}
+
+.pdf-btn:hover {
+    background: linear-gradient(135deg, #60a5fa, #3b82f6);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.pdf-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+
+/* --- Modal Hero Image --- */
+.modal-hero img {
+    width: 100%;
+    max-height: 340px;
+    object-fit: cover;
+    display: block;
+}
+
+/* --- Modal Body --- */
+.modal-body {
+    padding: 2rem 2.2rem 2.5rem;
+}
+
+.modal-story-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.9rem;
+    color: var(--text-main);
+    margin-bottom: 0.4rem;
+    line-height: 1.25;
+}
+
+.modal-meta {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    margin-bottom: 1.2rem;
+    flex-wrap: wrap;
+}
+
+.meta-author {
+    font-size: 1rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.meta-score {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--score);
+}
+
+/* --- Badges (Achievements & Inventory) --- */
+.badges-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.8rem;
+}
+
+.achievement-badge {
+    background: linear-gradient(135deg, #d4af37, #f3e5ab, #d4af37);
+    background-size: 200% auto;
+    color: #1a1a2e;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    animation: goldShimmer 3s infinite linear;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.inventory-pill {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+}
+
+/* ============================================
+   Chapter Card UI
+   ============================================ */
+
+.story-chapters {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-top: 1rem;
+}
+
+.chapter-card {
+    display: flex;
+    gap: 0;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.chapter-card:hover {
+    border-color: rgba(245, 158, 11, 0.35);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.chapter-card--no-image {
+    flex-direction: column;
+}
+
+/* --- Chapter Image Pane --- */
+.chapter-image-pane {
+    position: relative;
+    flex: 0 0 240px;
+    min-height: 200px;
+    overflow: hidden;
+}
+
+.chapter-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.4s ease;
+}
+
+.chapter-card:hover .chapter-image {
+    transform: scale(1.04);
+}
+
+.chapter-badge {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.6rem;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    color: #fbbf24;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+/* --- Chapter Text Pane --- */
+.chapter-text-pane {
+    flex: 1;
+    padding: 1.4rem 1.6rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.chapter-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2rem;
+    color: var(--accent);
+    margin-bottom: 0.7rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.chapter-num {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: block;
+    margin-bottom: 0.2rem;
+}
+
+.chapter-prose {
+    font-family: 'Lora', 'Georgia', serif;
+    color: rgba(248, 250, 252, 0.88);
+    font-size: 0.95rem;
+    line-height: 1.7;
+}
+
+.chapter-prose p {
+    margin-bottom: 0.8em;
+}
+
+.chapter-prose p:last-child {
+    margin-bottom: 0;
+}
+
+.story-empty {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 2rem;
+    font-style: italic;
+}
+
+/* --- Responsive --- */
+@media (max-width: 700px) {
+    .chapter-card {
+        flex-direction: column;
+    }
+
+    .chapter-image-pane {
+        flex: none;
+        min-height: 180px;
+        max-height: 220px;
+    }
+
+    .modal-body {
+        padding: 1.5rem 1.2rem 2rem;
+    }
+
+    .modal-story-title {
+        font-size: 1.5rem;
+    }
+
+    .archives-title {
+        font-size: 2rem;
+    }
+
+    .story-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .modal-panel {
+        max-width: 100%;
+    }
+}
