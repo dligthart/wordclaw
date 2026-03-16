@@ -1,3 +1,10 @@
+# [1.31.0](https://github.com/dligthart/wordclaw/compare/v1.30.0...v1.31.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add ttl-based lifecycle archival ([04da18e](https://github.com/dligthart/wordclaw/commit/04da18eece3aaad085ca0726b33aa0b1045d2b64))
+
 # [1.30.0](https://github.com/dligthart/wordclaw/compare/v1.29.0...v1.30.0) (2026-03-16)
 
 
