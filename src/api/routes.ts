@@ -68,6 +68,10 @@ type ContentItemsQuery = {
     q?: string;
     createdAfter?: string;
     createdBefore?: string;
+    fieldName?: string;
+    fieldOp?: 'eq' | 'contains' | 'gte' | 'lte';
+    fieldValue?: string;
+    sortField?: string;
     sortBy?: 'updatedAt' | 'createdAt' | 'version';
     sortDir?: 'asc' | 'desc';
     limit?: number;
@@ -3805,6 +3809,15 @@ export default async function apiRoutes(server: FastifyInstance) {
                 q: Type.Optional(Type.String()),
                 createdAfter: Type.Optional(Type.String()),
                 createdBefore: Type.Optional(Type.String()),
+                fieldName: Type.Optional(Type.String()),
+                fieldOp: Type.Optional(Type.Union([
+                    Type.Literal('eq'),
+                    Type.Literal('contains'),
+                    Type.Literal('gte'),
+                    Type.Literal('lte')
+                ])),
+                fieldValue: Type.Optional(Type.String()),
+                sortField: Type.Optional(Type.String()),
                 sortBy: Type.Optional(Type.Union([
                     Type.Literal('updatedAt'),
                     Type.Literal('createdAt'),
@@ -3839,6 +3852,10 @@ export default async function apiRoutes(server: FastifyInstance) {
             q,
             createdAfter,
             createdBefore,
+            fieldName,
+            fieldOp,
+            fieldValue,
+            sortField,
             sortBy,
             sortDir,
             limit: rawLimit,
@@ -3874,6 +3891,10 @@ export default async function apiRoutes(server: FastifyInstance) {
                 q,
                 createdAfter: afterDate,
                 createdBefore: beforeDate,
+                fieldName,
+                fieldOp,
+                fieldValue,
+                sortField,
                 sortBy,
                 sortDir,
                 limit,

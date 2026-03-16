@@ -25,6 +25,7 @@ describe('buildUsage', () => {
         expect(usage).toContain('WordClaw CLI: content');
         expect(usage).toContain('wordclaw content <subcommand> [options]');
         expect(usage).toContain('content guide --content-type-id <n>');
+        expect(usage).toContain('content list [--content-type-id <n>] [--status <value>] [--q <value>] [--created-after <iso>] [--created-before <iso>] [--field-name <value>] [--field-op eq|contains|gte|lte] [--field-value <value>] [--sort-field <value>]');
         expect(usage).not.toContain('workflow decide --id <n> --decision approved|rejected');
     });
 

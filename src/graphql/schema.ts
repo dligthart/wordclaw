@@ -348,6 +348,10 @@ ${agentRunTypeDefs}
       status: String,
       createdAfter: String,
       createdBefore: String,
+      fieldName: String,
+      fieldOp: String,
+      fieldValue: String,
+      sortField: String,
       limit: Int = 50,
       offset: Int = 0,
       cursor: String

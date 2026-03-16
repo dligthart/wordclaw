@@ -2,7 +2,7 @@ import { db } from '../db/index.js';
 import { contentItems, contentItemVersions, contentTypes } from '../db/schema.js';
 import { and, asc, desc, eq, gte, ilike, lt, lte, or, sql } from 'drizzle-orm';
 import { logAudit } from './audit.js';
-import { redactPremiumFields } from './content-schema.js';
+import { listQueryableContentFields, type QueryableContentFieldType, redactPremiumFields } from './content-schema.js';
 
 // --- Types ---
 
@@ -25,6 +25,10 @@ export type ListContentItemsInput = {
     q?: string;
     createdAfter?: Date | null;
     createdBefore?: Date | null;
+    fieldName?: string;
+    fieldOp?: 'eq' | 'contains' | 'gte' | 'lte';
+    fieldValue?: string;
+    sortField?: string;
     sortBy?: 'updatedAt' | 'createdAt' | 'version';
     sortDir?: 'asc' | 'desc';
     limit?: number;
@@ -87,6 +91,114 @@ export function decodeContentItemsCursor(cursor: string): ContentItemCursor | nu
     }
 }
 
+function normalizeQueryableFieldMap(schemaText: string): Map<string, QueryableContentFieldType> {
+    return new Map(listQueryableContentFields(schemaText).map((field) => [field.name, field.type]));
+}
+
+function parseBooleanFieldValue(value: string): boolean | null {
+    if (value === 'true') {
+        return true;
+    }
+
+    if (value === 'false') {
+        return false;
+    }
+
+    return null;
+}
+
+function getFieldTextExpression(fieldName: string) {
+    return sql<string>`((${contentItems.data})::jsonb ->> ${fieldName})`;
+}
+
+function getFieldNumericExpression(fieldName: string) {
+    return sql<number>`(((${contentItems.data})::jsonb ->> ${fieldName})::numeric)`;
+}
+
+function getFieldBooleanExpression(fieldName: string) {
+    return sql<boolean>`(((${contentItems.data})::jsonb ->> ${fieldName})::boolean)`;
+}
+
+function buildFieldFilterCondition(fieldName: string, fieldType: QueryableContentFieldType, operator: 'eq' | 'contains' | 'gte' | 'lte', rawValue: string) {
+    if (fieldType === 'string') {
+        const fieldExpression = getFieldTextExpression(fieldName);
+        if (operator === 'eq') {
+            return sql<boolean>`${fieldExpression} = ${rawValue}`;
+        }
+
+        if (operator === 'contains') {
+            return sql<boolean>`${fieldExpression} ILIKE ${`%${rawValue}%`}`;
+        }
+
+        throw new ContentItemListError(
+            'Unsupported operator for string content field filter',
+            'CONTENT_ITEMS_FIELD_FILTER_OPERATOR_UNSUPPORTED',
+            'Use eq or contains when filtering string content fields.'
+        );
+    }
+
+    if (fieldType === 'number') {
+        const parsedNumber = Number(rawValue);
+        if (!Number.isFinite(parsedNumber)) {
+            throw new ContentItemListError(
+                'Invalid numeric content field filter value',
+                'CONTENT_ITEMS_FIELD_FILTER_VALUE_INVALID',
+                'Provide a numeric fieldValue when filtering numeric content fields.'
+            );
+        }
+
+        const fieldExpression = getFieldNumericExpression(fieldName);
+        if (operator === 'eq') {
+            return sql<boolean>`${fieldExpression} = ${parsedNumber}`;
+        }
+
+        if (operator === 'gte') {
+            return sql<boolean>`${fieldExpression} >= ${parsedNumber}`;
+        }
+
+        if (operator === 'lte') {
+            return sql<boolean>`${fieldExpression} <= ${parsedNumber}`;
+        }
+
+        throw new ContentItemListError(
+            'Unsupported operator for numeric content field filter',
+            'CONTENT_ITEMS_FIELD_FILTER_OPERATOR_UNSUPPORTED',
+            'Use eq, gte, or lte when filtering numeric content fields.'
+        );
+    }
+
+    const parsedBoolean = parseBooleanFieldValue(rawValue);
+    if (parsedBoolean === null) {
+        throw new ContentItemListError(
+            'Invalid boolean content field filter value',
+            'CONTENT_ITEMS_FIELD_FILTER_VALUE_INVALID',
+            'Provide fieldValue as true or false when filtering boolean content fields.'
+        );
+    }
+
+    if (operator !== 'eq') {
+        throw new ContentItemListError(
+            'Unsupported operator for boolean content field filter',
+            'CONTENT_ITEMS_FIELD_FILTER_OPERATOR_UNSUPPORTED',
+            'Use eq when filtering boolean content fields.'
+        );
+    }
+
+    return sql<boolean>`${getFieldBooleanExpression(fieldName)} = ${parsedBoolean}`;
+}
+
+function buildFieldSortExpression(fieldName: string, fieldType: QueryableContentFieldType) {
+    if (fieldType === 'number') {
+        return getFieldNumericExpression(fieldName);
+    }
+
+    if (fieldType === 'boolean') {
+        return getFieldBooleanExpression(fieldName);
+    }
+
+    return getFieldTextExpression(fieldName);
+}
+
 // --- Service functions ---
 
 export async function createContentItem(input: CreateContentItemInput) {
@@ -108,6 +220,10 @@ export async function listContentItems(domainId: number, input: ListContentItems
         q,
         createdAfter,
         createdBefore,
+        fieldName,
+        fieldOp,
+        fieldValue,
+        sortField,
         sortBy,
         sortDir,
         limit = 50,
@@ -123,7 +239,7 @@ export async function listContentItems(domainId: number, input: ListContentItems
         );
     }
 
-    if (cursor && ((sortBy && sortBy !== 'createdAt') || (sortDir && sortDir !== 'desc'))) {
+    if (cursor && ((sortBy && sortBy !== 'createdAt') || (sortDir && sortDir !== 'desc') || sortField)) {
         throw new ContentItemListError(
             'Cursor pagination only supports createdAt descending order',
             'CONTENT_ITEMS_CURSOR_SORT_UNSUPPORTED',
@@ -140,8 +256,64 @@ export async function listContentItems(domainId: number, input: ListContentItems
         );
     }
 
+    if ((fieldName && fieldValue === undefined) || (fieldValue !== undefined && !fieldName)) {
+        throw new ContentItemListError(
+            'Content field filtering requires both fieldName and fieldValue',
+            'CONTENT_ITEMS_FIELD_FILTER_INCOMPLETE',
+            'Provide both fieldName and fieldValue when filtering content items by content data.'
+        );
+    }
+
+    if ((fieldName || sortField) && contentTypeId === undefined) {
+        throw new ContentItemListError(
+            'Content field queries require contentTypeId',
+            'CONTENT_ITEMS_FIELD_QUERY_REQUIRES_CONTENT_TYPE',
+            'Provide contentTypeId when filtering or sorting by content schema fields.'
+        );
+    }
+
     const searchQuery = q?.trim();
     const searchPattern = searchQuery ? `%${searchQuery}%` : null;
+
+    let queryableFields = new Map<string, QueryableContentFieldType>();
+    if (contentTypeId !== undefined && (fieldName || sortField)) {
+        const [contentType] = await db.select({
+            schema: contentTypes.schema
+        })
+            .from(contentTypes)
+            .where(and(eq(contentTypes.domainId, domainId), eq(contentTypes.id, contentTypeId)));
+
+        if (!contentType) {
+            throw new ContentItemListError(
+                'Content type not found for field-aware query',
+                'CONTENT_ITEMS_FIELD_QUERY_CONTENT_TYPE_NOT_FOUND',
+                'Use a valid contentTypeId from the current domain when filtering or sorting by schema fields.'
+            );
+        }
+
+        queryableFields = normalizeQueryableFieldMap(contentType.schema);
+    }
+
+    const normalizedFieldOp = fieldOp ?? 'eq';
+    if (fieldName && !queryableFields.has(fieldName)) {
+        throw new ContentItemListError(
+            'Unknown or unsupported content field filter',
+            'CONTENT_ITEMS_FIELD_FILTER_FIELD_UNKNOWN',
+            'Use a top-level scalar field defined by the selected content type schema.'
+        );
+    }
+
+    if (sortField && !queryableFields.has(sortField)) {
+        throw new ContentItemListError(
+            'Unknown or unsupported content field sort',
+            'CONTENT_ITEMS_FIELD_SORT_FIELD_UNKNOWN',
+            'Use a top-level scalar field defined by the selected content type schema when sorting by content data.'
+        );
+    }
+
+    const fieldCondition = fieldName && fieldValue !== undefined
+        ? buildFieldFilterCondition(fieldName, queryableFields.get(fieldName)!, normalizedFieldOp, fieldValue)
+        : undefined;
 
     const baseConditions = [
         eq(contentItems.domainId, domainId),
@@ -156,6 +328,7 @@ export async function listContentItems(domainId: number, input: ListContentItems
             : undefined,
         createdAfter ? gte(contentItems.createdAt, createdAfter) : undefined,
         createdBefore ? lte(contentItems.createdAt, createdBefore) : undefined,
+        fieldCondition,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const baseWhereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
@@ -193,18 +366,22 @@ export async function listContentItems(domainId: number, input: ListContentItems
             .orderBy(
                 sortDir === 'asc'
                     ? asc(
-                        sortBy === 'createdAt'
-                            ? contentItems.createdAt
-                            : sortBy === 'version'
-                                ? contentItems.version
-                                : contentItems.updatedAt
+                        sortField
+                            ? buildFieldSortExpression(sortField, queryableFields.get(sortField)!)
+                            : sortBy === 'createdAt'
+                                ? contentItems.createdAt
+                                : sortBy === 'version'
+                                    ? contentItems.version
+                                    : contentItems.updatedAt
                     )
                     : desc(
-                        sortBy === 'createdAt'
-                            ? contentItems.createdAt
-                            : sortBy === 'version'
-                                ? contentItems.version
-                                : contentItems.updatedAt
+                        sortField
+                            ? buildFieldSortExpression(sortField, queryableFields.get(sortField)!)
+                            : sortBy === 'createdAt'
+                                ? contentItems.createdAt
+                                : sortBy === 'version'
+                                    ? contentItems.version
+                                    : contentItems.updatedAt
                     ),
                 sortDir === 'asc' ? asc(contentItems.id) : desc(contentItems.id)
             )

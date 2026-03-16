@@ -215,6 +215,10 @@ describe('Capability Parity Matrix', () => {
         expect(contentItemsRouteBlock?.includes('status: Type.Optional(Type.String())')).toBe(true);
         expect(contentItemsRouteBlock?.includes('createdAfter: Type.Optional(Type.String())')).toBe(true);
         expect(contentItemsRouteBlock?.includes('createdBefore: Type.Optional(Type.String())')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('fieldName: Type.Optional(Type.String())')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('fieldOp: Type.Optional(Type.Union([')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('fieldValue: Type.Optional(Type.String())')).toBe(true);
+        expect(contentItemsRouteBlock?.includes('sortField: Type.Optional(Type.String())')).toBe(true);
         expect(contentItemsRouteBlock?.includes('limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 }))')).toBe(true);
         expect(contentItemsRouteBlock?.includes('offset: Type.Optional(Type.Number({ minimum: 0 }))')).toBe(true);
         expect(contentItemsRouteBlock?.includes('cursor: Type.Optional(Type.String())')).toBe(true);
@@ -224,6 +228,10 @@ describe('Capability Parity Matrix', () => {
         expect(contentItemsToolBlock?.includes('status: z.string().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('createdAfter: z.string().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('createdBefore: z.string().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('fieldName: z.string().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('fieldOp: z.enum([')).toBe(true);
+        expect(contentItemsToolBlock?.includes('fieldValue: z.string().optional()')).toBe(true);
+        expect(contentItemsToolBlock?.includes('sortField: z.string().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('limit: z.number().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('offset: z.number().optional()')).toBe(true);
         expect(contentItemsToolBlock?.includes('cursor: z.string().optional()')).toBe(true);
@@ -233,6 +241,10 @@ describe('Capability Parity Matrix', () => {
         expect(queryArgNames?.has('status')).toBe(true);
         expect(queryArgNames?.has('createdAfter')).toBe(true);
         expect(queryArgNames?.has('createdBefore')).toBe(true);
+        expect(queryArgNames?.has('fieldName')).toBe(true);
+        expect(queryArgNames?.has('fieldOp')).toBe(true);
+        expect(queryArgNames?.has('fieldValue')).toBe(true);
+        expect(queryArgNames?.has('sortField')).toBe(true);
         expect(queryArgNames?.has('limit')).toBe(true);
         expect(queryArgNames?.has('offset')).toBe(true);
         expect(queryArgNames?.has('cursor')).toBe(true);

@@ -288,6 +288,39 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('contentItems rejects field filters without contentTypeId with deterministic code', async () => {
+        await expect(
+            resolvers.Query.contentItems({}, { fieldName: 'enabled', fieldValue: 'true' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_ITEMS_FIELD_QUERY_REQUIRES_CONTENT_TYPE'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
+    it('contentItems rejects unknown schema field filters with deterministic code', async () => {
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            enabled: { type: 'boolean' }
+                        }
+                    })
+                }])
+            })
+        }));
+
+        await expect(
+            resolvers.Query.contentItems({}, { contentTypeId: '7', fieldName: 'missingField', fieldValue: 'true' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_ITEMS_FIELD_FILTER_FIELD_UNKNOWN'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
     it('contentItems rejects malformed cursor with deterministic code', async () => {
         await expect(
             resolvers.Query.contentItems({}, { cursor: 'not-a-cursor' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})

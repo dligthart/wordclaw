@@ -31,6 +31,11 @@ export type ContentReference = {
     allowedContentTypeIds: number[];
     allowedContentTypeSlugs: string[];
 };
+export type QueryableContentFieldType = 'string' | 'number' | 'boolean';
+export type QueryableContentField = {
+    name: string;
+    type: QueryableContentFieldType;
+};
 
 function formatAjvErrors(errors: ErrorObject[] | null | undefined): string {
     if (!errors || errors.length === 0) {
@@ -341,6 +346,28 @@ function parseJson(value: string, invalidCode: string, invalidError: string, rem
     }
 }
 
+function toQueryableFieldType(schemaNode: unknown): QueryableContentFieldType | null {
+    if (!isObject(schemaNode)) {
+        return null;
+    }
+
+    if (schemaNode['x-wordclaw-field-kind'] !== undefined) {
+        return null;
+    }
+
+    switch (schemaNode.type) {
+    case 'string':
+        return 'string';
+    case 'integer':
+    case 'number':
+        return 'number';
+    case 'boolean':
+        return 'boolean';
+    default:
+        return null;
+    }
+}
+
 function compileSchema(schemaText: string): { ok: true; schema: AnySchema; validate: ReturnType<Ajv['compile']> } | { ok: false; failure: ValidationFailure } {
     const parsedSchema = parseJson(
         schemaText,
@@ -411,6 +438,23 @@ export function validateContentTypeSchema(schemaText: string): ValidationFailure
     }
 
     return null;
+}
+
+export function listQueryableContentFields(schemaText: string): QueryableContentField[] {
+    const compiled = compileSchema(schemaText);
+    if (!compiled.ok) {
+        return [];
+    }
+
+    const schema = compiled.schema as JsonObject;
+    if (schema.type !== 'object' || !isObject(schema.properties)) {
+        return [];
+    }
+
+    return Object.entries(schema.properties).flatMap(([name, propertySchema]) => {
+        const type = toQueryableFieldType(propertySchema);
+        return type ? [{ name, type }] : [];
+    });
 }
 
 export async function validateContentDataAgainstSchema(schemaText: string, dataText: string, domainId: number): Promise<ValidationFailure | null> {

@@ -267,6 +267,10 @@ type OptionalContentTypeArg = {
     status?: string;
     createdAfter?: string;
     createdBefore?: string;
+    fieldName?: string;
+    fieldOp?: string;
+    fieldValue?: string;
+    sortField?: string;
     limit?: number;
     offset?: number;
     cursor?: string;
@@ -899,6 +903,10 @@ export const resolvers = {
             status,
             createdAfter,
             createdBefore,
+            fieldName,
+            fieldOp,
+            fieldValue,
+            sortField,
             limit: rawLimit,
             offset: rawOffset,
             cursor
@@ -910,6 +918,10 @@ export const resolvers = {
                     status,
                     createdAfter: parseDateArg(createdAfter, 'createdAfter'),
                     createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                    fieldName,
+                    fieldOp: fieldOp as 'eq' | 'contains' | 'gte' | 'lte' | undefined,
+                    fieldValue,
+                    sortField,
                     limit: clampLimit(rawLimit),
                     offset: cursor ? rawOffset : clampOffset(rawOffset),
                     cursor

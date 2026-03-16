@@ -16,7 +16,7 @@ vi.mock('../db/index.js', () => ({
     db: mocks.dbMock
 }));
 
-import { validateContentDataAgainstSchema, validateContentTypeSchema } from './content-schema.js';
+import { listQueryableContentFields, validateContentDataAgainstSchema, validateContentTypeSchema } from './content-schema.js';
 
 type LookupState = {
     assets?: Array<{ id: number }>;
@@ -121,6 +121,37 @@ describe('validateContentTypeSchema', () => {
         }));
 
         expect(failure).toBeNull();
+    });
+
+    it('lists top-level scalar fields as queryable content fields', () => {
+        const fields = listQueryableContentFields(JSON.stringify({
+            type: 'object',
+            properties: {
+                title: { type: 'string' },
+                score: { type: 'integer' },
+                enabled: { type: 'boolean' },
+                heroImage: {
+                    type: 'object',
+                    'x-wordclaw-field-kind': 'asset',
+                    properties: {
+                        assetId: { type: 'integer' }
+                    },
+                    required: ['assetId']
+                },
+                metadata: {
+                    type: 'object',
+                    properties: {
+                        difficulty: { type: 'string' }
+                    }
+                }
+            }
+        }));
+
+        expect(fields).toEqual([
+            { name: 'title', type: 'string' },
+            { name: 'score', type: 'number' },
+            { name: 'enabled', type: 'boolean' }
+        ]);
     });
 });
 

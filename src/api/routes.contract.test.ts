@@ -2226,6 +2226,53 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns CONTENT_ITEMS_FIELD_QUERY_REQUIRES_CONTENT_TYPE for field filters without contentTypeId', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?fieldName=enabled&fieldValue=true'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_ITEMS_FIELD_QUERY_REQUIRES_CONTENT_TYPE');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_ITEMS_FIELD_FILTER_FIELD_UNKNOWN for unsupported schema field filters', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            enabled: { type: 'boolean' }
+                        }
+                    })
+                }])
+            })
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?contentTypeId=7&fieldName=missingField&fieldValue=true'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_ITEMS_FIELD_FILTER_FIELD_UNKNOWN');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('accepts content-item search and sort query params', async () => {
         const app = await buildServer();
         const countWhereMock = vi.fn().mockResolvedValue([{ total: 1 }]);

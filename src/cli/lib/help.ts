@@ -27,7 +27,7 @@ const USAGE_LINES = [
     'content-types create --name <value> --slug <value> [--description <value>] [--schema-json <json>|--schema-file <path>] [--base-price <n>] [--dry-run]',
     'content-types update --id <n> [--name <value>] [--slug <value>] [--description <value>] [--schema-json <json>|--schema-file <path>] [--base-price <n>] [--dry-run]',
     'content-types delete --id <n> [--dry-run]',
-    'content list [--content-type-id <n>] [--status <value>] [--q <value>] [--created-after <iso>] [--created-before <iso>] [--sort-by updatedAt|createdAt|version] [--sort-dir asc|desc] [--limit <n>] [--offset <n>] [--cursor <value>]',
+    'content list [--content-type-id <n>] [--status <value>] [--q <value>] [--created-after <iso>] [--created-before <iso>] [--field-name <value>] [--field-op eq|contains|gte|lte] [--field-value <value>] [--sort-field <value>] [--sort-by updatedAt|createdAt|version] [--sort-dir asc|desc] [--limit <n>] [--offset <n>] [--cursor <value>]',
     'content guide --content-type-id <n>',
     'content get --id <n>',
     'content create --content-type-id <n> [--status <value>] [--data-json <json>|--data-file <path>] [--dry-run]',
