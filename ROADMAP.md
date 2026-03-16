@@ -18,7 +18,7 @@ We promote one major flagship feature per minor version release to ensure stabil
 
 ### v0.1: Context-Aware Headless CMS (Shipped)
 * **Goal**: Establish the core structured content models, validation schemas, and API primitives.
-* **Status**: Shipped. Core entity framework, domains, API Key scopes, and role management are stable.
+* **Status**: Shipped. Core entity framework, domains, API Key scopes, role management, schema-aware content references, field-aware content queries, and grouped content projections are stable.
 
 ---
 

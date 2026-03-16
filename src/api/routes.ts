@@ -1124,6 +1124,33 @@ export default async function apiRoutes(server: FastifyInstance) {
                         enabled: Type.Boolean(),
                         description: Type.String()
                     })),
+                    contentRuntime: Type.Object({
+                        enabled: Type.Boolean(),
+                        fieldAwareQueries: Type.Object({
+                            supported: Type.Boolean(),
+                            requiresContentTypeId: Type.Boolean(),
+                            queryableFieldKinds: Type.Array(Type.String()),
+                            filterOperators: Type.Array(Type.String()),
+                            sortModes: Type.Array(Type.String()),
+                            restPath: Type.String(),
+                            mcpTool: Type.String(),
+                            graphqlField: Type.String(),
+                            cliCommand: Type.String(),
+                        }),
+                        projections: Type.Object({
+                            supported: Type.Boolean(),
+                            requiresContentTypeId: Type.Boolean(),
+                            groupByMode: Type.String(),
+                            groupableFieldKinds: Type.Array(Type.String()),
+                            metrics: Type.Array(Type.String()),
+                            numericMetricsRequireNumericField: Type.Boolean(),
+                            restPath: Type.String(),
+                            mcpTool: Type.String(),
+                            graphqlField: Type.String(),
+                            cliCommand: Type.String(),
+                            note: Type.String(),
+                        }),
+                    }),
                     paidContent: Type.Object({
                         l402Enabled: Type.Boolean(),
                         purchaseFlowSurface: Type.String(),
@@ -1284,6 +1311,25 @@ export default async function apiRoutes(server: FastifyInstance) {
                             basePath: Type.String(),
                             note: Type.String(),
                         }),
+                        contentRuntime: Type.Object({
+                            status: Type.String(),
+                            fieldAwareQueries: Type.Object({
+                                supported: Type.Boolean(),
+                                restPath: Type.String(),
+                                mcpTool: Type.String(),
+                                graphqlField: Type.String(),
+                                requiresContentTypeId: Type.Boolean(),
+                            }),
+                            projections: Type.Object({
+                                supported: Type.Boolean(),
+                                restPath: Type.String(),
+                                mcpTool: Type.String(),
+                                graphqlField: Type.String(),
+                                metrics: Type.Array(Type.String()),
+                                requiresContentTypeId: Type.Boolean(),
+                            }),
+                            note: Type.String(),
+                        }),
                         mcp: Type.Object({
                             status: Type.String(),
                             endpoint: Type.String(),
@@ -1346,6 +1392,25 @@ export default async function apiRoutes(server: FastifyInstance) {
                         restApi: Type.Object({
                             status: Type.String(),
                             basePath: Type.String(),
+                            note: Type.String(),
+                        }),
+                        contentRuntime: Type.Object({
+                            status: Type.String(),
+                            fieldAwareQueries: Type.Object({
+                                supported: Type.Boolean(),
+                                restPath: Type.String(),
+                                mcpTool: Type.String(),
+                                graphqlField: Type.String(),
+                                requiresContentTypeId: Type.Boolean(),
+                            }),
+                            projections: Type.Object({
+                                supported: Type.Boolean(),
+                                restPath: Type.String(),
+                                mcpTool: Type.String(),
+                                graphqlField: Type.String(),
+                                metrics: Type.Array(Type.String()),
+                                requiresContentTypeId: Type.Boolean(),
+                            }),
                             note: Type.String(),
                         }),
                         mcp: Type.Object({

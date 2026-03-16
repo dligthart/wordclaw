@@ -404,6 +404,7 @@ Supported features:
 ```bash
 node dist/cli/index.js content list --content-type-id 12 --status draft --limit 20
 node dist/cli/index.js content list --content-type-id 12 --limit 20 --cursor <nextCursor>
+node dist/cli/index.js content project --content-type-id 12 --group-by characterClass --metric avg --metric-field score
 node dist/cli/index.js content guide --content-type-id 12
 node dist/cli/index.js content ls --status draft --raw
 node dist/cli/index.js content get --id 345
@@ -419,6 +420,7 @@ Supported features:
 - actor-aware authoring guidance for a target content schema
 - filtered list views
 - cursor pagination via `--cursor` for large result sets
+- grouped read models via `content project` for lightweight leaderboard and analytics views
 - item reads
 - create and update mutations
 - version history

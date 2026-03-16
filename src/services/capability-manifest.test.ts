@@ -122,6 +122,28 @@ describe('buildCapabilityManifest', () => {
                 enabled: true,
             }),
         ]));
+        expect(manifest.contentRuntime).toEqual(expect.objectContaining({
+            enabled: true,
+            fieldAwareQueries: expect.objectContaining({
+                supported: true,
+                requiresContentTypeId: true,
+                queryableFieldKinds: ['string', 'number', 'boolean'],
+                filterOperators: ['eq', 'contains', 'gte', 'lte'],
+                restPath: '/api/content-items',
+                mcpTool: 'get_content_items',
+                graphqlField: 'contentItems',
+            }),
+            projections: expect.objectContaining({
+                supported: true,
+                requiresContentTypeId: true,
+                groupByMode: 'single-field',
+                groupableFieldKinds: ['string', 'number', 'boolean'],
+                metrics: ['count', 'sum', 'avg', 'min', 'max'],
+                restPath: '/api/content-items/projections',
+                mcpTool: 'project_content_items',
+                graphqlField: 'contentItemProjection',
+            }),
+        }));
         expect(manifest.assetStorage).toEqual(expect.objectContaining({
             enabled: true,
             configuredProvider: 'local',
@@ -283,6 +305,9 @@ describe('buildCapabilityManifest', () => {
         ).toBe(true);
         expect(
             manifest.capabilities.some((capability) => capability.id === 'create_asset'),
+        ).toBe(true);
+        expect(
+            manifest.capabilities.some((capability) => capability.id === 'project_content_items'),
         ).toBe(true);
     });
 

@@ -6,7 +6,7 @@ import SwaggerUI from '../.vitepress/components/SwaggerUI.vue'
 
 This document covers WordClaw's primary HTTP surface: the REST API. MCP is the primary agent-native companion surface; see [mcp-integration.md](../guides/mcp-integration). GraphQL remains available at `/graphql` as a compatibility layer. Experimental revenue, payout, delegation, and agent-run endpoints are intentionally hidden from the default API reference unless an operator explicitly enables those incubator modules in runtime configuration.
 
-For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, and task-oriented agent recipes in one machine-readable document. It now also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, REST/MCP availability, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
+For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, and task-oriented agent recipes in one machine-readable document. It now also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. It now also publishes the content-runtime query contract: field-aware listing constraints, queryable scalar field kinds, and grouped projection support for lightweight leaderboard and analytics-style read models. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, REST/MCP availability, content-runtime query surfaces, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
 
 The fastest task-oriented preflight sequence is:
 
@@ -132,7 +132,44 @@ curl -H "x-api-key: writer" \
   "http://localhost:4000/api/content-items?contentTypeId=15&status=draft&limit=2&cursor=eyJjcmVhdGVkQXQiOiIyMDI0LTAzLTI0VDEyOjAwOjAwLjAwMFoiLCJpZCI6ODh9"
 ```
 
-### 4. Uploading an Asset
+### 4. Building a Grouped Content Projection
+
+Build a leaderboard- or analytics-style grouped read model directly from content data. In this first pass the runtime groups by one top-level scalar schema field and supports `count`, `sum`, `avg`, `min`, and `max`.
+
+**Request:**
+```bash
+curl -H "x-api-key: writer" \
+  "http://localhost:4000/api/content-items/projections?contentTypeId=15&groupBy=characterClass&metric=avg&metricField=score&limit=5"
+```
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "group": "Chronomancer",
+      "value": 18.5,
+      "count": 2
+    },
+    {
+      "group": "Ranger",
+      "value": 11.25,
+      "count": 4
+    }
+  ],
+  "meta": {
+    "contentTypeId": 15,
+    "groupBy": "characterClass",
+    "metric": "avg",
+    "metricField": "score",
+    "orderBy": "value",
+    "orderDir": "desc",
+    "limit": 5
+  }
+}
+```
+
+### 5. Uploading an Asset
 
 Create a signed asset and attach metadata without leaving the core runtime.
 
@@ -170,7 +207,7 @@ curl -X POST http://localhost:4000/api/assets \
 }
 ```
 
-### 5. Paying an L402 Invoice
+### 6. Paying an L402 Invoice
 
 Confirming a purchase locally with a simulated payment backend.
 

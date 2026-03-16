@@ -245,6 +245,27 @@ describe('API Route Contracts', () => {
                         id: string;
                         enabled: boolean;
                     }>;
+                    contentRuntime: {
+                        fieldAwareQueries: {
+                            supported: boolean;
+                            requiresContentTypeId: boolean;
+                            queryableFieldKinds: string[];
+                            filterOperators: string[];
+                            restPath: string;
+                            mcpTool: string;
+                            graphqlField: string;
+                        };
+                        projections: {
+                            supported: boolean;
+                            requiresContentTypeId: boolean;
+                            groupByMode: string;
+                            groupableFieldKinds: string[];
+                            metrics: string[];
+                            restPath: string;
+                            mcpTool: string;
+                            graphqlField: string;
+                        };
+                    };
                     assetStorage: {
                         configuredProvider: string;
                         effectiveProvider: string;
@@ -357,6 +378,27 @@ describe('API Route Contracts', () => {
                     expect.objectContaining({ id: 'agent-runs', enabled: false }),
                 ]),
             );
+            expect(body.data.contentRuntime).toEqual(expect.objectContaining({
+                fieldAwareQueries: expect.objectContaining({
+                    supported: true,
+                    requiresContentTypeId: true,
+                    queryableFieldKinds: ['string', 'number', 'boolean'],
+                    filterOperators: ['eq', 'contains', 'gte', 'lte'],
+                    restPath: '/api/content-items',
+                    mcpTool: 'get_content_items',
+                    graphqlField: 'contentItems',
+                }),
+                projections: expect.objectContaining({
+                    supported: true,
+                    requiresContentTypeId: true,
+                    groupByMode: 'single-field',
+                    groupableFieldKinds: ['string', 'number', 'boolean'],
+                    metrics: ['count', 'sum', 'avg', 'min', 'max'],
+                    restPath: '/api/content-items/projections',
+                    mcpTool: 'project_content_items',
+                    graphqlField: 'contentItemProjection',
+                }),
+            }));
             expect(body.data.assetStorage).toEqual(expect.objectContaining({
                 configuredProvider: 'local',
                 effectiveProvider: 'local',
@@ -489,6 +531,24 @@ describe('API Route Contracts', () => {
                     checks: {
                         database: { status: string };
                         restApi: { status: string; basePath: string };
+                        contentRuntime: {
+                            status: string;
+                            fieldAwareQueries: {
+                                supported: boolean;
+                                restPath: string;
+                                mcpTool: string;
+                                graphqlField: string;
+                                requiresContentTypeId: boolean;
+                            };
+                            projections: {
+                                supported: boolean;
+                                restPath: string;
+                                mcpTool: string;
+                                graphqlField: string;
+                                metrics: string[];
+                                requiresContentTypeId: boolean;
+                            };
+                        };
                         mcp: {
                             status: string;
                             endpoint: string;
@@ -532,6 +592,24 @@ describe('API Route Contracts', () => {
             expect(body.data.checks.restApi).toEqual(expect.objectContaining({
                 status: 'ready',
                 basePath: '/api',
+            }));
+            expect(body.data.checks.contentRuntime).toEqual(expect.objectContaining({
+                status: 'ready',
+                fieldAwareQueries: expect.objectContaining({
+                    supported: true,
+                    restPath: '/api/content-items',
+                    mcpTool: 'get_content_items',
+                    graphqlField: 'contentItems',
+                    requiresContentTypeId: true,
+                }),
+                projections: expect.objectContaining({
+                    supported: true,
+                    restPath: '/api/content-items/projections',
+                    mcpTool: 'project_content_items',
+                    graphqlField: 'contentItemProjection',
+                    metrics: ['count', 'sum', 'avg', 'min', 'max'],
+                    requiresContentTypeId: true,
+                }),
             }));
             expect(body.data.checks.mcp).toEqual(expect.objectContaining({
                 status: 'ready',

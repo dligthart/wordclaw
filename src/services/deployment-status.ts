@@ -21,6 +21,25 @@ export type DeploymentStatusSnapshot = {
             basePath: string;
             note: string;
         };
+        contentRuntime: {
+            status: DeploymentCheckLevel;
+            fieldAwareQueries: {
+                supported: boolean;
+                restPath: string;
+                mcpTool: string;
+                graphqlField: string;
+                requiresContentTypeId: boolean;
+            };
+            projections: {
+                supported: boolean;
+                restPath: string;
+                mcpTool: string;
+                graphqlField: string;
+                metrics: string[];
+                requiresContentTypeId: boolean;
+            };
+            note: string;
+        };
         mcp: {
             status: DeploymentCheckLevel;
             endpoint: string;
@@ -171,6 +190,25 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                 status: 'ready',
                 basePath: manifest.protocolSurfaces.rest.basePath,
                 note: 'REST API is reachable on the main HTTP server.',
+            },
+            contentRuntime: {
+                status: 'ready',
+                fieldAwareQueries: {
+                    supported: manifest.contentRuntime.fieldAwareQueries.supported,
+                    restPath: manifest.contentRuntime.fieldAwareQueries.restPath,
+                    mcpTool: manifest.contentRuntime.fieldAwareQueries.mcpTool,
+                    graphqlField: manifest.contentRuntime.fieldAwareQueries.graphqlField,
+                    requiresContentTypeId: manifest.contentRuntime.fieldAwareQueries.requiresContentTypeId,
+                },
+                projections: {
+                    supported: manifest.contentRuntime.projections.supported,
+                    restPath: manifest.contentRuntime.projections.restPath,
+                    mcpTool: manifest.contentRuntime.projections.mcpTool,
+                    graphqlField: manifest.contentRuntime.projections.graphqlField,
+                    metrics: [...manifest.contentRuntime.projections.metrics],
+                    requiresContentTypeId: manifest.contentRuntime.projections.requiresContentTypeId,
+                },
+                note: 'Content runtime supports schema-aware field queries and grouped projections for lightweight leaderboard and analytics-style views.',
             },
             mcp: {
                 status: 'ready',
