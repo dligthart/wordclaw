@@ -1,3 +1,10 @@
+# [1.34.0](https://github.com/dligthart/wordclaw/compare/v1.33.0...v1.34.0) (2026-03-16)
+
+
+### Features
+
+* **assets:** add direct provider upload flows ([4b05695](https://github.com/dligthart/wordclaw/commit/4b056958517b6038a679a2b160fb3f0cdc4f8e16))
+
 # [1.33.0](https://github.com/dligthart/wordclaw/compare/v1.32.0...v1.33.0) (2026-03-16)
 
 
