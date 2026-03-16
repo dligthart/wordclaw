@@ -1,3 +1,10 @@
+# [1.29.0](https://github.com/dligthart/wordclaw/compare/v1.28.0...v1.29.0) (2026-03-16)
+
+
+### Features
+
+* **capabilities:** expose content runtime query contract ([24adcdd](https://github.com/dligthart/wordclaw/commit/24adcdd0a077ae34b5b4eb83e007efd2af89d2bb))
+
 # [1.28.0](https://github.com/dligthart/wordclaw/compare/v1.27.0...v1.28.0) (2026-03-16)
 
 
