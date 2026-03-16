@@ -2442,6 +2442,99 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns grouped content projections for leaderboard-style views', async () => {
+        const app = await buildServer();
+        const limitMock = vi.fn().mockResolvedValue([
+            { group: 'chronomancer', value: 18.5, count: 2 },
+            { group: 'ranger', value: 11.25, count: 4 }
+        ]);
+        const orderByMock = vi.fn(() => ({ limit: limitMock }));
+        const groupByMock = vi.fn(() => ({ orderBy: orderByMock }));
+        const whereMock = vi.fn(() => ({ groupBy: groupByMock }));
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                characterClass: { type: 'string' },
+                                score: { type: 'integer' }
+                            }
+                        })
+                    }])
+                })
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: whereMock
+                })
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items/projections?contentTypeId=7&groupBy=characterClass&metric=avg&metricField=score&limit=10'
+            });
+
+            expect(response.statusCode).toBe(200);
+
+            const body = response.json() as {
+                data: Array<{ group: string; value: number; count: number }>;
+                meta: Record<string, unknown>;
+            };
+
+            expect(body.data).toEqual([
+                { group: 'chronomancer', value: 18.5, count: 2 },
+                { group: 'ranger', value: 11.25, count: 4 }
+            ]);
+            expect(body.meta).toMatchObject({
+                contentTypeId: 7,
+                groupBy: 'characterClass',
+                metric: 'avg',
+                metricField: 'score',
+                orderBy: 'value',
+                orderDir: 'desc',
+                limit: 10
+            });
+            expect(limitMock).toHaveBeenCalledWith(10);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_ITEMS_PROJECTION_METRIC_FIELD_REQUIRED for numeric projection metrics without metricField', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            characterClass: { type: 'string' },
+                            score: { type: 'integer' }
+                        }
+                    })
+                }])
+            })
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items/projections?contentTypeId=7&groupBy=characterClass&metric=avg'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_ITEMS_PROJECTION_METRIC_FIELD_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns CONTENT_ITEMS_CURSOR_OFFSET_CONFLICT when cursor and offset are both provided', async () => {
         const app = await buildServer();
         const cursor = Buffer.from(JSON.stringify({

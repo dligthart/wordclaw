@@ -250,6 +250,41 @@ describe('Capability Parity Matrix', () => {
         expect(queryArgNames?.has('cursor')).toBe(true);
     });
 
+    it('keeps content projection inputs aligned across REST, MCP, and GraphQL', () => {
+        const projectionRouteBlock = getRestRouteBlock(routesSource, 'GET', '/content-items/projections');
+        expect(projectionRouteBlock?.includes('contentTypeId: Type.Number()')).toBe(true);
+        expect(projectionRouteBlock?.includes('fieldName: Type.Optional(Type.String())')).toBe(true);
+        expect(projectionRouteBlock?.includes('fieldOp: Type.Optional(Type.Union([')).toBe(true);
+        expect(projectionRouteBlock?.includes('fieldValue: Type.Optional(Type.String())')).toBe(true);
+        expect(projectionRouteBlock?.includes('groupBy: Type.String()')).toBe(true);
+        expect(projectionRouteBlock?.includes("Type.Literal('count')")).toBe(true);
+        expect(projectionRouteBlock?.includes('metricField: Type.Optional(Type.String())')).toBe(true);
+        expect(projectionRouteBlock?.includes("Type.Literal('value')")).toBe(true);
+        expect(projectionRouteBlock?.includes("Type.Literal('group')")).toBe(true);
+
+        const projectionToolBlock = getMcpToolBlock(mcpSource, 'project_content_items');
+        expect(projectionToolBlock?.includes('contentTypeId: z.number()')).toBe(true);
+        expect(projectionToolBlock?.includes('fieldName: z.string().optional()')).toBe(true);
+        expect(projectionToolBlock?.includes('fieldOp: z.enum([')).toBe(true);
+        expect(projectionToolBlock?.includes('fieldValue: z.string().optional()')).toBe(true);
+        expect(projectionToolBlock?.includes('groupBy: z.string()')).toBe(true);
+        expect(projectionToolBlock?.includes("metric: z.enum(['count', 'sum', 'avg', 'min', 'max']).optional()")).toBe(true);
+        expect(projectionToolBlock?.includes('metricField: z.string().optional()')).toBe(true);
+        expect(projectionToolBlock?.includes("orderBy: z.enum(['value', 'group']).optional()")).toBe(true);
+
+        const queryArgNames = graphqlSurface.queryArgs.get('contentItemProjection');
+        expect(queryArgNames?.has('contentTypeId')).toBe(true);
+        expect(queryArgNames?.has('fieldName')).toBe(true);
+        expect(queryArgNames?.has('fieldOp')).toBe(true);
+        expect(queryArgNames?.has('fieldValue')).toBe(true);
+        expect(queryArgNames?.has('groupBy')).toBe(true);
+        expect(queryArgNames?.has('metric')).toBe(true);
+        expect(queryArgNames?.has('metricField')).toBe(true);
+        expect(queryArgNames?.has('orderBy')).toBe(true);
+        expect(queryArgNames?.has('orderDir')).toBe(true);
+        expect(queryArgNames?.has('limit')).toBe(true);
+    });
+
     it('keeps audit cursor pagination contract aligned', () => {
         const auditRouteBlock = getRestRouteBlock(routesSource, 'GET', '/audit-logs');
         expect(auditRouteBlock?.includes('cursor: Type.Optional(Type.String())')).toBe(true);

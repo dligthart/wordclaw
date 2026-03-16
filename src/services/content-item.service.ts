@@ -50,6 +50,42 @@ export type ListContentItemsResult = {
     nextCursor: string | null;
 };
 
+export type ContentProjectionMetric = 'count' | 'sum' | 'avg' | 'min' | 'max';
+export type ContentProjectionOrderBy = 'value' | 'group';
+
+export type ProjectContentItemsInput = {
+    contentTypeId: number;
+    status?: string;
+    createdAfter?: Date | null;
+    createdBefore?: Date | null;
+    fieldName?: string;
+    fieldOp?: 'eq' | 'contains' | 'gte' | 'lte';
+    fieldValue?: string;
+    groupBy: string;
+    metric?: ContentProjectionMetric;
+    metricField?: string;
+    orderBy?: ContentProjectionOrderBy;
+    orderDir?: 'asc' | 'desc';
+    limit?: number;
+};
+
+export type ContentProjectionBucket = {
+    group: string | number | boolean | null;
+    value: number;
+    count: number;
+};
+
+export type ProjectContentItemsResult = {
+    buckets: ContentProjectionBucket[];
+    contentTypeId: number;
+    groupBy: string;
+    metric: ContentProjectionMetric;
+    metricField: string | null;
+    orderBy: ContentProjectionOrderBy;
+    orderDir: 'asc' | 'desc';
+    limit: number;
+};
+
 export class ContentItemListError extends Error {
     code: string;
     remediation: string;
@@ -57,6 +93,18 @@ export class ContentItemListError extends Error {
     constructor(message: string, code: string, remediation: string) {
         super(message);
         this.name = 'ContentItemListError';
+        this.code = code;
+        this.remediation = remediation;
+    }
+}
+
+export class ContentItemProjectionError extends Error {
+    code: string;
+    remediation: string;
+
+    constructor(message: string, code: string, remediation: string) {
+        super(message);
+        this.name = 'ContentItemProjectionError';
         this.code = code;
         this.remediation = remediation;
     }
@@ -113,6 +161,10 @@ function getFieldTextExpression(fieldName: string) {
 
 function getFieldNumericExpression(fieldName: string) {
     return sql<number>`(((${contentItems.data})::jsonb ->> ${fieldName})::numeric)`;
+}
+
+function getFieldFloatExpression(fieldName: string) {
+    return sql<number>`(((${contentItems.data})::jsonb ->> ${fieldName})::double precision)`;
 }
 
 function getFieldBooleanExpression(fieldName: string) {
@@ -197,6 +249,39 @@ function buildFieldSortExpression(fieldName: string, fieldType: QueryableContent
     }
 
     return getFieldTextExpression(fieldName);
+}
+
+function buildProjectionGroupExpression(fieldName: string, fieldType: QueryableContentFieldType) {
+    if (fieldType === 'number') {
+        return getFieldFloatExpression(fieldName);
+    }
+
+    if (fieldType === 'boolean') {
+        return getFieldBooleanExpression(fieldName);
+    }
+
+    return getFieldTextExpression(fieldName);
+}
+
+function buildProjectionMetricExpression(metric: ContentProjectionMetric, metricField?: string) {
+    if (metric === 'count') {
+        return sql<number>`count(*)::int`;
+    }
+
+    const numericFieldExpression = getFieldFloatExpression(metricField!);
+    if (metric === 'sum') {
+        return sql<number>`coalesce(sum(${numericFieldExpression}), 0)::double precision`;
+    }
+
+    if (metric === 'avg') {
+        return sql<number>`coalesce(avg(${numericFieldExpression}), 0)::double precision`;
+    }
+
+    if (metric === 'min') {
+        return sql<number>`coalesce(min(${numericFieldExpression}), 0)::double precision`;
+    }
+
+    return sql<number>`coalesce(max(${numericFieldExpression}), 0)::double precision`;
 }
 
 // --- Service functions ---
@@ -410,6 +495,142 @@ export async function listContentItems(domainId: number, input: ListContentItems
         ...(cursor ? {} : { offset: offset ?? 0 }),
         hasMore,
         nextCursor
+    };
+}
+
+export async function projectContentItems(domainId: number, input: ProjectContentItemsInput): Promise<ProjectContentItemsResult> {
+    const {
+        contentTypeId,
+        status,
+        createdAfter,
+        createdBefore,
+        fieldName,
+        fieldOp,
+        fieldValue,
+        groupBy,
+        metric = 'count',
+        metricField,
+        orderBy = 'value',
+        orderDir = 'desc',
+        limit = 50
+    } = input;
+
+    if (!contentTypeId) {
+        throw new ContentItemProjectionError(
+            'Content projections require contentTypeId',
+            'CONTENT_ITEMS_PROJECTION_REQUIRES_CONTENT_TYPE',
+            'Provide contentTypeId when building grouped content projections.'
+        );
+    }
+
+    if ((fieldName && fieldValue === undefined) || (fieldValue !== undefined && !fieldName)) {
+        throw new ContentItemProjectionError(
+            'Content projection filtering requires both fieldName and fieldValue',
+            'CONTENT_ITEMS_PROJECTION_FILTER_INCOMPLETE',
+            'Provide both fieldName and fieldValue when filtering projected content groups.'
+        );
+    }
+
+    const [contentType] = await db.select({
+        schema: contentTypes.schema
+    })
+        .from(contentTypes)
+        .where(and(eq(contentTypes.domainId, domainId), eq(contentTypes.id, contentTypeId)));
+
+    if (!contentType) {
+        throw new ContentItemProjectionError(
+            'Content type not found for projection query',
+            'CONTENT_ITEMS_PROJECTION_CONTENT_TYPE_NOT_FOUND',
+            'Use a valid contentTypeId from the current domain when building content projections.'
+        );
+    }
+
+    const queryableFields = normalizeQueryableFieldMap(contentType.schema);
+
+    if (!queryableFields.has(groupBy)) {
+        throw new ContentItemProjectionError(
+            'Unknown or unsupported projection group field',
+            'CONTENT_ITEMS_PROJECTION_GROUP_FIELD_UNKNOWN',
+            'Use a top-level scalar field defined by the selected content type schema for groupBy.'
+        );
+    }
+
+    const normalizedFieldOp = fieldOp ?? 'eq';
+    if (fieldName && !queryableFields.has(fieldName)) {
+        throw new ContentItemProjectionError(
+            'Unknown or unsupported projection filter field',
+            'CONTENT_ITEMS_PROJECTION_FILTER_FIELD_UNKNOWN',
+            'Use a top-level scalar field defined by the selected content type schema for field-aware projection filters.'
+        );
+    }
+
+    if (metric !== 'count' && !metricField) {
+        throw new ContentItemProjectionError(
+            'Numeric projection metrics require metricField',
+            'CONTENT_ITEMS_PROJECTION_METRIC_FIELD_REQUIRED',
+            'Provide metricField when using sum, avg, min, or max projection metrics.'
+        );
+    }
+
+    if (metricField && !queryableFields.has(metricField)) {
+        throw new ContentItemProjectionError(
+            'Unknown or unsupported projection metric field',
+            'CONTENT_ITEMS_PROJECTION_METRIC_FIELD_UNKNOWN',
+            'Use a top-level scalar field defined by the selected content type schema for metricField.'
+        );
+    }
+
+    if (metricField && queryableFields.get(metricField) !== 'number' && metric !== 'count') {
+        throw new ContentItemProjectionError(
+            'Projection metric field must be numeric',
+            'CONTENT_ITEMS_PROJECTION_METRIC_FIELD_NOT_NUMERIC',
+            'Use a numeric top-level scalar field for sum, avg, min, or max projections.'
+        );
+    }
+
+    const fieldCondition = fieldName && fieldValue !== undefined
+        ? buildFieldFilterCondition(fieldName, queryableFields.get(fieldName)!, normalizedFieldOp, fieldValue)
+        : undefined;
+
+    const whereConditions = [
+        eq(contentItems.domainId, domainId),
+        eq(contentItems.contentTypeId, contentTypeId),
+        status ? eq(contentItems.status, status) : undefined,
+        createdAfter ? gte(contentItems.createdAt, createdAfter) : undefined,
+        createdBefore ? lte(contentItems.createdAt, createdBefore) : undefined,
+        fieldCondition
+    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+    const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
+    const groupExpression = buildProjectionGroupExpression(groupBy, queryableFields.get(groupBy)!);
+    const countExpression = sql<number>`count(*)::int`;
+    const valueExpression = buildProjectionMetricExpression(metric, metricField);
+    const normalizedLimit = Math.max(1, Math.min(limit, 500));
+
+    const orderExpression = orderBy === 'group' ? groupExpression : valueExpression;
+    const buckets = await db.select({
+        group: groupExpression,
+        value: valueExpression,
+        count: countExpression
+    })
+        .from(contentItems)
+        .where(whereClause)
+        .groupBy(groupExpression)
+        .orderBy(
+            orderDir === 'asc' ? asc(orderExpression) : desc(orderExpression),
+            asc(groupExpression)
+        )
+        .limit(normalizedLimit);
+
+    return {
+        buckets,
+        contentTypeId,
+        groupBy,
+        metric,
+        metricField: metricField ?? null,
+        orderBy,
+        orderDir,
+        limit: normalizedLimit
     };
 }
 

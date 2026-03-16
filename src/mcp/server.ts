@@ -38,7 +38,12 @@ import { buildL402Guide } from '../cli/lib/l402-guide.js';
 import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { issueSignedAssetAccess } from '../services/asset-access.js';
-import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
+import {
+    ContentItemListError,
+    ContentItemProjectionError,
+    listContentItems,
+    projectContentItems
+} from '../services/content-item.service.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import {
     canSubscribeToReactiveTopic,
@@ -1662,6 +1667,75 @@ server.tool(
                 return err(`${error.code}: ${error.message}. ${error.remediation}`);
             }
             return err(`Error listing content items: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'project_content_items',
+    'Build grouped content projections for leaderboard and analytics-style views',
+    {
+        contentTypeId: z.number().describe('Target content type ID'),
+        status: z.string().optional().describe('Filter by status'),
+        createdAfter: z.string().optional().describe('ISO-8601 created-at lower bound'),
+        createdBefore: z.string().optional().describe('ISO-8601 created-at upper bound'),
+        fieldName: z.string().optional().describe('Top-level scalar field from the selected content type schema'),
+        fieldOp: z.enum(['eq', 'contains', 'gte', 'lte']).optional().describe('Comparison operator for fieldName (default eq)'),
+        fieldValue: z.string().optional().describe('Filter value for fieldName'),
+        groupBy: z.string().describe('Top-level scalar field from the selected content type schema to group by'),
+        metric: z.enum(['count', 'sum', 'avg', 'min', 'max']).optional().describe('Projection metric (default count)'),
+        metricField: z.string().optional().describe('Numeric top-level scalar field used by sum, avg, min, or max'),
+        orderBy: z.enum(['value', 'group']).optional().describe('Sort grouped buckets by metric value or group label'),
+        orderDir: z.enum(['asc', 'desc']).optional().describe('Projection sort direction (default desc)'),
+        limit: z.number().optional().describe('Bucket limit (default 50, max 500)')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({
+        contentTypeId,
+        status,
+        createdAfter,
+        createdBefore,
+        fieldName,
+        fieldOp,
+        fieldValue,
+        groupBy,
+        metric,
+        metricField,
+        orderBy,
+        orderDir,
+        limit: rawLimit
+    }, extra, domainId) => {
+        try {
+            const result = await projectContentItems(domainId, {
+                contentTypeId,
+                status,
+                createdAfter: parseDateArg(createdAfter, 'createdAfter'),
+                createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                fieldName,
+                fieldOp,
+                fieldValue,
+                groupBy,
+                metric,
+                metricField,
+                orderBy,
+                orderDir,
+                limit: clampLimit(rawLimit)
+            });
+
+            return okJson({
+                buckets: result.buckets,
+                contentTypeId: result.contentTypeId,
+                groupBy: result.groupBy,
+                metric: result.metric,
+                metricField: result.metricField,
+                orderBy: result.orderBy,
+                orderDir: result.orderDir,
+                limit: result.limit
+            });
+        } catch (error) {
+            if (error instanceof ContentItemProjectionError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
+            return err(`Error projecting content items: ${(error as Error).message}`);
         }
     })
 );

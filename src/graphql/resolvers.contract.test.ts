@@ -331,6 +331,53 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('contentItemProjection rejects unknown group fields with deterministic code', async () => {
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            score: { type: 'integer' }
+                        }
+                    })
+                }])
+            })
+        }));
+
+        await expect(
+            resolvers.Query.contentItemProjection({}, { contentTypeId: '7', groupBy: 'characterClass' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_ITEMS_PROJECTION_GROUP_FIELD_UNKNOWN'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
+    it('contentItemProjection rejects numeric metrics without metricField', async () => {
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            characterClass: { type: 'string' },
+                            score: { type: 'integer' }
+                        }
+                    })
+                }])
+            })
+        }));
+
+        await expect(
+            resolvers.Query.contentItemProjection({}, { contentTypeId: '7', groupBy: 'characterClass', metric: 'avg' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_ITEMS_PROJECTION_METRIC_FIELD_REQUIRED'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
     it('contentItems rejects cursor and offset together with deterministic code', async () => {
         const cursor = Buffer.from(JSON.stringify({
             createdAt: '2026-03-09T11:00:00.000Z',

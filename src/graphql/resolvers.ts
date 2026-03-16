@@ -13,7 +13,12 @@ import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
-import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
+import {
+    ContentItemListError,
+    ContentItemProjectionError,
+    listContentItems,
+    projectContentItems
+} from '../services/content-item.service.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 import { toAuditActor, type AuditActor } from '../services/actor-identity.js';
 
@@ -274,6 +279,21 @@ type OptionalContentTypeArg = {
     limit?: number;
     offset?: number;
     cursor?: string;
+};
+type ContentProjectionArgs = {
+    contentTypeId: IdValue;
+    status?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+    fieldName?: string;
+    fieldOp?: string;
+    fieldValue?: string;
+    groupBy: string;
+    metric?: string;
+    metricField?: string;
+    orderBy?: string;
+    orderDir?: string;
+    limit?: number;
 };
 type ContentTypesArgs = {
     limit?: number;
@@ -930,6 +950,47 @@ export const resolvers = {
                 return result.items;
             } catch (error) {
                 if (error instanceof ContentItemListError) {
+                    throw toError(error.message, error.code, error.remediation);
+                }
+                throw error;
+            }
+        }),
+
+        contentItemProjection: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, {
+            contentTypeId,
+            status,
+            createdAfter,
+            createdBefore,
+            fieldName,
+            fieldOp,
+            fieldValue,
+            groupBy,
+            metric,
+            metricField,
+            orderBy,
+            orderDir,
+            limit: rawLimit
+        }: ContentProjectionArgs, context: unknown) => {
+            try {
+                const result = await projectContentItems(getDomainId(context), {
+                    contentTypeId: parseId(contentTypeId, 'contentTypeId'),
+                    status,
+                    createdAfter: parseDateArg(createdAfter, 'createdAfter'),
+                    createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                    fieldName,
+                    fieldOp: fieldOp as 'eq' | 'contains' | 'gte' | 'lte' | undefined,
+                    fieldValue,
+                    groupBy,
+                    metric: metric as 'count' | 'sum' | 'avg' | 'min' | 'max' | undefined,
+                    metricField,
+                    orderBy: orderBy as 'value' | 'group' | undefined,
+                    orderDir: orderDir as 'asc' | 'desc' | undefined,
+                    limit: clampLimit(rawLimit)
+                });
+
+                return result.buckets;
+            } catch (error) {
+                if (error instanceof ContentItemProjectionError) {
                     throw toError(error.message, error.code, error.remediation);
                 }
                 throw error;

@@ -30,7 +30,12 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
-import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
+import {
+    ContentItemListError,
+    ContentItemProjectionError,
+    listContentItems,
+    projectContentItems
+} from '../services/content-item.service.js';
 import { issueSignedAssetAccess, verifySignedAssetAccess } from '../services/asset-access.js';
 import {
     AssetListError,
@@ -77,6 +82,21 @@ type ContentItemsQuery = {
     limit?: number;
     offset?: number;
     cursor?: string;
+};
+type ContentItemsProjectionQuery = {
+    contentTypeId: number;
+    status?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+    fieldName?: string;
+    fieldOp?: 'eq' | 'contains' | 'gte' | 'lte';
+    fieldValue?: string;
+    groupBy: string;
+    metric?: 'count' | 'sum' | 'avg' | 'min' | 'max';
+    metricField?: string;
+    orderBy?: 'value' | 'group';
+    orderDir?: 'asc' | 'desc';
+    limit?: number;
 };
 type AssetsQuery = {
     q?: string;
@@ -3925,6 +3945,128 @@ export default async function apiRoutes(server: FastifyInstance) {
                 }
             )
         };
+    });
+
+    server.get('/content-items/projections', {
+        schema: {
+            querystring: Type.Object({
+                contentTypeId: Type.Number(),
+                status: Type.Optional(Type.String()),
+                createdAfter: Type.Optional(Type.String()),
+                createdBefore: Type.Optional(Type.String()),
+                fieldName: Type.Optional(Type.String()),
+                fieldOp: Type.Optional(Type.Union([
+                    Type.Literal('eq'),
+                    Type.Literal('contains'),
+                    Type.Literal('gte'),
+                    Type.Literal('lte')
+                ])),
+                fieldValue: Type.Optional(Type.String()),
+                groupBy: Type.String(),
+                metric: Type.Optional(Type.Union([
+                    Type.Literal('count'),
+                    Type.Literal('sum'),
+                    Type.Literal('avg'),
+                    Type.Literal('min'),
+                    Type.Literal('max')
+                ])),
+                metricField: Type.Optional(Type.String()),
+                orderBy: Type.Optional(Type.Union([
+                    Type.Literal('value'),
+                    Type.Literal('group')
+                ])),
+                orderDir: Type.Optional(Type.Union([
+                    Type.Literal('asc'),
+                    Type.Literal('desc')
+                ])),
+                limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 }))
+            }),
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    group: Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]),
+                    value: Type.Number(),
+                    count: Type.Number()
+                }))),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const {
+            contentTypeId,
+            status,
+            createdAfter,
+            createdBefore,
+            fieldName,
+            fieldOp,
+            fieldValue,
+            groupBy,
+            metric,
+            metricField,
+            orderBy,
+            orderDir,
+            limit: rawLimit
+        } = request.query as ContentItemsProjectionQuery;
+
+        const afterDate = createdAfter ? new Date(createdAfter) : null;
+        if (afterDate && Number.isNaN(afterDate.getTime())) {
+            return reply.status(400).send({
+                error: 'Invalid createdAfter timestamp',
+                code: 'INVALID_CREATED_AFTER',
+                remediation: 'Provide createdAfter as an ISO-8601 date-time string.'
+            });
+        }
+
+        const beforeDate = createdBefore ? new Date(createdBefore) : null;
+        if (beforeDate && Number.isNaN(beforeDate.getTime())) {
+            return reply.status(400).send({
+                error: 'Invalid createdBefore timestamp',
+                code: 'INVALID_CREATED_BEFORE',
+                remediation: 'Provide createdBefore as an ISO-8601 date-time string.'
+            });
+        }
+
+        try {
+            const result = await projectContentItems(getDomainId(request), {
+                contentTypeId,
+                status,
+                createdAfter: afterDate,
+                createdBefore: beforeDate,
+                fieldName,
+                fieldOp,
+                fieldValue,
+                groupBy,
+                metric,
+                metricField,
+                orderBy,
+                orderDir,
+                limit: clampLimit(rawLimit)
+            });
+
+            return {
+                data: result.buckets,
+                meta: buildMeta(
+                    'Inspect grouped content projections for leaderboard and analytics-style views',
+                    ['GET /api/content-items', 'POST /api/content-items'],
+                    'low',
+                    1,
+                    false,
+                    {
+                        contentTypeId: result.contentTypeId,
+                        groupBy: result.groupBy,
+                        metric: result.metric,
+                        metricField: result.metricField,
+                        orderBy: result.orderBy,
+                        orderDir: result.orderDir,
+                        limit: result.limit
+                    }
+                )
+            };
+        } catch (error) {
+            if (error instanceof ContentItemProjectionError) {
+                return reply.status(400).send(toErrorPayload(error.message, error.code, error.remediation));
+            }
+            throw error;
+        }
     });
 
     server.get('/content-items/:id', {
