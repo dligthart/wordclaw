@@ -477,7 +477,7 @@ if (!fs.existsSync(generatedDir)) {
 
 // Upload image bytes to WordClaw asset storage via REST API
 // Returns the proxied asset content URL or null on failure
-async function uploadToAssetStorage(b64Data: string, filename: string): Promise<string | null> {
+async function uploadToAssetStorage(b64Data: string, filename: string, sessionId: string): Promise<string | null> {
     try {
         const res = await fetch(`${WORDCLAW_API_URL}/assets`, {
             method: 'POST',
@@ -486,11 +486,11 @@ async function uploadToAssetStorage(b64Data: string, filename: string): Promise<
                 'x-api-key': WORDCLAW_API_KEY!
             },
             body: JSON.stringify({
-                filename,
+                filename: `${sessionId}/${filename}`,
                 mimeType: 'image/webp',
                 contentBase64: b64Data,
                 accessMode: 'public',
-                metadata: { source: 'adventure-game', generator: 'gpt-image-1' }
+                metadata: { source: 'adventure-game', generator: 'gpt-image-1', sessionId }
             })
         });
 
@@ -499,7 +499,7 @@ async function uploadToAssetStorage(b64Data: string, filename: string): Promise<
             const assetId = body.data?.id;
             if (assetId) {
                 const assetUrl = `/wc-assets/${assetId}/content`;
-                console.log(`📦 Asset uploaded to WordClaw: ID ${assetId} → ${assetUrl}`);
+                console.log(`📦 Asset uploaded to WordClaw: ID ${assetId} → ${assetUrl} (session: ${sessionId})`);
                 return assetUrl;
             }
         }
@@ -515,7 +515,8 @@ async function uploadToAssetStorage(b64Data: string, filename: string): Promise<
 
 // Generate an image using gpt-image-1
 // Uploads to WordClaw asset storage with local disk fallback
-async function generateSceneImage(prompt: string): Promise<string | null> {
+// Images are organized into session-specific folders
+async function generateSceneImage(prompt: string, sessionId: string): Promise<string | null> {
     try {
         const body: any = {
             model: "gpt-image-1",
@@ -543,15 +544,19 @@ async function generateSceneImage(prompt: string): Promise<string | null> {
                 return null;
             }
 
-            // Save to local disk as cache/fallback
+            // Save to local disk in session-specific folder as cache/fallback
+            const sessionDir = path.join(generatedDir, sessionId);
+            if (!fs.existsSync(sessionDir)) {
+                fs.mkdirSync(sessionDir, { recursive: true });
+            }
             const filename = `img_${crypto.randomBytes(8).toString('hex')}.webp`;
-            const filePath = path.join(generatedDir, filename);
+            const filePath = path.join(sessionDir, filename);
             fs.writeFileSync(filePath, Buffer.from(b64Data, 'base64'));
-            const localUrl = `/generated/${filename}`;
+            const localUrl = `/generated/${sessionId}/${filename}`;
             console.log(`🖼️  Image saved locally: ${localUrl}`);
 
-            // Upload to WordClaw asset storage
-            const assetUrl = await uploadToAssetStorage(b64Data, filename);
+            // Upload to WordClaw asset storage (with session in metadata)
+            const assetUrl = await uploadToAssetStorage(b64Data, filename, sessionId);
             if (assetUrl) {
                 return assetUrl;
             }
@@ -682,7 +687,7 @@ app.post('/api/start', async (req, res) => {
             setting: session.theme,
             mood: 'Majestic, epic, ready for adventure'
         });
-        heroImageUrl = await generateSceneImage(heroPrompt);
+        heroImageUrl = await generateSceneImage(heroPrompt, sessionId);
 
         if (heroImageUrl) {
             session.heroImageUrl = heroImageUrl;
@@ -699,7 +704,7 @@ app.post('/api/start', async (req, res) => {
             camera: 'Wide shot showing character and environment',
             lighting: 'Cinematic, atmospheric, matching the scene mood'
         });
-        sceneImageUrl = await generateSceneImage(scenePrompt);
+        sceneImageUrl = await generateSceneImage(scenePrompt, sessionId);
 
         if (sceneImageUrl) {
             session.sceneImageUrl = sceneImageUrl;
@@ -806,7 +811,7 @@ app.post('/api/choose', async (req, res) => {
             const achievementPrompt = `Based on the following adventure history, invent exactly 3 creative, short string achievements the player has earned during this run. \nHistory: ${session.history.join('. ')}\nReturn ONLY a raw JSON array of 3 strings. Example: ["Slayer of the Beast", "Master Thief", "Narrow Escape"]`;
 
             const [finaleImageUrl, achRes] = await Promise.all([
-                generateSceneImage(promptOutcome),
+                generateSceneImage(promptOutcome, sessionId),
                 fetch('https://api.openai.com/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -862,7 +867,7 @@ app.post('/api/choose', async (req, res) => {
                     lighting: 'Cinematic, atmospheric, matching the scene mood'
                 })
                 : `A highly detailed epic digital painting: "${validBranch.narrative_text}". Hero: ${session.characterVisualDesc || `a ${session.quirk} ${session.characterClass}`}. Setting: ${session.theme}. Style: Immersive fantasy concept art. Keep artwork safe.`;
-            sceneImageUrl = await generateSceneImage(scenePrompt);
+            sceneImageUrl = await generateSceneImage(scenePrompt, sessionId);
 
             if (sceneImageUrl) {
                 session.scene_images.push(sceneImageUrl);
