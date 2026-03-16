@@ -21,6 +21,40 @@ export type DeploymentStatusSnapshot = {
             basePath: string;
             note: string;
         };
+        contentRuntime: {
+            status: DeploymentCheckLevel;
+            fieldAwareQueries: {
+                supported: boolean;
+                restPath: string;
+                mcpTool: string;
+                graphqlField: string;
+                requiresContentTypeId: boolean;
+            };
+            projections: {
+                supported: boolean;
+                restPath: string;
+                mcpTool: string;
+                graphqlField: string;
+                metrics: string[];
+                requiresContentTypeId: boolean;
+            };
+            publicWriteLane: {
+                supported: boolean;
+                issueTokenPath: string;
+                createPath: string;
+                updatePath: string;
+                tokenHeader: string;
+                requiresSchemaPolicy: boolean;
+            };
+            lifecycle: {
+                supported: boolean;
+                triggerMode: string;
+                schemaExtension: string;
+                includeArchivedFlag: string;
+                defaultArchiveStatus: string;
+            };
+            note: string;
+        };
         mcp: {
             status: DeploymentCheckLevel;
             endpoint: string;
@@ -171,6 +205,40 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                 status: 'ready',
                 basePath: manifest.protocolSurfaces.rest.basePath,
                 note: 'REST API is reachable on the main HTTP server.',
+            },
+            contentRuntime: {
+                status: 'ready',
+                fieldAwareQueries: {
+                    supported: manifest.contentRuntime.fieldAwareQueries.supported,
+                    restPath: manifest.contentRuntime.fieldAwareQueries.restPath,
+                    mcpTool: manifest.contentRuntime.fieldAwareQueries.mcpTool,
+                    graphqlField: manifest.contentRuntime.fieldAwareQueries.graphqlField,
+                    requiresContentTypeId: manifest.contentRuntime.fieldAwareQueries.requiresContentTypeId,
+                },
+                projections: {
+                    supported: manifest.contentRuntime.projections.supported,
+                    restPath: manifest.contentRuntime.projections.restPath,
+                    mcpTool: manifest.contentRuntime.projections.mcpTool,
+                    graphqlField: manifest.contentRuntime.projections.graphqlField,
+                    metrics: [...manifest.contentRuntime.projections.metrics],
+                    requiresContentTypeId: manifest.contentRuntime.projections.requiresContentTypeId,
+                },
+                publicWriteLane: {
+                    supported: manifest.contentRuntime.publicWriteLane.supported,
+                    issueTokenPath: manifest.contentRuntime.publicWriteLane.issueTokenPath,
+                    createPath: manifest.contentRuntime.publicWriteLane.createPath,
+                    updatePath: manifest.contentRuntime.publicWriteLane.updatePath,
+                    tokenHeader: manifest.contentRuntime.publicWriteLane.tokenHeader,
+                    requiresSchemaPolicy: manifest.contentRuntime.publicWriteLane.requiresSchemaPolicy,
+                },
+                lifecycle: {
+                    supported: manifest.contentRuntime.lifecycle.supported,
+                    triggerMode: manifest.contentRuntime.lifecycle.triggerMode,
+                    schemaExtension: manifest.contentRuntime.lifecycle.schemaExtension,
+                    includeArchivedFlag: manifest.contentRuntime.lifecycle.includeArchivedFlag,
+                    defaultArchiveStatus: manifest.contentRuntime.lifecycle.defaultArchiveStatus,
+                },
+                note: 'Content runtime supports schema-aware field queries, grouped projections, bounded public write lanes, and lazy archival for TTL-managed session content.',
             },
             mcp: {
                 status: 'ready',

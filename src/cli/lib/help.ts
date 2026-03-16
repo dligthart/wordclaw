@@ -27,7 +27,8 @@ const USAGE_LINES = [
     'content-types create --name <value> --slug <value> [--description <value>] [--schema-json <json>|--schema-file <path>] [--base-price <n>] [--dry-run]',
     'content-types update --id <n> [--name <value>] [--slug <value>] [--description <value>] [--schema-json <json>|--schema-file <path>] [--base-price <n>] [--dry-run]',
     'content-types delete --id <n> [--dry-run]',
-    'content list [--content-type-id <n>] [--status <value>] [--q <value>] [--created-after <iso>] [--created-before <iso>] [--sort-by updatedAt|createdAt|version] [--sort-dir asc|desc] [--limit <n>] [--offset <n>] [--cursor <value>]',
+    'content list [--content-type-id <n>] [--status <value>] [--q <value>] [--created-after <iso>] [--created-before <iso>] [--field-name <value>] [--field-op eq|contains|gte|lte] [--field-value <value>] [--sort-field <value>] [--sort-by updatedAt|createdAt|version] [--sort-dir asc|desc] [--include-archived] [--limit <n>] [--offset <n>] [--cursor <value>]',
+    'content project --content-type-id <n> --group-by <value> [--status <value>] [--created-after <iso>] [--created-before <iso>] [--field-name <value>] [--field-op eq|contains|gte|lte] [--field-value <value>] [--metric count|sum|avg|min|max] [--metric-field <value>] [--order-by value|group] [--order-dir asc|desc] [--include-archived] [--limit <n>]',
     'content guide --content-type-id <n>',
     'content get --id <n>',
     'content create --content-type-id <n> [--status <value>] [--data-json <json>|--data-file <path>] [--dry-run]',
@@ -84,6 +85,7 @@ const EXAMPLES: Record<string, string[]> = {
     'content': [
         'wordclaw content guide --content-type-id 12',
         'wordclaw content create --content-type-id 12 --data-file item.json --dry-run',
+        'wordclaw content project --content-type-id 12 --group-by characterClass --metric avg --metric-field score',
     ],
     'assets': [
         'wordclaw assets list --access-mode public --limit 10',

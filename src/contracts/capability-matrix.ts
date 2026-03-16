@@ -122,6 +122,13 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'get_content_items' }
     },
     {
+        id: 'project_content_items',
+        description: 'Build grouped read-model buckets from content items',
+        rest: { method: 'GET', path: '/content-items/projections' },
+        graphql: { operation: 'Query', field: 'contentItemProjection' },
+        mcp: { tool: 'project_content_items' }
+    },
+    {
         id: 'get_content_item',
         description: 'Get content item by ID',
         rest: { method: 'GET', path: '/content-items/:id' },

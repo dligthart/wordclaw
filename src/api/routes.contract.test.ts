@@ -43,6 +43,7 @@ import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { LicensingService } from '../services/licensing.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import * as assetService from '../services/assets.js';
+import { issuePublicWriteToken } from '../services/public-write.js';
 
 type ApiErrorBody = {
     error: string;
@@ -111,6 +112,8 @@ const originalExperimentalDelegation = process.env.ENABLE_EXPERIMENTAL_DELEGATIO
 const originalExperimentalAgentRuns = process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
 const originalAssetStorageProvider = process.env.ASSET_STORAGE_PROVIDER;
 const originalAssetSignedTtl = process.env.ASSET_SIGNED_TTL_SECONDS;
+const originalPublicWriteSecret = process.env.PUBLIC_WRITE_SECRET;
+const originalPublicWriteTtl = process.env.PUBLIC_WRITE_TTL_SECONDS;
 
 function restoreAuthEnv() {
     if (originalAuthRequired === undefined) {
@@ -159,6 +162,18 @@ function restoreAuthEnv() {
         delete process.env.ASSET_SIGNED_TTL_SECONDS;
     } else {
         process.env.ASSET_SIGNED_TTL_SECONDS = originalAssetSignedTtl;
+    }
+
+    if (originalPublicWriteSecret === undefined) {
+        delete process.env.PUBLIC_WRITE_SECRET;
+    } else {
+        process.env.PUBLIC_WRITE_SECRET = originalPublicWriteSecret;
+    }
+
+    if (originalPublicWriteTtl === undefined) {
+        delete process.env.PUBLIC_WRITE_TTL_SECONDS;
+    } else {
+        process.env.PUBLIC_WRITE_TTL_SECONDS = originalPublicWriteTtl;
     }
 }
 
@@ -245,6 +260,35 @@ describe('API Route Contracts', () => {
                         id: string;
                         enabled: boolean;
                     }>;
+                    contentRuntime: {
+                        fieldAwareQueries: {
+                            supported: boolean;
+                            requiresContentTypeId: boolean;
+                            queryableFieldKinds: string[];
+                            filterOperators: string[];
+                            restPath: string;
+                            mcpTool: string;
+                            graphqlField: string;
+                        };
+                        projections: {
+                            supported: boolean;
+                            requiresContentTypeId: boolean;
+                            groupByMode: string;
+                            groupableFieldKinds: string[];
+                            metrics: string[];
+                            restPath: string;
+                            mcpTool: string;
+                            graphqlField: string;
+                        };
+                        publicWriteLane: {
+                            supported: boolean;
+                            requiresSchemaPolicy: boolean;
+                            issueTokenPath: string;
+                            createPath: string;
+                            updatePath: string;
+                            tokenHeader: string;
+                        };
+                    };
                     assetStorage: {
                         configuredProvider: string;
                         effectiveProvider: string;
@@ -357,6 +401,44 @@ describe('API Route Contracts', () => {
                     expect.objectContaining({ id: 'agent-runs', enabled: false }),
                 ]),
             );
+            expect(body.data.contentRuntime).toEqual(expect.objectContaining({
+                fieldAwareQueries: expect.objectContaining({
+                    supported: true,
+                    requiresContentTypeId: true,
+                    queryableFieldKinds: ['string', 'number', 'boolean'],
+                    filterOperators: ['eq', 'contains', 'gte', 'lte'],
+                    restPath: '/api/content-items',
+                    mcpTool: 'get_content_items',
+                    graphqlField: 'contentItems',
+                }),
+                projections: expect.objectContaining({
+                    supported: true,
+                    requiresContentTypeId: true,
+                    groupByMode: 'single-field',
+                    groupableFieldKinds: ['string', 'number', 'boolean'],
+                    metrics: ['count', 'sum', 'avg', 'min', 'max'],
+                    restPath: '/api/content-items/projections',
+                    mcpTool: 'project_content_items',
+                    graphqlField: 'contentItemProjection',
+                }),
+                publicWriteLane: expect.objectContaining({
+                    supported: true,
+                    requiresSchemaPolicy: true,
+                    issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                    createPath: '/api/public/content-types/:id/items',
+                    updatePath: '/api/public/content-items/:id',
+                    tokenHeader: 'x-public-write-token',
+                }),
+                lifecycle: expect.objectContaining({
+                    supported: true,
+                    requiresSchemaPolicy: true,
+                    triggerMode: 'lazy-on-touch',
+                    schemaExtension: 'x-wordclaw-lifecycle',
+                    defaultClock: 'updatedAt',
+                    defaultArchiveStatus: 'archived',
+                    includeArchivedFlag: 'includeArchived',
+                }),
+            }));
             expect(body.data.assetStorage).toEqual(expect.objectContaining({
                 configuredProvider: 'local',
                 effectiveProvider: 'local',
@@ -489,6 +571,32 @@ describe('API Route Contracts', () => {
                     checks: {
                         database: { status: string };
                         restApi: { status: string; basePath: string };
+                        contentRuntime: {
+                            status: string;
+                            fieldAwareQueries: {
+                                supported: boolean;
+                                restPath: string;
+                                mcpTool: string;
+                                graphqlField: string;
+                                requiresContentTypeId: boolean;
+                            };
+                            projections: {
+                                supported: boolean;
+                                restPath: string;
+                                mcpTool: string;
+                                graphqlField: string;
+                                metrics: string[];
+                                requiresContentTypeId: boolean;
+                            };
+                            publicWriteLane: {
+                                supported: boolean;
+                                issueTokenPath: string;
+                                createPath: string;
+                                updatePath: string;
+                                tokenHeader: string;
+                                requiresSchemaPolicy: boolean;
+                            };
+                        };
                         mcp: {
                             status: string;
                             endpoint: string;
@@ -532,6 +640,39 @@ describe('API Route Contracts', () => {
             expect(body.data.checks.restApi).toEqual(expect.objectContaining({
                 status: 'ready',
                 basePath: '/api',
+            }));
+            expect(body.data.checks.contentRuntime).toEqual(expect.objectContaining({
+                status: 'ready',
+                fieldAwareQueries: expect.objectContaining({
+                    supported: true,
+                    restPath: '/api/content-items',
+                    mcpTool: 'get_content_items',
+                    graphqlField: 'contentItems',
+                    requiresContentTypeId: true,
+                }),
+                projections: expect.objectContaining({
+                    supported: true,
+                    restPath: '/api/content-items/projections',
+                    mcpTool: 'project_content_items',
+                    graphqlField: 'contentItemProjection',
+                    metrics: ['count', 'sum', 'avg', 'min', 'max'],
+                    requiresContentTypeId: true,
+                }),
+                publicWriteLane: expect.objectContaining({
+                    supported: true,
+                    issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                    createPath: '/api/public/content-types/:id/items',
+                    updatePath: '/api/public/content-items/:id',
+                    tokenHeader: 'x-public-write-token',
+                    requiresSchemaPolicy: true,
+                }),
+                lifecycle: expect.objectContaining({
+                    supported: true,
+                    triggerMode: 'lazy-on-touch',
+                    schemaExtension: 'x-wordclaw-lifecycle',
+                    includeArchivedFlag: 'includeArchived',
+                    defaultArchiveStatus: 'archived',
+                }),
             }));
             expect(body.data.checks.mcp).toEqual(expect.objectContaining({
                 status: 'ready',
@@ -2209,6 +2350,396 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('issues public write tokens for policy-enabled content types', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 7,
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            sessionId: { type: 'string' },
+                            body: { type: 'string' }
+                        },
+                        required: ['sessionId', 'body'],
+                        'x-wordclaw-public-write': {
+                            enabled: true,
+                            subjectField: 'sessionId',
+                            allowedOperations: ['create', 'update'],
+                            requiredStatus: 'draft'
+                        }
+                    })
+                }]),
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-types/7/public-write-tokens',
+                payload: {
+                    subject: 'session-123',
+                    operations: ['create', 'update'],
+                    ttlSeconds: 300
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    token: string;
+                    contentTypeId: number;
+                    subjectField: string;
+                    subject: string;
+                    allowedOperations: string[];
+                    requiredStatus: string;
+                    ttlSeconds: number;
+                };
+            };
+
+            expect(body.data).toMatchObject({
+                contentTypeId: 7,
+                subjectField: 'sessionId',
+                subject: 'session-123',
+                allowedOperations: ['create', 'update'],
+                requiredStatus: 'draft',
+                ttlSeconds: 300
+            });
+            expect(body.data.token).toEqual(expect.any(String));
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('creates session-bound content through the public write lane without API auth', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+        process.env.PUBLIC_WRITE_SECRET = 'public-write-secret';
+        const app = await buildServer();
+        const insertReturningMock = vi.fn().mockResolvedValue([{
+            id: 44,
+            contentTypeId: 7,
+            version: 1,
+            status: 'draft'
+        }]);
+
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 7,
+                    domainId: 1,
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            sessionId: { type: 'string' },
+                            body: { type: 'string' }
+                        },
+                        required: ['sessionId', 'body'],
+                        'x-wordclaw-public-write': {
+                            enabled: true,
+                            subjectField: 'sessionId',
+                            allowedOperations: ['create', 'update'],
+                            requiredStatus: 'draft'
+                        }
+                    })
+                }]),
+            }),
+        }));
+        mocks.dbMock.insert.mockReturnValue({
+            values: vi.fn().mockReturnValue({
+                returning: insertReturningMock
+            })
+        });
+
+        const issued = issuePublicWriteToken({
+            domainId: 1,
+            contentTypeId: 7,
+            subjectField: 'sessionId',
+            subject: 'session-123',
+            allowedOperations: ['create', 'update'],
+            requiredStatus: 'draft'
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/public/content-types/7/items',
+                headers: {
+                    'x-public-write-token': issued.token
+                },
+                payload: {
+                    data: {
+                        sessionId: 'session-123',
+                        body: 'checkpoint'
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toMatchObject({
+                data: {
+                    id: 44,
+                    contentTypeId: 7,
+                    version: 1,
+                    status: 'draft'
+                }
+            });
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'create',
+                'content_item',
+                44,
+                expect.objectContaining({
+                    publicWrite: true,
+                    subjectField: 'sessionId',
+                    subject: 'session-123'
+                }),
+                expect.objectContaining({
+                    actorId: 'public_write:7:session-123'
+                }),
+                expect.any(String)
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('updates only the token-bound item through the public write lane', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+        process.env.PUBLIC_WRITE_SECRET = 'public-write-secret';
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 91,
+                        domainId: 1,
+                        contentTypeId: 7,
+                        data: JSON.stringify({
+                            sessionId: 'session-123',
+                            body: 'before'
+                        }),
+                        status: 'draft',
+                        version: 2,
+                        updatedAt: new Date('2026-03-16T12:00:00.000Z')
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        domainId: 1,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                sessionId: { type: 'string' },
+                                body: { type: 'string' }
+                            },
+                            required: ['sessionId', 'body'],
+                            'x-wordclaw-public-write': {
+                                enabled: true,
+                                subjectField: 'sessionId',
+                                allowedOperations: ['create', 'update'],
+                                requiredStatus: 'draft'
+                            }
+                        })
+                    }]),
+                }),
+            }));
+
+        mocks.dbMock.transaction.mockImplementation(async (callback: (tx: typeof mocks.dbMock) => Promise<unknown>) => {
+            const tx = {
+                insert: vi.fn().mockReturnValue({
+                    values: vi.fn().mockResolvedValue(undefined)
+                }),
+                update: vi.fn().mockReturnValue({
+                    set: vi.fn().mockReturnValue({
+                        where: vi.fn().mockReturnValue({
+                            returning: vi.fn().mockResolvedValue([{
+                                id: 91,
+                                contentTypeId: 7,
+                                version: 3,
+                                status: 'draft'
+                            }])
+                        })
+                    })
+                })
+            } as unknown as typeof mocks.dbMock;
+
+            return callback(tx);
+        });
+
+        const issued = issuePublicWriteToken({
+            domainId: 1,
+            contentTypeId: 7,
+            subjectField: 'sessionId',
+            subject: 'session-123',
+            allowedOperations: ['update'],
+            requiredStatus: 'draft'
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/public/content-items/91',
+                headers: {
+                    authorization: `Bearer ${issued.token}`
+                },
+                payload: {
+                    data: {
+                        sessionId: 'session-123',
+                        body: 'after'
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toMatchObject({
+                data: {
+                    id: 91,
+                    contentTypeId: 7,
+                    version: 3,
+                    status: 'draft'
+                }
+            });
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'update',
+                'content_item',
+                91,
+                expect.objectContaining({
+                    publicWrite: true,
+                    subjectField: 'sessionId',
+                    subject: 'session-123'
+                }),
+                expect.objectContaining({
+                    actorId: 'public_write:7:session-123'
+                }),
+                expect.any(String)
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('locks the public write lane once lifecycle-managed content auto-archives', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+        process.env.PUBLIC_WRITE_SECRET = 'public-write-secret';
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 91,
+                        domainId: 1,
+                        contentTypeId: 7,
+                        data: JSON.stringify({
+                            sessionId: 'session-123',
+                            body: 'before'
+                        }),
+                        status: 'draft',
+                        version: 2,
+                        createdAt: new Date('2026-03-16T11:00:00.000Z'),
+                        updatedAt: new Date('2026-03-16T11:00:00.000Z')
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        domainId: 1,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                sessionId: { type: 'string' },
+                                body: { type: 'string' }
+                            },
+                            required: ['sessionId', 'body'],
+                            'x-wordclaw-public-write': {
+                                enabled: true,
+                                subjectField: 'sessionId',
+                                allowedOperations: ['create', 'update'],
+                                requiredStatus: 'draft'
+                            },
+                            'x-wordclaw-lifecycle': {
+                                ttlSeconds: 60
+                            }
+                        })
+                    }]),
+                }),
+            }));
+
+        mocks.dbMock.transaction.mockImplementation(async (callback: (tx: typeof mocks.dbMock) => Promise<unknown>) => {
+            const tx = {
+                insert: vi.fn().mockReturnValue({
+                    values: vi.fn().mockResolvedValue(undefined)
+                }),
+                update: vi.fn().mockReturnValue({
+                    set: vi.fn().mockReturnValue({
+                        where: vi.fn().mockReturnValue({
+                            returning: vi.fn().mockResolvedValue([{
+                                id: 91,
+                                domainId: 1,
+                                contentTypeId: 7,
+                                data: JSON.stringify({
+                                    sessionId: 'session-123',
+                                    body: 'before'
+                                }),
+                                status: 'archived',
+                                version: 3,
+                                createdAt: new Date('2026-03-16T11:00:00.000Z'),
+                                updatedAt: new Date('2026-03-16T12:00:00.000Z')
+                            }])
+                        })
+                    })
+                })
+            } as unknown as typeof mocks.dbMock;
+
+            return callback(tx);
+        });
+
+        const issued = issuePublicWriteToken({
+            domainId: 1,
+            contentTypeId: 7,
+            subjectField: 'sessionId',
+            subject: 'session-123',
+            allowedOperations: ['update'],
+            requiredStatus: 'draft'
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/public/content-items/91',
+                headers: {
+                    authorization: `Bearer ${issued.token}`
+                },
+                payload: {
+                    data: {
+                        sessionId: 'session-123',
+                        body: 'after'
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(409);
+            expect(response.json()).toMatchObject({
+                code: 'PUBLIC_WRITE_STATUS_LOCKED'
+            });
+            expect(mocks.dbMock.transaction).toHaveBeenCalledTimes(1);
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns INVALID_CREATED_AFTER for malformed content-item filter date', async () => {
         const app = await buildServer();
 
@@ -2221,6 +2752,53 @@ describe('API Route Contracts', () => {
             expect(response.statusCode).toBe(400);
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('INVALID_CREATED_AFTER');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_ITEMS_FIELD_QUERY_REQUIRES_CONTENT_TYPE for field filters without contentTypeId', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?fieldName=enabled&fieldValue=true'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_ITEMS_FIELD_QUERY_REQUIRES_CONTENT_TYPE');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_ITEMS_FIELD_FILTER_FIELD_UNKNOWN for unsupported schema field filters', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            enabled: { type: 'boolean' }
+                        }
+                    })
+                }])
+            })
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?contentTypeId=7&fieldName=missingField&fieldValue=true'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_ITEMS_FIELD_FILTER_FIELD_UNKNOWN');
         } finally {
             await app.close();
         }
@@ -2249,6 +2827,18 @@ describe('API Route Contracts', () => {
         const whereMock = vi.fn(() => ({ orderBy: orderByMock }));
 
         mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                title: { type: 'string' }
+                            }
+                        })
+                    }])
+                }),
+            }))
             .mockImplementationOnce(() => ({
                 from: () => ({
                     where: countWhereMock
@@ -2334,6 +2924,18 @@ describe('API Route Contracts', () => {
         mocks.dbMock.select
             .mockImplementationOnce(() => ({
                 from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                title: { type: 'string' }
+                            }
+                        })
+                    }])
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
                     where: countWhereMock
                 }),
             }))
@@ -2390,6 +2992,99 @@ describe('API Route Contracts', () => {
             expect(response.statusCode).toBe(400);
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('INVALID_CONTENT_ITEMS_CURSOR');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns grouped content projections for leaderboard-style views', async () => {
+        const app = await buildServer();
+        const limitMock = vi.fn().mockResolvedValue([
+            { group: 'chronomancer', value: 18.5, count: 2 },
+            { group: 'ranger', value: 11.25, count: 4 }
+        ]);
+        const orderByMock = vi.fn(() => ({ limit: limitMock }));
+        const groupByMock = vi.fn(() => ({ orderBy: orderByMock }));
+        const whereMock = vi.fn(() => ({ groupBy: groupByMock }));
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                characterClass: { type: 'string' },
+                                score: { type: 'integer' }
+                            }
+                        })
+                    }])
+                })
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: whereMock
+                })
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items/projections?contentTypeId=7&groupBy=characterClass&metric=avg&metricField=score&limit=10'
+            });
+
+            expect(response.statusCode).toBe(200);
+
+            const body = response.json() as {
+                data: Array<{ group: string; value: number; count: number }>;
+                meta: Record<string, unknown>;
+            };
+
+            expect(body.data).toEqual([
+                { group: 'chronomancer', value: 18.5, count: 2 },
+                { group: 'ranger', value: 11.25, count: 4 }
+            ]);
+            expect(body.meta).toMatchObject({
+                contentTypeId: 7,
+                groupBy: 'characterClass',
+                metric: 'avg',
+                metricField: 'score',
+                orderBy: 'value',
+                orderDir: 'desc',
+                limit: 10
+            });
+            expect(limitMock).toHaveBeenCalledWith(10);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_ITEMS_PROJECTION_METRIC_FIELD_REQUIRED for numeric projection metrics without metricField', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            characterClass: { type: 'string' },
+                            score: { type: 'integer' }
+                        }
+                    })
+                }])
+            })
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items/projections?contentTypeId=7&groupBy=characterClass&metric=avg'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_ITEMS_PROJECTION_METRIC_FIELD_REQUIRED');
         } finally {
             await app.close();
         }

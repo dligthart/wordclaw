@@ -154,6 +154,16 @@ export const schema = `
     createdAt: String
   }
 
+  """A grouped read-model bucket derived from content items."""
+  type ContentProjectionBucket {
+    """Scalar group key from the projected schema field."""
+    group: JSON
+    """Computed metric value for the bucket."""
+    value: Float!
+    """Underlying item count that contributed to the bucket."""
+    count: Int!
+  }
+
   """An audit event emitted by content or policy operations."""
   type AuditLog {
     """Stable numeric identifier."""
@@ -348,10 +358,32 @@ ${agentRunTypeDefs}
       status: String,
       createdAfter: String,
       createdBefore: String,
+      fieldName: String,
+      fieldOp: String,
+      fieldValue: String,
+      sortField: String,
+      includeArchived: Boolean,
       limit: Int = 50,
       offset: Int = 0,
       cursor: String
     ): [ContentItem!]!
+    """Build grouped read-model buckets from content items for analytics or leaderboard-style views."""
+    contentItemProjection(
+      contentTypeId: ID!,
+      status: String,
+      createdAfter: String,
+      createdBefore: String,
+      fieldName: String,
+      fieldOp: String,
+      fieldValue: String,
+      groupBy: String!,
+      metric: String = "count",
+      metricField: String,
+      orderBy: String = "value",
+      orderDir: String = "desc",
+      includeArchived: Boolean,
+      limit: Int = 50
+    ): [ContentProjectionBucket!]!
     """Get one content item by id."""
     contentItem(id: ID!): ContentItem
     """List historical versions for a content item."""

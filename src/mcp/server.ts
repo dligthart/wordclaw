@@ -38,7 +38,13 @@ import { buildL402Guide } from '../cli/lib/l402-guide.js';
 import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { issueSignedAssetAccess } from '../services/asset-access.js';
-import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
+import {
+    ContentItemListError,
+    ContentItemProjectionError,
+    listContentItems,
+    projectContentItems
+} from '../services/content-item.service.js';
+import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import {
     canSubscribeToReactiveTopic,
@@ -1623,17 +1629,27 @@ server.tool(
         status: z.string().optional().describe('Filter by status'),
         createdAfter: z.string().optional().describe('ISO-8601 created-at lower bound'),
         createdBefore: z.string().optional().describe('ISO-8601 created-at upper bound'),
+        fieldName: z.string().optional().describe('Top-level scalar field from the selected content type schema'),
+        fieldOp: z.enum(['eq', 'contains', 'gte', 'lte']).optional().describe('Comparison operator for fieldName (default eq)'),
+        fieldValue: z.string().optional().describe('Filter value for fieldName'),
+        sortField: z.string().optional().describe('Top-level scalar field from the selected content type schema to sort by'),
+        includeArchived: z.boolean().optional().describe('Include lifecycle-archived items when the content type defines x-wordclaw-lifecycle'),
         limit: z.number().optional().describe('Page size (default 50, max 500)'),
         offset: z.number().optional().describe('Row offset (default 0)'),
         cursor: z.string().optional().describe('Cursor returned by a previous get_content_items page')
     },
-    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, createdAfter, createdBefore, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, createdAfter, createdBefore, fieldName, fieldOp, fieldValue, sortField, includeArchived, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
         try {
             const result = await listContentItems(domainId, {
                 contentTypeId,
                 status,
                 createdAfter: parseDateArg(createdAfter, 'createdAfter'),
                 createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                fieldName,
+                fieldOp,
+                fieldValue,
+                sortField,
+                includeArchived,
                 limit: clampLimit(rawLimit),
                 offset: cursor ? rawOffset : clampOffset(rawOffset),
                 cursor,
@@ -1659,6 +1675,78 @@ server.tool(
 );
 
 server.tool(
+    'project_content_items',
+    'Build grouped content projections for leaderboard and analytics-style views',
+    {
+        contentTypeId: z.number().describe('Target content type ID'),
+        status: z.string().optional().describe('Filter by status'),
+        createdAfter: z.string().optional().describe('ISO-8601 created-at lower bound'),
+        createdBefore: z.string().optional().describe('ISO-8601 created-at upper bound'),
+        fieldName: z.string().optional().describe('Top-level scalar field from the selected content type schema'),
+        fieldOp: z.enum(['eq', 'contains', 'gte', 'lte']).optional().describe('Comparison operator for fieldName (default eq)'),
+        fieldValue: z.string().optional().describe('Filter value for fieldName'),
+        groupBy: z.string().describe('Top-level scalar field from the selected content type schema to group by'),
+        metric: z.enum(['count', 'sum', 'avg', 'min', 'max']).optional().describe('Projection metric (default count)'),
+        metricField: z.string().optional().describe('Numeric top-level scalar field used by sum, avg, min, or max'),
+        orderBy: z.enum(['value', 'group']).optional().describe('Sort grouped buckets by metric value or group label'),
+        orderDir: z.enum(['asc', 'desc']).optional().describe('Projection sort direction (default desc)'),
+        includeArchived: z.boolean().optional().describe('Include lifecycle-archived items when the content type defines x-wordclaw-lifecycle'),
+        limit: z.number().optional().describe('Bucket limit (default 50, max 500)')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({
+        contentTypeId,
+        status,
+        createdAfter,
+        createdBefore,
+        fieldName,
+        fieldOp,
+        fieldValue,
+        groupBy,
+        metric,
+        metricField,
+        orderBy,
+        orderDir,
+        includeArchived,
+        limit: rawLimit
+    }, extra, domainId) => {
+        try {
+            const result = await projectContentItems(domainId, {
+                contentTypeId,
+                status,
+                createdAfter: parseDateArg(createdAfter, 'createdAfter'),
+                createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                fieldName,
+                fieldOp,
+                fieldValue,
+                groupBy,
+                metric,
+                metricField,
+                orderBy,
+                orderDir,
+                includeArchived,
+                limit: clampLimit(rawLimit)
+            });
+
+            return okJson({
+                buckets: result.buckets,
+                contentTypeId: result.contentTypeId,
+                groupBy: result.groupBy,
+                metric: result.metric,
+                metricField: result.metricField,
+                orderBy: result.orderBy,
+                orderDir: result.orderDir,
+                limit: result.limit
+            });
+        } catch (error) {
+            if (error instanceof ContentItemProjectionError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
+            return err(`Error projecting content items: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
     'get_content_item',
     'Get a single content item by ID',
     {
@@ -1667,7 +1755,8 @@ server.tool(
     withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, extra, domainId) => {
         const [row] = await db.select({
             item: contentItems,
-            basePrice: contentTypes.basePrice
+            basePrice: contentTypes.basePrice,
+            schema: contentTypes.schema
         })
             .from(contentItems)
             .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
@@ -1681,7 +1770,7 @@ server.tool(
             return err('PAYMENT_REQUIRED: This content item is paywalled. You must use the REST API /api/content-items/:id to fulfill the L402 payment challenge.');
         }
 
-        return okJson(row.item);
+        return okJson(await ensureContentItemLifecycleState(row.item, row.schema));
     }
     ));
 

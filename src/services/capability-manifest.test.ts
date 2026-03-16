@@ -122,6 +122,45 @@ describe('buildCapabilityManifest', () => {
                 enabled: true,
             }),
         ]));
+        expect(manifest.contentRuntime).toEqual(expect.objectContaining({
+            enabled: true,
+            fieldAwareQueries: expect.objectContaining({
+                supported: true,
+                requiresContentTypeId: true,
+                queryableFieldKinds: ['string', 'number', 'boolean'],
+                filterOperators: ['eq', 'contains', 'gte', 'lte'],
+                restPath: '/api/content-items',
+                mcpTool: 'get_content_items',
+                graphqlField: 'contentItems',
+            }),
+            projections: expect.objectContaining({
+                supported: true,
+                requiresContentTypeId: true,
+                groupByMode: 'single-field',
+                groupableFieldKinds: ['string', 'number', 'boolean'],
+                metrics: ['count', 'sum', 'avg', 'min', 'max'],
+                restPath: '/api/content-items/projections',
+                mcpTool: 'project_content_items',
+                graphqlField: 'contentItemProjection',
+            }),
+            publicWriteLane: expect.objectContaining({
+                supported: true,
+                requiresSchemaPolicy: true,
+                issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                createPath: '/api/public/content-types/:id/items',
+                updatePath: '/api/public/content-items/:id',
+                tokenHeader: 'x-public-write-token',
+            }),
+            lifecycle: expect.objectContaining({
+                supported: true,
+                requiresSchemaPolicy: true,
+                triggerMode: 'lazy-on-touch',
+                schemaExtension: 'x-wordclaw-lifecycle',
+                defaultClock: 'updatedAt',
+                defaultArchiveStatus: 'archived',
+                includeArchivedFlag: 'includeArchived',
+            }),
+        }));
         expect(manifest.assetStorage).toEqual(expect.objectContaining({
             enabled: true,
             configuredProvider: 'local',
@@ -283,6 +322,9 @@ describe('buildCapabilityManifest', () => {
         ).toBe(true);
         expect(
             manifest.capabilities.some((capability) => capability.id === 'create_asset'),
+        ).toBe(true);
+        expect(
+            manifest.capabilities.some((capability) => capability.id === 'project_content_items'),
         ).toBe(true);
     });
 

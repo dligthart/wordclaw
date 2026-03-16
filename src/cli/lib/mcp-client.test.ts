@@ -136,6 +136,20 @@ describe('WordClawMcpClient over HTTP', () => {
                     enabled: true,
                 }),
             ]),
+            contentRuntime: expect.objectContaining({
+                fieldAwareQueries: expect.objectContaining({
+                    supported: true,
+                    restPath: '/api/content-items',
+                    mcpTool: 'get_content_items',
+                    graphqlField: 'contentItems',
+                }),
+                projections: expect.objectContaining({
+                    supported: true,
+                    restPath: '/api/content-items/projections',
+                    mcpTool: 'project_content_items',
+                    graphqlField: 'contentItemProjection',
+                }),
+            }),
             protocolSurfaces: expect.objectContaining({
                 mcp: expect.objectContaining({
                     endpoint: '/mcp',
@@ -190,6 +204,12 @@ describe('WordClawMcpClient over HTTP', () => {
             checks: expect.objectContaining({
                 database: expect.objectContaining({
                     status: expect.any(String),
+                }),
+                contentRuntime: expect.objectContaining({
+                    status: expect.any(String),
+                    projections: expect.objectContaining({
+                        supported: true,
+                    }),
                 }),
             }),
         }));

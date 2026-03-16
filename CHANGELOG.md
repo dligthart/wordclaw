@@ -1,3 +1,59 @@
+# [1.32.0](https://github.com/dligthart/wordclaw/compare/v1.31.0...v1.32.0) (2026-03-16)
+
+
+### Features
+
+* **ui:** surface content runtime query controls ([fe86a49](https://github.com/dligthart/wordclaw/commit/fe86a49ad85e6c2ac4396154741f54d4f54b081e))
+
+# [1.31.0](https://github.com/dligthart/wordclaw/compare/v1.30.0...v1.31.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add ttl-based lifecycle archival ([04da18e](https://github.com/dligthart/wordclaw/commit/04da18eece3aaad085ca0726b33aa0b1045d2b64))
+
+# [1.30.0](https://github.com/dligthart/wordclaw/compare/v1.29.0...v1.30.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add public write lanes ([2577ead](https://github.com/dligthart/wordclaw/commit/2577ead60e9455a1dbfd7bfe60c0889760137a05))
+
+# [1.29.0](https://github.com/dligthart/wordclaw/compare/v1.28.0...v1.29.0) (2026-03-16)
+
+
+### Features
+
+* **capabilities:** expose content runtime query contract ([24adcdd](https://github.com/dligthart/wordclaw/commit/24adcdd0a077ae34b5b4eb83e007efd2af89d2bb))
+
+# [1.28.0](https://github.com/dligthart/wordclaw/compare/v1.27.0...v1.28.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add grouped content projections ([e004907](https://github.com/dligthart/wordclaw/commit/e0049079a7a3f4854e1750c8ba87bb86742b37b8))
+
+# [1.27.0](https://github.com/dligthart/wordclaw/compare/v1.26.0...v1.27.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add schema-aware content field queries ([c80ef7b](https://github.com/dligthart/wordclaw/commit/c80ef7b4716a717dd33ffb183afac865a62686aa))
+
+# [1.26.0](https://github.com/dligthart/wordclaw/compare/v1.25.0...v1.26.0) (2026-03-16)
+
+
+### Features
+
+* **content:** add schema-aware content references ([1b326e8](https://github.com/dligthart/wordclaw/commit/1b326e8cf34c8ea78a066fe4c41a00b5574bbfe3))
+
+# [1.25.0](https://github.com/dligthart/wordclaw/compare/v1.24.0...v1.25.0) (2026-03-16)
+
+
+### Features
+
+* **adventure-game:** organize images into session-specific folders ([e65900a](https://github.com/dligthart/wordclaw/commit/e65900a6b5afa530994b81e13f1b6bbdecb0d0c4))
+
 # [1.24.0](https://github.com/dligthart/wordclaw/compare/v1.23.0...v1.24.0) (2026-03-16)
 
 

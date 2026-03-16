@@ -13,7 +13,13 @@ import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
-import { ContentItemListError, listContentItems } from '../services/content-item.service.js';
+import {
+    ContentItemListError,
+    ContentItemProjectionError,
+    listContentItems,
+    projectContentItems
+} from '../services/content-item.service.js';
+import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 import { toAuditActor, type AuditActor } from '../services/actor-identity.js';
 
@@ -267,9 +273,30 @@ type OptionalContentTypeArg = {
     status?: string;
     createdAfter?: string;
     createdBefore?: string;
+    fieldName?: string;
+    fieldOp?: string;
+    fieldValue?: string;
+    sortField?: string;
+    includeArchived?: boolean;
     limit?: number;
     offset?: number;
     cursor?: string;
+};
+type ContentProjectionArgs = {
+    contentTypeId: IdValue;
+    status?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+    fieldName?: string;
+    fieldOp?: string;
+    fieldValue?: string;
+    groupBy: string;
+    metric?: string;
+    metricField?: string;
+    orderBy?: string;
+    orderDir?: string;
+    includeArchived?: boolean;
+    limit?: number;
 };
 type ContentTypesArgs = {
     limit?: number;
@@ -899,6 +926,11 @@ export const resolvers = {
             status,
             createdAfter,
             createdBefore,
+            fieldName,
+            fieldOp,
+            fieldValue,
+            sortField,
+            includeArchived,
             limit: rawLimit,
             offset: rawOffset,
             cursor
@@ -910,6 +942,11 @@ export const resolvers = {
                     status,
                     createdAfter: parseDateArg(createdAfter, 'createdAfter'),
                     createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                    fieldName,
+                    fieldOp: fieldOp as 'eq' | 'contains' | 'gte' | 'lte' | undefined,
+                    fieldValue,
+                    sortField,
+                    includeArchived,
                     limit: clampLimit(rawLimit),
                     offset: cursor ? rawOffset : clampOffset(rawOffset),
                     cursor
@@ -924,11 +961,55 @@ export const resolvers = {
             }
         }),
 
+        contentItemProjection: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, {
+            contentTypeId,
+            status,
+            createdAfter,
+            createdBefore,
+            fieldName,
+            fieldOp,
+            fieldValue,
+            groupBy,
+            metric,
+            metricField,
+            orderBy,
+            orderDir,
+            includeArchived,
+            limit: rawLimit
+        }: ContentProjectionArgs, context: unknown) => {
+            try {
+                const result = await projectContentItems(getDomainId(context), {
+                    contentTypeId: parseId(contentTypeId, 'contentTypeId'),
+                    status,
+                    createdAfter: parseDateArg(createdAfter, 'createdAfter'),
+                    createdBefore: parseDateArg(createdBefore, 'createdBefore'),
+                    fieldName,
+                    fieldOp: fieldOp as 'eq' | 'contains' | 'gte' | 'lte' | undefined,
+                    fieldValue,
+                    groupBy,
+                    metric: metric as 'count' | 'sum' | 'avg' | 'min' | 'max' | undefined,
+                    metricField,
+                    orderBy: orderBy as 'value' | 'group' | undefined,
+                    orderDir: orderDir as 'asc' | 'desc' | undefined,
+                    includeArchived,
+                    limit: clampLimit(rawLimit)
+                });
+
+                return result.buckets;
+            } catch (error) {
+                if (error instanceof ContentItemProjectionError) {
+                    throw toError(error.message, error.code, error.remediation);
+                }
+                throw error;
+            }
+        }),
+
         contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
             const numericId = parseId(id);
             const [row] = await db.select({
                 item: contentItems,
-                basePrice: contentTypes.basePrice
+                basePrice: contentTypes.basePrice,
+                schema: contentTypes.schema
             })
                 .from(contentItems)
                 .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
@@ -942,7 +1023,7 @@ export const resolvers = {
                     'This content item is paywalled. You must use the REST API /api/content-items/:id to fulfill the L402 payment challenge.'
                 );
             }
-            return row.item;
+            return ensureContentItemLifecycleState(row.item, row.schema);
         }),
 
         contentItemVersions: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {

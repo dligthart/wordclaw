@@ -88,7 +88,7 @@ const AUDIT_SUBCOMMANDS = ['list', 'guide'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
-const CONTENT_SUBCOMMANDS = ['list', 'guide', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
+const CONTENT_SUBCOMMANDS = ['list', 'project', 'guide', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
 const ASSETS_SUBCOMMANDS = ['list', 'get', 'create', 'offers', 'access', 'delete', 'restore', 'purge'] as const;
 const WORKFLOW_SUBCOMMANDS = ['active', 'guide', 'submit', 'tasks', 'decide'] as const;
 const L402_SUBCOMMANDS = ['offers', 'guide', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
@@ -1020,11 +1020,52 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
                 q: getStringFlag(args, 'q'),
                 createdAfter: getStringFlag(args, 'created-after'),
                 createdBefore: getStringFlag(args, 'created-before'),
+                fieldName: getStringFlag(args, 'field-name'),
+                fieldOp: getStringFlag(args, 'field-op'),
+                fieldValue: getStringFlag(args, 'field-value'),
+                sortField: getStringFlag(args, 'sort-field'),
                 sortBy: getStringFlag(args, 'sort-by'),
                 sortDir: getStringFlag(args, 'sort-dir'),
+                includeArchived: hasFlag(args, 'include-archived') ? true : undefined,
                 limit: maybeNumber(getNumberFlag(args, 'limit')),
                 offset: getStringFlag(args, 'cursor') ? undefined : maybeNumber(getNumberFlag(args, 'offset')),
                 cursor: getStringFlag(args, 'cursor'),
+            },
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'project') {
+        const contentTypeId = getNumberFlag(args, 'content-type-id');
+        const groupBy = getStringFlag(args, 'group-by');
+
+        if (contentTypeId === undefined) {
+            throw new Error('content project requires --content-type-id.');
+        }
+
+        if (!groupBy) {
+            throw new Error('content project requires --group-by.');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: '/content-items/projections',
+            query: {
+                contentTypeId,
+                status: getStringFlag(args, 'status'),
+                createdAfter: getStringFlag(args, 'created-after'),
+                createdBefore: getStringFlag(args, 'created-before'),
+                fieldName: getStringFlag(args, 'field-name'),
+                fieldOp: getStringFlag(args, 'field-op'),
+                fieldValue: getStringFlag(args, 'field-value'),
+                groupBy,
+                metric: getStringFlag(args, 'metric'),
+                metricField: getStringFlag(args, 'metric-field'),
+                orderBy: getStringFlag(args, 'order-by'),
+                orderDir: getStringFlag(args, 'order-dir'),
+                includeArchived: hasFlag(args, 'include-archived') ? true : undefined,
+                limit: maybeNumber(getNumberFlag(args, 'limit')),
             },
         });
         printResponse(args, response);

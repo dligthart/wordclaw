@@ -2736,6 +2736,10 @@ paths:
             enum:
               - asc
               - desc
+        - type: boolean
+          required: false
+          in: query
+          name: includeArchived
         - minimum: 1
           maximum: 500
           type: number
@@ -3181,6 +3185,147 @@ paths:
                 type: string
               context: {}
         "503":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - error
+              - code
+              - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  /api/content-items/projections:
+    get:
+      parameters:
+        - type: number
+          required: true
+          in: query
+          name: contentTypeId
+        - type: string
+          required: true
+          in: query
+          name: groupBy
+        - type: string
+          required: false
+          in: query
+          name: status
+        - type: string
+          required: false
+          in: query
+          name: createdAfter
+        - type: string
+          required: false
+          in: query
+          name: createdBefore
+        - type: string
+          required: false
+          in: query
+          name: fieldName
+        - type: string
+          required: false
+          in: query
+          name: fieldOp
+        - type: string
+          required: false
+          in: query
+          name: fieldValue
+        - type: string
+          required: false
+          in: query
+          name: metric
+        - type: string
+          required: false
+          in: query
+          name: metricField
+        - type: string
+          required: false
+          in: query
+          name: orderBy
+        - type: string
+          required: false
+          in: query
+          name: orderDir
+        - type: boolean
+          required: false
+          in: query
+          name: includeArchived
+        - type: number
+          required: false
+          in: query
+          name: limit
+      responses:
+        "200":
+          description: Default Response
+          schema:
+            type: object
+            required:
+              - data
+              - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - value
+                    - count
+                  properties:
+                    group:
+                      type:
+                        - string
+                        - number
+                        - boolean
+                        - "null"
+                    value:
+                      type: number
+                    count:
+                      type: number
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                  - availableActions
+                  - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - low
+                      - type: string
+                        enum:
+                          - medium
+                      - type: string
+                        enum:
+                          - high
+                      - type: string
+                        enum:
+                          - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        "400":
           description: Default Response
           schema:
             type: object
