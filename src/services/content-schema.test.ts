@@ -16,7 +16,13 @@ vi.mock('../db/index.js', () => ({
     db: mocks.dbMock
 }));
 
-import { listQueryableContentFields, validateContentDataAgainstSchema, validateContentTypeSchema } from './content-schema.js';
+import {
+    getPublicWriteSchemaConfig,
+    getPublicWriteSubjectValue,
+    listQueryableContentFields,
+    validateContentDataAgainstSchema,
+    validateContentTypeSchema
+} from './content-schema.js';
 
 type LookupState = {
     assets?: Array<{ id: number }>;
@@ -153,6 +159,51 @@ describe('validateContentTypeSchema', () => {
             { name: 'enabled', type: 'boolean' }
         ]);
     });
+
+    it('accepts a valid top-level public-write extension', () => {
+        const schemaText = JSON.stringify({
+            type: 'object',
+            properties: {
+                sessionId: { type: 'string' },
+                body: { type: 'string' }
+            },
+            required: ['sessionId', 'body'],
+            'x-wordclaw-public-write': {
+                enabled: true,
+                subjectField: 'sessionId',
+                allowedOperations: ['create', 'update'],
+                requiredStatus: 'draft'
+            }
+        });
+
+        expect(validateContentTypeSchema(schemaText)).toBeNull();
+        expect(getPublicWriteSchemaConfig(schemaText)).toEqual({
+            enabled: true,
+            subjectField: 'sessionId',
+            allowedOperations: ['create', 'update'],
+            requiredStatus: 'draft'
+        });
+    });
+
+    it('rejects malformed public-write schema extensions', () => {
+        const failure = validateContentTypeSchema(JSON.stringify({
+            type: 'object',
+            properties: {
+                sessionId: { type: 'integer' },
+                body: { type: 'string' }
+            },
+            required: ['body'],
+            'x-wordclaw-public-write': {
+                enabled: true,
+                subjectField: 'sessionId',
+                allowedOperations: ['create', 'delete']
+            }
+        }));
+
+        expect(failure).toMatchObject({
+            code: 'INVALID_CONTENT_SCHEMA_PUBLIC_WRITE_EXTENSION'
+        });
+    });
 });
 
 describe('validateContentDataAgainstSchema', () => {
@@ -191,6 +242,27 @@ describe('validateContentDataAgainstSchema', () => {
 
         expect(failure).toBeNull();
         expect(mocks.dbMock.select).toHaveBeenCalledTimes(1);
+    });
+
+    it('extracts the configured public-write subject from content data', async () => {
+        const schemaText = JSON.stringify({
+            type: 'object',
+            properties: {
+                sessionId: { type: 'string' },
+                body: { type: 'string' }
+            },
+            required: ['sessionId', 'body'],
+            'x-wordclaw-public-write': {
+                enabled: true,
+                subjectField: 'sessionId',
+                allowedOperations: ['create', 'update']
+            }
+        });
+
+        expect(getPublicWriteSubjectValue(schemaText, JSON.stringify({
+            sessionId: 'session-123',
+            body: 'savepoint'
+        }))).toBe('session-123');
     });
 
     it('rejects missing or cross-domain asset references', async () => {

@@ -38,6 +38,14 @@ export type DeploymentStatusSnapshot = {
                 metrics: string[];
                 requiresContentTypeId: boolean;
             };
+            publicWriteLane: {
+                supported: boolean;
+                issueTokenPath: string;
+                createPath: string;
+                updatePath: string;
+                tokenHeader: string;
+                requiresSchemaPolicy: boolean;
+            };
             note: string;
         };
         mcp: {
@@ -208,7 +216,15 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                     metrics: [...manifest.contentRuntime.projections.metrics],
                     requiresContentTypeId: manifest.contentRuntime.projections.requiresContentTypeId,
                 },
-                note: 'Content runtime supports schema-aware field queries and grouped projections for lightweight leaderboard and analytics-style views.',
+                publicWriteLane: {
+                    supported: manifest.contentRuntime.publicWriteLane.supported,
+                    issueTokenPath: manifest.contentRuntime.publicWriteLane.issueTokenPath,
+                    createPath: manifest.contentRuntime.publicWriteLane.createPath,
+                    updatePath: manifest.contentRuntime.publicWriteLane.updatePath,
+                    tokenHeader: manifest.contentRuntime.publicWriteLane.tokenHeader,
+                    requiresSchemaPolicy: manifest.contentRuntime.publicWriteLane.requiresSchemaPolicy,
+                },
+                note: 'Content runtime supports schema-aware field queries, grouped projections, and bounded public write lanes for session-like content.',
             },
             mcp: {
                 status: 'ready',

@@ -11,7 +11,15 @@ import {
     isExperimentalDelegationEnabled,
     isExperimentalRevenueEnabled
 } from '../config/runtime-features.js';
-import { validateContentDataAgainstSchema, validateContentTypeSchema, ValidationFailure, redactPremiumFields } from '../services/content-schema.js';
+import {
+    getPublicWriteSchemaConfig,
+    getPublicWriteSubjectValue,
+    type PublicWriteOperation,
+    validateContentDataAgainstSchema,
+    validateContentTypeSchema,
+    ValidationFailure,
+    redactPremiumFields
+} from '../services/content-schema.js';
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authenticateApiRequest, authorizeApiRequest, getDomainId } from './auth.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
@@ -62,6 +70,7 @@ import {
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
 import { getDeploymentStatusSnapshot } from '../services/deployment-status.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
+import { issuePublicWriteToken, verifyPublicWriteToken } from '../services/public-write.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -120,6 +129,14 @@ type CreateAssetBody = {
 };
 type CreateAssetMultipartBody = Omit<CreateAssetBody, 'contentBase64'> & {
     contentBytes: Buffer;
+};
+type PublicWriteTokenIssueBody = {
+    subject: string;
+    ttlSeconds?: number;
+    operations?: PublicWriteOperation[];
+};
+type PublicWriteBody = {
+    data: string | Record<string, unknown>;
 };
 type PaginationQuery = {
     limit?: number;
@@ -190,6 +207,41 @@ function toAssetErrorPayload(error: AssetListError): AIErrorPayload {
         remediation: error.remediation,
         ...(error.context ? { context: error.context } : {})
     };
+}
+
+function parsePublicWriteToken(headers: FastifyRequest['headers']): string | null {
+    const directHeader = headers['x-public-write-token'];
+    if (typeof directHeader === 'string' && directHeader.trim().length > 0) {
+        return directHeader.trim();
+    }
+
+    const authorization = headers.authorization;
+    if (typeof authorization !== 'string') {
+        return null;
+    }
+
+    const [scheme, token] = authorization.split(' ');
+    if (scheme?.toLowerCase() === 'bearer' && token?.trim().length) {
+        return token.trim();
+    }
+
+    return null;
+}
+
+function buildPublicWriteActor(contentTypeId: number, subject: string): AuditActor {
+    return {
+        actorId: `public_write:${contentTypeId}:${subject}`,
+        actorType: 'system',
+        actorSource: 'system'
+    };
+}
+
+function normalizePublicWritePayloadData(raw: unknown): string {
+    if (typeof raw === 'string') {
+        return raw;
+    }
+
+    return JSON.stringify(raw);
 }
 
 function parseAssetAccessMode(raw: string): 'public' | 'signed' | 'entitled' {
@@ -1010,6 +1062,10 @@ export default async function apiRoutes(server: FastifyInstance) {
             return undefined;
         }
 
+        if (/^\/api\/public\/content-types\/\d+\/items$/.test(path) || /^\/api\/public\/content-items\/\d+$/.test(path)) {
+            return undefined;
+        }
+
         if (!principal) {
             const auth = await authenticateApiRequest(request.headers);
             if (!auth.ok) {
@@ -1148,6 +1204,18 @@ export default async function apiRoutes(server: FastifyInstance) {
                             mcpTool: Type.String(),
                             graphqlField: Type.String(),
                             cliCommand: Type.String(),
+                            note: Type.String(),
+                        }),
+                        publicWriteLane: Type.Object({
+                            supported: Type.Boolean(),
+                            requiresSchemaPolicy: Type.Boolean(),
+                            issueTokenPath: Type.String(),
+                            createPath: Type.String(),
+                            updatePath: Type.String(),
+                            tokenHeader: Type.String(),
+                            authorizationScheme: Type.String(),
+                            subjectBindingMode: Type.String(),
+                            allowedOperations: Type.Array(Type.String()),
                             note: Type.String(),
                         }),
                     }),
@@ -1328,6 +1396,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 metrics: Type.Array(Type.String()),
                                 requiresContentTypeId: Type.Boolean(),
                             }),
+                            publicWriteLane: Type.Object({
+                                supported: Type.Boolean(),
+                                issueTokenPath: Type.String(),
+                                createPath: Type.String(),
+                                updatePath: Type.String(),
+                                tokenHeader: Type.String(),
+                                requiresSchemaPolicy: Type.Boolean(),
+                            }),
                             note: Type.String(),
                         }),
                         mcp: Type.Object({
@@ -1410,6 +1486,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 graphqlField: Type.String(),
                                 metrics: Type.Array(Type.String()),
                                 requiresContentTypeId: Type.Boolean(),
+                            }),
+                            publicWriteLane: Type.Object({
+                                supported: Type.Boolean(),
+                                issueTokenPath: Type.String(),
+                                createPath: Type.String(),
+                                updatePath: Type.String(),
+                                tokenHeader: Type.String(),
+                                requiresSchemaPolicy: Type.Boolean(),
                             }),
                             note: Type.String(),
                         }),
@@ -2828,6 +2912,111 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
+    server.post('/content-types/:contentTypeId/public-write-tokens', {
+        schema: {
+            params: Type.Object({
+                contentTypeId: Type.Number()
+            }),
+            body: Type.Union([
+                Type.Object({
+                    subject: Type.String({ minLength: 1, maxLength: 256 }),
+                    ttlSeconds: Type.Optional(Type.Number({ minimum: 60, maximum: 86400 })),
+                    operations: Type.Optional(Type.Array(Type.Union([
+                        Type.Literal('create'),
+                        Type.Literal('update')
+                    ]), { minItems: 1 }))
+                }),
+                Type.Null()
+            ]),
+            response: {
+                200: createAIResponse(Type.Object({
+                    token: Type.String(),
+                    contentTypeId: Type.Number(),
+                    subjectField: Type.String(),
+                    subject: Type.String(),
+                    allowedOperations: Type.Array(Type.String()),
+                    requiredStatus: Type.String(),
+                    ttlSeconds: Type.Number(),
+                    expiresAt: Type.String()
+                })),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { contentTypeId } = request.params as { contentTypeId: number };
+        const body = (request.body as PublicWriteTokenIssueBody | null | undefined) ?? undefined;
+        const [contentType] = await db.select().from(contentTypes).where(and(
+            eq(contentTypes.id, contentTypeId),
+            eq(contentTypes.domainId, getDomainId(request))
+        ));
+
+        if (!contentType) {
+            return reply.status(404).send(notFoundContentType(contentTypeId));
+        }
+
+        const publicWriteConfig = getPublicWriteSchemaConfig(contentType.schema);
+        if (!publicWriteConfig) {
+            return reply.status(409).send(toErrorPayload(
+                'Content type public write unavailable',
+                'CONTENT_TYPE_PUBLIC_WRITE_UNAVAILABLE',
+                'Enable x-wordclaw-public-write on the content type schema before issuing public write tokens.'
+            ));
+        }
+
+        const subject = body?.subject?.trim();
+        if (!subject) {
+            return reply.status(400).send(toErrorPayload(
+                'Public write subject required',
+                'PUBLIC_WRITE_SUBJECT_REQUIRED',
+                `Provide a non-empty subject matching the schema field "${publicWriteConfig.subjectField}".`
+            ));
+        }
+
+        const requestedOperations = body?.operations ?? publicWriteConfig.allowedOperations;
+        const unsupportedOperations = requestedOperations.filter((operation) => !publicWriteConfig.allowedOperations.includes(operation));
+        if (unsupportedOperations.length > 0) {
+            return reply.status(400).send(toErrorPayload(
+                'Unsupported public write operation',
+                'PUBLIC_WRITE_OPERATION_UNSUPPORTED',
+                `This content type only allows public ${publicWriteConfig.allowedOperations.join('/')} operations.`
+            ));
+        }
+
+        const issued = issuePublicWriteToken({
+            domainId: getDomainId(request),
+            contentTypeId,
+            subjectField: publicWriteConfig.subjectField,
+            subject,
+            allowedOperations: requestedOperations,
+            requiredStatus: publicWriteConfig.requiredStatus,
+            ttlSeconds: body?.ttlSeconds
+        });
+
+        return {
+            data: {
+                token: issued.token,
+                contentTypeId: issued.contentTypeId,
+                subjectField: issued.subjectField,
+                subject: issued.subject,
+                allowedOperations: issued.allowedOperations,
+                requiredStatus: issued.requiredStatus,
+                ttlSeconds: issued.ttlSeconds,
+                expiresAt: issued.expiresAt.toISOString()
+            },
+            meta: buildMeta(
+                'Use the token on the public content write routes before it expires',
+                [
+                    `POST /api/public/content-types/${contentTypeId}/items`,
+                    'PUT /api/public/content-items/:id'
+                ],
+                'medium',
+                0
+            )
+        };
+    });
+
     server.put('/content-types/:id', {
         schema: {
             querystring: DryRunQuery,
@@ -3654,6 +3843,305 @@ export default async function apiRoutes(server: FastifyInstance) {
     });
 
     const globalL402Middleware = l402Middleware(globalL402Options);
+
+    server.post('/public/content-types/:contentTypeId/items', {
+        schema: {
+            params: Type.Object({
+                contentTypeId: Type.Number()
+            }),
+            body: Type.Object({
+                data: Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })])
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    contentTypeId: Type.Number(),
+                    version: Type.Number(),
+                    status: Type.String()
+                })),
+                400: AIErrorResponse,
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { contentTypeId } = request.params as { contentTypeId: number };
+        const token = parsePublicWriteToken(request.headers);
+        if (!token) {
+            return reply.status(401).send(toErrorPayload(
+                'Missing public write token',
+                'PUBLIC_WRITE_TOKEN_MISSING',
+                'Provide x-public-write-token or Authorization: Bearer <token>.'
+            ));
+        }
+
+        const verification = verifyPublicWriteToken(token, 'create');
+        if (!verification.ok) {
+            const statusCode = verification.code === 'PUBLIC_WRITE_TOKEN_EXPIRED' ? 401 : 403;
+            return reply.status(statusCode).send(toErrorPayload(
+                verification.code === 'PUBLIC_WRITE_TOKEN_EXPIRED' ? 'Public write token expired' : 'Invalid public write token',
+                verification.code,
+                verification.remediation
+            ));
+        }
+
+        if (verification.contentTypeId !== contentTypeId) {
+            return reply.status(403).send(toErrorPayload(
+                'Public write token does not match content type',
+                'PUBLIC_WRITE_TOKEN_CONTENT_TYPE_MISMATCH',
+                'Issue a token for the requested content type before writing through the public lane.'
+            ));
+        }
+
+        const [contentType] = await db.select().from(contentTypes).where(and(
+            eq(contentTypes.id, contentTypeId),
+            eq(contentTypes.domainId, verification.domainId)
+        ));
+
+        if (!contentType) {
+            return reply.status(404).send(notFoundContentType(contentTypeId));
+        }
+
+        const publicWriteConfig = getPublicWriteSchemaConfig(contentType.schema);
+        if (!publicWriteConfig) {
+            return reply.status(409).send(toErrorPayload(
+                'Content type public write unavailable',
+                'CONTENT_TYPE_PUBLIC_WRITE_UNAVAILABLE',
+                'Enable x-wordclaw-public-write on the content type schema before using the public write lane.'
+            ));
+        }
+
+        if (publicWriteConfig.subjectField !== verification.subjectField || publicWriteConfig.requiredStatus !== verification.requiredStatus) {
+            return reply.status(409).send(toErrorPayload(
+                'Public write token is stale',
+                'PUBLIC_WRITE_TOKEN_STALE',
+                'Issue a fresh public write token because the content type public write policy changed.'
+            ));
+        }
+
+        const dataStr = normalizePublicWritePayloadData((request.body as PublicWriteBody).data);
+        const contentValidation = await validateContentDataAgainstSchema(contentType.schema, dataStr, verification.domainId);
+        if (contentValidation) {
+            return reply.status(400).send(fromValidationFailure(contentValidation));
+        }
+
+        const subjectValue = getPublicWriteSubjectValue(contentType.schema, dataStr);
+        if (subjectValue !== verification.subject) {
+            return reply.status(403).send(toErrorPayload(
+                'Public write subject mismatch',
+                'PUBLIC_WRITE_SUBJECT_MISMATCH',
+                `Set ${verification.subjectField} to the issued subject before creating content through the public lane.`
+            ));
+        }
+
+        const [created] = await db.insert(contentItems).values({
+            domainId: verification.domainId,
+            contentTypeId,
+            data: dataStr,
+            status: publicWriteConfig.requiredStatus
+        }).returning();
+
+        await logAudit(
+            verification.domainId,
+            'create',
+            'content_item',
+            created.id,
+            {
+                publicWrite: true,
+                subjectField: verification.subjectField,
+                subject: verification.subject
+            },
+            buildPublicWriteActor(contentTypeId, verification.subject),
+            request.id
+        );
+
+        return reply.status(201).send({
+            data: {
+                id: created.id,
+                contentTypeId: created.contentTypeId,
+                version: created.version,
+                status: created.status
+            },
+            meta: buildMeta(
+                `Continue updating session-bound content item ${created.id}`,
+                ['PUT /api/public/content-items/:id'],
+                'low',
+                0
+            )
+        });
+    });
+
+    server.put('/public/content-items/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                data: Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })])
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    contentTypeId: Type.Number(),
+                    version: Type.Number(),
+                    status: Type.String()
+                })),
+                400: AIErrorResponse,
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const token = parsePublicWriteToken(request.headers);
+        if (!token) {
+            return reply.status(401).send(toErrorPayload(
+                'Missing public write token',
+                'PUBLIC_WRITE_TOKEN_MISSING',
+                'Provide x-public-write-token or Authorization: Bearer <token>.'
+            ));
+        }
+
+        const verification = verifyPublicWriteToken(token, 'update');
+        if (!verification.ok) {
+            const statusCode = verification.code === 'PUBLIC_WRITE_TOKEN_EXPIRED' ? 401 : 403;
+            return reply.status(statusCode).send(toErrorPayload(
+                verification.code === 'PUBLIC_WRITE_TOKEN_EXPIRED' ? 'Public write token expired' : 'Invalid public write token',
+                verification.code,
+                verification.remediation
+            ));
+        }
+
+        const [existing] = await db.select().from(contentItems).where(and(
+            eq(contentItems.id, id),
+            eq(contentItems.domainId, verification.domainId)
+        ));
+        if (!existing) {
+            return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        if (existing.contentTypeId !== verification.contentTypeId) {
+            return reply.status(403).send(toErrorPayload(
+                'Public write token does not match content item type',
+                'PUBLIC_WRITE_TOKEN_CONTENT_TYPE_MISMATCH',
+                'Issue a token for the target content type before updating through the public lane.'
+            ));
+        }
+
+        const [contentType] = await db.select().from(contentTypes).where(and(
+            eq(contentTypes.id, existing.contentTypeId),
+            eq(contentTypes.domainId, verification.domainId)
+        ));
+        if (!contentType) {
+            return reply.status(404).send(notFoundContentType(existing.contentTypeId));
+        }
+
+        const publicWriteConfig = getPublicWriteSchemaConfig(contentType.schema);
+        if (!publicWriteConfig) {
+            return reply.status(409).send(toErrorPayload(
+                'Content type public write unavailable',
+                'CONTENT_TYPE_PUBLIC_WRITE_UNAVAILABLE',
+                'Enable x-wordclaw-public-write on the content type schema before using the public write lane.'
+            ));
+        }
+
+        if (publicWriteConfig.subjectField !== verification.subjectField || publicWriteConfig.requiredStatus !== verification.requiredStatus) {
+            return reply.status(409).send(toErrorPayload(
+                'Public write token is stale',
+                'PUBLIC_WRITE_TOKEN_STALE',
+                'Issue a fresh public write token because the content type public write policy changed.'
+            ));
+        }
+
+        if (existing.status !== publicWriteConfig.requiredStatus) {
+            return reply.status(409).send(toErrorPayload(
+                'Content item is outside the public write lane',
+                'PUBLIC_WRITE_STATUS_LOCKED',
+                `Only ${publicWriteConfig.requiredStatus} items can be updated through this public write lane.`
+            ));
+        }
+
+        const existingSubject = getPublicWriteSubjectValue(contentType.schema, existing.data);
+        if (existingSubject !== verification.subject) {
+            return reply.status(403).send(toErrorPayload(
+                'Public write token does not own this content item',
+                'PUBLIC_WRITE_SUBJECT_MISMATCH',
+                `Use a token bound to ${verification.subjectField}=${existingSubject ?? 'unknown'} or choose the correct session item.`
+            ));
+        }
+
+        const dataStr = normalizePublicWritePayloadData((request.body as PublicWriteBody).data);
+        const contentValidation = await validateContentDataAgainstSchema(contentType.schema, dataStr, verification.domainId);
+        if (contentValidation) {
+            return reply.status(400).send(fromValidationFailure(contentValidation));
+        }
+
+        const updatedSubject = getPublicWriteSubjectValue(contentType.schema, dataStr);
+        if (updatedSubject !== verification.subject) {
+            return reply.status(403).send(toErrorPayload(
+                'Public write subject mismatch',
+                'PUBLIC_WRITE_SUBJECT_MISMATCH',
+                `Set ${verification.subjectField} to the issued subject before updating content through the public lane.`
+            ));
+        }
+
+        const updated = await db.transaction(async (tx) => {
+            await tx.insert(contentItemVersions).values({
+                contentItemId: existing.id,
+                version: existing.version,
+                data: existing.data,
+                status: existing.status,
+                createdAt: existing.updatedAt
+            });
+
+            const [result] = await tx.update(contentItems)
+                .set({
+                    data: dataStr,
+                    version: existing.version + 1,
+                    updatedAt: new Date()
+                })
+                .where(and(
+                    eq(contentItems.id, id),
+                    eq(contentItems.domainId, verification.domainId)
+                ))
+                .returning();
+
+            return result;
+        });
+
+        await logAudit(
+            verification.domainId,
+            'update',
+            'content_item',
+            updated.id,
+            {
+                publicWrite: true,
+                subjectField: verification.subjectField,
+                subject: verification.subject
+            },
+            buildPublicWriteActor(updated.contentTypeId, verification.subject),
+            request.id
+        );
+
+        return {
+            data: {
+                id: updated.id,
+                contentTypeId: updated.contentTypeId,
+                version: updated.version,
+                status: updated.status
+            },
+            meta: buildMeta(
+                `Continue updating session-bound content item ${updated.id}`,
+                ['PUT /api/public/content-items/:id'],
+                'low',
+                0
+            )
+        };
+    });
 
     server.post('/content-items', {
         preHandler: globalL402Middleware,

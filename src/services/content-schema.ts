@@ -21,6 +21,13 @@ const validatorCache = new Map<string, ReturnType<Ajv['compile']>>();
 type JsonObject = Record<string, unknown>;
 type AssetSchemaKind = 'asset' | 'asset-list';
 type ContentSchemaKind = 'content-ref' | 'content-ref-list';
+export type PublicWriteOperation = 'create' | 'update';
+export type PublicWriteSchemaConfig = {
+    enabled: true;
+    subjectField: string;
+    allowedOperations: PublicWriteOperation[];
+    requiredStatus: string;
+};
 export type AssetReference = {
     assetId: number;
     path: string;
@@ -36,6 +43,9 @@ export type QueryableContentField = {
     name: string;
     type: QueryableContentFieldType;
 };
+
+const PUBLIC_WRITE_EXTENSION_KEY = 'x-wordclaw-public-write';
+const PUBLIC_WRITE_EXTENSION_CODE = 'INVALID_CONTENT_SCHEMA_PUBLIC_WRITE_EXTENSION';
 
 function formatAjvErrors(errors: ErrorObject[] | null | undefined): string {
     if (!errors || errors.length === 0) {
@@ -203,9 +213,127 @@ function validateContentReferenceShape(schemaNode: JsonObject, path: string, kin
     return validateContentReferenceShape(schemaNode.items, `${path}/items`, 'content-ref');
 }
 
+function normalizePublicWriteOperations(value: unknown): PublicWriteOperation[] | null {
+    if (value === undefined) {
+        return ['create'];
+    }
+
+    if (!Array.isArray(value) || value.length === 0) {
+        return null;
+    }
+
+    const normalized = value.filter((entry): entry is PublicWriteOperation => entry === 'create' || entry === 'update');
+    if (normalized.length !== value.length) {
+        return null;
+    }
+
+    return [...new Set(normalized)];
+}
+
+function validatePublicWriteExtension(schemaNode: JsonObject, path: string): ValidationFailure | null {
+    const rawConfig = schemaNode[PUBLIC_WRITE_EXTENSION_KEY];
+    if (rawConfig === undefined) {
+        return null;
+    }
+
+    if (!isObject(rawConfig)) {
+        return {
+            error: 'Invalid public-write schema extension',
+            code: PUBLIC_WRITE_EXTENSION_CODE,
+            remediation: 'x-wordclaw-public-write must be an object when declared on a content type schema.',
+            context: {
+                details: `${path}/${PUBLIC_WRITE_EXTENSION_KEY} must be a JSON object.`
+            }
+        };
+    }
+
+    if (rawConfig.enabled === false) {
+        return null;
+    }
+
+    if (schemaNode.type !== 'object' || !isObject(schemaNode.properties)) {
+        return {
+            error: 'Invalid public-write schema extension',
+            code: PUBLIC_WRITE_EXTENSION_CODE,
+            remediation: 'Public write lanes require a top-level object schema with addressable properties.',
+            context: {
+                details: `${path} must declare type "object" with properties before enabling x-wordclaw-public-write.`
+            }
+        };
+    }
+
+    const subjectField = typeof rawConfig.subjectField === 'string' ? rawConfig.subjectField.trim() : '';
+    if (!subjectField) {
+        return {
+            error: 'Invalid public-write schema extension',
+            code: PUBLIC_WRITE_EXTENSION_CODE,
+            remediation: 'Public write lanes must declare subjectField so tokens can bind one session or player subject.',
+            context: {
+                details: `${path}/${PUBLIC_WRITE_EXTENSION_KEY}/subjectField must be a non-empty string.`
+            }
+        };
+    }
+
+    const subjectSchema = schemaNode.properties[subjectField];
+    if (!isObject(subjectSchema) || subjectSchema.type !== 'string') {
+        return {
+            error: 'Invalid public-write schema extension',
+            code: PUBLIC_WRITE_EXTENSION_CODE,
+            remediation: 'subjectField must reference a required top-level string property in the schema.',
+            context: {
+                details: `${path}/properties/${subjectField} must declare type "string".`
+            }
+        };
+    }
+
+    const requiredFields = Array.isArray(schemaNode.required) ? schemaNode.required : [];
+    if (!requiredFields.includes(subjectField)) {
+        return {
+            error: 'Invalid public-write schema extension',
+            code: PUBLIC_WRITE_EXTENSION_CODE,
+            remediation: 'subjectField must also appear in the top-level required list so public writes always bind a subject.',
+            context: {
+                details: `${path}/required must include "${subjectField}".`
+            }
+        };
+    }
+
+    const allowedOperations = normalizePublicWriteOperations(rawConfig.allowedOperations);
+    if (!allowedOperations) {
+        return {
+            error: 'Invalid public-write schema extension',
+            code: PUBLIC_WRITE_EXTENSION_CODE,
+            remediation: 'allowedOperations must be a non-empty array containing only "create" and/or "update".',
+            context: {
+                details: `${path}/${PUBLIC_WRITE_EXTENSION_KEY}/allowedOperations must be a non-empty array of supported operations.`
+            }
+        };
+    }
+
+    if (rawConfig.requiredStatus !== undefined && (typeof rawConfig.requiredStatus !== 'string' || rawConfig.requiredStatus.trim().length === 0)) {
+        return {
+            error: 'Invalid public-write schema extension',
+            code: PUBLIC_WRITE_EXTENSION_CODE,
+            remediation: 'requiredStatus must be a non-empty string when provided.',
+            context: {
+                details: `${path}/${PUBLIC_WRITE_EXTENSION_KEY}/requiredStatus must be a non-empty string.`
+            }
+        };
+    }
+
+    return null;
+}
+
 function validateSchemaExtensions(schemaNode: unknown, path = '/'): ValidationFailure | null {
     if (!isObject(schemaNode)) {
         return null;
+    }
+
+    if (path === '/') {
+        const publicWriteFailure = validatePublicWriteExtension(schemaNode, path);
+        if (publicWriteFailure) {
+            return publicWriteFailure;
+        }
     }
 
     const kind = schemaNode['x-wordclaw-field-kind'];
@@ -455,6 +583,57 @@ export function listQueryableContentFields(schemaText: string): QueryableContent
         const type = toQueryableFieldType(propertySchema);
         return type ? [{ name, type }] : [];
     });
+}
+
+export function getPublicWriteSchemaConfig(schemaText: string): PublicWriteSchemaConfig | null {
+    const compiled = compileSchema(schemaText);
+    if (!compiled.ok) {
+        return null;
+    }
+
+    const schema = compiled.schema as JsonObject;
+    const rawConfig = isObject(schema[PUBLIC_WRITE_EXTENSION_KEY]) ? schema[PUBLIC_WRITE_EXTENSION_KEY] : null;
+    if (!rawConfig || rawConfig.enabled === false) {
+        return null;
+    }
+
+    const subjectField = typeof rawConfig.subjectField === 'string' ? rawConfig.subjectField.trim() : '';
+    const allowedOperations = normalizePublicWriteOperations(rawConfig.allowedOperations);
+    if (!subjectField || !allowedOperations || allowedOperations.length === 0) {
+        return null;
+    }
+
+    return {
+        enabled: true,
+        subjectField,
+        allowedOperations,
+        requiredStatus: typeof rawConfig.requiredStatus === 'string' && rawConfig.requiredStatus.trim().length > 0
+            ? rawConfig.requiredStatus.trim()
+            : 'draft'
+    };
+}
+
+export function getPublicWriteSubjectValue(schemaText: string, dataText: string): string | null {
+    const config = getPublicWriteSchemaConfig(schemaText);
+    if (!config) {
+        return null;
+    }
+
+    const parsedData = parseJson(
+        dataText,
+        'INVALID_CONTENT_DATA_JSON',
+        'Invalid content data JSON',
+        'Provide valid JSON for the content item "data" field.'
+    );
+
+    if (!parsedData.ok || !isObject(parsedData.parsed)) {
+        return null;
+    }
+
+    const subjectValue = parsedData.parsed[config.subjectField];
+    return typeof subjectValue === 'string' && subjectValue.trim().length > 0
+        ? subjectValue
+        : null;
 }
 
 export async function validateContentDataAgainstSchema(schemaText: string, dataText: string, domainId: number): Promise<ValidationFailure | null> {

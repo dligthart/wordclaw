@@ -43,6 +43,7 @@ import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { LicensingService } from '../services/licensing.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import * as assetService from '../services/assets.js';
+import { issuePublicWriteToken } from '../services/public-write.js';
 
 type ApiErrorBody = {
     error: string;
@@ -111,6 +112,8 @@ const originalExperimentalDelegation = process.env.ENABLE_EXPERIMENTAL_DELEGATIO
 const originalExperimentalAgentRuns = process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS;
 const originalAssetStorageProvider = process.env.ASSET_STORAGE_PROVIDER;
 const originalAssetSignedTtl = process.env.ASSET_SIGNED_TTL_SECONDS;
+const originalPublicWriteSecret = process.env.PUBLIC_WRITE_SECRET;
+const originalPublicWriteTtl = process.env.PUBLIC_WRITE_TTL_SECONDS;
 
 function restoreAuthEnv() {
     if (originalAuthRequired === undefined) {
@@ -159,6 +162,18 @@ function restoreAuthEnv() {
         delete process.env.ASSET_SIGNED_TTL_SECONDS;
     } else {
         process.env.ASSET_SIGNED_TTL_SECONDS = originalAssetSignedTtl;
+    }
+
+    if (originalPublicWriteSecret === undefined) {
+        delete process.env.PUBLIC_WRITE_SECRET;
+    } else {
+        process.env.PUBLIC_WRITE_SECRET = originalPublicWriteSecret;
+    }
+
+    if (originalPublicWriteTtl === undefined) {
+        delete process.env.PUBLIC_WRITE_TTL_SECONDS;
+    } else {
+        process.env.PUBLIC_WRITE_TTL_SECONDS = originalPublicWriteTtl;
     }
 }
 
@@ -264,6 +279,14 @@ describe('API Route Contracts', () => {
                             restPath: string;
                             mcpTool: string;
                             graphqlField: string;
+                        };
+                        publicWriteLane: {
+                            supported: boolean;
+                            requiresSchemaPolicy: boolean;
+                            issueTokenPath: string;
+                            createPath: string;
+                            updatePath: string;
+                            tokenHeader: string;
                         };
                     };
                     assetStorage: {
@@ -397,6 +420,14 @@ describe('API Route Contracts', () => {
                     restPath: '/api/content-items/projections',
                     mcpTool: 'project_content_items',
                     graphqlField: 'contentItemProjection',
+                }),
+                publicWriteLane: expect.objectContaining({
+                    supported: true,
+                    requiresSchemaPolicy: true,
+                    issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                    createPath: '/api/public/content-types/:id/items',
+                    updatePath: '/api/public/content-items/:id',
+                    tokenHeader: 'x-public-write-token',
                 }),
             }));
             expect(body.data.assetStorage).toEqual(expect.objectContaining({
@@ -548,6 +579,14 @@ describe('API Route Contracts', () => {
                                 metrics: string[];
                                 requiresContentTypeId: boolean;
                             };
+                            publicWriteLane: {
+                                supported: boolean;
+                                issueTokenPath: string;
+                                createPath: string;
+                                updatePath: string;
+                                tokenHeader: string;
+                                requiresSchemaPolicy: boolean;
+                            };
                         };
                         mcp: {
                             status: string;
@@ -609,6 +648,14 @@ describe('API Route Contracts', () => {
                     graphqlField: 'contentItemProjection',
                     metrics: ['count', 'sum', 'avg', 'min', 'max'],
                     requiresContentTypeId: true,
+                }),
+                publicWriteLane: expect.objectContaining({
+                    supported: true,
+                    issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                    createPath: '/api/public/content-types/:id/items',
+                    updatePath: '/api/public/content-items/:id',
+                    tokenHeader: 'x-public-write-token',
+                    requiresSchemaPolicy: true,
                 }),
             }));
             expect(body.data.checks.mcp).toEqual(expect.objectContaining({
@@ -2282,6 +2329,283 @@ describe('API Route Contracts', () => {
             expect(response.statusCode).toBe(400);
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('CONTENT_ASSET_REFERENCE_INVALID');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('issues public write tokens for policy-enabled content types', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 7,
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            sessionId: { type: 'string' },
+                            body: { type: 'string' }
+                        },
+                        required: ['sessionId', 'body'],
+                        'x-wordclaw-public-write': {
+                            enabled: true,
+                            subjectField: 'sessionId',
+                            allowedOperations: ['create', 'update'],
+                            requiredStatus: 'draft'
+                        }
+                    })
+                }]),
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-types/7/public-write-tokens',
+                payload: {
+                    subject: 'session-123',
+                    operations: ['create', 'update'],
+                    ttlSeconds: 300
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    token: string;
+                    contentTypeId: number;
+                    subjectField: string;
+                    subject: string;
+                    allowedOperations: string[];
+                    requiredStatus: string;
+                    ttlSeconds: number;
+                };
+            };
+
+            expect(body.data).toMatchObject({
+                contentTypeId: 7,
+                subjectField: 'sessionId',
+                subject: 'session-123',
+                allowedOperations: ['create', 'update'],
+                requiredStatus: 'draft',
+                ttlSeconds: 300
+            });
+            expect(body.data.token).toEqual(expect.any(String));
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('creates session-bound content through the public write lane without API auth', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+        process.env.PUBLIC_WRITE_SECRET = 'public-write-secret';
+        const app = await buildServer();
+        const insertReturningMock = vi.fn().mockResolvedValue([{
+            id: 44,
+            contentTypeId: 7,
+            version: 1,
+            status: 'draft'
+        }]);
+
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 7,
+                    domainId: 1,
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            sessionId: { type: 'string' },
+                            body: { type: 'string' }
+                        },
+                        required: ['sessionId', 'body'],
+                        'x-wordclaw-public-write': {
+                            enabled: true,
+                            subjectField: 'sessionId',
+                            allowedOperations: ['create', 'update'],
+                            requiredStatus: 'draft'
+                        }
+                    })
+                }]),
+            }),
+        }));
+        mocks.dbMock.insert.mockReturnValue({
+            values: vi.fn().mockReturnValue({
+                returning: insertReturningMock
+            })
+        });
+
+        const issued = issuePublicWriteToken({
+            domainId: 1,
+            contentTypeId: 7,
+            subjectField: 'sessionId',
+            subject: 'session-123',
+            allowedOperations: ['create', 'update'],
+            requiredStatus: 'draft'
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/public/content-types/7/items',
+                headers: {
+                    'x-public-write-token': issued.token
+                },
+                payload: {
+                    data: {
+                        sessionId: 'session-123',
+                        body: 'checkpoint'
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toMatchObject({
+                data: {
+                    id: 44,
+                    contentTypeId: 7,
+                    version: 1,
+                    status: 'draft'
+                }
+            });
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'create',
+                'content_item',
+                44,
+                expect.objectContaining({
+                    publicWrite: true,
+                    subjectField: 'sessionId',
+                    subject: 'session-123'
+                }),
+                expect.objectContaining({
+                    actorId: 'public_write:7:session-123'
+                }),
+                expect.any(String)
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('updates only the token-bound item through the public write lane', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+        process.env.PUBLIC_WRITE_SECRET = 'public-write-secret';
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 91,
+                        domainId: 1,
+                        contentTypeId: 7,
+                        data: JSON.stringify({
+                            sessionId: 'session-123',
+                            body: 'before'
+                        }),
+                        status: 'draft',
+                        version: 2,
+                        updatedAt: new Date('2026-03-16T12:00:00.000Z')
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        domainId: 1,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                sessionId: { type: 'string' },
+                                body: { type: 'string' }
+                            },
+                            required: ['sessionId', 'body'],
+                            'x-wordclaw-public-write': {
+                                enabled: true,
+                                subjectField: 'sessionId',
+                                allowedOperations: ['create', 'update'],
+                                requiredStatus: 'draft'
+                            }
+                        })
+                    }]),
+                }),
+            }));
+
+        mocks.dbMock.transaction.mockImplementation(async (callback: (tx: typeof mocks.dbMock) => Promise<unknown>) => {
+            const tx = {
+                insert: vi.fn().mockReturnValue({
+                    values: vi.fn().mockResolvedValue(undefined)
+                }),
+                update: vi.fn().mockReturnValue({
+                    set: vi.fn().mockReturnValue({
+                        where: vi.fn().mockReturnValue({
+                            returning: vi.fn().mockResolvedValue([{
+                                id: 91,
+                                contentTypeId: 7,
+                                version: 3,
+                                status: 'draft'
+                            }])
+                        })
+                    })
+                })
+            } as unknown as typeof mocks.dbMock;
+
+            return callback(tx);
+        });
+
+        const issued = issuePublicWriteToken({
+            domainId: 1,
+            contentTypeId: 7,
+            subjectField: 'sessionId',
+            subject: 'session-123',
+            allowedOperations: ['update'],
+            requiredStatus: 'draft'
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/public/content-items/91',
+                headers: {
+                    authorization: `Bearer ${issued.token}`
+                },
+                payload: {
+                    data: {
+                        sessionId: 'session-123',
+                        body: 'after'
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toMatchObject({
+                data: {
+                    id: 91,
+                    contentTypeId: 7,
+                    version: 3,
+                    status: 'draft'
+                }
+            });
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'update',
+                'content_item',
+                91,
+                expect.objectContaining({
+                    publicWrite: true,
+                    subjectField: 'sessionId',
+                    subject: 'session-123'
+                }),
+                expect.objectContaining({
+                    actorId: 'public_write:7:session-123'
+                }),
+                expect.any(String)
+            );
         } finally {
             await app.close();
         }

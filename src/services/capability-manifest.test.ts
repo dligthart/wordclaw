@@ -143,6 +143,14 @@ describe('buildCapabilityManifest', () => {
                 mcpTool: 'project_content_items',
                 graphqlField: 'contentItemProjection',
             }),
+            publicWriteLane: expect.objectContaining({
+                supported: true,
+                requiresSchemaPolicy: true,
+                issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                createPath: '/api/public/content-types/:id/items',
+                updatePath: '/api/public/content-items/:id',
+                tokenHeader: 'x-public-write-token',
+            }),
         }));
         expect(manifest.assetStorage).toEqual(expect.objectContaining({
             enabled: true,

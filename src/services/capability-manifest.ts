@@ -690,6 +690,18 @@ export function buildCapabilityManifest() {
                 cliCommand: 'node dist/cli/index.js content project --content-type-id <id> --group-by <field>',
                 note: 'Grouped projections provide lightweight leaderboard and analytics-style read models without requiring background materialization.',
             },
+            publicWriteLane: {
+                supported: true,
+                requiresSchemaPolicy: true,
+                issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                createPath: '/api/public/content-types/:id/items',
+                updatePath: '/api/public/content-items/:id',
+                tokenHeader: 'x-public-write-token',
+                authorizationScheme: 'Bearer <public-write-token>',
+                subjectBindingMode: 'single-subject-field',
+                allowedOperations: ['create', 'update'],
+                note: 'Public write lanes are TTL-bound, content-type-scoped session/player tokens for app-owned draft/session mutations without exposing a full API key to the client.',
+            },
         },
         paidContent: {
             l402Enabled: true,
