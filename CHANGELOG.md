@@ -1,3 +1,10 @@
+# [1.33.0](https://github.com/dligthart/wordclaw/compare/v1.32.0...v1.33.0) (2026-03-16)
+
+
+### Features
+
+* **assets:** add s3-compatible storage providers ([9b46945](https://github.com/dligthart/wordclaw/commit/9b4694546190a711f3b83ddceeab71bc91b944d8))
+
 # [1.32.0](https://github.com/dligthart/wordclaw/compare/v1.31.0...v1.32.0) (2026-03-16)
 
 
