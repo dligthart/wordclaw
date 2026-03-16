@@ -368,6 +368,48 @@ h3 {
     min-width: 0;
 }
 
+.brand-strip {
+    padding-top: 8px;
+    padding-bottom: 12px;
+}
+
+.brand-strip .container {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.brand-strip-label {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+}
+
+.brand-strip-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.brand-wordmark {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 9999px;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(255, 255, 255, 0.72);
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(8px);
+}
+
 /* Code Window */
 .code-window {
     background: #0d0d10;
@@ -732,6 +774,20 @@ footer {
     .hero {
         padding-top: calc(var(--nav-height) + 24px);
         padding-bottom: 24px;
+    }
+
+    .brand-strip {
+        padding-top: 0;
+    }
+
+    .brand-strip-row {
+        gap: 10px;
+    }
+
+    .brand-wordmark {
+        min-height: 40px;
+        padding: 0 14px;
+        font-size: 0.88rem;
     }
 
     .hero-subtitle {
