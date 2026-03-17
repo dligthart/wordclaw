@@ -1,9 +1,9 @@
 ---
 title: Media Asset Storage
-status: rolling-out
+status: shipped
 author: WordClaw Team
 date: 2026-03-13
-updated: 2026-03-16
+updated: 2026-03-17
 ---
 
 # RFC 0023: Media Asset Storage
@@ -23,7 +23,7 @@ This RFC proposes a native asset system with schema-aware references, managed st
 
 ## 1.1 Current Status
 
-As of 2026-03-16, RFC 0023 is actively rolling out and the core asset runtime is already live on `main`.
+As of 2026-03-17, RFC 0023 is shipped for the supported product path and the core asset runtime is live on `main`.
 
 Implemented so far:
 
@@ -32,15 +32,15 @@ Implemented so far:
 - REST asset routes for create, direct-upload issue/complete, list, get, offers, signed-access issuance, content delivery, soft delete, restore, and purge
 - multipart, JSON/base64, and provider-issued direct upload paths
 - local and S3-compatible object storage providers, with explicit fallback-to-local reporting when remote configuration is incomplete
+- derivative asset variants via `sourceAssetId`, `variantKey`, and `transformSpec`
 - `public`, `signed`, and `entitled` delivery modes
 - MCP asset tools and asset discovery resources
 - capability/deployment discovery for asset provider, upload modes, delivery modes, and lifecycle support
 - CLI asset commands for list/get/create/offers/access/delete/restore/purge
 - supervisor UI asset inventory, inspector, upload, preview, signed access, and lifecycle controls
 
-Still pending:
+Optional future follow-up:
 
-- optional asset derivatives
 - additional remote providers beyond the current `local` + S3-compatible adapter if product demand justifies them
 
 ## 2. Motivation
@@ -408,7 +408,7 @@ Because content versions point to durable asset records instead of raw URLs, rol
 - S3-compatible remote object storage providers
 - direct signed upload flows
 - optional derivatives and transformations
-- Status: in progress; S3-compatible storage and direct uploads are shipped, while derivatives remain open
+- Status: shipped
 
 ## 7. Drawbacks
 

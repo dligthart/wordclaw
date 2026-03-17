@@ -319,6 +319,16 @@ describe('API Route Contracts', () => {
                                 defaultTtlSeconds: number;
                             };
                         };
+                        derivatives: {
+                            supported: boolean;
+                            createViaRestPath: string;
+                            createViaMcpTool: string;
+                            listPath: string;
+                            listTool: string;
+                            sourceField: string;
+                            variantKeyField: string;
+                            transformSpecField: string;
+                        };
                     };
                     agentGuidance: {
                         routingHints: Array<{
@@ -475,6 +485,16 @@ describe('API Route Contracts', () => {
                         issueTool: 'issue_asset_access',
                         defaultTtlSeconds: 480,
                     }),
+                }),
+                derivatives: expect.objectContaining({
+                    supported: true,
+                    createViaRestPath: '/api/assets',
+                    createViaMcpTool: 'create_asset',
+                    listPath: '/api/assets/:id/derivatives',
+                    listTool: 'list_asset_derivatives',
+                    sourceField: 'sourceAssetId',
+                    variantKeyField: 'variantKey',
+                    transformSpecField: 'transformSpec',
                 }),
             }));
             expect(body.data.agentGuidance.routingHints).toEqual(
@@ -649,6 +669,14 @@ describe('API Route Contracts', () => {
                                 issuePath: string;
                                 issueTool: string;
                             };
+                            derivatives: {
+                                supported: boolean;
+                                listPath: string;
+                                listTool: string;
+                                sourceField: string;
+                                variantKeyField: string;
+                                transformSpecField: string;
+                            };
                         };
                         agentRuns: { status: string; enabled: boolean };
                     };
@@ -731,6 +759,14 @@ describe('API Route Contracts', () => {
                     defaultTtlSeconds: 510,
                     issuePath: '/api/assets/:id/access',
                     issueTool: 'issue_asset_access',
+                }),
+                derivatives: expect.objectContaining({
+                    supported: true,
+                    listPath: '/api/assets/:id/derivatives',
+                    listTool: 'list_asset_derivatives',
+                    sourceField: 'sourceAssetId',
+                    variantKeyField: 'variantKey',
+                    transformSpecField: 'transformSpec',
                 }),
             }));
             expect(body.data.checks.agentRuns).toEqual(expect.objectContaining({
@@ -3144,6 +3180,9 @@ describe('API Route Contracts', () => {
         const createSpy = vi.spyOn(assetService, 'createAsset').mockResolvedValue({
             id: 18,
             domainId: 1,
+            sourceAssetId: 12,
+            variantKey: 'hero-webp',
+            transformSpec: { width: 1200, format: 'webp' },
             filename: 'hero.png',
             originalFilename: 'hero.png',
             mimeType: 'image/png',
@@ -3173,7 +3212,10 @@ describe('API Route Contracts', () => {
                     mimeType: 'image/png',
                     contentBase64: Buffer.from('png-bytes').toString('base64'),
                     accessMode: 'public',
-                    metadata: { width: 1200 }
+                    metadata: { width: 1200 },
+                    sourceAssetId: 12,
+                    variantKey: 'hero-webp',
+                    transformSpec: { width: 1200, format: 'webp' },
                 }
             });
 
@@ -3203,7 +3245,10 @@ describe('API Route Contracts', () => {
                 domainId: 1,
                 filename: 'hero.png',
                 mimeType: 'image/png',
-                accessMode: 'public'
+                accessMode: 'public',
+                sourceAssetId: 12,
+                variantKey: 'hero-webp',
+                transformSpec: { width: 1200, format: 'webp' },
             }));
         } finally {
             createSpy.mockRestore();
@@ -3216,6 +3261,9 @@ describe('API Route Contracts', () => {
         const createSpy = vi.spyOn(assetService, 'createAsset').mockResolvedValue({
             id: 19,
             domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
             filename: 'hero.jpg',
             originalFilename: 'hero-original.jpg',
             mimeType: 'image/jpeg',
@@ -3242,7 +3290,10 @@ describe('API Route Contracts', () => {
             {
                 accessMode: 'signed',
                 metadata: JSON.stringify({ width: 1600, height: 900 }),
-                originalFilename: 'hero-original.jpg'
+                originalFilename: 'hero-original.jpg',
+                sourceAssetId: '18',
+                variantKey: 'hero-jpeg-preview',
+                transformSpec: JSON.stringify({ width: 1600, format: 'jpeg' }),
             },
             {
                 fieldName: 'file',
@@ -3271,6 +3322,9 @@ describe('API Route Contracts', () => {
                 mimeType: 'image/jpeg',
                 accessMode: 'signed',
                 metadata: { width: 1600, height: 900 },
+                sourceAssetId: 18,
+                variantKey: 'hero-jpeg-preview',
+                transformSpec: { width: 1600, format: 'jpeg' },
                 contentBytes: expect.any(Buffer)
             }));
 
@@ -3313,6 +3367,9 @@ describe('API Route Contracts', () => {
                     mimeType: 'image/png',
                     accessMode: 'signed',
                     metadata: { alt: 'Hero' },
+                    sourceAssetId: 18,
+                    variantKey: 'hero-webp',
+                    transformSpec: { width: 1200, format: 'webp' },
                 }
             });
 
@@ -3345,6 +3402,9 @@ describe('API Route Contracts', () => {
                 mimeType: 'image/png',
                 accessMode: 'signed',
                 metadata: { alt: 'Hero' },
+                sourceAssetId: 18,
+                variantKey: 'hero-webp',
+                transformSpec: { width: 1200, format: 'webp' },
             }));
         } finally {
             issueSpy.mockRestore();
@@ -3357,6 +3417,9 @@ describe('API Route Contracts', () => {
         const completeSpy = vi.spyOn(assetService, 'completeDirectAssetUpload').mockResolvedValue({
             id: 20,
             domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
             filename: 'hero.png',
             originalFilename: 'hero.png',
             mimeType: 'image/png',
@@ -3412,6 +3475,9 @@ describe('API Route Contracts', () => {
             items: [{
                 id: 32,
                 domainId: 1,
+                sourceAssetId: null,
+                variantKey: null,
+                transformSpec: null,
                 filename: 'spec.pdf',
                 originalFilename: 'spec.pdf',
                 mimeType: 'application/pdf',
@@ -3477,12 +3543,122 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('lists derivative variants for a source asset', async () => {
+        const app = await buildServer();
+        const getAssetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
+            id: 18,
+            domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
+            filename: 'hero.png',
+            originalFilename: 'hero.png',
+            mimeType: 'image/png',
+            sizeBytes: 256,
+            byteHash: 'hash-18',
+            storageProvider: 'local',
+            storageKey: '1/hero.png',
+            accessMode: 'public',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
+            status: 'active',
+            metadata: {},
+            uploaderActorId: 'api_key:2',
+            uploaderActorType: 'api_key',
+            uploaderActorSource: 'db',
+            createdAt: new Date('2026-03-16T12:00:00.000Z'),
+            updatedAt: new Date('2026-03-16T12:00:00.000Z'),
+            deletedAt: null,
+        });
+        const listDerivativeSpy = vi.spyOn(assetService, 'listAssetDerivatives').mockResolvedValue([
+            {
+                id: 19,
+                domainId: 1,
+                sourceAssetId: 18,
+                variantKey: 'hero-webp',
+                transformSpec: { width: 1200, format: 'webp' },
+                filename: 'hero.webp',
+                originalFilename: 'hero.webp',
+                mimeType: 'image/webp',
+                sizeBytes: 192,
+                byteHash: 'hash-19',
+                storageProvider: 'local',
+                storageKey: '1/hero.webp',
+                accessMode: 'public',
+                entitlementScopeType: null,
+                entitlementScopeRef: null,
+                status: 'active',
+                metadata: { purpose: 'preview' },
+                uploaderActorId: 'api_key:2',
+                uploaderActorType: 'api_key',
+                uploaderActorSource: 'db',
+                createdAt: new Date('2026-03-16T12:05:00.000Z'),
+                updatedAt: new Date('2026-03-16T12:05:00.000Z'),
+                deletedAt: null,
+            },
+        ]);
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/assets/18/derivatives',
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: Array<{
+                    id: number;
+                    sourceAssetId: number | null;
+                    variantKey: string | null;
+                    transformSpec: Record<string, unknown> | null;
+                    relationships: {
+                        sourcePath: string | null;
+                        derivativesPath: string;
+                    };
+                }>;
+                meta: {
+                    total: number;
+                    sourceAssetId: number;
+                    status: string;
+                };
+            };
+
+            expect(body.data).toEqual([
+                expect.objectContaining({
+                    id: 19,
+                    sourceAssetId: 18,
+                    variantKey: 'hero-webp',
+                    transformSpec: { width: 1200, format: 'webp' },
+                    relationships: {
+                        sourcePath: '/api/assets/18',
+                        derivativesPath: '/api/assets/19/derivatives',
+                    },
+                }),
+            ]);
+            expect(body.meta).toMatchObject({
+                total: 1,
+                sourceAssetId: 18,
+                status: 'active',
+            });
+            expect(listDerivativeSpy).toHaveBeenCalledWith(18, 1, {
+                includeDeleted: false,
+            });
+        } finally {
+            listDerivativeSpy.mockRestore();
+            getAssetSpy.mockRestore();
+            await app.close();
+        }
+    });
+
     it('serves public asset content without auth', async () => {
         process.env.AUTH_REQUIRED = 'true';
         const app = await buildServer();
         const publicSpy = vi.spyOn(assetService, 'getPublicAsset').mockResolvedValue({
             id: 44,
             domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
             filename: 'cover.jpg',
             originalFilename: 'cover.jpg',
             mimeType: 'image/jpeg',
@@ -3526,6 +3702,9 @@ describe('API Route Contracts', () => {
         const getAssetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
             id: 77,
             domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
             filename: 'premium.pdf',
             originalFilename: 'premium.pdf',
             mimeType: 'application/pdf',
@@ -3588,6 +3767,9 @@ describe('API Route Contracts', () => {
         const getAssetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
             id: 78,
             domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
             filename: 'private.pdf',
             originalFilename: 'private.pdf',
             mimeType: 'application/pdf',
@@ -3650,6 +3832,9 @@ describe('API Route Contracts', () => {
         const getAssetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
             id: 79,
             domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
             filename: 'premium.pdf',
             originalFilename: 'premium.pdf',
             mimeType: 'application/pdf',
@@ -3712,6 +3897,9 @@ describe('API Route Contracts', () => {
         const deleteSpy = vi.spyOn(assetService, 'softDeleteAsset').mockResolvedValue({
             id: 61,
             domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
             filename: 'diagram.svg',
             originalFilename: 'diagram.svg',
             mimeType: 'image/svg+xml',
@@ -3755,6 +3943,9 @@ describe('API Route Contracts', () => {
         const restoreSpy = vi.spyOn(assetService, 'restoreAsset').mockResolvedValue({
             id: 62,
             domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
             filename: 'diagram.svg',
             originalFilename: 'diagram.svg',
             mimeType: 'image/svg+xml',
@@ -3823,6 +4014,9 @@ describe('API Route Contracts', () => {
             asset: {
                 id: 63,
                 domainId: 1,
+                sourceAssetId: null,
+                variantKey: null,
+                transformSpec: null,
                 filename: 'legacy.pdf',
                 originalFilename: 'legacy.pdf',
                 mimeType: 'application/pdf',

@@ -769,6 +769,17 @@ export function buildCapabilityManifest() {
                 restore: true,
                 purge: true,
             },
+            derivatives: {
+                supported: true,
+                createViaRestPath: '/api/assets',
+                createViaMcpTool: 'create_asset',
+                listPath: '/api/assets/:id/derivatives',
+                listTool: 'list_asset_derivatives',
+                sourceField: 'sourceAssetId',
+                variantKeyField: 'variantKey',
+                transformSpecField: 'transformSpec',
+                note: 'Derivatives are first-class asset records linked back to a source asset and inherit the same lifecycle, audit, and storage rules.',
+            },
         },
         agentGuidance,
         capabilities: capabilityMatrix.map((capability) => ({

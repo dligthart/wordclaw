@@ -289,8 +289,13 @@ curl -X POST http://localhost:4000/api/assets/direct-upload \
     "filename": "hero.png",
     "originalFilename": "hero.png",
     "mimeType": "image/png",
-    "contentLength": 245120,
-    "accessMode": "signed"
+    "accessMode": "signed",
+    "sourceAssetId": 44,
+    "variantKey": "hero-webp",
+    "transformSpec": {
+      "width": 1200,
+      "format": "webp"
+    }
   }'
 ```
 
@@ -298,13 +303,21 @@ curl -X POST http://localhost:4000/api/assets/direct-upload \
 ```json
 {
   "data": {
-    "uploadUrl": "https://storage.example.com/bucket/object?signature=...",
-    "method": "PUT",
-    "headers": {
-      "content-type": "image/png"
+    "provider": "s3",
+    "upload": {
+      "uploadUrl": "https://storage.example.com/bucket/object?signature=...",
+      "method": "PUT",
+      "uploadHeaders": {
+        "content-type": "image/png"
+      },
+      "expiresAt": "2026-03-17T12:15:00.000Z",
+      "ttlSeconds": 900
     },
-    "completionToken": "<direct-upload-token>",
-    "expiresAt": "2026-03-17T12:15:00.000Z"
+    "finalize": {
+      "path": "/api/assets/direct-upload/complete",
+      "token": "<direct-upload-token>",
+      "expiresAt": "2026-03-17T12:15:00.000Z"
+    },
   }
 }
 ```
@@ -315,14 +328,46 @@ curl -X POST http://localhost:4000/api/assets/direct-upload/complete \
   -H "x-api-key: writer" \
   -H "Content-Type: application/json" \
   -d '{
-    "completionToken": "<direct-upload-token>",
+    "token": "<direct-upload-token>",
     "metadata": {
       "alt": "Workflow hero image"
     }
   }'
 ```
 
-### 9. Inspecting Asset Storage Readiness
+### 9. Inspecting Derivative Asset Variants
+
+List the managed variants attached to a source asset, such as a web-optimized image or thumbnail derivative.
+
+**Request:**
+```bash
+curl http://localhost:4000/api/assets/44/derivatives \
+  -H "x-api-key: writer"
+```
+
+**Response excerpt:**
+```json
+{
+  "data": [
+    {
+      "id": 45,
+      "sourceAssetId": 44,
+      "variantKey": "hero-webp",
+      "transformSpec": {
+        "width": 1200,
+        "format": "webp"
+      }
+    }
+  ],
+  "meta": {
+    "total": 1,
+    "sourceAssetId": 44,
+    "status": "active"
+  }
+}
+```
+
+### 10. Inspecting Asset Storage Readiness
 
 Check which asset storage provider is configured, which provider is actually active, and whether the runtime fell back to local storage because remote configuration is incomplete.
 
@@ -345,7 +390,7 @@ curl http://localhost:4000/api/deployment-status
 }
 ```
 
-### 10. Paying an L402 Invoice
+### 11. Paying an L402 Invoice
 
 Confirming a purchase locally with a simulated payment backend.
 

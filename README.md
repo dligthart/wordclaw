@@ -19,7 +19,7 @@ For a look ahead at what is in active development versus what is experimental, c
 
 -   **Structured Content**: JSON schema-based content types with runtime validation, version history, and rollback.
 -   **Content Runtime Queries**: Schema-aware field filters, grouped projections for leaderboard and analytics-style reads, public write lanes for bounded player/session input, and TTL lifecycle archival for ephemeral content.
--   **Schema-Aware Media Assets**: First-class asset records with schema-level references, multipart and direct-provider uploads, local or S3-compatible storage backends, public/signed/entitled delivery modes, and safe restore/purge lifecycle controls.
+-   **Schema-Aware Media Assets**: First-class asset records with schema-level references, derivative variants, multipart and direct-provider uploads, local or S3-compatible storage backends, public/signed/entitled delivery modes, and safe restore/purge lifecycle controls.
 -   **Agent-Friendly API**: REST responses include `recommendedNextAction`, `availableActions`, and `actionPriority` to guide automated clients.
 -   **REST + Reactive MCP Surfaces**: Primary agent access paths with strong content and governance semantics, including remote MCP subscriptions for pushed runtime events.
 -   **Governance by Default**: Dry-run support, approval workflows, audit logs, idempotency, and multi-tenant isolation.
@@ -197,7 +197,7 @@ The CLI is JSON-first so agents can script it reliably, and `--raw` is available
 - REST content type and content item CRUD
 - schema-aware field queries, grouped content projections, and TTL lifecycle handling for session-like content
 - public write tokens plus bounded public content writes for session-like actors
-- REST asset upload, direct-provider upload issuance/completion, metadata inspection, signed-access issuance, offer lookup, restore/purge lifecycle operations, and storage-provider discovery
+- REST asset upload, derivative variant creation/listing, direct-provider upload issuance/completion, metadata inspection, signed-access issuance, offer lookup, restore/purge lifecycle operations, and storage-provider discovery
 - actor-aware content authoring guidance for a target schema
 - actor-aware integration guidance for API keys and webhooks
 - actor-aware provenance guidance for audit-trail inspection

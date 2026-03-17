@@ -89,6 +89,12 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'get_asset' }
     },
     {
+        id: 'list_asset_derivatives',
+        description: 'List derivative variants for a source asset',
+        rest: { method: 'GET', path: '/assets/:id/derivatives' },
+        mcp: { tool: 'list_asset_derivatives' }
+    },
+    {
         id: 'issue_asset_access',
         description: 'Issue signed asset access or direct delivery guidance',
         rest: { method: 'POST', path: '/assets/:id/access' },

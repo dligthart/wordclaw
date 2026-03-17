@@ -201,6 +201,17 @@ describe('buildCapabilityManifest', () => {
                 restore: true,
                 purge: true,
             },
+            derivatives: {
+                supported: true,
+                createViaRestPath: '/api/assets',
+                createViaMcpTool: 'create_asset',
+                listPath: '/api/assets/:id/derivatives',
+                listTool: 'list_asset_derivatives',
+                sourceField: 'sourceAssetId',
+                variantKeyField: 'variantKey',
+                transformSpecField: 'transformSpec',
+                note: expect.any(String),
+            },
         }));
         expect(manifest.agentGuidance.routingHints).toEqual(
             expect.arrayContaining([

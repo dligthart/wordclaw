@@ -462,6 +462,7 @@ Use the asset commands when an agent or operator needs to upload binaries, inspe
 ```bash
 node dist/cli/index.js assets list --access-mode public --limit 20
 node dist/cli/index.js assets list --status deleted --limit 20 --cursor <nextCursor>
+node dist/cli/index.js assets list --source-asset-id 44
 node dist/cli/index.js asset ls --raw
 node dist/cli/index.js assets get --id 44
 node dist/cli/index.js assets create \
@@ -469,6 +470,13 @@ node dist/cli/index.js assets create \
   --mime-type image/png \
   --access-mode signed \
   --metadata-json '{"alt":"Homepage hero"}'
+node dist/cli/index.js assets create \
+  --content-file ./hero.webp \
+  --mime-type image/webp \
+  --access-mode public \
+  --source-asset-id 44 \
+  --variant-key hero-webp \
+  --transform-spec-json '{"width":1200,"format":"webp"}'
 node dist/cli/index.js assets create \
   --filename price-sheet.pdf \
   --mime-type application/pdf \
@@ -486,6 +494,7 @@ Supported features:
 
 - filtered list views with cursor pagination
 - asset metadata reads
+- derivative variant creation and derivative family listing
 - multipart upload from `--content-file`
 - JSON/base64 upload from `--content-base64` or `--content-base64-file`
 - delivery policy inspection for `public`, `signed`, and `entitled` assets
@@ -496,6 +505,7 @@ Supported features:
 Recommended usage:
 
 - use `assets create --content-file ...` when the bytes already exist on disk
+- use `assets create --source-asset-id ... --variant-key ...` when you are adding a managed derivative for an existing source asset
 - use `assets access --id ...` when a signed asset needs a short-lived read token
 - use `assets offers --id ...` to inspect the purchase path for entitled assets before attempting a read
 - use `assets list --status deleted` before `assets restore` or `assets purge`

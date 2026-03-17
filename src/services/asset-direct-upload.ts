@@ -8,6 +8,9 @@ type DirectAssetUploadTokenPayload = {
     domainId: number;
     storageProvider: AssetStorageProviderName;
     storageKey: string;
+    sourceAssetId: number | null;
+    variantKey: string | null;
+    transformSpec: Record<string, unknown> | null;
     filename: string;
     originalFilename: string;
     mimeType: string;
@@ -50,6 +53,15 @@ function decodePayload(payload: string): DirectAssetUploadTokenPayload | null {
             || (decoded.storageProvider !== 'local' && decoded.storageProvider !== 's3')
             || typeof decoded.storageKey !== 'string'
             || decoded.storageKey.length === 0
+            || (decoded.sourceAssetId !== null
+                && decoded.sourceAssetId !== undefined
+                && (typeof decoded.sourceAssetId !== 'number' || !Number.isInteger(decoded.sourceAssetId) || decoded.sourceAssetId <= 0))
+            || (decoded.variantKey !== null
+                && decoded.variantKey !== undefined
+                && (typeof decoded.variantKey !== 'string' || decoded.variantKey.length === 0))
+            || (decoded.transformSpec !== null
+                && decoded.transformSpec !== undefined
+                && (typeof decoded.transformSpec !== 'object' || Array.isArray(decoded.transformSpec)))
             || typeof decoded.filename !== 'string'
             || decoded.filename.length === 0
             || typeof decoded.originalFilename !== 'string'
@@ -78,6 +90,9 @@ function decodePayload(payload: string): DirectAssetUploadTokenPayload | null {
             domainId: decoded.domainId,
             storageProvider: decoded.storageProvider,
             storageKey: decoded.storageKey,
+            sourceAssetId: decoded.sourceAssetId ?? null,
+            variantKey: decoded.variantKey ?? null,
+            transformSpec: decoded.transformSpec ?? null,
             filename: decoded.filename,
             originalFilename: decoded.originalFilename,
             mimeType: decoded.mimeType,
@@ -106,6 +121,9 @@ export function issueDirectAssetUploadToken(input: Omit<DirectAssetUploadTokenPa
         domainId: input.domainId,
         storageProvider: input.storageProvider,
         storageKey: input.storageKey,
+        sourceAssetId: input.sourceAssetId ?? null,
+        variantKey: input.variantKey ?? null,
+        transformSpec: input.transformSpec ?? null,
         filename: input.filename,
         originalFilename: input.originalFilename,
         mimeType: input.mimeType,
@@ -170,6 +188,9 @@ export function verifyDirectAssetUploadToken(token: string, expectedDomainId?: n
         domainId: decoded.domainId,
         storageProvider: decoded.storageProvider,
         storageKey: decoded.storageKey,
+        sourceAssetId: decoded.sourceAssetId,
+        variantKey: decoded.variantKey,
+        transformSpec: decoded.transformSpec,
         filename: decoded.filename,
         originalFilename: decoded.originalFilename,
         mimeType: decoded.mimeType,

@@ -12,10 +12,13 @@ import { extractAssetReferencesFromContent } from './content-schema.js';
 export type AssetAccessMode = 'public' | 'signed' | 'entitled';
 export type AssetStatus = 'active' | 'deleted';
 export type AssetEntitlementScopeType = 'item' | 'type' | 'subscription';
+export type AssetRecord = typeof assets.$inferSelect;
 export type AssetEntitlementScope = {
     type: AssetEntitlementScopeType;
     ref?: number | null;
 };
+
+export type AssetTransformSpec = Record<string, unknown>;
 
 export type CreateAssetInput = {
     domainId: number;
@@ -27,6 +30,9 @@ export type CreateAssetInput = {
     accessMode?: AssetAccessMode;
     entitlementScope?: AssetEntitlementScope;
     metadata?: Record<string, unknown>;
+    sourceAssetId?: number;
+    variantKey?: string;
+    transformSpec?: AssetTransformSpec;
     actor?: AuditActor;
 };
 
@@ -38,6 +44,9 @@ export type IssueDirectAssetUploadInput = {
     accessMode?: AssetAccessMode;
     entitlementScope?: AssetEntitlementScope;
     metadata?: Record<string, unknown>;
+    sourceAssetId?: number;
+    variantKey?: string;
+    transformSpec?: AssetTransformSpec;
     ttlSeconds?: number;
 };
 
@@ -57,6 +66,7 @@ export type ListAssetsInput = {
     q?: string;
     accessMode?: AssetAccessMode;
     status?: AssetStatus;
+    sourceAssetId?: number;
     limit?: number;
     offset?: number;
     cursor?: string;
@@ -118,7 +128,17 @@ type PersistAssetRecordInput = {
     accessMode: AssetAccessMode;
     entitlementScope: { type: AssetEntitlementScopeType | null; ref: number | null };
     metadata: Record<string, unknown>;
+    sourceAssetId: number | null;
+    variantKey: string | null;
+    transformSpec: AssetTransformSpec | null;
     actor?: AuditActor;
+};
+
+type NormalizedDerivativeSource = {
+    sourceAsset: AssetRecord | null;
+    sourceAssetId: number | null;
+    variantKey: string | null;
+    transformSpec: AssetTransformSpec | null;
 };
 
 function isPositiveInteger(value: unknown): value is number {
@@ -209,6 +229,89 @@ async function normalizeEntitlementScope(
     return {
         type: entitlementScope.type,
         ref: entitlementScope.ref
+    };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function normalizeDerivativeSource(
+    domainId: number,
+    sourceAssetId: number | undefined,
+    variantKey: string | undefined,
+    transformSpec: AssetTransformSpec | undefined,
+): Promise<NormalizedDerivativeSource> {
+    const normalizedVariantKey = variantKey?.trim() ?? '';
+
+    if (sourceAssetId === undefined) {
+        if (normalizedVariantKey.length > 0 || transformSpec !== undefined) {
+            throw new AssetListError(
+                'Derivative metadata requires a source asset',
+                'ASSET_DERIVATIVE_SOURCE_REQUIRED',
+                'Provide sourceAssetId before setting variantKey or transformSpec.'
+            );
+        }
+
+        return {
+            sourceAsset: null,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
+        };
+    }
+
+    if (!isPositiveInteger(sourceAssetId)) {
+        throw new AssetListError(
+            'Invalid source asset ID',
+            'ASSET_SOURCE_ID_INVALID',
+            'Provide sourceAssetId as a positive integer.'
+        );
+    }
+
+    const [sourceAsset] = await db.select().from(assets).where(and(
+        eq(assets.id, sourceAssetId),
+        eq(assets.domainId, domainId),
+        eq(assets.status, 'active')
+    )).limit(1);
+
+    if (!sourceAsset) {
+        throw new AssetListError(
+            'Source asset not found',
+            'ASSET_SOURCE_NOT_FOUND',
+            'Provide sourceAssetId for an active asset in the current domain.'
+        );
+    }
+
+    if (normalizedVariantKey.length === 0) {
+        throw new AssetListError(
+            'Derivative variant key is required',
+            'ASSET_VARIANT_KEY_REQUIRED',
+            'Provide variantKey when creating a derivative asset.'
+        );
+    }
+
+    if (!/^[a-z0-9._-]{2,64}$/i.test(normalizedVariantKey)) {
+        throw new AssetListError(
+            'Derivative variant key is invalid',
+            'ASSET_VARIANT_KEY_INVALID',
+            'Use variantKey with 2-64 letters, numbers, dashes, underscores, or periods.'
+        );
+    }
+
+    if (transformSpec !== undefined && !isPlainObject(transformSpec)) {
+        throw new AssetListError(
+            'Derivative transform spec must be an object',
+            'ASSET_TRANSFORM_SPEC_INVALID',
+            'Provide transformSpec as a JSON object when present.'
+        );
+    }
+
+    return {
+        sourceAsset,
+        sourceAssetId: sourceAsset.id,
+        variantKey: normalizedVariantKey,
+        transformSpec: transformSpec ?? null,
     };
 }
 
@@ -306,6 +409,9 @@ export function decodeAssetsCursor(cursor: string): AssetCursor | null {
 async function persistAssetRecord(input: PersistAssetRecordInput) {
     const [created] = await db.insert(assets).values({
         domainId: input.domainId,
+        sourceAssetId: input.sourceAssetId,
+        variantKey: input.variantKey,
+        transformSpec: input.transformSpec,
         filename: input.filename,
         originalFilename: input.originalFilename,
         mimeType: input.mimeType,
@@ -329,6 +435,8 @@ async function persistAssetRecord(input: PersistAssetRecordInput) {
         'asset',
         created.id,
         {
+            sourceAssetId: created.sourceAssetId,
+            variantKey: created.variantKey,
             filename: created.filename,
             mimeType: created.mimeType,
             sizeBytes: created.sizeBytes,
@@ -344,8 +452,19 @@ async function persistAssetRecord(input: PersistAssetRecordInput) {
 }
 
 export async function createAsset(input: CreateAssetInput) {
-    const accessMode = input.accessMode || 'public';
-    const entitlementScope = await normalizeEntitlementScope(input.domainId, accessMode, input.entitlementScope);
+    const derivative = await normalizeDerivativeSource(
+        input.domainId,
+        input.sourceAssetId,
+        input.variantKey,
+        input.transformSpec,
+    );
+    const inheritedEntitlementScope = derivative.sourceAsset ? getAssetEntitlementScope(derivative.sourceAsset) ?? undefined : undefined;
+    const accessMode = input.accessMode || derivative.sourceAsset?.accessMode as AssetAccessMode | undefined || 'public';
+    const entitlementScope = await normalizeEntitlementScope(
+        input.domainId,
+        accessMode,
+        input.entitlementScope ?? inheritedEntitlementScope,
+    );
     const bytes = resolveAssetContentBytes(input);
     const storage = getAssetStorageProvider();
     const stored = await storage.put(input.domainId, input.filename, bytes);
@@ -360,6 +479,9 @@ export async function createAsset(input: CreateAssetInput) {
             accessMode,
             entitlementScope,
             metadata: input.metadata || {},
+            sourceAssetId: derivative.sourceAssetId,
+            variantKey: derivative.variantKey,
+            transformSpec: derivative.transformSpec,
             actor: input.actor,
         });
     } catch (error) {
@@ -369,8 +491,19 @@ export async function createAsset(input: CreateAssetInput) {
 }
 
 export async function issueDirectAssetUpload(input: IssueDirectAssetUploadInput): Promise<IssuedDirectAssetUploadFlow> {
-    const accessMode = input.accessMode || 'public';
-    const entitlementScope = await normalizeEntitlementScope(input.domainId, accessMode, input.entitlementScope);
+    const derivative = await normalizeDerivativeSource(
+        input.domainId,
+        input.sourceAssetId,
+        input.variantKey,
+        input.transformSpec,
+    );
+    const inheritedEntitlementScope = derivative.sourceAsset ? getAssetEntitlementScope(derivative.sourceAsset) ?? undefined : undefined;
+    const accessMode = input.accessMode || derivative.sourceAsset?.accessMode as AssetAccessMode | undefined || 'public';
+    const entitlementScope = await normalizeEntitlementScope(
+        input.domainId,
+        accessMode,
+        input.entitlementScope ?? inheritedEntitlementScope,
+    );
     const provider = getAssetStorageProvider();
     const ttlSeconds = Math.max(60, Math.min(Math.trunc(input.ttlSeconds ?? getAssetDirectUploadTtlSeconds()), 3600));
     const issued = await provider.issueDirectUpload(input.domainId, input.filename, input.mimeType, new Date(Date.now() + ttlSeconds * 1000));
@@ -385,6 +518,9 @@ export async function issueDirectAssetUpload(input: IssueDirectAssetUploadInput)
         entitlementScopeType: entitlementScope.type,
         entitlementScopeRef: entitlementScope.ref,
         metadata: input.metadata || {},
+        sourceAssetId: derivative.sourceAssetId,
+        variantKey: derivative.variantKey,
+        transformSpec: derivative.transformSpec,
         ttlSeconds,
     });
 
@@ -443,6 +579,9 @@ export async function completeDirectAssetUpload(token: string, domainId: number,
             ref: verification.entitlementScopeRef,
         },
         metadata: verification.metadata,
+        sourceAssetId: verification.sourceAssetId,
+        variantKey: verification.variantKey,
+        transformSpec: verification.transformSpec,
         actor,
     });
 }
@@ -452,6 +591,7 @@ export async function listAssets(domainId: number, input: ListAssetsInput = {}):
         q,
         accessMode,
         status = 'active',
+        sourceAssetId,
         limit = 50,
         offset,
         cursor
@@ -481,6 +621,7 @@ export async function listAssets(domainId: number, input: ListAssetsInput = {}):
         eq(assets.domainId, domainId),
         status ? eq(assets.status, status) : undefined,
         accessMode ? eq(assets.accessMode, accessMode) : undefined,
+        sourceAssetId !== undefined ? eq(assets.sourceAssetId, sourceAssetId) : undefined,
         searchPattern
             ? or(
                 ilike(assets.filename, searchPattern),
@@ -538,6 +679,23 @@ export async function getAsset(id: number, domainId: number, options: { includeD
 
     const [asset] = await db.select().from(assets).where(and(...conditions));
     return asset ?? null;
+}
+
+export async function listAssetDerivatives(
+    sourceAssetId: number,
+    domainId: number,
+    options: { includeDeleted?: boolean } = {},
+) {
+    const conditions = [
+        eq(assets.domainId, domainId),
+        eq(assets.sourceAssetId, sourceAssetId),
+        options.includeDeleted ? undefined : eq(assets.status, 'active'),
+    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+    return db.select()
+        .from(assets)
+        .where(and(...conditions))
+        .orderBy(desc(assets.createdAt), desc(assets.id));
 }
 
 export async function getPublicAsset(id: number) {
@@ -759,6 +917,19 @@ export async function purgeAsset(id: number, domainId: number, actor?: AuditActo
             'Asset must be soft-deleted before purge',
             'ASSET_PURGE_REQUIRES_SOFT_DELETE',
             'Call DELETE /api/assets/:id first, then retry the purge.'
+        );
+    }
+
+    const derivatives = await listAssetDerivatives(id, domainId, { includeDeleted: true });
+    if (derivatives.length > 0) {
+        throw new AssetListError(
+            'Asset purge blocked by derivative variants',
+            'ASSET_PURGE_BLOCKED_BY_DERIVATIVES',
+            'Purge or re-home derivative assets before purging the source asset.',
+            {
+                derivativeIds: derivatives.map((asset) => asset.id),
+                derivativeCount: derivatives.length,
+            }
         );
     }
 

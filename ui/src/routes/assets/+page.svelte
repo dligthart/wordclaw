@@ -27,6 +27,9 @@
         sizeBytes: number;
         byteHash: string | null;
         storageProvider: string;
+        sourceAssetId: number | null;
+        variantKey: string | null;
+        transformSpec: Record<string, unknown> | null;
         accessMode: AssetAccessMode;
         entitlementScope: {
             type: EntitlementScopeType;
@@ -40,6 +43,10 @@
         createdAt: string;
         updatedAt: string;
         deletedAt: string | null;
+        relationships: {
+            sourcePath: string | null;
+            derivativesPath: string;
+        };
         delivery: {
             contentPath: string;
             accessPath: string | null;
@@ -99,6 +106,7 @@
 
     let assets = $state<Asset[]>([]);
     let selectedAsset = $state<Asset | null>(null);
+    let selectedDerivatives = $state<Asset[]>([]);
     let offers = $state<AssetOffer[]>([]);
     let accessGrant = $state<AssetAccessGrant | null>(null);
     let meta = $state<AssetListMeta>({ ...DEFAULT_META });
@@ -106,6 +114,7 @@
     let loading = $state(true);
     let refreshing = $state(false);
     let loadingInspector = $state(false);
+    let loadingDerivatives = $state(false);
     let loadingOffers = $state(false);
     let error = $state<any>(null);
 
@@ -123,6 +132,9 @@
     let uploadMetadata = $state("");
     let uploadEntitlementType = $state<EntitlementScopeType>("type");
     let uploadEntitlementRef = $state("");
+    let uploadSourceAssetId = $state("");
+    let uploadVariantKey = $state("");
+    let uploadTransformSpec = $state("");
 
     let issuingAccess = $state(false);
 
@@ -158,6 +170,7 @@
             ? `${formatAccessModeLabel(accessModeFilter as AssetAccessMode)} only`
             : "All access modes",
     ]);
+    let uploadIsDerivative = $derived(uploadSourceAssetId.trim().length > 0);
 
     onMount(() => {
         void loadAssets();
@@ -243,6 +256,10 @@
         return asset.originalFilename || asset.filename;
     }
 
+    function derivativeLabel(asset: Asset) {
+        return asset.variantKey ? `${asset.variantKey} variant` : "Derivative";
+    }
+
     function openUrl(url: string) {
         window.open(url, "_blank", "noopener,noreferrer");
     }
@@ -267,11 +284,27 @@
         uploadMetadata = "";
         uploadEntitlementType = "type";
         uploadEntitlementRef = "";
+        uploadSourceAssetId = "";
+        uploadVariantKey = "";
+        uploadTransformSpec = "";
         uploadError = null;
     }
 
     function openUploadModal() {
         resetUploadForm();
+        showUploadModal = true;
+    }
+
+    function openDerivativeModal(asset: Asset) {
+        resetUploadForm();
+        uploadSourceAssetId = String(asset.id);
+        uploadAccessMode = asset.accessMode;
+        if (asset.entitlementScope) {
+            uploadEntitlementType = asset.entitlementScope.type;
+            uploadEntitlementRef = asset.entitlementScope.ref
+                ? String(asset.entitlementScope.ref)
+                : "";
+        }
         showUploadModal = true;
     }
 
@@ -317,6 +350,26 @@
         }
     }
 
+    async function loadAssetDerivatives(
+        id: number,
+        status: AssetStatus = "active",
+    ) {
+        loadingDerivatives = true;
+        try {
+            const params = new URLSearchParams();
+            params.set("status", status);
+            const response = await fetchApi(
+                `/assets/${id}/derivatives?${params.toString()}`,
+            );
+            selectedDerivatives = response.data ?? [];
+        } catch (err) {
+            selectedDerivatives = [];
+            showErrorToast("Failed to load derivative assets", err);
+        } finally {
+            loadingDerivatives = false;
+        }
+    }
+
     async function loadAssetDetails(id: number, silent = false) {
         if (!silent) {
             loadingInspector = true;
@@ -326,11 +379,18 @@
             const response = await fetchApi(`/assets/${id}`);
             selectedAsset = response.data;
             accessGrant = null;
+            const followUps: Promise<void>[] = [
+                loadAssetDerivatives(
+                    selectedAsset?.sourceAssetId ?? id,
+                    selectedAsset?.status ?? "active",
+                ),
+            ];
             if (selectedAsset?.accessMode === "entitled") {
-                await loadAssetOffers(id);
+                followUps.push(loadAssetOffers(id));
             } else {
                 offers = [];
             }
+            await Promise.all(followUps);
         } catch (err) {
             showErrorToast("Failed to load asset", err);
         } finally {
@@ -396,12 +456,14 @@
                 selectedAsset = null;
                 accessGrant = null;
                 offers = [];
+                selectedDerivatives = [];
             }
         } catch (err) {
             error = err;
             assets = [];
             selectedAsset = null;
             offers = [];
+            selectedDerivatives = [];
             accessGrant = null;
         } finally {
             loading = false;
@@ -460,6 +522,45 @@
             }
         }
 
+        let transformSpec: Record<string, unknown> | undefined;
+        if (uploadTransformSpec.trim()) {
+            try {
+                const parsed = JSON.parse(uploadTransformSpec);
+                if (
+                    !parsed ||
+                    typeof parsed !== "object" ||
+                    Array.isArray(parsed)
+                ) {
+                    throw new Error("not-object");
+                }
+                transformSpec = parsed as Record<string, unknown>;
+            } catch {
+                uploadError = new Error(
+                    "Transform spec must be valid JSON object text.",
+                );
+                return;
+            }
+        }
+
+        let sourceAssetId: number | undefined;
+        if (uploadSourceAssetId.trim()) {
+            const parsed = Number(uploadSourceAssetId);
+            if (!Number.isInteger(parsed) || parsed <= 0) {
+                uploadError = new Error(
+                    "Source asset ID must be a positive integer.",
+                );
+                return;
+            }
+            sourceAssetId = parsed;
+        }
+
+        if (sourceAssetId && !uploadVariantKey.trim()) {
+            uploadError = new Error(
+                "Variant key is required when creating a derivative asset.",
+            );
+            return;
+        }
+
         const form = new FormData();
         form.set("file", uploadFile, uploadFile.name);
         if (uploadFilename.trim()) {
@@ -468,6 +569,13 @@
         form.set("accessMode", uploadAccessMode);
         if (metadata) {
             form.set("metadata", JSON.stringify(metadata));
+        }
+        if (sourceAssetId) {
+            form.set("sourceAssetId", String(sourceAssetId));
+            form.set("variantKey", uploadVariantKey.trim());
+        }
+        if (transformSpec) {
+            form.set("transformSpec", JSON.stringify(transformSpec));
         }
 
         if (uploadAccessMode === "entitled") {
@@ -702,6 +810,63 @@
                     </div>
                 </div>
 
+                <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white">
+                                Derivative settings
+                            </p>
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                Optional. Link this upload to an existing source asset to create a managed variant.
+                            </p>
+                        </div>
+                        {#if uploadIsDerivative}
+                            <Badge variant="info">Derivative</Badge>
+                        {:else}
+                            <Badge variant="outline">Standalone</Badge>
+                        {/if}
+                    </div>
+
+                    <div class="mt-4 grid gap-4 md:grid-cols-2">
+                        <div class="space-y-2">
+                            <label for="upload-source-asset-id" class="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Source asset ID
+                            </label>
+                            <Input
+                                id="upload-source-asset-id"
+                                bind:value={uploadSourceAssetId}
+                                type="number"
+                                min="1"
+                                placeholder="Optional asset ID"
+                            />
+                        </div>
+                        <div class="space-y-2">
+                            <label for="upload-variant-key" class="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Variant key
+                            </label>
+                            <Input
+                                id="upload-variant-key"
+                                bind:value={uploadVariantKey}
+                                placeholder="hero-webp"
+                                disabled={!uploadIsDerivative}
+                            />
+                        </div>
+                    </div>
+
+                    <div class="mt-4 space-y-2">
+                        <label for="upload-transform-spec" class="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Transform spec JSON
+                        </label>
+                        <Textarea
+                            id="upload-transform-spec"
+                            bind:value={uploadTransformSpec}
+                            rows={4}
+                            placeholder={'{"width":1200,"height":675,"format":"webp"}'}
+                            disabled={!uploadIsDerivative}
+                        />
+                    </div>
+                </div>
+
                 {#if uploadAccessMode === "entitled"}
                     <div class="grid gap-4 md:grid-cols-2">
                         <div class="space-y-2">
@@ -915,6 +1080,11 @@
                                     <p class="truncate text-xs text-slate-500 dark:text-slate-400">
                                         #{asset.id} · {asset.mimeType}
                                     </p>
+                                    {#if asset.sourceAssetId}
+                                        <p class="truncate text-xs text-slate-500 dark:text-slate-400">
+                                            {derivativeLabel(asset)} · source #{asset.sourceAssetId}
+                                        </p>
+                                    {/if}
                                 </div>
                             {:else if column.key === "accessMode"}
                                 <Badge variant={assetAccessVariant(asset.accessMode)}>
@@ -1023,6 +1193,17 @@
                         <div class="mt-5 flex flex-wrap gap-3">
                             {#if selectedAsset.status === "active"}
                                 <Button
+                                    variant="outline"
+                                    onclick={() =>
+                                        selectedAsset &&
+                                        openDerivativeModal(selectedAsset)}
+                                >
+                                    <Icon src={Plus} class="h-4 w-4" />
+                                    Create derivative
+                                </Button>
+                            {/if}
+                            {#if selectedAsset.status === "active"}
+                                <Button
                                     variant="destructive"
                                     onclick={() =>
                                         selectedAsset &&
@@ -1078,6 +1259,119 @@
                             >
                                 Purge permanently
                             </Button>
+                        </div>
+                    </Surface>
+
+                    <Surface>
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                    Asset family
+                                </p>
+                                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                                    Inspect the source asset relationship and any derivative variants linked to this record.
+                                </p>
+                            </div>
+                            <Badge variant="outline">
+                                {selectedDerivatives.length} variants
+                            </Badge>
+                        </div>
+
+                        <div class="mt-4 space-y-4">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                    Source asset
+                                </p>
+                                {#if selectedAsset.sourceAssetId}
+                                    <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p class="text-sm font-medium text-slate-900 dark:text-white">
+                                                Asset #{selectedAsset.sourceAssetId}
+                                            </p>
+                                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                This asset is stored as the {selectedAsset.variantKey ?? "linked"} variant of its source record.
+                                            </p>
+                                        </div>
+                                        <Button
+                                            variant="outline"
+                                            onclick={() =>
+                                                selectedAsset?.sourceAssetId &&
+                                                loadAssetDetails(selectedAsset.sourceAssetId)}
+                                        >
+                                            View source
+                                        </Button>
+                                    </div>
+                                {:else}
+                                    <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                                        This asset is the source record for its derivative family.
+                                    </p>
+                                {/if}
+                            </div>
+
+                            {#if selectedAsset.variantKey || selectedAsset.transformSpec}
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                            Variant key
+                                        </p>
+                                        <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+                                            {selectedAsset.variantKey ?? "Not set"}
+                                        </p>
+                                    </div>
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                            Transform metadata
+                                        </p>
+                                        <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                                            {selectedAsset.transformSpec
+                                                ? "Recorded on this derivative asset."
+                                                : "No transform metadata recorded."}
+                                        </p>
+                                    </div>
+                                </div>
+                            {/if}
+
+                            {#if loadingDerivatives}
+                                <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                                    <LoadingSpinner size="sm" />
+                                    <p class="text-sm text-slate-500 dark:text-slate-400">
+                                        Loading derivative variants…
+                                    </p>
+                                </div>
+                            {:else if selectedDerivatives.length > 0}
+                                <div class="space-y-3">
+                                    {#each selectedDerivatives as derivative}
+                                        <button
+                                            class="w-full rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-left transition hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-900/30 dark:hover:border-slate-600 dark:hover:bg-slate-900"
+                                            type="button"
+                                            onclick={() => void loadAssetDetails(derivative.id)}
+                                        >
+                                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                                <div class="min-w-0">
+                                                    <p class="truncate text-sm font-medium text-slate-900 dark:text-white">
+                                                        {assetLabel(derivative)}
+                                                    </p>
+                                                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                        #{derivative.id} · {derivative.variantKey ?? "variant"} · {derivative.mimeType}
+                                                    </p>
+                                                </div>
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    <Badge variant={assetAccessVariant(derivative.accessMode)}>
+                                                        {formatAccessModeLabel(derivative.accessMode)}
+                                                    </Badge>
+                                                    <Badge variant={assetStatusVariant(derivative.status)}>
+                                                        {formatStatusLabel(derivative.status)}
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    {/each}
+                                </div>
+                            {:else}
+                                <p class="text-sm text-slate-500 dark:text-slate-400">
+                                    No derivative variants are currently stored for this asset.
+                                </p>
+                            {/if}
                         </div>
                     </Surface>
 
@@ -1293,6 +1587,21 @@
                             />
                         </div>
                     </Surface>
+
+                    {#if selectedAsset.transformSpec}
+                        <Surface>
+                            <p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Transform spec
+                            </p>
+                            <div class="mt-4">
+                                <JsonCodeBlock
+                                    value={selectedAsset.transformSpec}
+                                    label="Derivative transform"
+                                    copyable={true}
+                                />
+                            </div>
+                        </Surface>
+                    {/if}
                 {:else}
                     <Surface class="min-h-[20rem]">
                         <div class="flex h-full flex-col items-center justify-center text-center">

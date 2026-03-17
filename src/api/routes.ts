@@ -55,6 +55,7 @@ import {
     getAssetEntitlementScope,
     getPublicAsset,
     issueDirectAssetUpload,
+    listAssetDerivatives,
     listAssets,
     purgeAsset,
     readAssetContent,
@@ -118,6 +119,7 @@ type AssetsQuery = {
     q?: string;
     accessMode?: 'public' | 'signed' | 'entitled';
     status?: 'active' | 'deleted';
+    sourceAssetId?: number;
     limit?: number;
     offset?: number;
     cursor?: string;
@@ -133,6 +135,9 @@ type CreateAssetBody = {
         ref?: number;
     };
     metadata?: Record<string, unknown>;
+    sourceAssetId?: number;
+    variantKey?: string;
+    transformSpec?: Record<string, unknown>;
 };
 type CreateAssetMultipartBody = Omit<CreateAssetBody, 'contentBase64'> & {
     contentBytes: Buffer;
@@ -326,6 +331,9 @@ async function parseMultipartAssetCreateBody(request: FastifyRequest): Promise<C
     let accessMode: 'public' | 'signed' | 'entitled' | undefined;
     let entitlementScope: AssetEntitlementScope | undefined;
     let metadata: Record<string, unknown> | undefined;
+    let sourceAssetId: number | undefined;
+    let variantKey: string | undefined;
+    let transformSpec: Record<string, unknown> | undefined;
 
     for await (const part of request.parts()) {
         if (part.type === 'file') {
@@ -356,6 +364,20 @@ async function parseMultipartAssetCreateBody(request: FastifyRequest): Promise<C
             metadata = parseMultipartJsonObjectField(value, 'metadata');
         } else if (part.fieldname === 'entitlementScope' && value) {
             entitlementScope = parseMultipartEntitlementScopeField(value);
+        } else if (part.fieldname === 'sourceAssetId' && value) {
+            const parsed = Number(value);
+            if (!Number.isInteger(parsed) || parsed <= 0) {
+                throw new AssetListError(
+                    'Invalid source asset ID',
+                    'ASSET_SOURCE_ID_INVALID',
+                    'Provide sourceAssetId as a positive integer.'
+                );
+            }
+            sourceAssetId = parsed;
+        } else if (part.fieldname === 'variantKey' && value) {
+            variantKey = value;
+        } else if (part.fieldname === 'transformSpec' && value) {
+            transformSpec = parseMultipartJsonObjectField(value, 'transformSpec');
         }
     }
 
@@ -396,7 +418,10 @@ async function parseMultipartAssetCreateBody(request: FastifyRequest): Promise<C
             type: entitlementScope.type,
             ref: entitlementScope.ref ?? undefined
         } : undefined,
-        metadata
+        metadata,
+        sourceAssetId,
+        variantKey,
+        transformSpec
     };
 }
 
@@ -476,6 +501,39 @@ function parseJsonAssetCreateBody(body: unknown): CreateAssetBody {
         );
     }
 
+    if (
+        candidate.sourceAssetId !== undefined
+        && (!Number.isInteger(candidate.sourceAssetId) || (candidate.sourceAssetId as number) <= 0)
+    ) {
+        throw new AssetListError(
+            'Invalid source asset ID',
+            'ASSET_SOURCE_ID_INVALID',
+            'Provide sourceAssetId as a positive integer when present.'
+        );
+    }
+
+    if (
+        candidate.variantKey !== undefined
+        && (typeof candidate.variantKey !== 'string' || candidate.variantKey.trim().length === 0)
+    ) {
+        throw new AssetListError(
+            'Derivative variant key must be a non-empty string',
+            'ASSET_VARIANT_KEY_INVALID',
+            'Provide variantKey as a non-empty string when present.'
+        );
+    }
+
+    if (
+        candidate.transformSpec !== undefined
+        && (!candidate.transformSpec || typeof candidate.transformSpec !== 'object' || Array.isArray(candidate.transformSpec))
+    ) {
+        throw new AssetListError(
+            'Invalid transform spec object',
+            'ASSET_TRANSFORM_SPEC_INVALID',
+            'Provide transformSpec as a JSON object.'
+        );
+    }
+
     return {
         filename: candidate.filename.trim(),
         originalFilename: candidate.originalFilename?.trim(),
@@ -483,7 +541,10 @@ function parseJsonAssetCreateBody(body: unknown): CreateAssetBody {
         contentBase64: candidate.contentBase64.trim(),
         accessMode,
         entitlementScope: candidate.entitlementScope as CreateAssetBody['entitlementScope'],
-        metadata: candidate.metadata as Record<string, unknown> | undefined
+        metadata: candidate.metadata as Record<string, unknown> | undefined,
+        sourceAssetId: candidate.sourceAssetId as number | undefined,
+        variantKey: candidate.variantKey?.trim() as string | undefined,
+        transformSpec: candidate.transformSpec as Record<string, unknown> | undefined
     };
 }
 
@@ -870,6 +931,9 @@ function buildCurrentActorResponse(principal: ActorPrincipal) {
 
 const AssetResponseSchema = Type.Object({
     id: Type.Number(),
+    sourceAssetId: Type.Union([Type.Number(), Type.Null()]),
+    variantKey: Type.Union([Type.String(), Type.Null()]),
+    transformSpec: Type.Union([Type.Object({}, { additionalProperties: true }), Type.Null()]),
     filename: Type.String(),
     originalFilename: Type.String(),
     mimeType: Type.String(),
@@ -896,6 +960,10 @@ const AssetResponseSchema = Type.Object({
     createdAt: Type.String(),
     updatedAt: Type.String(),
     deletedAt: Type.Union([Type.String(), Type.Null()]),
+    relationships: Type.Object({
+        sourcePath: Type.Union([Type.String(), Type.Null()]),
+        derivativesPath: Type.String(),
+    }),
     delivery: Type.Object({
         contentPath: Type.String(),
         accessPath: Type.Union([Type.String(), Type.Null()]),
@@ -969,6 +1037,9 @@ const AssetPurgeResponseSchema = Type.Object({
 
 function serializeAsset(asset: {
     id: number;
+    sourceAssetId: number | null;
+    variantKey: string | null;
+    transformSpec: unknown;
     filename: string;
     originalFilename: string;
     mimeType: string;
@@ -989,6 +1060,9 @@ function serializeAsset(asset: {
 }) {
     return {
         id: asset.id,
+        sourceAssetId: asset.sourceAssetId ?? null,
+        variantKey: asset.variantKey ?? null,
+        transformSpec: asset.transformSpec && typeof asset.transformSpec === 'object' ? asset.transformSpec as Record<string, unknown> : null,
         filename: asset.filename,
         originalFilename: asset.originalFilename,
         mimeType: asset.mimeType,
@@ -1005,6 +1079,10 @@ function serializeAsset(asset: {
         createdAt: asset.createdAt.toISOString(),
         updatedAt: asset.updatedAt.toISOString(),
         deletedAt: asset.deletedAt ? asset.deletedAt.toISOString() : null,
+        relationships: {
+            sourcePath: asset.sourceAssetId ? `/api/assets/${asset.sourceAssetId}` : null,
+            derivativesPath: `/api/assets/${asset.id}/derivatives`,
+        },
         delivery: {
             contentPath: `/api/assets/${asset.id}/content`,
             accessPath: asset.accessMode === 'signed' ? `/api/assets/${asset.id}/access` : null,
@@ -1318,6 +1396,17 @@ export default async function apiRoutes(server: FastifyInstance) {
                             restore: Type.Boolean(),
                             purge: Type.Boolean(),
                         }),
+                        derivatives: Type.Object({
+                            supported: Type.Boolean(),
+                            createViaRestPath: Type.String(),
+                            createViaMcpTool: Type.String(),
+                            listPath: Type.String(),
+                            listTool: Type.String(),
+                            sourceField: Type.String(),
+                            variantKeyField: Type.String(),
+                            transformSpecField: Type.String(),
+                            note: Type.String(),
+                        }),
                     }),
                     agentGuidance: Type.Object({
                         routingHints: Type.Array(Type.Object({
@@ -1522,6 +1611,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 offersPath: Type.String(),
                                 contentPath: Type.String(),
                             }),
+                            derivatives: Type.Object({
+                                supported: Type.Boolean(),
+                                listPath: Type.String(),
+                                listTool: Type.String(),
+                                sourceField: Type.String(),
+                                variantKeyField: Type.String(),
+                                transformSpecField: Type.String(),
+                            }),
                             note: Type.String(),
                         }),
                     }),
@@ -1619,6 +1716,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 enabled: Type.Boolean(),
                                 offersPath: Type.String(),
                                 contentPath: Type.String(),
+                            }),
+                            derivatives: Type.Object({
+                                supported: Type.Boolean(),
+                                listPath: Type.String(),
+                                listTool: Type.String(),
+                                sourceField: Type.String(),
+                                variantKeyField: Type.String(),
+                                transformSpecField: Type.String(),
                             }),
                             note: Type.String(),
                         }),
@@ -3310,6 +3415,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 accessMode: body.accessMode,
                 entitlementScope: body.entitlementScope,
                 metadata: body.metadata,
+                sourceAssetId: body.sourceAssetId,
+                variantKey: body.variantKey,
+                transformSpec: body.transformSpec,
                 actor: toAuditActorFromRequest(request as RequestActorCarrier)
             });
         } catch (error) {
@@ -3350,6 +3458,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                     ref: Type.Optional(Type.Number())
                 })),
                 metadata: Type.Optional(Type.Object({}, { additionalProperties: true })),
+                sourceAssetId: Type.Optional(Type.Number({ minimum: 1 })),
+                variantKey: Type.Optional(Type.String({ minLength: 1 })),
+                transformSpec: Type.Optional(Type.Object({}, { additionalProperties: true })),
                 ttlSeconds: Type.Optional(Type.Number({ minimum: 60, maximum: 3600 }))
             }),
             response: {
@@ -3367,6 +3478,9 @@ export default async function apiRoutes(server: FastifyInstance) {
             accessMode?: 'public' | 'signed' | 'entitled';
             entitlementScope?: AssetEntitlementScope;
             metadata?: Record<string, unknown>;
+            sourceAssetId?: number;
+            variantKey?: string;
+            transformSpec?: Record<string, unknown>;
             ttlSeconds?: number;
         };
 
@@ -3379,6 +3493,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 accessMode: body.accessMode,
                 entitlementScope: body.entitlementScope,
                 metadata: body.metadata,
+                sourceAssetId: body.sourceAssetId,
+                variantKey: body.variantKey,
+                transformSpec: body.transformSpec,
                 ttlSeconds: body.ttlSeconds
             });
 
@@ -3477,6 +3594,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     Type.Literal('active'),
                     Type.Literal('deleted')
                 ])),
+                sourceAssetId: Type.Optional(Type.Number({ minimum: 1 })),
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
                 offset: Type.Optional(Type.Number({ minimum: 0 })),
                 cursor: Type.Optional(Type.String())
@@ -3496,6 +3614,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 q: query.q,
                 accessMode: query.accessMode,
                 status: query.status,
+                sourceAssetId: query.sourceAssetId,
                 limit,
                 offset: query.cursor ? query.offset : clampOffset(query.offset),
                 cursor: query.cursor
@@ -3511,7 +3630,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             data: result.items.map((asset) => serializeAsset(asset)),
             meta: buildMeta(
                 'Inspect an asset or upload a new one',
-                ['POST /api/assets', 'GET /api/assets/:id'],
+                ['POST /api/assets', 'GET /api/assets/:id', 'GET /api/assets/:id/derivatives'],
                 'low',
                 1,
                 false,
@@ -3547,10 +3666,56 @@ export default async function apiRoutes(server: FastifyInstance) {
         return {
             data: serializeAsset(asset),
             meta: buildMeta(
-                'Fetch the asset bytes or remove the asset',
-                ['GET /api/assets/:id/content', 'DELETE /api/assets/:id'],
+                'Fetch the asset bytes, inspect derivatives, or remove the asset',
+                ['GET /api/assets/:id/content', 'GET /api/assets/:id/derivatives', 'DELETE /api/assets/:id'],
                 'low',
                 1
+            )
+        };
+    });
+
+    server.get('/assets/:id/derivatives', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            querystring: Type.Object({
+                status: Type.Optional(Type.Union([
+                    Type.Literal('active'),
+                    Type.Literal('deleted')
+                ]))
+            }),
+            response: {
+                200: createAIResponse(Type.Array(AssetResponseSchema)),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const { status } = request.query as { status?: 'active' | 'deleted' };
+        const asset = await getAsset(id, getDomainId(request), { includeDeleted: status === 'deleted' });
+
+        if (!asset) {
+            return reply.status(404).send(notFoundAsset(id));
+        }
+
+        const derivatives = await listAssetDerivatives(id, getDomainId(request), {
+            includeDeleted: status === 'deleted'
+        });
+
+        return {
+            data: derivatives.map((candidate) => serializeAsset(candidate)),
+            meta: buildMeta(
+                'Inspect or attach derivative variants for this asset family',
+                ['POST /api/assets', 'GET /api/assets/:id'],
+                'low',
+                1,
+                false,
+                {
+                    total: derivatives.length,
+                    sourceAssetId: id,
+                    status: status ?? 'active'
+                }
             )
         };
     });

@@ -83,6 +83,9 @@ export const apiKeys = pgTable('api_keys', {
 export const assets = pgTable('assets', {
     id: serial('id').primaryKey(),
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    sourceAssetId: integer('source_asset_id').references((): any => assets.id, { onDelete: 'set null' }),
+    variantKey: text('variant_key'),
+    transformSpec: jsonb('transform_spec'),
     filename: text('filename').notNull(),
     originalFilename: text('original_filename').notNull(),
     mimeType: text('mime_type').notNull(),
@@ -105,6 +108,7 @@ export const assets = pgTable('assets', {
     return {
         assetDomainCreatedAtIdx: index('asset_domain_created_at_idx').on(table.domainId, table.createdAt),
         assetDomainStatusIdx: index('asset_domain_status_idx').on(table.domainId, table.status),
+        assetDomainSourceIdx: index('asset_domain_source_idx').on(table.domainId, table.sourceAssetId),
         assetDomainEntitlementScopeIdx: index('asset_domain_entitlement_scope_idx').on(table.domainId, table.entitlementScopeType, table.entitlementScopeRef),
         assetStorageKeyUniqueIdx: uniqueIndex('asset_storage_key_unique').on(table.storageKey),
     };

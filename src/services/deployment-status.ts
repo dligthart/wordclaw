@@ -99,6 +99,14 @@ export type DeploymentStatusSnapshot = {
                 offersPath: string;
                 contentPath: string;
             };
+            derivatives: {
+                supported: boolean;
+                listPath: string;
+                listTool: string;
+                sourceField: string;
+                variantKeyField: string;
+                transformSpecField: string;
+            };
             note: string;
         };
         agentRuns: {
@@ -197,6 +205,14 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
             enabled: true,
             offersPath: manifest.assetStorage.delivery.entitled.offersPath,
             contentPath: manifest.assetStorage.delivery.entitled.contentPath,
+        },
+        derivatives: {
+            supported: manifest.assetStorage.derivatives.supported,
+            listPath: manifest.assetStorage.derivatives.listPath,
+            listTool: manifest.assetStorage.derivatives.listTool,
+            sourceField: manifest.assetStorage.derivatives.sourceField,
+            variantKeyField: manifest.assetStorage.derivatives.variantKeyField,
+            transformSpecField: manifest.assetStorage.derivatives.transformSpecField,
         },
         note: manifest.assetStorage.fallbackApplied
             ? `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unavailable; the runtime is using "${manifest.assetStorage.effectiveProvider}" instead.`
