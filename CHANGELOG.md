@@ -1,3 +1,11 @@
+# [1.36.0](https://github.com/dligthart/wordclaw/compare/v1.35.0...v1.36.0) (2026-03-17)
+
+
+### Features
+
+* **adventure-game:** integrate RFC 0026 CMS features ([d5edaaa](https://github.com/dligthart/wordclaw/commit/d5edaaa8bfc28e98661ae84a6930a03c7409ccc2))
+* **archive:** card-based chapter UI with inline scene images + PDF export ([33dcd91](https://github.com/dligthart/wordclaw/commit/33dcd91a1a2ad1c3491b7a098f852c979d5c80be))
+
 # [1.35.0](https://github.com/dligthart/wordclaw/compare/v1.34.0...v1.35.0) (2026-03-17)
 
 
