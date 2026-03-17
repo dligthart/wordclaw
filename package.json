@@ -6,20 +6,24 @@
   "bin": {
     "wordclaw": "dist/cli/index.js"
   },
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "db:migrate": "tsx src/db/migrate.ts",
-    "db:stamp": "tsx src/db/stamp-migrations.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "mcp:start": "tsx src/mcp/index.ts",
-    "demo:seed-blog": "tsx scripts/seed-blog.ts",
-    "test": "vitest run --reporter verbose",
-    "docs:dev": "vitepress dev doc",
-    "docs:build": "vitepress build doc",
-    "docs:preview": "vitepress preview doc",
-    "test:integration": "vitest run tests/integration"
-  },
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "db:migrate": "tsx src/db/migrate.ts",
+        "db:stamp": "tsx src/db/stamp-migrations.ts",
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "mcp:start": "tsx src/mcp/index.ts",
+        "demo:seed-blog": "tsx scripts/seed-blog.ts",
+        "test": "vitest run --reporter verbose",
+        "test:coverage": "vitest run --reporter verbose --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary",
+        "test:ui": "npm --prefix ui run test",
+        "test:ui:coverage": "npm --prefix ui run test:coverage",
+        "test:all": "npm test && npm run test:ui",
+        "docs:dev": "vitepress dev doc",
+        "docs:build": "vitepress build doc",
+        "docs:preview": "vitepress preview doc",
+        "test:integration": "vitest run tests/integration"
+    },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dligthart/wordclaw.git"
