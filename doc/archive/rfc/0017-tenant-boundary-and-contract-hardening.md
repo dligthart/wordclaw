@@ -1,8 +1,24 @@
 # RFC 0017: Tenant Boundary and Contract Hardening
 
 **Author:** Codex (Audit)  
-**Status:** Proposed  
+**Status:** Partially Implemented  
 **Date:** 2026-02-25  
+**Updated:** 2026-03-17  
+
+## 0. Current Status
+
+As of 2026-03-17, this RFC is partially implemented and its core hardening direction is already shaping the runtime on `main`.
+
+Implemented so far:
+
+- stronger tenant-bounded access checks across the core REST, MCP, and GraphQL surfaces
+- capability-contract governance and parity checks for the supported runtime
+- canonical actor identity propagation and related contract cleanup
+
+Still pending:
+
+- the remaining schema and migration hardening passes described here, especially where tenant-owned uniqueness rules still need cleanup
+- the recurring audit-gate work called out in the later rollout phases
 
 ## 1. Summary
 This RFC proposes a cross-cutting hardening pass to align runtime behavior with WordClaw's core multi-tenant and agent-safety promises. It introduces mandatory tenant-bounded data access patterns, stronger cross-protocol policy context, and explicit capability-contract tiering for parity and dry-run guarantees.

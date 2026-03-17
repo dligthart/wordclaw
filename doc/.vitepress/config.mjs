@@ -63,11 +63,11 @@ export default withMermaid(defineConfig({
                     {
                         text: 'Current Direction',
                         items: [
-                            { text: '0015 Paid Content Consumption Contract', link: '/archive/rfc/0015-paid-content-consumption-contract' },
-                            { text: '0017 Tenant Boundary and Contract Hardening', link: '/archive/rfc/0017-tenant-boundary-and-contract-hardening' },
-                            { text: '0021 Core Product Focus and Feature Pruning', link: '/archive/rfc/0021-core-product-focus-and-feature-pruning' },
-                            { text: '0023 Media Asset Storage', link: '/rfc/proposed/0023-media-asset-storage' },
-                            { text: '0025 Reactive Agentic Webhooks via MCP', link: '/rfc/proposed/0025-agentic-webhooks' }
+                            { text: '0015 Paid Content Consumption Contract (partial)', link: '/archive/rfc/0015-paid-content-consumption-contract' },
+                            { text: '0017 Tenant Boundary and Contract Hardening (partial)', link: '/archive/rfc/0017-tenant-boundary-and-contract-hardening' },
+                            { text: '0021 Core Product Focus and Feature Pruning (accepted)', link: '/archive/rfc/0021-core-product-focus-and-feature-pruning' },
+                            { text: '0023 Media Asset Storage (rolling out)', link: '/rfc/proposed/0023-media-asset-storage' },
+                            { text: '0025 Reactive Agentic Webhooks via MCP (rolling out)', link: '/rfc/proposed/0025-agentic-webhooks' }
                         ]
                     },
                     {
@@ -75,7 +75,7 @@ export default withMermaid(defineConfig({
                         items: [
                             { text: '0001 Blog Valuation Architecture', link: '/rfc/proposed/0001-blog-valuation-architecture' },
                             { text: '0005 Multi-Channel Distribution Orchestrator', link: '/rfc/proposed/0005-multi-channel-distribution-orchestrator' },
-                            { text: '0009 Content Discovery and Consumption API', link: '/rfc/proposed/0009-content-discovery-and-consumption-api' },
+                            { text: '0009 Content Discovery and Consumption API (rolling out)', link: '/rfc/proposed/0009-content-discovery-and-consumption-api' },
                             { text: '0019 Internal Agentic Content Recommender Engine', link: '/rfc/proposed/0019-internal-agentic-content-recommender-engine' },
                             { text: '0016 AP2 Agentic Monetization', link: '/rfc/proposed/0016-ap2-agentic-monetization' },
                             { text: '0020 Autonomous Content Ops Agent', link: '/rfc/proposed/0020-autonomous-content-ops-agent' }
