@@ -1,3 +1,10 @@
+# [1.35.0](https://github.com/dligthart/wordclaw/compare/v1.34.0...v1.35.0) (2026-03-17)
+
+
+### Features
+
+* **assets:** ship derivative asset variants ([79f7cc6](https://github.com/dligthart/wordclaw/commit/79f7cc60b3dee7ae9008284f18247060ddcbc0ac))
+
 # [1.34.0](https://github.com/dligthart/wordclaw/compare/v1.33.0...v1.34.0) (2026-03-16)
 
 
