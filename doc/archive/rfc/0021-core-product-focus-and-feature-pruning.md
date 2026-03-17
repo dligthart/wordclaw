@@ -1,8 +1,24 @@
 # RFC 0021: Core Product Focus and Feature Pruning
 
 **Author:** Codex  
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-03-06  
+**Updated:** 2026-03-17  
+
+## 0. Current Status
+
+As of 2026-03-17, RFC 0021 is accepted and is the active product-direction document for WordClaw.
+
+Already reflected in the current project state:
+
+- REST and MCP are the required primary surfaces for new core capabilities
+- GraphQL is treated as a compatibility layer
+- docs, roadmap, and supervisor UI distinguish core from experimental features
+- sandbox/incubator surfaces are hidden behind explicit experimental controls in the default operator flow
+
+Still ongoing:
+
+- pruning or further isolating the remaining incubator modules that are still present in the codebase for historical or experimental reasons
 
 ## 1. Summary
 This RFC proposes a product focus reset for WordClaw. The project should narrow around its strongest concept: a headless content runtime for AI agents and human supervisors, with strict safety, structured content contracts, and built-in machine-native monetization.

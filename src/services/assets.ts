@@ -2,18 +2,23 @@ import { and, desc, eq, ilike, inArray, lt, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { assets, contentItems, contentItemVersions, contentTypes } from '../db/schema.js';
+import { getAssetDirectUploadTtlSeconds } from '../config/assets.js';
 import { logAudit } from './audit.js';
-import { getAssetStorageProvider } from './asset-storage.js';
+import { getAssetStorageProvider, type AssetObjectStat, type IssuedDirectAssetUpload } from './asset-storage.js';
 import type { AuditActor } from './actor-identity.js';
+import { issueDirectAssetUploadToken, verifyDirectAssetUploadToken } from './asset-direct-upload.js';
 import { extractAssetReferencesFromContent } from './content-schema.js';
 
 export type AssetAccessMode = 'public' | 'signed' | 'entitled';
 export type AssetStatus = 'active' | 'deleted';
 export type AssetEntitlementScopeType = 'item' | 'type' | 'subscription';
+export type AssetRecord = typeof assets.$inferSelect;
 export type AssetEntitlementScope = {
     type: AssetEntitlementScopeType;
     ref?: number | null;
 };
+
+export type AssetTransformSpec = Record<string, unknown>;
 
 export type CreateAssetInput = {
     domainId: number;
@@ -25,13 +30,43 @@ export type CreateAssetInput = {
     accessMode?: AssetAccessMode;
     entitlementScope?: AssetEntitlementScope;
     metadata?: Record<string, unknown>;
+    sourceAssetId?: number;
+    variantKey?: string;
+    transformSpec?: AssetTransformSpec;
     actor?: AuditActor;
+};
+
+export type IssueDirectAssetUploadInput = {
+    domainId: number;
+    filename: string;
+    originalFilename?: string;
+    mimeType: string;
+    accessMode?: AssetAccessMode;
+    entitlementScope?: AssetEntitlementScope;
+    metadata?: Record<string, unknown>;
+    sourceAssetId?: number;
+    variantKey?: string;
+    transformSpec?: AssetTransformSpec;
+    ttlSeconds?: number;
+};
+
+export type IssuedDirectAssetUploadFlow = {
+    provider: string;
+    upload: IssuedDirectAssetUpload & {
+        ttlSeconds: number;
+    };
+    finalize: {
+        path: string;
+        token: string;
+        expiresAt: Date;
+    };
 };
 
 export type ListAssetsInput = {
     q?: string;
     accessMode?: AssetAccessMode;
     status?: AssetStatus;
+    sourceAssetId?: number;
     limit?: number;
     offset?: number;
     cursor?: string;
@@ -79,6 +114,31 @@ export type AssetReferenceUsage = {
 export type AssetUsageSummary = {
     activeReferences: AssetReferenceUsage[];
     historicalReferences: AssetReferenceUsage[];
+};
+
+type PersistAssetRecordInput = {
+    domainId: number;
+    filename: string;
+    originalFilename: string;
+    mimeType: string;
+    stored: {
+        provider: string;
+        storageKey: string;
+    } & AssetObjectStat;
+    accessMode: AssetAccessMode;
+    entitlementScope: { type: AssetEntitlementScopeType | null; ref: number | null };
+    metadata: Record<string, unknown>;
+    sourceAssetId: number | null;
+    variantKey: string | null;
+    transformSpec: AssetTransformSpec | null;
+    actor?: AuditActor;
+};
+
+type NormalizedDerivativeSource = {
+    sourceAsset: AssetRecord | null;
+    sourceAssetId: number | null;
+    variantKey: string | null;
+    transformSpec: AssetTransformSpec | null;
 };
 
 function isPositiveInteger(value: unknown): value is number {
@@ -169,6 +229,89 @@ async function normalizeEntitlementScope(
     return {
         type: entitlementScope.type,
         ref: entitlementScope.ref
+    };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function normalizeDerivativeSource(
+    domainId: number,
+    sourceAssetId: number | undefined,
+    variantKey: string | undefined,
+    transformSpec: AssetTransformSpec | undefined,
+): Promise<NormalizedDerivativeSource> {
+    const normalizedVariantKey = variantKey?.trim() ?? '';
+
+    if (sourceAssetId === undefined) {
+        if (normalizedVariantKey.length > 0 || transformSpec !== undefined) {
+            throw new AssetListError(
+                'Derivative metadata requires a source asset',
+                'ASSET_DERIVATIVE_SOURCE_REQUIRED',
+                'Provide sourceAssetId before setting variantKey or transformSpec.'
+            );
+        }
+
+        return {
+            sourceAsset: null,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
+        };
+    }
+
+    if (!isPositiveInteger(sourceAssetId)) {
+        throw new AssetListError(
+            'Invalid source asset ID',
+            'ASSET_SOURCE_ID_INVALID',
+            'Provide sourceAssetId as a positive integer.'
+        );
+    }
+
+    const [sourceAsset] = await db.select().from(assets).where(and(
+        eq(assets.id, sourceAssetId),
+        eq(assets.domainId, domainId),
+        eq(assets.status, 'active')
+    )).limit(1);
+
+    if (!sourceAsset) {
+        throw new AssetListError(
+            'Source asset not found',
+            'ASSET_SOURCE_NOT_FOUND',
+            'Provide sourceAssetId for an active asset in the current domain.'
+        );
+    }
+
+    if (normalizedVariantKey.length === 0) {
+        throw new AssetListError(
+            'Derivative variant key is required',
+            'ASSET_VARIANT_KEY_REQUIRED',
+            'Provide variantKey when creating a derivative asset.'
+        );
+    }
+
+    if (!/^[a-z0-9._-]{2,64}$/i.test(normalizedVariantKey)) {
+        throw new AssetListError(
+            'Derivative variant key is invalid',
+            'ASSET_VARIANT_KEY_INVALID',
+            'Use variantKey with 2-64 letters, numbers, dashes, underscores, or periods.'
+        );
+    }
+
+    if (transformSpec !== undefined && !isPlainObject(transformSpec)) {
+        throw new AssetListError(
+            'Derivative transform spec must be an object',
+            'ASSET_TRANSFORM_SPEC_INVALID',
+            'Provide transformSpec as a JSON object when present.'
+        );
+    }
+
+    return {
+        sourceAsset,
+        sourceAssetId: sourceAsset.id,
+        variantKey: normalizedVariantKey,
+        transformSpec: transformSpec ?? null,
     };
 }
 
@@ -263,54 +406,184 @@ export function decodeAssetsCursor(cursor: string): AssetCursor | null {
     }
 }
 
+async function persistAssetRecord(input: PersistAssetRecordInput) {
+    const [created] = await db.insert(assets).values({
+        domainId: input.domainId,
+        sourceAssetId: input.sourceAssetId,
+        variantKey: input.variantKey,
+        transformSpec: input.transformSpec,
+        filename: input.filename,
+        originalFilename: input.originalFilename,
+        mimeType: input.mimeType,
+        sizeBytes: input.stored.sizeBytes,
+        byteHash: input.stored.byteHash,
+        storageProvider: input.stored.provider,
+        storageKey: input.stored.storageKey,
+        accessMode: input.accessMode,
+        entitlementScopeType: input.entitlementScope.type,
+        entitlementScopeRef: input.entitlementScope.ref,
+        status: 'active',
+        metadata: input.metadata,
+        uploaderActorId: input.actor?.actorId ?? null,
+        uploaderActorType: input.actor?.actorType ?? null,
+        uploaderActorSource: input.actor?.actorSource ?? null,
+    }).returning();
+
+    await logAudit(
+        input.domainId,
+        'create',
+        'asset',
+        created.id,
+        {
+            sourceAssetId: created.sourceAssetId,
+            variantKey: created.variantKey,
+            filename: created.filename,
+            mimeType: created.mimeType,
+            sizeBytes: created.sizeBytes,
+            accessMode: created.accessMode,
+            entitlementScopeType: created.entitlementScopeType,
+            entitlementScopeRef: created.entitlementScopeRef,
+            storageProvider: created.storageProvider,
+        },
+        input.actor
+    );
+
+    return created;
+}
+
 export async function createAsset(input: CreateAssetInput) {
-    const accessMode = input.accessMode || 'public';
-    const entitlementScope = await normalizeEntitlementScope(input.domainId, accessMode, input.entitlementScope);
+    const derivative = await normalizeDerivativeSource(
+        input.domainId,
+        input.sourceAssetId,
+        input.variantKey,
+        input.transformSpec,
+    );
+    const inheritedEntitlementScope = derivative.sourceAsset ? getAssetEntitlementScope(derivative.sourceAsset) ?? undefined : undefined;
+    const accessMode = input.accessMode || derivative.sourceAsset?.accessMode as AssetAccessMode | undefined || 'public';
+    const entitlementScope = await normalizeEntitlementScope(
+        input.domainId,
+        accessMode,
+        input.entitlementScope ?? inheritedEntitlementScope,
+    );
     const bytes = resolveAssetContentBytes(input);
     const storage = getAssetStorageProvider();
     const stored = await storage.put(input.domainId, input.filename, bytes);
 
     try {
-        const [created] = await db.insert(assets).values({
+        return await persistAssetRecord({
             domainId: input.domainId,
             filename: input.filename,
             originalFilename: input.originalFilename || input.filename,
             mimeType: input.mimeType,
-            sizeBytes: stored.sizeBytes,
-            byteHash: stored.byteHash,
-            storageProvider: stored.provider,
-            storageKey: stored.storageKey,
+            stored,
             accessMode,
-            entitlementScopeType: entitlementScope.type,
-            entitlementScopeRef: entitlementScope.ref,
-            status: 'active',
+            entitlementScope,
             metadata: input.metadata || {},
-            uploaderActorId: input.actor?.actorId ?? null,
-            uploaderActorType: input.actor?.actorType ?? null,
-            uploaderActorSource: input.actor?.actorSource ?? null,
-        }).returning();
-
-        await logAudit(
-            input.domainId,
-            'create',
-            'asset',
-            created.id,
-            {
-                filename: created.filename,
-                mimeType: created.mimeType,
-                sizeBytes: created.sizeBytes,
-                accessMode: created.accessMode,
-                entitlementScopeType: created.entitlementScopeType,
-                entitlementScopeRef: created.entitlementScopeRef
-            },
-            input.actor
-        );
-
-        return created;
+            sourceAssetId: derivative.sourceAssetId,
+            variantKey: derivative.variantKey,
+            transformSpec: derivative.transformSpec,
+            actor: input.actor,
+        });
     } catch (error) {
         await storage.remove(stored.storageKey).catch(() => undefined);
         throw error;
     }
+}
+
+export async function issueDirectAssetUpload(input: IssueDirectAssetUploadInput): Promise<IssuedDirectAssetUploadFlow> {
+    const derivative = await normalizeDerivativeSource(
+        input.domainId,
+        input.sourceAssetId,
+        input.variantKey,
+        input.transformSpec,
+    );
+    const inheritedEntitlementScope = derivative.sourceAsset ? getAssetEntitlementScope(derivative.sourceAsset) ?? undefined : undefined;
+    const accessMode = input.accessMode || derivative.sourceAsset?.accessMode as AssetAccessMode | undefined || 'public';
+    const entitlementScope = await normalizeEntitlementScope(
+        input.domainId,
+        accessMode,
+        input.entitlementScope ?? inheritedEntitlementScope,
+    );
+    const provider = getAssetStorageProvider();
+    const ttlSeconds = Math.max(60, Math.min(Math.trunc(input.ttlSeconds ?? getAssetDirectUploadTtlSeconds()), 3600));
+    const issued = await provider.issueDirectUpload(input.domainId, input.filename, input.mimeType, new Date(Date.now() + ttlSeconds * 1000));
+    const completion = issueDirectAssetUploadToken({
+        domainId: input.domainId,
+        storageProvider: issued.provider,
+        storageKey: issued.storageKey,
+        filename: input.filename,
+        originalFilename: input.originalFilename || input.filename,
+        mimeType: input.mimeType,
+        accessMode,
+        entitlementScopeType: entitlementScope.type,
+        entitlementScopeRef: entitlementScope.ref,
+        metadata: input.metadata || {},
+        sourceAssetId: derivative.sourceAssetId,
+        variantKey: derivative.variantKey,
+        transformSpec: derivative.transformSpec,
+        ttlSeconds,
+    });
+
+    return {
+        provider: issued.provider,
+        upload: {
+            ...issued,
+            ttlSeconds: completion.ttlSeconds,
+        },
+        finalize: {
+            path: '/api/assets/direct-upload/complete',
+            token: completion.token,
+            expiresAt: completion.expiresAt,
+        },
+    };
+}
+
+export async function completeDirectAssetUpload(token: string, domainId: number, actor?: AuditActor) {
+    const verification = verifyDirectAssetUploadToken(token, domainId);
+    if (!verification.ok) {
+        throw new AssetListError(
+            verification.code === 'DIRECT_ASSET_UPLOAD_TOKEN_EXPIRED'
+                ? 'Direct upload token expired'
+                : 'Invalid direct upload token',
+            verification.code,
+            verification.remediation,
+        );
+    }
+
+    const [existing] = await db.select().from(assets).where(and(
+        eq(assets.domainId, verification.domainId),
+        eq(assets.storageProvider, verification.storageProvider),
+        eq(assets.storageKey, verification.storageKey),
+    )).limit(1);
+    if (existing) {
+        return existing;
+    }
+
+    const storage = getAssetStorageProvider(verification.storageProvider);
+    const objectStats = await storage.stat(verification.storageKey);
+
+    return persistAssetRecord({
+        domainId: verification.domainId,
+        filename: verification.filename,
+        originalFilename: verification.originalFilename,
+        mimeType: verification.mimeType,
+        stored: {
+            provider: verification.storageProvider,
+            storageKey: verification.storageKey,
+            sizeBytes: objectStats.sizeBytes,
+            byteHash: objectStats.byteHash,
+        },
+        accessMode: verification.accessMode,
+        entitlementScope: {
+            type: verification.entitlementScopeType,
+            ref: verification.entitlementScopeRef,
+        },
+        metadata: verification.metadata,
+        sourceAssetId: verification.sourceAssetId,
+        variantKey: verification.variantKey,
+        transformSpec: verification.transformSpec,
+        actor,
+    });
 }
 
 export async function listAssets(domainId: number, input: ListAssetsInput = {}): Promise<ListAssetsResult> {
@@ -318,6 +591,7 @@ export async function listAssets(domainId: number, input: ListAssetsInput = {}):
         q,
         accessMode,
         status = 'active',
+        sourceAssetId,
         limit = 50,
         offset,
         cursor
@@ -347,6 +621,7 @@ export async function listAssets(domainId: number, input: ListAssetsInput = {}):
         eq(assets.domainId, domainId),
         status ? eq(assets.status, status) : undefined,
         accessMode ? eq(assets.accessMode, accessMode) : undefined,
+        sourceAssetId !== undefined ? eq(assets.sourceAssetId, sourceAssetId) : undefined,
         searchPattern
             ? or(
                 ilike(assets.filename, searchPattern),
@@ -406,6 +681,23 @@ export async function getAsset(id: number, domainId: number, options: { includeD
     return asset ?? null;
 }
 
+export async function listAssetDerivatives(
+    sourceAssetId: number,
+    domainId: number,
+    options: { includeDeleted?: boolean } = {},
+) {
+    const conditions = [
+        eq(assets.domainId, domainId),
+        eq(assets.sourceAssetId, sourceAssetId),
+        options.includeDeleted ? undefined : eq(assets.status, 'active'),
+    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+    return db.select()
+        .from(assets)
+        .where(and(...conditions))
+        .orderBy(desc(assets.createdAt), desc(assets.id));
+}
+
 export async function getPublicAsset(id: number) {
     const [asset] = await db.select().from(assets).where(and(
         eq(assets.id, id),
@@ -440,8 +732,11 @@ export function getAssetEntitlementScope(asset: {
     return null;
 }
 
-export async function readAssetContent(storageKey: string) {
-    return getAssetStorageProvider().read(storageKey);
+export async function readAssetContent(asset: {
+    storageKey: string;
+    storageProvider: string;
+}) {
+    return getAssetStorageProvider(asset.storageProvider).read(asset.storageKey);
 }
 
 export async function softDeleteAsset(id: number, domainId: number, actor?: AuditActor) {
@@ -625,6 +920,19 @@ export async function purgeAsset(id: number, domainId: number, actor?: AuditActo
         );
     }
 
+    const derivatives = await listAssetDerivatives(id, domainId, { includeDeleted: true });
+    if (derivatives.length > 0) {
+        throw new AssetListError(
+            'Asset purge blocked by derivative variants',
+            'ASSET_PURGE_BLOCKED_BY_DERIVATIVES',
+            'Purge or re-home derivative assets before purging the source asset.',
+            {
+                derivativeIds: derivatives.map((asset) => asset.id),
+                derivativeCount: derivatives.length,
+            }
+        );
+    }
+
     const usage = await findAssetUsage(domainId, id);
     if (usage.activeReferences.length > 0 || usage.historicalReferences.length > 0) {
         throw new AssetListError(
@@ -638,7 +946,7 @@ export async function purgeAsset(id: number, domainId: number, actor?: AuditActo
         );
     }
 
-    const storage = getAssetStorageProvider();
+    const storage = getAssetStorageProvider(existing.storageProvider);
     await storage.remove(existing.storageKey);
 
     const [purged] = await db.delete(assets).where(and(

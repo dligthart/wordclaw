@@ -17,14 +17,21 @@ The same discovery surfaces now expose the asset contract too:
 
 - configured versus effective asset storage provider
 - supported upload modes over REST and MCP
+- whether direct provider upload is currently available, plus the issue/complete paths
 - supported delivery modes (`public`, `signed`, `entitled`)
 - signed asset issuance path/tool plus the default token TTL
+- derivative variant support, including the source field, variant key field, transform metadata field, and list route/tool
 
 Asset discovery is available in-band too:
 
 - `content://assets` lists the current domain asset catalog snapshot
 - `content://assets/{id}` returns a single asset metadata snapshot
+- `content://assets/{id}/derivatives` lists the current derivative family for a source asset
 - `get_asset_access` explains which REST path to read, whether auth is required, and whether an entitlement-backed offer applies
+- `create_asset` accepts `sourceAssetId`, `variantKey`, and `transformSpec` when you need to create a managed derivative variant
+- `issue_direct_asset_upload` returns a provider upload URL plus a completion token for S3-compatible direct upload flows
+- `issue_direct_asset_upload` also accepts `sourceAssetId`, `variantKey`, and `transformSpec` so direct provider uploads can finalize as derivative assets
+- `complete_direct_asset_upload` finalizes the uploaded object into a first-class asset record after the provider write succeeds
 - `issue_asset_access` issues a short-lived signed asset URL for `signed` assets, or returns direct public-read guidance when the asset is already public
 
 Recommended remote MCP preflight:
@@ -66,6 +73,11 @@ node dist/cli/index.js mcp resource system://agent-guidance \
   --api-key writer
 
 node dist/cli/index.js mcp resource content://assets \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
+node dist/cli/index.js mcp resource content://assets/44/derivatives \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
@@ -268,6 +280,9 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | Tool               | Description                                                          |
 |--------------------|----------------------------------------------------------------------|
 | `create_asset`     | Upload an asset with public, signed, or entitled access mode         |
+| `list_asset_derivatives` | List derivative variants for a source asset                    |
+| `issue_direct_asset_upload` | Issue a provider upload URL and completion token for direct asset upload |
+| `complete_direct_asset_upload` | Finalize a previously issued direct asset upload into an asset record |
 | `list_assets`      | List assets with optional filters and cursor paging                  |
 | `get_asset`        | Read a single asset metadata record                                  |
 | `get_asset_access` | Return REST delivery guidance, auth requirements, and available offers |

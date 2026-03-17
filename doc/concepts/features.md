@@ -8,7 +8,9 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 
 - **Content Types** — Define reusable JSON schemas that content items must conform to. Schemas are validated on creation and enforced on every content write.
 - **Content Items** — Versioned content entities with `draft`, `published`, and `archived` status. Every update auto-increments the version and stores an immutable snapshot.
-- **Media Assets** — Domain-scoped asset records with schema-aware references, multipart upload, `public`/`signed`/`entitled` delivery modes, and restore/purge lifecycle controls.
+- **Content Runtime Queries** — Schema-aware field filters, scalar field sorting, grouped projections, and cursor pagination let agents build targeted list and leaderboard-style reads without shipping a separate query layer.
+- **Public Write Lanes and Lifecycle Policies** — Schemas can explicitly allow bounded public writes and TTL-based lifecycle archival for ephemeral session-like content.
+- **Media Assets** — Domain-scoped asset records with schema-aware references, multipart upload, `local` or S3-compatible storage backends, `public`/`signed`/`entitled` delivery modes, and restore/purge lifecycle controls.
 - **Batch Operations** — Create, update, or delete multiple items in a single call in atomic or partial mode.
 - **Version History and Rollback** — Browse the full history of any content item and restore prior versions without losing auditability.
 
@@ -32,7 +34,7 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 ### Primary Agent Surfaces
 
 - **REST API** — The main HTTP contract, documented at `/documentation`, with agent-oriented guidance metadata in responses.
-- **MCP Server** — The primary agent-native tool surface for MCP-compatible clients.
+- **MCP Server** — The primary agent-native tool surface for MCP-compatible clients, including remote Streamable HTTP sessions and reactive runtime subscriptions.
 - **AI-Friendly Errors** — Auth and validation failures include deterministic remediation guidance so agents can recover programmatically.
 
 ### Supervisor Control Plane
@@ -45,6 +47,7 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 - **Schema Manager** — Visual schema administration for content models.
 - **Approval Queue** — Review and decide pending workflow items.
 - **API Keys** — Provision, rotate, and revoke API credentials for agents and operator integrations.
+- **Asset Library** — Upload assets, inspect delivery policy, preview image content, and manage delete/restore/purge lifecycle without dropping to the CLI.
 
 ## Tier 2: Optional Modules
 

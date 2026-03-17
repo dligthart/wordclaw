@@ -735,6 +735,13 @@ export function buildCapabilityManifest() {
                 rest: {
                     path: '/api/assets',
                     modes: [...SUPPORTED_ASSET_UPLOAD_MODES],
+                    directProviderUpload: {
+                        enabled: assetStorage.effectiveProvider === 's3',
+                        issuePath: '/api/assets/direct-upload',
+                        completePath: '/api/assets/direct-upload/complete',
+                        method: 'PUT',
+                        providers: ['s3'],
+                    },
                 },
                 mcp: {
                     tool: 'create_asset',
@@ -761,6 +768,17 @@ export function buildCapabilityManifest() {
                 softDelete: true,
                 restore: true,
                 purge: true,
+            },
+            derivatives: {
+                supported: true,
+                createViaRestPath: '/api/assets',
+                createViaMcpTool: 'create_asset',
+                listPath: '/api/assets/:id/derivatives',
+                listTool: 'list_asset_derivatives',
+                sourceField: 'sourceAssetId',
+                variantKeyField: 'variantKey',
+                transformSpecField: 'transformSpec',
+                note: 'Derivatives are first-class asset records linked back to a source asset and inherit the same lifecycle, audit, and storage rules.',
             },
         },
         agentGuidance,

@@ -65,6 +65,18 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'create_asset' }
     },
     {
+        id: 'issue_direct_asset_upload',
+        description: 'Issue a direct provider upload URL and completion token for an asset',
+        rest: { method: 'POST', path: '/assets/direct-upload' },
+        mcp: { tool: 'issue_direct_asset_upload' }
+    },
+    {
+        id: 'complete_direct_asset_upload',
+        description: 'Finalize a previously issued direct provider upload',
+        rest: { method: 'POST', path: '/assets/direct-upload/complete' },
+        mcp: { tool: 'complete_direct_asset_upload' }
+    },
+    {
         id: 'list_assets',
         description: 'List assets',
         rest: { method: 'GET', path: '/assets' },
@@ -75,6 +87,12 @@ export const capabilityMatrix: Capability[] = [
         description: 'Get asset by ID',
         rest: { method: 'GET', path: '/assets/:id' },
         mcp: { tool: 'get_asset' }
+    },
+    {
+        id: 'list_asset_derivatives',
+        description: 'List derivative variants for a source asset',
+        rest: { method: 'GET', path: '/assets/:id/derivatives' },
+        mcp: { tool: 'list_asset_derivatives' }
     },
     {
         id: 'issue_asset_access',

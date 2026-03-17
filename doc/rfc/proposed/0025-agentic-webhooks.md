@@ -1,8 +1,28 @@
 # RFC 0025: Reactive Agentic Webhooks via MCP
 
 **Author:** Codex  
-**Status:** Proposed  
+**Status:** Rolling out  
 **Date:** 2026-03-12  
+**Updated:** 2026-03-17  
+
+## 0. Current Status
+
+As of 2026-03-17, RFC 0025 is actively rolling out and the core reactive MCP runtime is already live on `main`.
+
+Implemented so far:
+
+- remote MCP sessions over Streamable HTTP at `/mcp`
+- session-backed SSE delivery for server-pushed MCP notifications
+- `subscribe_events` with topic, recipe, and filter support
+- filter-aware topic recipes such as `content-publication`, `review-decisions`, and `integration-admin`
+- capability and deployment-status discovery for reactive transports, filter fields, topics, and recipes
+- `guide_task` reactive follow-up recommendations for the core workflow classes
+- verification and demo-agent flows for live reactive subscription testing
+
+Still pending:
+
+- continued topic hardening and recipe refinement for the highest-value runtime events
+- broader demo coverage showing full end-to-end reactive agent loops on top of the current transport
 
 ## 1. Summary
 This RFC proposes extending WordClaw's existing webhook architecture to support **Agentic Webhooks** natively through the Model Context Protocol (MCP). By introducing Server-Sent Events (SSE) or bi-directional streaming over MCP, we can transition AI agents from a costly "polling" loop architecture to a highly efficient, real-time "reactive" architecture. 

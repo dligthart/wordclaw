@@ -1304,6 +1304,7 @@ async function handleAssets(client: RestCliClient, args: ParsedArgs) {
                 q: getStringFlag(args, 'q'),
                 accessMode: getStringFlag(args, 'access-mode'),
                 status: getStringFlag(args, 'status'),
+                sourceAssetId: maybeNumber(getNumberFlag(args, 'source-asset-id')),
                 limit: maybeNumber(getNumberFlag(args, 'limit')),
                 offset: getStringFlag(args, 'cursor') ? undefined : maybeNumber(getNumberFlag(args, 'offset')),
                 cursor: getStringFlag(args, 'cursor'),
@@ -1330,12 +1331,15 @@ async function handleAssets(client: RestCliClient, args: ParsedArgs) {
     if (action === 'create') {
         const metadata = await loadJsonFlag(args, 'metadata-json', 'metadata-file');
         const entitlementScope = await loadJsonFlag(args, 'entitlement-scope-json', 'entitlement-scope-file');
+        const transformSpec = await loadJsonFlag(args, 'transform-spec-json', 'transform-spec-file');
         const contentBase64 = await loadTextFlag(args, 'content-base64', 'content-base64-file');
         const contentFile = getStringFlag(args, 'content-file');
         const filenameFlag = getStringFlag(args, 'filename');
         const originalFilenameFlag = getStringFlag(args, 'original-filename');
         const mimeType = requireStringFlag(args, 'mime-type');
         const accessMode = getStringFlag(args, 'access-mode');
+        const sourceAssetId = getNumberFlag(args, 'source-asset-id');
+        const variantKey = getStringFlag(args, 'variant-key');
 
         if (contentBase64 !== undefined && contentFile) {
             throw new Error('assets create accepts either --content-file or --content-base64/--content-base64-file, not both.');
@@ -1359,6 +1363,15 @@ async function handleAssets(client: RestCliClient, args: ParsedArgs) {
             }
             if (entitlementScope !== undefined) {
                 form.append('entitlementScope', JSON.stringify(entitlementScope));
+            }
+            if (sourceAssetId !== undefined) {
+                form.append('sourceAssetId', String(sourceAssetId));
+            }
+            if (variantKey) {
+                form.append('variantKey', variantKey);
+            }
+            if (transformSpec !== undefined) {
+                form.append('transformSpec', JSON.stringify(transformSpec));
             }
             form.append('file', new Blob([fileBytes], { type: mimeType }), derivedOriginalFilename);
 
@@ -1389,6 +1402,9 @@ async function handleAssets(client: RestCliClient, args: ParsedArgs) {
                     accessMode,
                     entitlementScope,
                     metadata,
+                    sourceAssetId,
+                    variantKey,
+                    transformSpec,
                 }),
                 acceptStatuses: [201],
             });

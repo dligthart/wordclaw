@@ -166,11 +166,18 @@ describe('buildCapabilityManifest', () => {
             configuredProvider: 'local',
             effectiveProvider: 'local',
             fallbackApplied: false,
-            supportedProviders: ['local'],
+            supportedProviders: ['local', 's3'],
             upload: expect.objectContaining({
                 rest: {
                     path: '/api/assets',
                     modes: ['json-base64', 'multipart-form-data'],
+                    directProviderUpload: {
+                        enabled: false,
+                        issuePath: '/api/assets/direct-upload',
+                        completePath: '/api/assets/direct-upload/complete',
+                        method: 'PUT',
+                        providers: ['s3'],
+                    },
                 },
                 mcp: {
                     tool: 'create_asset',
@@ -193,6 +200,17 @@ describe('buildCapabilityManifest', () => {
                 softDelete: true,
                 restore: true,
                 purge: true,
+            },
+            derivatives: {
+                supported: true,
+                createViaRestPath: '/api/assets',
+                createViaMcpTool: 'create_asset',
+                listPath: '/api/assets/:id/derivatives',
+                listTool: 'list_asset_derivatives',
+                sourceField: 'sourceAssetId',
+                variantKeyField: 'variantKey',
+                transformSpecField: 'transformSpec',
+                note: expect.any(String),
             },
         }));
         expect(manifest.agentGuidance.routingHints).toEqual(

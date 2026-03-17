@@ -17,14 +17,18 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 import { LicensingService, type OfferReadScope } from '../services/licensing.js';
 import {
     AssetListError,
+    completeDirectAssetUpload,
     createAsset,
     getAsset,
     getAssetEntitlementScope,
+    issueDirectAssetUpload,
+    listAssetDerivatives,
     listAssets,
     purgeAsset,
     restoreAsset,
     softDeleteAsset
 } from '../services/assets.js';
+import { AssetStorageError } from '../services/asset-storage.js';
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
@@ -461,6 +465,9 @@ export function createServer(options: CreateMcpServerOptions = {}) {
 
     function serializeAssetForMcp(asset: {
         id: number;
+        sourceAssetId: number | null;
+        variantKey: string | null;
+        transformSpec: unknown;
         filename: string;
         originalFilename: string;
         mimeType: string;
@@ -481,6 +488,11 @@ export function createServer(options: CreateMcpServerOptions = {}) {
     }) {
         return {
             id: asset.id,
+            sourceAssetId: asset.sourceAssetId ?? null,
+            variantKey: asset.variantKey ?? null,
+            transformSpec: asset.transformSpec && typeof asset.transformSpec === 'object'
+                ? asset.transformSpec as Record<string, unknown>
+                : null,
             filename: asset.filename,
             originalFilename: asset.originalFilename,
             mimeType: asset.mimeType,
@@ -499,6 +511,10 @@ export function createServer(options: CreateMcpServerOptions = {}) {
             createdAt: asset.createdAt.toISOString(),
             updatedAt: asset.updatedAt.toISOString(),
             deletedAt: asset.deletedAt ? asset.deletedAt.toISOString() : null,
+            relationships: {
+                sourcePath: asset.sourceAssetId ? `/api/assets/${asset.sourceAssetId}` : null,
+                derivativesPath: `/api/assets/${asset.id}/derivatives`,
+            },
             delivery: {
                 readSurface: 'rest',
                 contentPath: `/api/assets/${asset.id}/content`,
@@ -847,6 +863,9 @@ server.tool(
         mimeType: z.string().describe('MIME type such as image/png'),
         contentBase64: z.string().describe('Asset bytes encoded as base64'),
         accessMode: z.enum(['public', 'signed', 'entitled']).optional().describe('Access mode for the asset'),
+        sourceAssetId: z.number().optional().describe('Optional source asset ID when creating a derivative variant'),
+        variantKey: z.string().optional().describe('Required derivative variant key when sourceAssetId is set'),
+        transformSpec: z.record(z.string(), z.any()).optional().describe('Optional derivative transform metadata such as width, height, format, or fit'),
         entitlementScope: z.object({
             type: z.enum(['item', 'type', 'subscription']),
             ref: z.number().optional()
@@ -863,6 +882,9 @@ server.tool(
                 mimeType: args.mimeType,
                 contentBase64: args.contentBase64,
                 accessMode: args.accessMode,
+                sourceAssetId: args.sourceAssetId,
+                variantKey: args.variantKey,
+                transformSpec: args.transformSpec,
                 entitlementScope: args.entitlementScope,
                 metadata: args.metadata,
                 actor: {
@@ -880,8 +902,106 @@ server.tool(
             if (error instanceof AssetListError) {
                 return err(formatAssetError(error));
             }
+            if (error instanceof AssetStorageError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
 
             return err(`Error creating asset: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'issue_direct_asset_upload',
+    'Issue a direct provider upload URL for S3-compatible asset storage and return a completion token',
+    {
+        filename: z.string().describe('Storage filename for the asset'),
+        originalFilename: z.string().optional().describe('Original source filename'),
+        mimeType: z.string().describe('MIME type such as image/png'),
+        accessMode: z.enum(['public', 'signed', 'entitled']).optional().describe('Access mode for the asset'),
+        sourceAssetId: z.number().optional().describe('Optional source asset ID when creating a derivative variant'),
+        variantKey: z.string().optional().describe('Required derivative variant key when sourceAssetId is set'),
+        transformSpec: z.record(z.string(), z.any()).optional().describe('Optional derivative transform metadata such as width, height, format, or fit'),
+        entitlementScope: z.object({
+            type: z.enum(['item', 'type', 'subscription']),
+            ref: z.number().optional()
+        }).optional().describe('Required when accessMode is entitled'),
+        metadata: z.record(z.string(), z.any()).optional().describe('Optional metadata object'),
+        ttlSeconds: z.number().optional().describe('Optional direct upload lifetime in seconds (60-3600)')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async (args, _extra, domainId) => {
+        try {
+            const issued = await issueDirectAssetUpload({
+                domainId,
+                filename: args.filename,
+                originalFilename: args.originalFilename,
+                mimeType: args.mimeType,
+                accessMode: args.accessMode,
+                sourceAssetId: args.sourceAssetId,
+                variantKey: args.variantKey,
+                transformSpec: args.transformSpec,
+                entitlementScope: args.entitlementScope,
+                metadata: args.metadata,
+                ttlSeconds: args.ttlSeconds,
+            });
+
+            return okJson({
+                provider: issued.provider,
+                upload: {
+                    method: issued.upload.method,
+                    uploadUrl: issued.upload.uploadUrl,
+                    uploadHeaders: issued.upload.uploadHeaders,
+                    expiresAt: issued.upload.expiresAt.toISOString(),
+                    ttlSeconds: issued.upload.ttlSeconds,
+                },
+                finalize: {
+                    path: issued.finalize.path,
+                    token: issued.finalize.token,
+                    expiresAt: issued.finalize.expiresAt.toISOString(),
+                },
+                recommendedNextAction: 'Upload the bytes to the provider URL, then call complete_direct_asset_upload with the returned token.'
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return err(formatAssetError(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
+
+            return err(`Error issuing direct asset upload: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'complete_direct_asset_upload',
+    'Finalize a previously issued direct provider upload and materialize the asset record',
+    {
+        token: z.string().describe('Completion token returned by issue_direct_asset_upload')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ token }, extra, domainId) => {
+        try {
+            const principal = resolveMcpPrincipal(extra);
+            const completed = await completeDirectAssetUpload(token, domainId, {
+                actorId: principal.actorId,
+                actorType: principal.actorType,
+                actorSource: principal.actorSource
+            });
+
+            return okJson({
+                asset: serializeAssetForMcp(completed),
+                recommendedNextAction: 'Use get_asset or get_asset_access to inspect delivery and attachment guidance.'
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return err(formatAssetError(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return err(`${error.code}: ${error.message}. ${error.remediation}`);
+            }
+
+            return err(`Error completing direct asset upload: ${(error as Error).message}`);
         }
     })
 );
@@ -893,16 +1013,18 @@ server.tool(
         q: z.string().optional().describe('Search by filename, original filename, mime type, or asset ID'),
         accessMode: z.enum(['public', 'signed', 'entitled']).optional().describe('Filter by asset access mode'),
         status: z.enum(['active', 'deleted']).optional().describe('Filter by asset status'),
+        sourceAssetId: z.number().optional().describe('Filter derivatives by source asset ID'),
         limit: z.number().optional().describe('Page size (default 50, max 500)'),
         offset: z.number().optional().describe('Row offset (default 0)'),
         cursor: z.string().optional().describe('Cursor returned by a previous list_assets page')
     },
-    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ q, accessMode, status, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ q, accessMode, status, sourceAssetId, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
         try {
             const result = await listAssets(domainId, {
                 q,
                 accessMode,
                 status,
+                sourceAssetId,
                 limit: clampLimit(rawLimit),
                 offset: cursor ? rawOffset : clampOffset(rawOffset),
                 cursor
@@ -923,6 +1045,32 @@ server.tool(
 
             return err(`Error listing assets: ${(error as Error).message}`);
         }
+    })
+);
+
+server.tool(
+    'list_asset_derivatives',
+    'List derivative variants for a source asset',
+    {
+        id: z.number().describe('Source asset ID'),
+        status: z.enum(['active', 'deleted']).optional().describe('Optional derivative status filter'),
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'asset', id: args.id }), async ({ id, status }, _extra, domainId) => {
+        const asset = await getAsset(id, domainId, { includeDeleted: status === 'deleted' });
+        if (!asset) {
+            return err(`ASSET_NOT_FOUND: Asset ${id} not found in the current domain.`);
+        }
+
+        const derivatives = await listAssetDerivatives(id, domainId, {
+            includeDeleted: status === 'deleted',
+        });
+
+        return okJson({
+            sourceAsset: serializeAssetForMcp(asset),
+            items: derivatives.map((candidate) => serializeAssetForMcp(candidate)),
+            total: derivatives.length,
+            status: status ?? 'active',
+        });
     })
 );
 
@@ -3482,6 +3630,53 @@ server.resource(
                     null,
                     2
                 )
+            }]
+        };
+    }
+);
+
+server.resource(
+    'asset-derivatives',
+    new ResourceTemplate('content://assets/{id}/derivatives', { list: undefined }),
+    async (uri, variables, extra) => {
+        const domainId = resolveMcpPrincipal(extra as McpRequestExtra | undefined).domainId;
+        const idValue = readResourceTemplateValue(variables.id);
+        const id = Number(idValue);
+
+        if (!Number.isInteger(id) || id <= 0) {
+            return {
+                contents: [{
+                    uri: uri.href,
+                    text: JSON.stringify({
+                        error: 'INVALID_ASSET_ID',
+                        remediation: 'Use content://assets/<positive integer id>/derivatives.'
+                    }, null, 2)
+                }]
+            };
+        }
+
+        const asset = await getAsset(id, domainId);
+        if (!asset) {
+            return {
+                contents: [{
+                    uri: uri.href,
+                    text: JSON.stringify({
+                        error: 'ASSET_NOT_FOUND',
+                        remediation: 'List content://assets to discover valid asset IDs in the current domain.'
+                    }, null, 2)
+                }]
+            };
+        }
+
+        const derivatives = await listAssetDerivatives(id, domainId);
+        return {
+            contents: [{
+                uri: uri.href,
+                text: JSON.stringify({
+                    sourceAsset: serializeAssetForMcp(asset),
+                    items: derivatives.map((candidate) => serializeAssetForMcp(candidate)),
+                    total: derivatives.length,
+                }, null, 2)
             }]
         };
     }

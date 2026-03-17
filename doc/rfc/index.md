@@ -5,17 +5,16 @@ This index now distinguishes between the active product direction and older non-
 
 ## Current Direction
 
-- [RFC-0015: Paid Content Consumption Contract](/archive/rfc/0015-paid-content-consumption-contract)
-- [RFC-0017: Tenant Boundary and Contract Hardening](/archive/rfc/0017-tenant-boundary-and-contract-hardening)
-- [RFC-0021: Core Product Focus and Feature Pruning](/archive/rfc/0021-core-product-focus-and-feature-pruning)
-- [RFC-0023: Media Asset Storage (rolling out)](/rfc/proposed/0023-media-asset-storage)
-- [RFC-0025: Reactive Agentic Webhooks via MCP](/rfc/proposed/0025-agentic-webhooks)
+- [RFC-0015: Paid Content Consumption Contract (partially implemented)](/archive/rfc/0015-paid-content-consumption-contract)
+- [RFC-0017: Tenant Boundary and Contract Hardening (partially implemented)](/archive/rfc/0017-tenant-boundary-and-contract-hardening)
+- [RFC-0021: Core Product Focus and Feature Pruning (accepted)](/archive/rfc/0021-core-product-focus-and-feature-pruning)
+- [RFC-0025: Reactive Agentic Webhooks via MCP (rolling out)](/rfc/proposed/0025-agentic-webhooks)
 
 ## Historical / Non-Core Proposals
 
 - [RFC-0001: Blog Valuation Architecture](/rfc/proposed/0001-blog-valuation-architecture)
 - [RFC-0005: Multi-Channel Distribution Orchestrator](/rfc/proposed/0005-multi-channel-distribution-orchestrator)
-- [RFC-0009: Content Discovery and Consumption API](/rfc/proposed/0009-content-discovery-and-consumption-api)
+- [RFC-0009: Content Discovery and Consumption API (rolling out)](/rfc/proposed/0009-content-discovery-and-consumption-api)
 - [RFC-0019: Internal Agentic Content Recommender Engine](/rfc/proposed/0019-internal-agentic-content-recommender-engine)
 - [RFC-0016: AP2 Agentic Monetization](/rfc/proposed/0016-ap2-agentic-monetization)
 - [RFC-0020: Autonomous Content Ops Agent](/rfc/proposed/0020-autonomous-content-ops-agent)
@@ -31,6 +30,7 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0011: Multi-Domain Tenant Support](/rfc/implemented/0011-multi-domain-tenant-support)
 - [RFC-0012: Native Vector RAG Endpoints](/rfc/implemented/0012-native-vector-rag-endpoints)
 - [RFC-0014: L402 Production Readiness Operator Runbook](/rfc/implemented/0014-l402-production-readiness-operator-runbook)
+- [RFC-0023: Media Asset Storage (shipped)](/rfc/proposed/0023-media-asset-storage)
 
 ## Implemented Historical / Non-Core
 

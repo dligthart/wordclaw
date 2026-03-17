@@ -49,16 +49,20 @@ import { issueSignedAssetAccess, verifySignedAssetAccess } from '../services/ass
 import {
     AssetListError,
     type AssetEntitlementScope,
+    completeDirectAssetUpload,
     createAsset,
     getAsset,
     getAssetEntitlementScope,
     getPublicAsset,
+    issueDirectAssetUpload,
+    listAssetDerivatives,
     listAssets,
     purgeAsset,
     readAssetContent,
     restoreAsset,
     softDeleteAsset
 } from '../services/assets.js';
+import { AssetStorageError } from '../services/asset-storage.js';
 import {
     buildCurrentActorSnapshot,
     buildSupervisorPrincipal,
@@ -115,6 +119,7 @@ type AssetsQuery = {
     q?: string;
     accessMode?: 'public' | 'signed' | 'entitled';
     status?: 'active' | 'deleted';
+    sourceAssetId?: number;
     limit?: number;
     offset?: number;
     cursor?: string;
@@ -130,6 +135,9 @@ type CreateAssetBody = {
         ref?: number;
     };
     metadata?: Record<string, unknown>;
+    sourceAssetId?: number;
+    variantKey?: string;
+    transformSpec?: Record<string, unknown>;
 };
 type CreateAssetMultipartBody = Omit<CreateAssetBody, 'contentBase64'> & {
     contentBytes: Buffer;
@@ -210,6 +218,14 @@ function toAssetErrorPayload(error: AssetListError): AIErrorPayload {
         code: error.code,
         remediation: error.remediation,
         ...(error.context ? { context: error.context } : {})
+    };
+}
+
+function toAssetStorageErrorPayload(error: AssetStorageError): AIErrorPayload {
+    return {
+        error: error.message,
+        code: error.code,
+        remediation: error.remediation
     };
 }
 
@@ -315,6 +331,9 @@ async function parseMultipartAssetCreateBody(request: FastifyRequest): Promise<C
     let accessMode: 'public' | 'signed' | 'entitled' | undefined;
     let entitlementScope: AssetEntitlementScope | undefined;
     let metadata: Record<string, unknown> | undefined;
+    let sourceAssetId: number | undefined;
+    let variantKey: string | undefined;
+    let transformSpec: Record<string, unknown> | undefined;
 
     for await (const part of request.parts()) {
         if (part.type === 'file') {
@@ -345,6 +364,20 @@ async function parseMultipartAssetCreateBody(request: FastifyRequest): Promise<C
             metadata = parseMultipartJsonObjectField(value, 'metadata');
         } else if (part.fieldname === 'entitlementScope' && value) {
             entitlementScope = parseMultipartEntitlementScopeField(value);
+        } else if (part.fieldname === 'sourceAssetId' && value) {
+            const parsed = Number(value);
+            if (!Number.isInteger(parsed) || parsed <= 0) {
+                throw new AssetListError(
+                    'Invalid source asset ID',
+                    'ASSET_SOURCE_ID_INVALID',
+                    'Provide sourceAssetId as a positive integer.'
+                );
+            }
+            sourceAssetId = parsed;
+        } else if (part.fieldname === 'variantKey' && value) {
+            variantKey = value;
+        } else if (part.fieldname === 'transformSpec' && value) {
+            transformSpec = parseMultipartJsonObjectField(value, 'transformSpec');
         }
     }
 
@@ -385,7 +418,10 @@ async function parseMultipartAssetCreateBody(request: FastifyRequest): Promise<C
             type: entitlementScope.type,
             ref: entitlementScope.ref ?? undefined
         } : undefined,
-        metadata
+        metadata,
+        sourceAssetId,
+        variantKey,
+        transformSpec
     };
 }
 
@@ -465,6 +501,39 @@ function parseJsonAssetCreateBody(body: unknown): CreateAssetBody {
         );
     }
 
+    if (
+        candidate.sourceAssetId !== undefined
+        && (!Number.isInteger(candidate.sourceAssetId) || (candidate.sourceAssetId as number) <= 0)
+    ) {
+        throw new AssetListError(
+            'Invalid source asset ID',
+            'ASSET_SOURCE_ID_INVALID',
+            'Provide sourceAssetId as a positive integer when present.'
+        );
+    }
+
+    if (
+        candidate.variantKey !== undefined
+        && (typeof candidate.variantKey !== 'string' || candidate.variantKey.trim().length === 0)
+    ) {
+        throw new AssetListError(
+            'Derivative variant key must be a non-empty string',
+            'ASSET_VARIANT_KEY_INVALID',
+            'Provide variantKey as a non-empty string when present.'
+        );
+    }
+
+    if (
+        candidate.transformSpec !== undefined
+        && (!candidate.transformSpec || typeof candidate.transformSpec !== 'object' || Array.isArray(candidate.transformSpec))
+    ) {
+        throw new AssetListError(
+            'Invalid transform spec object',
+            'ASSET_TRANSFORM_SPEC_INVALID',
+            'Provide transformSpec as a JSON object.'
+        );
+    }
+
     return {
         filename: candidate.filename.trim(),
         originalFilename: candidate.originalFilename?.trim(),
@@ -472,7 +541,10 @@ function parseJsonAssetCreateBody(body: unknown): CreateAssetBody {
         contentBase64: candidate.contentBase64.trim(),
         accessMode,
         entitlementScope: candidate.entitlementScope as CreateAssetBody['entitlementScope'],
-        metadata: candidate.metadata as Record<string, unknown> | undefined
+        metadata: candidate.metadata as Record<string, unknown> | undefined,
+        sourceAssetId: candidate.sourceAssetId as number | undefined,
+        variantKey: candidate.variantKey?.trim() as string | undefined,
+        transformSpec: candidate.transformSpec as Record<string, unknown> | undefined
     };
 }
 
@@ -859,6 +931,9 @@ function buildCurrentActorResponse(principal: ActorPrincipal) {
 
 const AssetResponseSchema = Type.Object({
     id: Type.Number(),
+    sourceAssetId: Type.Union([Type.Number(), Type.Null()]),
+    variantKey: Type.Union([Type.String(), Type.Null()]),
+    transformSpec: Type.Union([Type.Object({}, { additionalProperties: true }), Type.Null()]),
     filename: Type.String(),
     originalFilename: Type.String(),
     mimeType: Type.String(),
@@ -885,6 +960,10 @@ const AssetResponseSchema = Type.Object({
     createdAt: Type.String(),
     updatedAt: Type.String(),
     deletedAt: Type.Union([Type.String(), Type.Null()]),
+    relationships: Type.Object({
+        sourcePath: Type.Union([Type.String(), Type.Null()]),
+        derivativesPath: Type.String(),
+    }),
     delivery: Type.Object({
         contentPath: Type.String(),
         accessPath: Type.Union([Type.String(), Type.Null()]),
@@ -929,6 +1008,24 @@ const AssetAccessResponseSchema = Type.Object({
     })
 });
 
+const AssetDirectUploadResponseSchema = Type.Object({
+    provider: Type.String(),
+    upload: Type.Object({
+        method: Type.Literal('PUT'),
+        uploadUrl: Type.String(),
+        uploadHeaders: Type.Record(Type.String(), Type.String()),
+        expiresAt: Type.String(),
+        ttlSeconds: Type.Number(),
+        note: Type.String()
+    }),
+    finalize: Type.Object({
+        path: Type.String(),
+        token: Type.String(),
+        expiresAt: Type.String(),
+        note: Type.String()
+    })
+});
+
 const AssetPurgeResponseSchema = Type.Object({
     purged: Type.Boolean(),
     asset: AssetResponseSchema,
@@ -940,6 +1037,9 @@ const AssetPurgeResponseSchema = Type.Object({
 
 function serializeAsset(asset: {
     id: number;
+    sourceAssetId: number | null;
+    variantKey: string | null;
+    transformSpec: unknown;
     filename: string;
     originalFilename: string;
     mimeType: string;
@@ -960,6 +1060,9 @@ function serializeAsset(asset: {
 }) {
     return {
         id: asset.id,
+        sourceAssetId: asset.sourceAssetId ?? null,
+        variantKey: asset.variantKey ?? null,
+        transformSpec: asset.transformSpec && typeof asset.transformSpec === 'object' ? asset.transformSpec as Record<string, unknown> : null,
         filename: asset.filename,
         originalFilename: asset.originalFilename,
         mimeType: asset.mimeType,
@@ -976,6 +1079,10 @@ function serializeAsset(asset: {
         createdAt: asset.createdAt.toISOString(),
         updatedAt: asset.updatedAt.toISOString(),
         deletedAt: asset.deletedAt ? asset.deletedAt.toISOString() : null,
+        relationships: {
+            sourcePath: asset.sourceAssetId ? `/api/assets/${asset.sourceAssetId}` : null,
+            derivativesPath: `/api/assets/${asset.id}/derivatives`,
+        },
         delivery: {
             contentPath: `/api/assets/${asset.id}/content`,
             accessPath: asset.accessMode === 'signed' ? `/api/assets/${asset.id}/access` : null,
@@ -1255,6 +1362,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             rest: Type.Object({
                                 path: Type.String(),
                                 modes: Type.Array(Type.String()),
+                                directProviderUpload: Type.Object({
+                                    enabled: Type.Boolean(),
+                                    issuePath: Type.String(),
+                                    completePath: Type.String(),
+                                    method: Type.String(),
+                                    providers: Type.Array(Type.String()),
+                                }),
                             }),
                             mcp: Type.Object({
                                 tool: Type.String(),
@@ -1281,6 +1395,17 @@ export default async function apiRoutes(server: FastifyInstance) {
                             softDelete: Type.Boolean(),
                             restore: Type.Boolean(),
                             purge: Type.Boolean(),
+                        }),
+                        derivatives: Type.Object({
+                            supported: Type.Boolean(),
+                            createViaRestPath: Type.String(),
+                            createViaMcpTool: Type.String(),
+                            listPath: Type.String(),
+                            listTool: Type.String(),
+                            sourceField: Type.String(),
+                            variantKeyField: Type.String(),
+                            transformSpecField: Type.String(),
+                            note: Type.String(),
                         }),
                     }),
                     agentGuidance: Type.Object({
@@ -1467,6 +1592,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             supportedProviders: Type.Array(Type.String()),
                             restUploadModes: Type.Array(Type.String()),
                             mcpUploadModes: Type.Array(Type.String()),
+                            directProviderUpload: Type.Object({
+                                enabled: Type.Boolean(),
+                                issuePath: Type.String(),
+                                completePath: Type.String(),
+                                method: Type.String(),
+                                providers: Type.Array(Type.String()),
+                            }),
                             deliveryModes: Type.Array(Type.String()),
                             signedAccess: Type.Object({
                                 enabled: Type.Boolean(),
@@ -1478,6 +1610,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 enabled: Type.Boolean(),
                                 offersPath: Type.String(),
                                 contentPath: Type.String(),
+                            }),
+                            derivatives: Type.Object({
+                                supported: Type.Boolean(),
+                                listPath: Type.String(),
+                                listTool: Type.String(),
+                                sourceField: Type.String(),
+                                variantKeyField: Type.String(),
+                                transformSpecField: Type.String(),
                             }),
                             note: Type.String(),
                         }),
@@ -1558,6 +1698,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                             supportedProviders: Type.Array(Type.String()),
                             restUploadModes: Type.Array(Type.String()),
                             mcpUploadModes: Type.Array(Type.String()),
+                            directProviderUpload: Type.Object({
+                                enabled: Type.Boolean(),
+                                issuePath: Type.String(),
+                                completePath: Type.String(),
+                                method: Type.String(),
+                                providers: Type.Array(Type.String()),
+                            }),
                             deliveryModes: Type.Array(Type.String()),
                             signedAccess: Type.Object({
                                 enabled: Type.Boolean(),
@@ -1569,6 +1716,14 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 enabled: Type.Boolean(),
                                 offersPath: Type.String(),
                                 contentPath: Type.String(),
+                            }),
+                            derivatives: Type.Object({
+                                supported: Type.Boolean(),
+                                listPath: Type.String(),
+                                listTool: Type.String(),
+                                sourceField: Type.String(),
+                                variantKeyField: Type.String(),
+                                transformSpecField: Type.String(),
                             }),
                             note: Type.String(),
                         }),
@@ -3228,7 +3383,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             body: Type.Any(),
             response: {
                 201: createAIResponse(AssetResponseSchema),
-                400: AIErrorResponse
+                400: AIErrorResponse,
+                503: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -3240,6 +3396,9 @@ export default async function apiRoutes(server: FastifyInstance) {
         } catch (error) {
             if (error instanceof AssetListError) {
                 return reply.status(400).send(toAssetErrorPayload(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 503).send(toAssetStorageErrorPayload(error));
             }
             throw error;
         }
@@ -3256,6 +3415,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 accessMode: body.accessMode,
                 entitlementScope: body.entitlementScope,
                 metadata: body.metadata,
+                sourceAssetId: body.sourceAssetId,
+                variantKey: body.variantKey,
+                transformSpec: body.transformSpec,
                 actor: toAuditActorFromRequest(request as RequestActorCarrier)
             });
         } catch (error) {
@@ -3276,6 +3438,149 @@ export default async function apiRoutes(server: FastifyInstance) {
         });
     });
 
+    server.post('/assets/direct-upload', {
+        schema: {
+            body: Type.Object({
+                filename: Type.String({ minLength: 1 }),
+                originalFilename: Type.Optional(Type.String({ minLength: 1 })),
+                mimeType: Type.String({ minLength: 1 }),
+                accessMode: Type.Optional(Type.Union([
+                    Type.Literal('public'),
+                    Type.Literal('signed'),
+                    Type.Literal('entitled')
+                ])),
+                entitlementScope: Type.Optional(Type.Object({
+                    type: Type.Union([
+                        Type.Literal('item'),
+                        Type.Literal('type'),
+                        Type.Literal('subscription')
+                    ]),
+                    ref: Type.Optional(Type.Number())
+                })),
+                metadata: Type.Optional(Type.Object({}, { additionalProperties: true })),
+                sourceAssetId: Type.Optional(Type.Number({ minimum: 1 })),
+                variantKey: Type.Optional(Type.String({ minLength: 1 })),
+                transformSpec: Type.Optional(Type.Object({}, { additionalProperties: true })),
+                ttlSeconds: Type.Optional(Type.Number({ minimum: 60, maximum: 3600 }))
+            }),
+            response: {
+                200: createAIResponse(AssetDirectUploadResponseSchema),
+                400: AIErrorResponse,
+                409: AIErrorResponse,
+                503: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as {
+            filename: string;
+            originalFilename?: string;
+            mimeType: string;
+            accessMode?: 'public' | 'signed' | 'entitled';
+            entitlementScope?: AssetEntitlementScope;
+            metadata?: Record<string, unknown>;
+            sourceAssetId?: number;
+            variantKey?: string;
+            transformSpec?: Record<string, unknown>;
+            ttlSeconds?: number;
+        };
+
+        try {
+            const issued = await issueDirectAssetUpload({
+                domainId: getDomainId(request),
+                filename: body.filename,
+                originalFilename: body.originalFilename,
+                mimeType: body.mimeType,
+                accessMode: body.accessMode,
+                entitlementScope: body.entitlementScope,
+                metadata: body.metadata,
+                sourceAssetId: body.sourceAssetId,
+                variantKey: body.variantKey,
+                transformSpec: body.transformSpec,
+                ttlSeconds: body.ttlSeconds
+            });
+
+            return {
+                data: {
+                    provider: issued.provider,
+                    upload: {
+                        method: issued.upload.method,
+                        uploadUrl: issued.upload.uploadUrl,
+                        uploadHeaders: issued.upload.uploadHeaders,
+                        expiresAt: issued.upload.expiresAt.toISOString(),
+                        ttlSeconds: issued.upload.ttlSeconds,
+                        note: 'Upload the raw bytes directly to the storage provider before completing the asset creation step.'
+                    },
+                    finalize: {
+                        path: issued.finalize.path,
+                        token: issued.finalize.token,
+                        expiresAt: issued.finalize.expiresAt.toISOString(),
+                        note: 'Call POST /api/assets/direct-upload/complete with this token after the provider upload succeeds.'
+                    }
+                },
+                meta: buildMeta(
+                    'Complete the direct upload after the provider PUT succeeds',
+                    ['POST /api/assets/direct-upload/complete'],
+                    'low',
+                    1
+                )
+            };
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                return reply.status(400).send(toAssetErrorPayload(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 409 | 503).send(toAssetStorageErrorPayload(error));
+            }
+            throw error;
+        }
+    });
+
+    server.post('/assets/direct-upload/complete', {
+        schema: {
+            body: Type.Object({
+                token: Type.String({ minLength: 1 })
+            }),
+            response: {
+                201: createAIResponse(AssetResponseSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+                503: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as { token: string };
+
+        try {
+            const completed = await completeDirectAssetUpload(
+                body.token,
+                getDomainId(request),
+                toAuditActorFromRequest(request as RequestActorCarrier)
+            );
+
+            return reply.status(201).send({
+                data: serializeAsset(completed),
+                meta: buildMeta(
+                    'Inspect the uploaded asset or attach it to content',
+                    ['GET /api/assets/:id', 'GET /api/assets/:id/content'],
+                    'low',
+                    1
+                )
+            });
+        } catch (error) {
+            if (error instanceof AssetListError) {
+                const statusCode = error.code === 'INVALID_DIRECT_ASSET_UPLOAD_TOKEN' || error.code === 'DIRECT_ASSET_UPLOAD_TOKEN_EXPIRED'
+                    ? 400
+                    : 409;
+                return reply.status(statusCode).send(toAssetErrorPayload(error));
+            }
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 404 | 409 | 503).send(toAssetStorageErrorPayload(error));
+            }
+            throw error;
+        }
+    });
+
     server.get('/assets', {
         schema: {
             querystring: Type.Object({
@@ -3289,6 +3594,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     Type.Literal('active'),
                     Type.Literal('deleted')
                 ])),
+                sourceAssetId: Type.Optional(Type.Number({ minimum: 1 })),
                 limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
                 offset: Type.Optional(Type.Number({ minimum: 0 })),
                 cursor: Type.Optional(Type.String())
@@ -3308,6 +3614,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 q: query.q,
                 accessMode: query.accessMode,
                 status: query.status,
+                sourceAssetId: query.sourceAssetId,
                 limit,
                 offset: query.cursor ? query.offset : clampOffset(query.offset),
                 cursor: query.cursor
@@ -3323,7 +3630,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             data: result.items.map((asset) => serializeAsset(asset)),
             meta: buildMeta(
                 'Inspect an asset or upload a new one',
-                ['POST /api/assets', 'GET /api/assets/:id'],
+                ['POST /api/assets', 'GET /api/assets/:id', 'GET /api/assets/:id/derivatives'],
                 'low',
                 1,
                 false,
@@ -3359,10 +3666,56 @@ export default async function apiRoutes(server: FastifyInstance) {
         return {
             data: serializeAsset(asset),
             meta: buildMeta(
-                'Fetch the asset bytes or remove the asset',
-                ['GET /api/assets/:id/content', 'DELETE /api/assets/:id'],
+                'Fetch the asset bytes, inspect derivatives, or remove the asset',
+                ['GET /api/assets/:id/content', 'GET /api/assets/:id/derivatives', 'DELETE /api/assets/:id'],
                 'low',
                 1
+            )
+        };
+    });
+
+    server.get('/assets/:id/derivatives', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            querystring: Type.Object({
+                status: Type.Optional(Type.Union([
+                    Type.Literal('active'),
+                    Type.Literal('deleted')
+                ]))
+            }),
+            response: {
+                200: createAIResponse(Type.Array(AssetResponseSchema)),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const { status } = request.query as { status?: 'active' | 'deleted' };
+        const asset = await getAsset(id, getDomainId(request), { includeDeleted: status === 'deleted' });
+
+        if (!asset) {
+            return reply.status(404).send(notFoundAsset(id));
+        }
+
+        const derivatives = await listAssetDerivatives(id, getDomainId(request), {
+            includeDeleted: status === 'deleted'
+        });
+
+        return {
+            data: derivatives.map((candidate) => serializeAsset(candidate)),
+            meta: buildMeta(
+                'Inspect or attach derivative variants for this asset family',
+                ['POST /api/assets', 'GET /api/assets/:id'],
+                'low',
+                1,
+                false,
+                {
+                    total: derivatives.length,
+                    sourceAssetId: id,
+                    status: status ?? 'active'
+                }
             )
         };
     });
@@ -3526,6 +3879,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 402: AIErrorResponse,
                 403: AIErrorResponse,
                 404: AIErrorResponse,
+                503: AIErrorResponse,
                 409: AIErrorResponse
             }
         }
@@ -3712,7 +4066,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         try {
-            const content = await readAssetContent(asset.storageKey);
+            const content = await readAssetContent(asset);
             reply.header('content-type', asset.mimeType);
             reply.header('content-length', String(content.byteLength));
             reply.header('content-disposition', `inline; filename="${asset.originalFilename}"`);
@@ -3725,6 +4079,9 @@ export default async function apiRoutes(server: FastifyInstance) {
 
             return reply.send(content);
         } catch (error) {
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 404 | 503).send(toAssetStorageErrorPayload(error));
+            }
             request.log.warn({ err: error, assetId: id }, 'Failed to read asset content');
             return reply.status(404).send(toErrorPayload(
                 'Asset content not found',
@@ -3775,7 +4132,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             response: {
                 200: createAIResponse(AssetRestoreResponseSchema),
                 404: AIErrorResponse,
-                409: AIErrorResponse
+                409: AIErrorResponse,
+                503: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -3805,6 +4163,9 @@ export default async function apiRoutes(server: FastifyInstance) {
             if (error instanceof AssetListError) {
                 return reply.status(409).send(toAssetErrorPayload(error));
             }
+            if (error instanceof AssetStorageError) {
+                return reply.status(error.statusCode as 503).send(toAssetStorageErrorPayload(error));
+            }
 
             throw error;
         }
@@ -3819,7 +4180,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                 200: createAIResponse(AssetPurgeResponseSchema),
                 403: AIErrorResponse,
                 404: AIErrorResponse,
-                409: AIErrorResponse
+                409: AIErrorResponse,
+                503: AIErrorResponse
             }
         }
     }, async (request, reply) => {

@@ -176,6 +176,13 @@
       "when": 1773507600000,
       "tag": "0024_asset_entitlement_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1773766800000,
+      "tag": "0025_asset_derivatives",
+      "breakpoints": true
     }
   ]
 }

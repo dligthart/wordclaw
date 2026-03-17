@@ -80,6 +80,13 @@ export type DeploymentStatusSnapshot = {
             supportedProviders: string[];
             restUploadModes: string[];
             mcpUploadModes: string[];
+            directProviderUpload: {
+                enabled: boolean;
+                issuePath: string;
+                completePath: string;
+                method: string;
+                providers: string[];
+            };
             deliveryModes: string[];
             signedAccess: {
                 enabled: boolean;
@@ -91,6 +98,14 @@ export type DeploymentStatusSnapshot = {
                 enabled: boolean;
                 offersPath: string;
                 contentPath: string;
+            };
+            derivatives: {
+                supported: boolean;
+                listPath: string;
+                listTool: string;
+                sourceField: string;
+                variantKeyField: string;
+                transformSpecField: string;
             };
             note: string;
         };
@@ -172,6 +187,13 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
         supportedProviders: [...manifest.assetStorage.supportedProviders],
         restUploadModes: [...manifest.assetStorage.upload.rest.modes],
         mcpUploadModes: [...manifest.assetStorage.upload.mcp.modes],
+        directProviderUpload: {
+            enabled: manifest.assetStorage.upload.rest.directProviderUpload.enabled,
+            issuePath: manifest.assetStorage.upload.rest.directProviderUpload.issuePath,
+            completePath: manifest.assetStorage.upload.rest.directProviderUpload.completePath,
+            method: manifest.assetStorage.upload.rest.directProviderUpload.method,
+            providers: [...manifest.assetStorage.upload.rest.directProviderUpload.providers],
+        },
         deliveryModes: [...manifest.assetStorage.delivery.supportedModes],
         signedAccess: {
             enabled: true,
@@ -184,15 +206,23 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
             offersPath: manifest.assetStorage.delivery.entitled.offersPath,
             contentPath: manifest.assetStorage.delivery.entitled.contentPath,
         },
+        derivatives: {
+            supported: manifest.assetStorage.derivatives.supported,
+            listPath: manifest.assetStorage.derivatives.listPath,
+            listTool: manifest.assetStorage.derivatives.listTool,
+            sourceField: manifest.assetStorage.derivatives.sourceField,
+            variantKeyField: manifest.assetStorage.derivatives.variantKeyField,
+            transformSpecField: manifest.assetStorage.derivatives.transformSpecField,
+        },
         note: manifest.assetStorage.fallbackApplied
-            ? `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unsupported; the runtime is using "${manifest.assetStorage.effectiveProvider}" instead.`
+            ? `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unavailable; the runtime is using "${manifest.assetStorage.effectiveProvider}" instead.`
             : `Asset storage is enabled with the "${manifest.assetStorage.effectiveProvider}" provider.`,
     };
 
     if (manifest.assetStorage.fallbackApplied) {
         overallStatus = 'degraded';
         warnings.push(
-            `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unsupported; the runtime fell back to "${manifest.assetStorage.effectiveProvider}".`
+            `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unavailable; the runtime fell back to "${manifest.assetStorage.effectiveProvider}".`
         );
     }
 

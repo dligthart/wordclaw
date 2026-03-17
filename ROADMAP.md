@@ -6,9 +6,14 @@ WordClaw is evolving from a headless CMS into a secure governance runtime for AI
 
 We promote one major flagship feature per minor version release to ensure stability and focus.
 
-### v0.3: Schema-Aware Media Assets (Current)
+### v0.4: Reactive MCP Sessions (Current)
+* **Goal**: Let long-lived agents subscribe to runtime events instead of polling for content, workflow, and integration changes.
+* **Status**: Rolling out. Remote MCP sessions, reactive topic subscriptions, filter-aware recipes, task guidance follow-up recommendations, and discovery/status exposure are live on `main`. Remaining work is focused on hardening the reactive contract around the most valuable topics and demos, not inventing a second event system.
+* **Documentation**: See [RFC 0025](/doc/rfc/proposed/0025-agentic-webhooks.md).
+
+### v0.3: Schema-Aware Media Assets (Shipped)
 * **Goal**: Make media files a first-class part of the core runtime instead of pushing agents toward ad hoc external URLs.
-* **Status**: Rolling out. Local storage, schema-level asset references, multipart upload, signed and entitlement-gated delivery, MCP/CLI asset tooling, and restore/purge lifecycle are live on `main`. Remaining work is focused on remote object-storage providers and supervisor UI asset controls.
+* **Status**: Shipped. Local and S3-compatible storage, schema-level asset references, derivative variants, multipart and direct-provider upload flows, signed and entitlement-gated delivery, MCP/CLI tooling, supervisor asset controls, and restore/purge lifecycle are live on `main`.
 * **Documentation**: See [RFC 0023](/doc/rfc/proposed/0023-media-asset-storage.md).
 
 ### v0.2: Production-Ready L402 Flows (Shipped)
@@ -30,17 +35,17 @@ These features are currently in active development or polishing phases for upcom
 - **Status**: Rolling out.
 - **Description**: Making native `pgvector` semantic search easier to enable. We now auto-detect `OPENAI_API_KEY` on startup, automatically generating embeddings for published content without requiring complex external pipeline deployments.
 
-### 2. Extensibility and Plugins (RFC 0022)
+### 2. Additional Asset Providers (Optional follow-up)
+- **Status**: On demand.
+- **Description**: RFC 0023 is effectively shipped for the supported product path. Additional object-storage adapters beyond the current local and S3-compatible providers are now a demand-driven extension, not a core product gap.
+
+### 3. Extensibility and Plugins (RFC 0022)
 - **Status**: Proposed.
 - **Description**: Designing a Strapi-style plugin architecture to allow the community to extend the Express/Fastify API boundaries and MCP toolsets without continuously forking the core runtime.
 
-### 3. API Polish and Error Schemas
+### 4. API Polish and Error Schemas
 - **Status**: In progress.
 - **Description**: Standardizing error payloads across both GraphQL and REST, ensuring AI agents receive consistent, actionable `recommendedNextAction` directives when validations fail.
-
-### 4. Remote Asset Providers & Operator UX (RFC 0023)
-- **Status**: In progress.
-- **Description**: The core asset runtime is now live. The remaining rollout work is expanding beyond the local provider (`S3`/`R2`-style adapters) and exposing asset lifecycle controls in the supervisor UI so operators do not need the CLI for day-to-day asset management.
 
 ### 5. Performance & Scalability (RFC 0024)
 - **Status**: Proposed.

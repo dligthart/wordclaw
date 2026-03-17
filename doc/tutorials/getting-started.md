@@ -1,5 +1,13 @@
 # Getting Started
 
+## Current Runtime Status
+
+Before you start, it helps to know which parts of WordClaw are stable versus still rolling out:
+
+- **Shipped core runtime**: structured content, versioning, workflows, audit, L402 offers and entitlements, content-runtime queries, public write lanes, TTL lifecycle archival, and the supervisor control plane.
+- **Rolling out**: schema-aware media assets (RFC 0023) and reactive MCP sessions (RFC 0025). Both are already live on `main`, but their docs and optional extensions are still being tightened.
+- **Experimental**: AP2, agent-run orchestration, delegation, and broader incubator surfaces remain off by default behind runtime flags.
+
 ## Prerequisites
 
 - Node.js 20+
@@ -48,13 +56,19 @@
    | `ENABLE_EXPERIMENTAL_AGENT_RUNS` | `false`                         | Enable experimental autonomous-run APIs and MCP tools |
    | `AGENT_RUN_WORKER_INTERVAL_MS` | `1000`                          | Sweep interval for experimental autonomous-run execution |
    | `AGENT_RUN_WORKER_BATCH_SIZE` | `25`                             | Maximum runs processed per autonomous-run worker sweep |
+   | `ASSET_STORAGE_PROVIDER` | `local`                                   | Asset backend (`local` or `s3`) |
+   | `ASSET_STORAGE_ROOT` | `./storage/assets`                             | Local asset storage root |
+   | `ASSET_S3_BUCKET` | *(empty)*                                       | S3-compatible bucket name |
+   | `ASSET_S3_REGION` | *(empty)*                                       | S3-compatible region |
+   | `ASSET_SIGNED_TTL_SECONDS` | `300`                               | Default signed asset access TTL |
+   | `ASSET_DIRECT_UPLOAD_TTL_SECONDS` | `900`                        | Direct-provider upload URL/completion TTL |
 
-   `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). `ALLOW_INSECURE_LOCAL_ADMIN` should stay `false` unless you are intentionally running a local-only dev environment without API keys. The three `ENABLE_EXPERIMENTAL_*` flags stay off by default and should only be enabled if you explicitly want those incubator surfaces available. If you enable experimental autonomous runs, the worker interval and batch-size knobs let you tune execution cadence without changing code.
+   `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). `ALLOW_INSECURE_LOCAL_ADMIN` should stay `false` unless you are intentionally running a local-only dev environment without API keys. The three `ENABLE_EXPERIMENTAL_*` flags stay off by default and should only be enabled if you explicitly want those incubator surfaces available. If you enable experimental autonomous runs, the worker interval and batch-size knobs let you tune execution cadence without changing code. Asset storage defaults to the local filesystem; set `ASSET_STORAGE_PROVIDER=s3` plus the corresponding bucket, region, and credentials if you want S3-compatible object storage or direct provider uploads.
 
 5. **Run database migrations**
 
    ```bash
-   npx drizzle-kit migrate
+   npm run db:migrate
    ```
 
    For full migration workflows (`generate`, `migrate`, `push`) see [drizzle-migrations.md](../reference/drizzle-migrations.md).
@@ -130,6 +144,10 @@ npx tsx src/cli/index.ts workflow guide
 npx tsx src/cli/index.ts l402 guide --item 123
 npx tsx src/cli/index.ts repl
 npx tsx src/cli/index.ts content-types list --limit 10
+npx tsx src/cli/index.ts content list --content-type-id 1 --field-name title --field-op contains --field-value agent
+npx tsx src/cli/index.ts content project --content-type-id 1 --group-by status --metric count
+npx tsx src/cli/index.ts assets list --limit 10
+npx tsx src/cli/index.ts assets create --content-file ./hero.png --mime-type image/png --access-mode signed
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 
 # Built mode

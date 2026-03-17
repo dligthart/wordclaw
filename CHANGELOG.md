@@ -1,3 +1,24 @@
+# [1.35.0](https://github.com/dligthart/wordclaw/compare/v1.34.0...v1.35.0) (2026-03-17)
+
+
+### Features
+
+* **assets:** ship derivative asset variants ([79f7cc6](https://github.com/dligthart/wordclaw/commit/79f7cc60b3dee7ae9008284f18247060ddcbc0ac))
+
+# [1.34.0](https://github.com/dligthart/wordclaw/compare/v1.33.0...v1.34.0) (2026-03-16)
+
+
+### Features
+
+* **assets:** add direct provider upload flows ([4b05695](https://github.com/dligthart/wordclaw/commit/4b056958517b6038a679a2b160fb3f0cdc4f8e16))
+
+# [1.33.0](https://github.com/dligthart/wordclaw/compare/v1.32.0...v1.33.0) (2026-03-16)
+
+
+### Features
+
+* **assets:** add s3-compatible storage providers ([9b46945](https://github.com/dligthart/wordclaw/commit/9b4694546190a711f3b83ddceeab71bc91b944d8))
+
 # [1.32.0](https://github.com/dligthart/wordclaw/compare/v1.31.0...v1.32.0) (2026-03-16)
 
 

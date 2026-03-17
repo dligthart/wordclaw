@@ -36,9 +36,9 @@ const USAGE_LINES = [
     'content versions --id <n>',
     'content rollback --id <n> --version <n> [--dry-run]',
     'content delete --id <n> [--dry-run]',
-    'assets list [--q <value>] [--access-mode public|signed|entitled] [--status active|deleted] [--limit <n>] [--offset <n>] [--cursor <value>]',
+    'assets list [--q <value>] [--access-mode public|signed|entitled] [--status active|deleted] [--source-asset-id <n>] [--limit <n>] [--offset <n>] [--cursor <value>]',
     'assets get --id <n>',
-    'assets create [--filename <value>] [--original-filename <value>] --mime-type <value> [--content-file <path>|--content-base64 <value>|--content-base64-file <path>] [--access-mode public|signed|entitled] [--metadata-json <json>|--metadata-file <path>] [--entitlement-scope-json <json>|--entitlement-scope-file <path>]',
+    'assets create [--filename <value>] [--original-filename <value>] --mime-type <value> [--content-file <path>|--content-base64 <value>|--content-base64-file <path>] [--access-mode public|signed|entitled] [--metadata-json <json>|--metadata-file <path>] [--entitlement-scope-json <json>|--entitlement-scope-file <path>] [--source-asset-id <n> --variant-key <value> [--transform-spec-json <json>|--transform-spec-file <path>]]',
     'assets offers --id <n>',
     'assets access --id <n> [--ttl-seconds <n>]',
     'assets delete --id <n>',
@@ -90,6 +90,7 @@ const EXAMPLES: Record<string, string[]> = {
     'assets': [
         'wordclaw assets list --access-mode public --limit 10',
         'wordclaw assets create --content-file ./hero.png --mime-type image/png --access-mode signed',
+        'wordclaw assets create --content-file ./hero@2x.webp --mime-type image/webp --source-asset-id 44 --variant-key hero-webp --transform-spec-json \'{"format":"webp","width":1600}\'',
         'wordclaw assets access --id 44 --ttl-seconds 120',
     ],
     'workflow': [
