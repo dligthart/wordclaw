@@ -1,0 +1,31 @@
+{
+    "type": "object",
+    "properties": {
+        "title": {
+            "type": "string"
+        },
+        "description": {
+            "type": "string"
+        },
+        "genre_tags": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "difficulty_modifier": {
+            "type": "number"
+        },
+        "lore_context": {
+            "type": "string"
+        },
+        "enabled": {
+            "type": "boolean"
+        }
+    },
+    "required": [
+        "title",
+        "description",
+        "enabled"
+    ]
+}

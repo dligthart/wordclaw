@@ -4,14 +4,11 @@ const libraryContainer = document.getElementById('library-container');
 
 const storyModal = document.getElementById('story-modal');
 const closeModalBtn = document.getElementById('close-modal');
-const downloadPdfBtn = document.getElementById('download-pdf-btn');
 const modalHero = document.getElementById('modal-hero');
 const modalTitle = document.getElementById('modal-title');
 const modalAuthor = document.getElementById('modal-author');
 const modalScore = document.getElementById('modal-score');
 const modalContent = document.getElementById('modal-content');
-
-let currentStory = null;
 
 window.addEventListener('DOMContentLoaded', loadStories);
 
@@ -71,7 +68,6 @@ async function loadStories() {
 }
 
 function showStory(story) {
-    currentStory = story;
 
     // Hero image
     if (story.finale_image_url) {
@@ -184,193 +180,4 @@ function formatStoryAsCards(rawText, sceneImages) {
     return htmlParts.join('\n');
 }
 
-// =====================
-// PDF GENERATION
-// =====================
 
-downloadPdfBtn.addEventListener('click', () => {
-    if (!currentStory) return;
-    generatePDF(currentStory);
-});
-
-async function generatePDF(story) {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 20;
-    const contentWidth = pageWidth - margin * 2;
-    let y = margin;
-
-    downloadPdfBtn.disabled = true;
-    downloadPdfBtn.textContent = '⏳ Generating...';
-
-    try {
-        // ---- Title Page ----
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(28);
-        const titleLines = doc.splitTextToSize(story.title || 'Untitled', contentWidth);
-        y = 60;
-        doc.text(titleLines, pageWidth / 2, y, { align: 'center' });
-        y += titleLines.length * 12 + 10;
-
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(14);
-        doc.text(`By ${story.author || 'Anonymous'}`, pageWidth / 2, y, { align: 'center' });
-        y += 10;
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(12);
-        doc.text(`Score: ${story.final_score || 0}`, pageWidth / 2, y, { align: 'center' });
-        y += 8;
-
-        if (story.character_class) {
-            doc.text(`Class: ${story.character_class}`, pageWidth / 2, y, { align: 'center' });
-            y += 8;
-        }
-
-        if (story.cause_of_death) {
-            doc.text(story.cause_of_death, pageWidth / 2, y, { align: 'center' });
-        }
-
-        // Hero image on title page
-        if (story.finale_image_url || story.hero_image_url) {
-            try {
-                const heroUrl = story.finale_image_url || story.hero_image_url;
-                const imgData = await fetchImageAsBase64(heroUrl);
-                if (imgData) {
-                    const imgWidth = 80;
-                    const imgHeight = 80;
-                    y += 15;
-                    doc.addImage(imgData, 'WEBP', (pageWidth - imgWidth) / 2, y, imgWidth, imgHeight);
-                }
-            } catch (e) {
-                console.warn('Failed to add hero image to PDF:', e);
-            }
-        }
-
-        // ---- Chapters ----
-        const rawText = story.full_text || '';
-        const text = rawText.replace(/\r\n/g, '\n').replace(/<br\s*\/?>/gi, '\n');
-        const sections = text.split(/\n*\s*---\s*\n*/);
-        const sceneImages = story.scene_images || [];
-
-        for (let i = 0; i < sections.length; i++) {
-            const trimmed = sections[i].trim();
-            if (!trimmed) continue;
-
-            // New page for each chapter
-            doc.addPage();
-            y = margin;
-
-            const titleMatch = trimmed.match(/^\*\*([^*]+)\*\*\s*\n([\s\S]*)$/);
-            const chapterTitle = titleMatch ? titleMatch[1].trim() : `Chapter ${i + 1}`;
-            const chapterBody = titleMatch ? titleMatch[2].trim() : trimmed;
-
-            // Chapter number label
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.setTextColor(150);
-            doc.text(`Chapter ${i + 1}`, margin, y);
-            y += 6;
-
-            // Chapter title
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(18);
-            doc.setTextColor(0);
-            const chTitleLines = doc.splitTextToSize(chapterTitle, contentWidth);
-            doc.text(chTitleLines, margin, y);
-            y += chTitleLines.length * 8 + 4;
-
-            // Divider line
-            doc.setDrawColor(200);
-            doc.setLineWidth(0.3);
-            doc.line(margin, y, pageWidth - margin, y);
-            y += 8;
-
-            // Scene image
-            const imgUrl = sceneImages[i];
-            if (imgUrl) {
-                try {
-                    const imgData = await fetchImageAsBase64(imgUrl);
-                    if (imgData) {
-                        const imgWidth = contentWidth;
-                        const imgHeight = contentWidth * 0.6; // 5:3 aspect
-                        if (y + imgHeight > pageHeight - margin) {
-                            doc.addPage();
-                            y = margin;
-                        }
-                        doc.addImage(imgData, 'WEBP', margin, y, imgWidth, imgHeight);
-                        y += imgHeight + 6;
-                    }
-                } catch (e) {
-                    console.warn(`Failed to add scene image ${i} to PDF:`, e);
-                }
-            }
-
-            // Chapter prose text
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(11);
-            doc.setTextColor(40);
-            const bodyLines = doc.splitTextToSize(chapterBody.replace(/\n/g, ' '), contentWidth);
-
-            for (const line of bodyLines) {
-                if (y + 6 > pageHeight - margin) {
-                    doc.addPage();
-                    y = margin;
-                }
-                doc.text(line, margin, y);
-                y += 5.5;
-            }
-        }
-
-        // ---- Achievements page ----
-        if (story.achievements && story.achievements.length > 0) {
-            doc.addPage();
-            y = margin;
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(18);
-            doc.setTextColor(0);
-            doc.text('Achievements', margin, y);
-            y += 12;
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(12);
-            story.achievements.forEach(ach => {
-                doc.text(`🏆 ${ach}`, margin, y);
-                y += 8;
-            });
-        }
-
-        // Save the PDF
-        const filename = (story.title || 'adventure').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-        doc.save(`${filename}.pdf`);
-    } catch (e) {
-        console.error('PDF generation failed:', e);
-        alert('Failed to generate PDF: ' + e.message);
-    } finally {
-        downloadPdfBtn.disabled = false;
-        downloadPdfBtn.textContent = '📄 PDF';
-    }
-}
-
-/**
- * Fetches an image URL and returns it as a base64 data URL
- * for embedding in the PDF.
- */
-async function fetchImageAsBase64(url) {
-    try {
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const blob = await res.blob();
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(blob);
-        });
-    } catch (e) {
-        console.warn('Failed to fetch image:', url, e);
-        return null;
-    }
-}

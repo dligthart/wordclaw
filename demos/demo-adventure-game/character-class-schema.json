@@ -1,0 +1,34 @@
+{
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "description": {
+            "type": "string"
+        },
+        "icon_emoji": {
+            "type": "string"
+        },
+        "ability_description": {
+            "type": "string"
+        },
+        "visual_archetype": {
+            "type": "string"
+        },
+        "dc_bonus_categories": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "enabled": {
+            "type": "boolean"
+        }
+    },
+    "required": [
+        "name",
+        "description",
+        "enabled"
+    ]
+}

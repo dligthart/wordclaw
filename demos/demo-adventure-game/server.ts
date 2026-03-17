@@ -31,6 +31,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 let storyNodeContentTypeId: number | null = null;
 let publishedStoryContentTypeId: number | null = null;
 let gameSessionContentTypeId: number | null = null;
+let themePackContentTypeId: number | null = null;
+let characterClassContentTypeId: number | null = null;
 
 // Initial setup logic
 async function setupWordclawSchemas() {
@@ -139,9 +141,119 @@ async function setupWordclawSchemas() {
                 process.exit(1);
             }
         }
+        // ---- Adventure Theme Pack ----
+        const existingTheme = types.find(t => t.slug === 'adventure-theme-pack');
+        if (existingTheme) {
+            themePackContentTypeId = existingTheme.id;
+            console.log(`✅ ThemePack Schema found (ID: ${themePackContentTypeId})`);
+        } else {
+            console.log("📦 Creating new ThemePack ContentType...");
+            const themeDef = JSON.parse(fs.readFileSync('./theme-pack-schema.json', 'utf-8'));
+            const createThemeRes = await fetch(`${WORDCLAW_API_URL}/content-types`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-api-key': WORDCLAW_API_KEY! },
+                body: JSON.stringify({
+                    name: 'Adventure Theme Pack',
+                    slug: 'adventure-theme-pack',
+                    description: 'Curated world themes for the adventure game.',
+                    schema: themeDef
+                })
+            });
+            if (createThemeRes.ok) {
+                const created = await createThemeRes.json();
+                themePackContentTypeId = created.data.id;
+                console.log(`✅ ThemePack Schema created (ID: ${themePackContentTypeId})`);
+            } else {
+                console.error("❌ Failed to create ThemePack Schema:", await createThemeRes.json());
+            }
+        }
+
+        // ---- Adventure Character Class ----
+        const existingClass = types.find(t => t.slug === 'adventure-character-class');
+        if (existingClass) {
+            characterClassContentTypeId = existingClass.id;
+            console.log(`✅ CharacterClass Schema found (ID: ${characterClassContentTypeId})`);
+        } else {
+            console.log("📦 Creating new CharacterClass ContentType...");
+            const classDef = JSON.parse(fs.readFileSync('./character-class-schema.json', 'utf-8'));
+            const createClassRes = await fetch(`${WORDCLAW_API_URL}/content-types`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-api-key': WORDCLAW_API_KEY! },
+                body: JSON.stringify({
+                    name: 'Adventure Character Class',
+                    slug: 'adventure-character-class',
+                    description: 'Playable character classes for the adventure game.',
+                    schema: classDef
+                })
+            });
+            if (createClassRes.ok) {
+                const created = await createClassRes.json();
+                characterClassContentTypeId = created.data.id;
+                console.log(`✅ CharacterClass Schema created (ID: ${characterClassContentTypeId})`);
+            } else {
+                console.error("❌ Failed to create CharacterClass Schema:", await createClassRes.json());
+            }
+        }
     } else {
         console.error("❌ Failed to fetch content types", await snRes.json());
         process.exit(1);
+    }
+}
+
+// ---- Seed initial CMS data if content types are empty ----
+async function seedCmsData() {
+    // Seed theme packs
+    if (themePackContentTypeId) {
+        const existingThemes = await fetch(
+            `${WORDCLAW_API_URL}/content-items?contentTypeId=${themePackContentTypeId}&limit=1`,
+            { headers: { 'x-api-key': WORDCLAW_API_KEY! } }
+        );
+        const themesData = await existingThemes.json() as any;
+        if (!themesData.data || themesData.data.length === 0) {
+            console.log("🌱 Seeding initial theme packs...");
+            const seedThemes = [
+                { title: "Haunted Steampunk Bayou", description: "Mist-choked swamps where clockwork gators lurk beneath rusted iron bridges.", genre_tags: ["steampunk", "horror", "swamp"], difficulty_modifier: 1.2, lore_context: "In the fog-draped Bayou of Meridian, steam-powered contraptions and spectral apparitions coexist. The locals whisper of a clockwork curse that animates the dead.", enabled: true },
+                { title: "Neon Cyberpunk Undercity", description: "Hack your way through corporate firewalls in the rain-slicked streets below the megacorps.", genre_tags: ["cyberpunk", "noir", "tech"], difficulty_modifier: 1.0, lore_context: "Beneath the towering arcologies of Neo-Shinjuku lies the Undercity — a lawless maze of black-market hackers, rogue AIs, and neon-lit ramen bars.", enabled: true },
+                { title: "Whimsical Enchanted Forest", description: "A magical woodland where talking animals guard ancient secrets and mischievous fae play tricks.", genre_tags: ["fantasy", "whimsical", "nature"], difficulty_modifier: 0.8, lore_context: "The Everbloom Forest is alive with magic. Ancient oaks whisper prophecies, mushroom circles are portals to the Fae Court, and every creature has a story to tell.", enabled: true },
+                { title: "Post-Apocalyptic Wasteland", description: "Survive the irradiated desert where water is currency and mutant beasts roam the ruins.", genre_tags: ["post-apocalyptic", "survival", "desert"], difficulty_modifier: 1.5, lore_context: "The Great Collapse left the world a scorched husk. Scattered settlements trade in purified water while nomad clans war over the last functioning tech from the Old World.", enabled: true },
+                { title: "Cosmic Horror Deep Space", description: "Your research vessel drifts into uncharted space where reality itself begins to unravel.", genre_tags: ["sci-fi", "horror", "space"], difficulty_modifier: 1.3, lore_context: "The research vessel ISS Prometheus ventured beyond the Kuiper Belt and found something that defies physics — a living void that whispers in dead languages.", enabled: true }
+            ];
+            for (const theme of seedThemes) {
+                await fetch(`${WORDCLAW_API_URL}/content-items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': WORDCLAW_API_KEY! },
+                    body: JSON.stringify({ contentTypeId: themePackContentTypeId, data: theme, status: 'published' })
+                });
+            }
+            console.log(`✅ Seeded ${seedThemes.length} theme packs`);
+        }
+    }
+
+    // Seed character classes
+    if (characterClassContentTypeId) {
+        const existingClasses = await fetch(
+            `${WORDCLAW_API_URL}/content-items?contentTypeId=${characterClassContentTypeId}&limit=1`,
+            { headers: { 'x-api-key': WORDCLAW_API_KEY! } }
+        );
+        const classesData = await existingClasses.json() as any;
+        if (!classesData.data || classesData.data.length === 0) {
+            console.log("🌱 Seeding initial character classes...");
+            const seedClasses = [
+                { name: "Warrior", description: "A battle-hardened fighter who excels in close combat.", icon_emoji: "⚔️", ability_description: "Powerful melee attacks and defensive stances.", visual_archetype: "Muscular figure in heavy plate armor with a greatsword", dc_bonus_categories: ["combat", "strength", "intimidation"], enabled: true },
+                { name: "Spellcaster", description: "A wielder of arcane forces who bends reality to their will.", icon_emoji: "🔮", ability_description: "Cast devastating spells and uncover magical secrets.", visual_archetype: "Robed figure with glowing staff and arcane runes", dc_bonus_categories: ["magic", "knowledge", "arcana"], enabled: true },
+                { name: "Cyber-Hacker", description: "A tech genius who can crack any system and weaponize data.", icon_emoji: "💻", ability_description: "Hack systems, deploy tech gadgets, and manipulate digital environments.", visual_archetype: "Sleek figure with cybernetic implants and holographic displays", dc_bonus_categories: ["tech", "hacking", "electronics"], enabled: true },
+                { name: "Scoundrel", description: "A cunning rogue who thrives in shadows and deception.", icon_emoji: "🗡️", ability_description: "Stealth, lockpicking, and silver-tongued persuasion.", visual_archetype: "Hooded figure in dark leather with daggers and a sly grin", dc_bonus_categories: ["stealth", "deception", "lockpicking"], enabled: true },
+                { name: "Ranger", description: "A wilderness expert who commands nature and tracks any prey.", icon_emoji: "🏹", ability_description: "Expert tracker, animal companion, and deadly archer.", visual_archetype: "Cloaked figure with a longbow, animal companion, and forest camouflage", dc_bonus_categories: ["nature", "survival", "tracking"], enabled: true }
+            ];
+            for (const cls of seedClasses) {
+                await fetch(`${WORDCLAW_API_URL}/content-items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': WORDCLAW_API_KEY! },
+                    body: JSON.stringify({ contentTypeId: characterClassContentTypeId, data: cls, status: 'published' })
+                });
+            }
+            console.log(`✅ Seeded ${seedClasses.length} character classes`);
+        }
     }
 }
 
@@ -599,49 +711,102 @@ app.get('/wc-assets/:id/content', async (req, res) => {
     }
 });
 
+// ---- CMS-Managed Themes (RFC 0026) ----
 app.get('/api/themes', async (req, res) => {
     try {
-        const completion = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                messages: [
-                    {
-                        role: "system",
-                        content: `You are an interactive fiction engine that strictly outputs JSON. 
-Generate exactly 3 random, completely different, and highly engaging story themes/vibes for a text adventure. 
-Example themes: "A suspenseful sci-fi thriller on Mars", "A hilarious romp through a magical bakery", "A gritty cyberpunk detective mystery".
+        // Fetch published, enabled theme packs from WordClaw CMS
+        const fetchRes = await fetch(
+            `${WORDCLAW_API_URL}/content-items?contentTypeId=${themePackContentTypeId}&status=published&fieldName=enabled&fieldOp=eq&fieldValue=true&limit=50`,
+            { headers: { 'x-api-key': WORDCLAW_API_KEY! } }
+        );
+        const data = await fetchRes.json() as any;
+        if (!fetchRes.ok) {
+            console.error("Failed to fetch themes from CMS:", data);
+            return res.status(500).json({ error: "Failed to fetch themes." });
+        }
 
-Return a JSON array containing EXACTLY 3 objects with these properties:
-{
-  "title": "Short catchy title of the theme",
-  "description": "A one sentence hook about the vibe"
-}
-
-Return ONLY the JSON array. Do not include markdown blocks.`
-                    }
-                ],
-                temperature: 0.9
-            })
+        const themes = (data.data || []).map((item: any) => {
+            const d = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+            return {
+                title: d.title,
+                description: d.description,
+                genre_tags: d.genre_tags || [],
+                difficulty_modifier: d.difficulty_modifier || 1.0,
+                lore_context: d.lore_context || ''
+            };
         });
 
-        const body = await completion.json() as any;
-        if (!body.choices || !body.choices[0]) {
-            console.error("OpenAI API error response:", JSON.stringify(body));
-            return res.status(500).json({ error: body.error?.message || "OpenAI API returned an error. Check your API key and quota." });
-        }
-        const content = body.choices[0].message.content;
-        const cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleaned);
-
-        res.json({ themes: parsed });
+        res.json({ themes });
     } catch (err) {
-        console.error("Failed to generate themes:", err);
-        res.status(500).json({ error: "Failed to generate story themes." });
+        console.error("Failed to fetch themes:", err);
+        res.status(500).json({ error: "Failed to fetch story themes." });
+    }
+});
+
+// ---- CMS-Managed Character Classes (RFC 0026) ----
+app.get('/api/classes', async (req, res) => {
+    try {
+        const fetchRes = await fetch(
+            `${WORDCLAW_API_URL}/content-items?contentTypeId=${characterClassContentTypeId}&status=published&fieldName=enabled&fieldOp=eq&fieldValue=true&limit=50`,
+            { headers: { 'x-api-key': WORDCLAW_API_KEY! } }
+        );
+        const data = await fetchRes.json() as any;
+        if (!fetchRes.ok) {
+            console.error("Failed to fetch classes from CMS:", data);
+            return res.status(500).json({ error: "Failed to fetch character classes." });
+        }
+
+        const classes = (data.data || []).map((item: any) => {
+            const d = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+            return {
+                name: d.name,
+                description: d.description,
+                icon_emoji: d.icon_emoji || '',
+                ability_description: d.ability_description || '',
+                visual_archetype: d.visual_archetype || '',
+                dc_bonus_categories: d.dc_bonus_categories || []
+            };
+        });
+
+        res.json({ classes });
+    } catch (err) {
+        console.error("Failed to fetch classes:", err);
+        res.status(500).json({ error: "Failed to fetch character classes." });
+    }
+});
+
+// ---- Leaderboard (RFC 0026 Phase 3) ----
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        // Fetch published stories sorted by final_score descending
+        const fetchRes = await fetch(
+            `${WORDCLAW_API_URL}/content-items?contentTypeId=${publishedStoryContentTypeId}&status=published&sortField=final_score&sortDir=desc&limit=25`,
+            { headers: { 'x-api-key': WORDCLAW_API_KEY! } }
+        );
+        const data = await fetchRes.json() as any;
+        if (!fetchRes.ok) {
+            console.error("Failed to fetch leaderboard:", data);
+            return res.status(500).json({ error: "Failed to fetch leaderboard." });
+        }
+
+        const entries = (data.data || []).map((item: any, index: number) => {
+            const d = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+            return {
+                rank: index + 1,
+                player_name: d.author || 'Anonymous',
+                score: d.final_score || 0,
+                character_class: d.character_class || 'Unknown',
+                cause_of_death: d.cause_of_death || '',
+                hero_image_url: d.hero_image_url || null,
+                achievements: d.achievements || [],
+                played_at: item.createdAt
+            };
+        });
+
+        res.json({ entries });
+    } catch (err) {
+        console.error("Failed to fetch leaderboard:", err);
+        res.status(500).json({ error: "Failed to fetch leaderboard." });
     }
 });
 
@@ -999,7 +1164,7 @@ app.post('/api/load', async (req, res) => {
 
 app.get('/api/stories', async (req, res) => {
     try {
-        const fetchRes = await fetch(`${WORDCLAW_API_URL}/content-items?content_type_id=${publishedStoryContentTypeId}&limit=50&sort=-created_at`, {
+        const fetchRes = await fetch(`${WORDCLAW_API_URL}/content-items?contentTypeId=${publishedStoryContentTypeId}&status=published&limit=50&sortBy=createdAt&sortDir=desc`, {
             headers: {
                 'x-api-key': WORDCLAW_API_KEY!
             }
@@ -1067,12 +1232,12 @@ app.post('/api/publish', async (req, res) => {
         body: JSON.stringify({
             contentTypeId: publishedStoryContentTypeId,
             data: payload,
-            status: 'published'
+            status: 'draft'
         })
     });
 
     if (saveRes.ok) {
-        res.json({ success: true, message: "Story published to WordClaw successfully!" });
+        res.json({ success: true, message: "Your tale has been submitted for review! It will appear in the archives once approved." });
     } else {
         const err = await saveRes.json() as any;
         console.error("Failed to publish story:", err);
@@ -1081,7 +1246,8 @@ app.post('/api/publish', async (req, res) => {
 });
 
 const PORT = 8080;
-setupWordclawSchemas().then(() => {
+setupWordclawSchemas().then(async () => {
+    await seedCmsData();
     app.listen(PORT, () => {
         console.log(`🎮 Game Engine Server running on http://localhost:${PORT}`);
     });

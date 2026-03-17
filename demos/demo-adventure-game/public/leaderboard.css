@@ -1,0 +1,347 @@
+/* ============================================
+   Leaderboard — Dedicated Stylesheet
+   ============================================ */
+
+/* --- Page Wrapper (leaderboard uses styles.css body + its own wrapper) --- */
+.wrapper {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    position: relative;
+    z-index: 1;
+}
+
+.lb-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+}
+
+.lb-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.6rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #f59e0b, #fbbf24, #f59e0b);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: goldShimmer 4s linear infinite;
+    margin-bottom: 0.5rem;
+}
+
+.lb-subtitle {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    font-style: italic;
+}
+
+@keyframes goldShimmer {
+    to {
+        background-position: 200% center;
+    }
+}
+
+/* --- Loading --- */
+.loading {
+    text-align: center;
+    padding: 3rem 0;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    margin: 0 auto 1rem;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* --- Table --- */
+#leaderboard-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.lb-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 0.5rem;
+    min-width: 600px;
+}
+
+.lb-table thead th {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    padding: 0.6rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.lb-table tbody tr {
+    background: var(--bg-panel);
+    border-radius: 12px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lb-table tbody tr:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.lb-table tbody td {
+    padding: 0.8rem 1rem;
+    vertical-align: middle;
+    font-size: 0.95rem;
+    color: var(--text-main);
+}
+
+.lb-table tbody td:first-child {
+    border-radius: 12px 0 0 12px;
+}
+
+.lb-table tbody td:last-child {
+    border-radius: 0 12px 12px 0;
+}
+
+/* --- Rank Column --- */
+.col-rank {
+    text-align: center;
+    font-weight: 800;
+    font-size: 1.3rem;
+    width: 3.5rem;
+}
+
+.rank-1 {
+    color: #fbbf24;
+}
+
+.rank-2 {
+    color: #94a3b8;
+}
+
+.rank-3 {
+    color: #d97706;
+}
+
+/* --- Hero Avatar --- */
+.lb-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--border);
+}
+
+.lb-avatar-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+}
+
+.col-hero {
+    width: 56px;
+}
+
+/* --- Score --- */
+.col-score {
+    font-weight: 800;
+    color: var(--score);
+    font-size: 1.1rem;
+    white-space: nowrap;
+}
+
+/* --- Achievements --- */
+.lb-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #d4af37, #f3e5ab, #d4af37);
+    background-size: 200% auto;
+    color: #1a1a2e;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    margin-right: 0.3rem;
+    margin-bottom: 0.2rem;
+    animation: goldShimmer 3s infinite linear;
+    white-space: nowrap;
+}
+
+/* --- Empty / Footer --- */
+.lb-empty {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 3rem 0;
+    font-style: italic;
+    font-size: 1.05rem;
+}
+
+.lb-footer {
+    text-align: center;
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+
+.footer-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.95rem;
+    transition: color 0.2s;
+}
+
+.footer-link:hover {
+    color: var(--accent);
+}
+
+/* --- Responsive: Tablet --- */
+@media (max-width: 768px) {
+    .wrapper {
+        padding: 1rem;
+    }
+
+    .lb-title {
+        font-size: 1.8rem;
+    }
+
+    .lb-subtitle {
+        font-size: 0.9rem;
+    }
+
+    .lb-table {
+        min-width: unset;
+    }
+
+    .lb-table thead {
+        display: none;
+    }
+
+    .lb-table,
+    .lb-table tbody {
+        display: block;
+    }
+
+    .lb-table tbody tr {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        grid-template-rows: auto auto;
+        gap: 0.2rem 0.8rem;
+        padding: 1rem;
+        margin-bottom: 0.8rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        align-items: center;
+    }
+
+    .lb-table tbody td {
+        padding: 0.2rem 0;
+        border-radius: 0 !important;
+    }
+
+    /* Rank + Avatar on the left */
+    .col-rank {
+        grid-row: 1 / 3;
+        font-size: 1.1rem;
+        width: auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .col-hero {
+        display: none;
+    }
+
+    /* Name on first row right */
+    .col-name {
+        font-weight: 700;
+        font-size: 1rem;
+    }
+
+    /* Class on second row right */
+    .col-class {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
+    /* Score, fate, achievements span full width */
+    .col-score,
+    .col-fate,
+    .col-achievements {
+        grid-column: 1 / -1;
+    }
+
+    .col-score {
+        font-size: 1rem;
+    }
+
+    .col-achievements {
+        padding-top: 0.3rem;
+    }
+
+    .lb-footer {
+        gap: 1rem;
+    }
+}
+
+/* --- Responsive: Small mobile --- */
+@media (max-width: 480px) {
+    .wrapper {
+        padding: 0.75rem;
+    }
+
+    .lb-title {
+        font-size: 1.5rem;
+    }
+
+    .lb-table tbody tr {
+        padding: 0.8rem;
+    }
+
+    .lb-badge {
+        font-size: 0.6rem;
+        padding: 0.15rem 0.4rem;
+    }
+}
+
+/* --- Responsive: Large screens --- */
+@media (min-width: 1400px) {
+    .wrapper {
+        max-width: 1400px;
+    }
+
+    .lb-title {
+        font-size: 3rem;
+    }
+
+    .lb-table tbody td {
+        padding: 1rem 1.2rem;
+        font-size: 1.05rem;
+    }
+
+    .lb-avatar {
+        width: 48px;
+        height: 48px;
+    }
+}

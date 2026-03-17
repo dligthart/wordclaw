@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaderboard — WordClaw Adventure</title>
+    <meta name="description" content="Top adventurers ranked by score in the WordClaw text adventure game.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600;700;800&family=Lora:ital@0;1&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="leaderboard.css">
+</head>
+
+<body>
+    <div class="wrapper">
+        <main id="leaderboard-container">
+            <header class="lb-header">
+                <h1 class="lb-title">⚔️ Hall of Legends</h1>
+                <p class="lb-subtitle">The greatest adventurers, ranked by glory</p>
+            </header>
+
+            <div id="loading" class="loading hidden">
+                <div class="loading-spinner"></div>
+                <p>Loading rankings...</p>
+            </div>
+
+            <div id="leaderboard-table-wrap">
+                <table id="leaderboard-table" class="lb-table">
+                    <thead>
+                        <tr>
+                            <th class="col-rank">#</th>
+                            <th class="col-hero"></th>
+                            <th class="col-name">Adventurer</th>
+                            <th class="col-class">Class</th>
+                            <th class="col-score">Score</th>
+                            <th class="col-fate">Fate</th>
+                            <th class="col-achievements">Achievements</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body">
+                    </tbody>
+                </table>
+
+                <p id="empty-message" class="lb-empty hidden">No adventurers have made it to the hall yet. Go play a
+                    game!</p>
+            </div>
+
+            <footer class="lb-footer">
+                <a href="/" class="footer-link">🎮 Play the Game</a>
+                <a href="/library.html" class="footer-link">📜 The Grand Archives</a>
+            </footer>
+        </main>
+    </div>
+
+    <script src="leaderboard.js"></script>
+</body>
+
+</html>

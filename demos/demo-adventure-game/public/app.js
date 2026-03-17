@@ -45,21 +45,30 @@ const finaleMural = document.getElementById('finale-mural');
 const sceneCounterWrap = document.getElementById('scene-counter-wrap');
 const sceneCounterEl = document.getElementById('scene-counter');
 
-const CLASSES = ['Warrior', 'Spellcaster', 'Cyber-Hacker', 'Scoundrel', 'Ranger'];
+// Quirks remain local for now (not CMS-managed yet)
 const QUIRKS = ['Optimistic', 'Clumsy', 'Ruthless', 'Charming', 'Paranoid'];
+let cmsClasses = []; // populated from /api/classes
 
 window.addEventListener('DOMContentLoaded', loadThemes);
 
 async function loadThemes() {
     setLoading(true);
     try {
-        const res = await fetch('/api/themes');
-        const data = await res.json();
+        // Load themes and classes in parallel from CMS
+        const [themesRes, classesRes] = await Promise.all([
+            fetch('/api/themes'),
+            fetch('/api/classes')
+        ]);
+        const themesData = await themesRes.json();
+        const classesData = await classesRes.json();
 
-        if (data.error) throw new Error(data.error);
+        if (themesData.error) throw new Error(themesData.error);
+
+        // Store CMS classes for character builder
+        cmsClasses = classesData.classes || [];
 
         themeCardsEl.innerHTML = '';
-        data.themes.forEach(theme => {
+        themesData.themes.forEach(theme => {
             const card = document.createElement('div');
             card.className = 'theme-card';
             card.innerHTML = `
@@ -85,14 +94,19 @@ function renderCharacterBuilder() {
     classGrid.innerHTML = '';
     quirkGrid.innerHTML = '';
 
-    CLASSES.forEach(c => {
+    // Render CMS-driven classes with icons and descriptions
+    cmsClasses.forEach(c => {
         const btn = document.createElement('div');
         btn.className = 'class-card';
-        btn.innerText = c;
+        btn.innerHTML = `
+            <span class="class-icon">${c.icon_emoji || '⚔️'}</span>
+            <span class="class-name">${c.name}</span>
+            <span class="class-desc">${c.description || ''}</span>
+        `;
         btn.onclick = () => {
             document.querySelectorAll('#class-grid .class-card').forEach(el => el.classList.remove('selected'));
             btn.classList.add('selected');
-            selectedClass = c;
+            selectedClass = c.name;
             checkCanStart();
         };
         classGrid.appendChild(btn);
