@@ -6,6 +6,8 @@ import SwaggerUI from '../.vitepress/components/SwaggerUI.vue'
 
 This document covers WordClaw's primary HTTP surface: the REST API. MCP is the primary agent-native companion surface; see [mcp-integration.md](../guides/mcp-integration). GraphQL remains available at `/graphql` as a compatibility layer. Experimental revenue, payout, delegation, and agent-run endpoints are intentionally hidden from the default API reference unless an operator explicitly enables those incubator modules in runtime configuration.
 
+The prose examples below are the current reference point for the newest runtime layers such as public write lanes, direct asset upload, and the latest asset lifecycle flows. The embedded OpenAPI viewer still emphasizes the longest-stable core contract while those newer slices continue to be expanded there.
+
 For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, and task-oriented agent recipes in one machine-readable document. It now also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, supported providers (`local`, `s3`), fallback state when remote storage is misconfigured, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. It now also publishes the content-runtime query contract: field-aware listing constraints, queryable scalar field kinds, grouped projection support for lightweight leaderboard and analytics-style read models, and TTL lifecycle semantics for session-like content via `x-wordclaw-lifecycle` plus the `includeArchived` override on list/projection reads. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, REST/MCP availability, content-runtime query surfaces, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
 
 The fastest task-oriented preflight sequence is:
@@ -41,8 +43,8 @@ curl -H "x-api-key: writer" "http://localhost:4000/api/workspace-context?intent=
 ```json
 {
   "data": {
-    "currentDomainId": "tenant-A",
-    "selectableDomains": ["tenant-A"],
+    "currentDomainId": 1,
+    "selectableDomains": [1],
     "contentModelInventory": {
       "schemas": { "15": "agent-skill" },
       "activeWorkflows": { "15": 1 },
@@ -196,7 +198,7 @@ curl -H "x-api-key: writer" \
   "http://localhost:4000/api/content-items?contentTypeId=15&includeArchived=true&limit=20"
 ```
 
-### 5. Uploading an Asset
+### 6. Uploading an Asset
 
 Create a signed asset and attach metadata without leaving the core runtime.
 
@@ -234,7 +236,93 @@ curl -X POST http://localhost:4000/api/assets \
 }
 ```
 
-### 6. Inspecting Asset Storage Readiness
+### 7. Issuing a Public Write Token
+
+For bounded player/session-like writes, issue a short-lived token from a schema that explicitly allows public writes.
+
+**Request:**
+```bash
+curl -X POST http://localhost:4000/api/content-types/15/public-write-tokens \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expiresInSeconds": 900,
+    "subject": {
+      "playerId": "session-42"
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "token": "<signed-token>",
+    "expiresAt": "2026-03-17T12:00:00.000Z"
+  }
+}
+```
+
+**Public write using the token:**
+```bash
+curl -X POST http://localhost:4000/api/public/content-types/15/items \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "<signed-token>",
+    "data": {
+      "playerId": "session-42",
+      "score": 18
+    }
+  }'
+```
+
+### 8. Direct Asset Upload Through a Storage Provider
+
+For large files or browser-friendly flows, ask WordClaw for a provider upload URL first, then complete the asset after the object write succeeds.
+
+**Issue upload URL:**
+```bash
+curl -X POST http://localhost:4000/api/assets/direct-upload \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "hero.png",
+    "originalFilename": "hero.png",
+    "mimeType": "image/png",
+    "contentLength": 245120,
+    "accessMode": "signed"
+  }'
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "uploadUrl": "https://storage.example.com/bucket/object?signature=...",
+    "method": "PUT",
+    "headers": {
+      "content-type": "image/png"
+    },
+    "completionToken": "<direct-upload-token>",
+    "expiresAt": "2026-03-17T12:15:00.000Z"
+  }
+}
+```
+
+**Complete the asset after the provider write succeeds:**
+```bash
+curl -X POST http://localhost:4000/api/assets/direct-upload/complete \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "completionToken": "<direct-upload-token>",
+    "metadata": {
+      "alt": "Workflow hero image"
+    }
+  }'
+```
+
+### 9. Inspecting Asset Storage Readiness
 
 Check which asset storage provider is configured, which provider is actually active, and whether the runtime fell back to local storage because remote configuration is incomplete.
 
@@ -257,7 +345,7 @@ curl http://localhost:4000/api/deployment-status
 }
 ```
 
-### 6. Paying an L402 Invoice
+### 10. Paying an L402 Invoice
 
 Confirming a purchase locally with a simulated payment backend.
 

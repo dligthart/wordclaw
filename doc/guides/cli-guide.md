@@ -3,8 +3,7 @@
 The WordClaw CLI is a JSON-first command-line interface for agents and operators. It wraps both of the product's primary agent surfaces:
 
 - `MCP` for local tool discovery or remote MCP attachment
-- `REST` for content operations, workflows, and L402 purchase/entitlement flows
-- `REST` for content operations, asset storage, workflows, and L402 purchase/entitlement flows
+- `REST` for content operations, content-runtime queries, public write lanes, asset storage, workflows, and L402 purchase/entitlement flows
 
 Use the CLI when you want a scriptable interface without writing a custom MCP client or hand-rolling HTTP requests.
 
@@ -208,6 +207,7 @@ Supported MCP features:
 - direct tool calls
 - prompt retrieval
 - resource reads
+- reactive subscription contract inspection via `subscribe_events`
 - OpenAI-compatible function tool export from the live MCP inventory
 - end-to-end smoke validation across content, workflow, audit, API key, webhook, and payment-read surfaces
 
@@ -229,6 +229,16 @@ Usability details:
 - `assets ls` is a shorthand for `assets list`
 - top-level aliases `ct` and `wf` expand to `content-types` and `workflow`
 - top-level alias `asset` expands to `assets`
+
+Current asset and content-runtime examples:
+
+```bash
+wordclaw content list --content-type-id 12 --field-name characterClass --field-op eq --field-value Chronomancer
+wordclaw content project --content-type-id 12 --group-by characterClass --metric avg --metric-field score
+wordclaw content list --content-type-id 18 --include-archived
+wordclaw assets create --content-file ./hero.png --mime-type image/png --access-mode signed
+wordclaw assets access --id 44 --ttl-seconds 120
+```
 
 ### Generic REST
 

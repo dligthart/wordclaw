@@ -5,7 +5,7 @@ export default withMermaid(defineConfig({
     title: "WordClaw",
     base: "/wordclaw/docs/",
     outDir: ".vitepress/dist/docs",
-    description: "Documentation for WordClaw Content API and Supervisor UI",
+    description: "Documentation for the WordClaw safe content runtime for AI agents",
     themeConfig: {
         nav: [
             { text: 'Home', link: '/' },
@@ -63,9 +63,11 @@ export default withMermaid(defineConfig({
                     {
                         text: 'Current Direction',
                         items: [
-                            { text: '0015 Paid Content Consumption Contract', link: '/rfc/proposed/0015-paid-content-consumption-contract' },
-                            { text: '0017 Tenant Boundary and Contract Hardening', link: '/rfc/proposed/0017-tenant-boundary-and-contract-hardening' },
-                            { text: '0021 Core Product Focus and Feature Pruning', link: '/rfc/proposed/0021-core-product-focus-and-feature-pruning' }
+                            { text: '0015 Paid Content Consumption Contract', link: '/archive/rfc/0015-paid-content-consumption-contract' },
+                            { text: '0017 Tenant Boundary and Contract Hardening', link: '/archive/rfc/0017-tenant-boundary-and-contract-hardening' },
+                            { text: '0021 Core Product Focus and Feature Pruning', link: '/archive/rfc/0021-core-product-focus-and-feature-pruning' },
+                            { text: '0023 Media Asset Storage', link: '/rfc/proposed/0023-media-asset-storage' },
+                            { text: '0025 Reactive Agentic Webhooks via MCP', link: '/rfc/proposed/0025-agentic-webhooks' }
                         ]
                     },
                     {
