@@ -1,3 +1,10 @@
+## [1.36.1](https://github.com/dligthart/wordclaw/compare/v1.36.0...v1.36.1) (2026-03-28)
+
+
+### Bug Fixes
+
+* **paid-content:** preserve purchase metadata and harden tests ([24a5e4a](https://github.com/dligthart/wordclaw/commit/24a5e4a3bd07e4881acbbcc7ce81f44aed32b669))
+
 # [1.36.0](https://github.com/dligthart/wordclaw/compare/v1.35.0...v1.36.0) (2026-03-17)
 
 
