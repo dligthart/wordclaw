@@ -57,22 +57,82 @@ cp doc/guides/openclaw-integration/SKILL.md ~/.openclaw/skills/wordclaw-cms/SKIL
 
 Restart OpenClaw (or run `openclaw onboard`) and ask:
 
-> "List my WordClaw content types"
+> "Discover my WordClaw workspace and pick the best authoring target"
 
-The agent should call `list_content_types` through the MCP server and return results.
+The agent should read the WordClaw discovery resources, call `guide_task` or
+`resolve_workspace_target`, and then explain the available domains and content
+targets.
 
 ## What the Skill Teaches
 
-The `SKILL.md` encodes six workflow recipes:
+The `SKILL.md` now centers the runtime's built-in guidance surfaces
+(`system://capabilities`, `system://deployment-status`, `system://current-actor`,
+`system://workspace-context`, `guide_task`, and `resolve_workspace_target`)
+and then maps them into these task playbooks:
 
 | Recipe | Description |
 |--------|-------------|
-| **Content Authoring** | Discovery → dry-run → write → subscribe |
-| **Workflow Review** | Target resolution → task inspection → approve/reject |
-| **Asset Management** | Upload, derivatives, signed access |
-| **L402 Paid Content** | 402 challenge → pay → retry with token |
-| **Reactive Subscriptions** | Event-driven sync instead of polling |
-| **Content Projections** | Grouped analytics and leaderboard queries |
+| **Discover Deployment** | Check enabled modules, readiness, and actor expectations |
+| **Discover Workspace** | Resolve the active domain, content inventory, and best target |
+| **Content Authoring** | Discovery → actor-aware guide → dry-run → write |
+| **Workflow Review** | Pending-task inspection → comment → approve/reject |
+| **Asset Management** | Metadata discovery first, then REST delivery or upload flow |
+| **L402 Paid Content** | MCP discovery, then REST offer → purchase → confirm → entitlement read |
+| **Manage Integrations** | API key and webhook lifecycle operations |
+| **Verify Provenance** | Actor/entity-scoped audit inspection and follow-up monitoring |
+
+## Use Case Test: Low-Memory Resume Across Sessions
+
+This is the most practical test for whether OpenClaw is using WordClaw well.
+
+### Goal
+
+Verify that OpenClaw can stop and restart with minimal local memory while
+recovering the same domain, target, and next action from WordClaw.
+
+### Prompt 1
+
+> "Discover my WordClaw workspace, choose the best authoring target, and return only a compact checkpoint with IDs and the next action."
+
+Expected behavior:
+
+- reads `system://current-actor`
+- reads `system://workspace-context` or `system://workspace-target/authoring`
+- calls `resolve_workspace_target` or `guide_task`
+- returns a compact checkpoint, not a long transcript
+
+### Prompt 2
+
+> "Using only that checkpoint, create or update one draft item, then return a new checkpoint with the content item id and any review task id."
+
+Expected behavior:
+
+- reloads only the required schema or item
+- uses dry-run before the real write
+- returns stable IDs and next action instead of keeping the whole payload in memory
+
+### Prompt 3
+
+Start a fresh OpenClaw session and provide only the compact checkpoint:
+
+> "Resume this WordClaw task from the checkpoint. Rehydrate state from WordClaw, not from prior conversation memory."
+
+Expected behavior:
+
+- rereads `system://current-actor`
+- uses `guide_task`, `system://workspace-target/{intent}`, or filtered workspace resources
+- fetches only the referenced content item, review task, or audit delta
+- continues from the same domain and target without re-scanning the whole workspace
+
+### Success Criteria
+
+- OpenClaw uses canonical IDs rather than carrying long payloads forward.
+- OpenClaw rehydrates from WordClaw resources and tools instead of depending on old chat context.
+- The resumed session picks the same domain and work target unless WordClaw state has actually changed.
+- Audit or reactive deltas are used for freshness instead of replaying the full history.
+
+For a stricter operator-facing pass/fail runbook, use
+`tests/use-cases/openclaw-low-memory-resume.md`.
 
 ## Optional: Webhook Bridge
 
