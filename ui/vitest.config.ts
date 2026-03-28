@@ -7,7 +7,16 @@ export default defineConfig({
         include: ['src/**/*.{test,spec}.{js,ts}'],
         environment: 'jsdom',
         setupFiles: ['./vitest-setup.ts'],
-        globals: true
+        globals: true,
+        coverage: {
+            provider: 'v8',
+            thresholds: {
+                statements: 65,
+                branches: 45,
+                functions: 65,
+                lines: 70
+            }
+        }
     },
     resolve: {
         conditions: ['mode=test', 'browser']

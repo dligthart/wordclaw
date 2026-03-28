@@ -5243,7 +5243,24 @@ export default async function apiRoutes(server: FastifyInstance) {
                 ]))
             })),
             response: {
-                402: AIErrorResponse,
+                402: Type.Object({
+                    error: Type.String(),
+                    code: Type.String(),
+                    remediation: Type.String(),
+                    context: Type.Object({
+                        invoice: Type.String(),
+                        macaroon: Type.String(),
+                        amountSatoshis: Type.Number(),
+                        reason: Type.String(),
+                        recommendedNextAction: Type.String()
+                    }),
+                    paymentHash: Type.String(),
+                    entitlementId: Type.Number(),
+                    paymentMethod: Type.Union([
+                        Type.Literal('lightning'),
+                        Type.Literal('ap2')
+                    ])
+                }),
                 404: AIErrorResponse,
                 400: AIErrorResponse,
                 403: AIErrorResponse,

@@ -2,12 +2,13 @@ import fastifyMultipart from '@fastify/multipart';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { db } from '../db/index.js';
-import { accessEvents, agentProfiles, agentRunDefinitions, agentRuns, apiKeys, assets, contentItems, contentItemVersions, contentTypes, domains, entitlements, licensePolicies, offers, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
+import { accessEvents, agentProfiles, agentRunDefinitions, agentRuns, apiKeys, assets, contentItems, contentItemVersions, contentTypes, domains, entitlements, licensePolicies, offers, payments, reviewTasks, workflowTransitions, workflows } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import apiRoutes from '../api/routes.js';
 import { errorHandler } from '../api/error-handler.js';
 import { hashApiKey } from '../services/api-key.js';
 import { getAssetStorageProvider } from '../services/asset-storage.js';
+import { MockPaymentProvider } from '../services/mock-payment-provider.js';
 import { settleAgentRun } from '../test/agent-run-test-helpers.js';
 import crypto from 'crypto';
 
@@ -663,6 +664,401 @@ describe('Multi-Tenant Domain Isolation Tests', () => {
             }
             if (assetStorageKey) {
                 await getAssetStorageProvider().remove(assetStorageKey).catch(() => undefined);
+            }
+        }
+    });
+
+    it('offer purchase confirmation stays tenant-scoped and only activates the caller domain entitlement', async () => {
+        let domain1ApiKeyId: number | null = null;
+        let domain2ApiKeyId: number | null = null;
+        let domain1ProfileId: number | null = null;
+        let domain2ProfileId: number | null = null;
+        let offerId: number | null = null;
+        let policyId: number | null = null;
+        let entitlementId: number | null = null;
+        let paymentHash: string | null = null;
+
+        const domain1RawKey = `wc_paid_d1_${crypto.randomUUID().slice(0, 10)}`;
+        const domain2RawKey = `wc_paid_d2_${crypto.randomUUID().slice(0, 10)}`;
+
+        try {
+            const [domain1ApiKey] = await db.insert(apiKeys).values({
+                keyHash: hashApiKey(domain1RawKey),
+                keyPrefix: domain1RawKey.slice(0, 12),
+                name: 'Paid Domain 1 Key',
+                domainId: domain1Id,
+                scopes: 'admin'
+            }).returning();
+            domain1ApiKeyId = domain1ApiKey.id;
+
+            const [domain2ApiKey] = await db.insert(apiKeys).values({
+                keyHash: hashApiKey(domain2RawKey),
+                keyPrefix: domain2RawKey.slice(0, 12),
+                name: 'Paid Domain 2 Key',
+                domainId: domain2Id,
+                scopes: 'admin'
+            }).returning();
+            domain2ApiKeyId = domain2ApiKey.id;
+
+            const [domain1Profile] = await db.insert(agentProfiles).values({
+                domainId: domain1Id,
+                apiKeyId: domain1ApiKey.id,
+                displayName: 'Paid Domain 1 Profile'
+            }).returning();
+            domain1ProfileId = domain1Profile.id;
+
+            const [domain2Profile] = await db.insert(agentProfiles).values({
+                domainId: domain2Id,
+                apiKeyId: domain2ApiKey.id,
+                displayName: 'Paid Domain 2 Profile'
+            }).returning();
+            domain2ProfileId = domain2Profile.id;
+
+            const [offer] = await db.insert(offers).values({
+                domainId: domain1Id,
+                slug: `purchase-confirm-${crypto.randomUUID().slice(0, 8)}`,
+                name: 'Purchase Confirm Subscription',
+                scopeType: 'subscription',
+                scopeRef: null,
+                priceSats: 321,
+                active: true
+            }).returning();
+            offerId = offer.id;
+
+            const [policy] = await db.insert(licensePolicies).values({
+                domainId: domain1Id,
+                offerId: offer.id,
+                version: 1,
+                maxReads: 3,
+                allowedChannels: ['rest']
+            }).returning();
+            policyId = policy.id;
+
+            const purchase = await fastify.inject({
+                method: 'POST',
+                url: `/api/offers/${offer.id}/purchase`,
+                headers: { 'x-api-key': domain1RawKey },
+                payload: {}
+            });
+
+            expect(purchase.statusCode).toBe(402);
+            const purchasePayload = JSON.parse(purchase.payload) as {
+                code: string;
+                paymentHash: string;
+                entitlementId: number;
+                context: {
+                    macaroon: string;
+                };
+            };
+            expect(purchasePayload.code).toBe('PAYMENT_REQUIRED');
+            expect(typeof purchasePayload.context?.macaroon).toBe('string');
+            entitlementId = purchasePayload.entitlementId;
+            paymentHash = purchasePayload.paymentHash;
+
+            const [pendingEntitlement] = await db.select().from(entitlements).where(eq(entitlements.id, purchasePayload.entitlementId));
+            expect(pendingEntitlement.domainId).toBe(domain1Id);
+            expect(pendingEntitlement.agentProfileId).toBe(domain1Profile.id);
+            expect(pendingEntitlement.status).toBe('pending_payment');
+
+            const wrongDomainConfirm = await fastify.inject({
+                method: 'POST',
+                url: `/api/offers/${offer.id}/purchase/confirm`,
+                headers: {
+                    'x-api-key': domain2RawKey,
+                    'x-payment-hash': purchasePayload.paymentHash,
+                    authorization: `L402 ${purchasePayload.context.macaroon}:${MockPaymentProvider.MOCK_PREIMAGE}`
+                }
+            });
+
+            expect(wrongDomainConfirm.statusCode).toBe(404);
+            expect(JSON.parse(wrongDomainConfirm.payload).code).toBe('OFFER_NOT_FOUND');
+
+            const confirm = await fastify.inject({
+                method: 'POST',
+                url: `/api/offers/${offer.id}/purchase/confirm`,
+                headers: {
+                    'x-api-key': domain1RawKey,
+                    'x-payment-hash': purchasePayload.paymentHash,
+                    authorization: `L402 ${purchasePayload.context.macaroon}:${MockPaymentProvider.MOCK_PREIMAGE}`
+                }
+            });
+
+            expect(confirm.statusCode).toBe(200);
+            const confirmPayload = JSON.parse(confirm.payload) as {
+                data: {
+                    id: number;
+                    agentProfileId: number;
+                    paymentHash: string;
+                    status: string;
+                    activatedAt: string | null;
+                };
+            };
+            expect(confirmPayload.data.id).toBe(purchasePayload.entitlementId);
+            expect(confirmPayload.data.agentProfileId).toBe(domain1Profile.id);
+            expect(confirmPayload.data.paymentHash).toBe(purchasePayload.paymentHash);
+            expect(confirmPayload.data.status).toBe('active');
+            expect(confirmPayload.data.activatedAt).toBeTruthy();
+
+            const [activatedEntitlement] = await db.select().from(entitlements).where(eq(entitlements.id, purchasePayload.entitlementId));
+            expect(activatedEntitlement.status).toBe('active');
+            expect(activatedEntitlement.activatedAt).not.toBeNull();
+        } finally {
+            if (entitlementId) {
+                await db.delete(accessEvents).where(eq(accessEvents.entitlementId, entitlementId));
+                await db.delete(entitlements).where(eq(entitlements.id, entitlementId));
+            }
+            if (paymentHash) {
+                await db.delete(payments).where(eq(payments.paymentHash, paymentHash));
+            }
+            if (policyId) {
+                await db.delete(licensePolicies).where(eq(licensePolicies.id, policyId));
+            }
+            if (offerId) {
+                await db.delete(offers).where(eq(offers.id, offerId));
+            }
+            if (domain1ProfileId) {
+                await db.delete(agentProfiles).where(eq(agentProfiles.id, domain1ProfileId));
+            }
+            if (domain2ProfileId) {
+                await db.delete(agentProfiles).where(eq(agentProfiles.id, domain2ProfileId));
+            }
+            if (domain1ApiKeyId) {
+                await db.delete(apiKeys).where(eq(apiKeys.id, domain1ApiKeyId));
+            }
+            if (domain2ApiKeyId) {
+                await db.delete(apiKeys).where(eq(apiKeys.id, domain2ApiKeyId));
+            }
+        }
+    });
+
+    it('content-item paid reads require explicit entitlement selection and reject foreign entitlement ids', async () => {
+        let domain1ApiKeyId: number | null = null;
+        let domain2ApiKeyId: number | null = null;
+        let domain1ProfileId: number | null = null;
+        let domain2ProfileId: number | null = null;
+        let domain1ItemId: number | null = null;
+        let domain1OfferId: number | null = null;
+        let domain1PolicyId: number | null = null;
+        let domain1EntitlementAId: number | null = null;
+        let domain1EntitlementBId: number | null = null;
+        let domain2OfferId: number | null = null;
+        let domain2PolicyId: number | null = null;
+        let domain2EntitlementId: number | null = null;
+
+        const domain1RawKey = `wc_select_d1_${crypto.randomUUID().slice(0, 10)}`;
+        const domain2RawKey = `wc_select_d2_${crypto.randomUUID().slice(0, 10)}`;
+
+        try {
+            const [domain1ApiKey] = await db.insert(apiKeys).values({
+                keyHash: hashApiKey(domain1RawKey),
+                keyPrefix: domain1RawKey.slice(0, 12),
+                name: 'Selection Domain 1 Key',
+                domainId: domain1Id,
+                scopes: 'admin'
+            }).returning();
+            domain1ApiKeyId = domain1ApiKey.id;
+
+            const [domain2ApiKey] = await db.insert(apiKeys).values({
+                keyHash: hashApiKey(domain2RawKey),
+                keyPrefix: domain2RawKey.slice(0, 12),
+                name: 'Selection Domain 2 Key',
+                domainId: domain2Id,
+                scopes: 'admin'
+            }).returning();
+            domain2ApiKeyId = domain2ApiKey.id;
+
+            const [domain1Profile] = await db.insert(agentProfiles).values({
+                domainId: domain1Id,
+                apiKeyId: domain1ApiKey.id,
+                displayName: 'Selection Domain 1 Profile'
+            }).returning();
+            domain1ProfileId = domain1Profile.id;
+
+            const [domain2Profile] = await db.insert(agentProfiles).values({
+                domainId: domain2Id,
+                apiKeyId: domain2ApiKey.id,
+                displayName: 'Selection Domain 2 Profile'
+            }).returning();
+            domain2ProfileId = domain2Profile.id;
+
+            const [domain1Item] = await db.insert(contentItems).values({
+                domainId: domain1Id,
+                contentTypeId: contentType1Id,
+                data: JSON.stringify({ title: 'Paid content item' }),
+                status: 'published',
+                version: 1
+            }).returning();
+            domain1ItemId = domain1Item.id;
+
+            const [domain1Offer] = await db.insert(offers).values({
+                domainId: domain1Id,
+                slug: `paid-item-${crypto.randomUUID().slice(0, 8)}`,
+                name: 'Paid Item Offer',
+                scopeType: 'item',
+                scopeRef: domain1Item.id,
+                priceSats: 99,
+                active: true
+            }).returning();
+            domain1OfferId = domain1Offer.id;
+
+            const [domain1Policy] = await db.insert(licensePolicies).values({
+                domainId: domain1Id,
+                offerId: domain1Offer.id,
+                version: 1,
+                maxReads: 2,
+                allowedChannels: ['rest']
+            }).returning();
+            domain1PolicyId = domain1Policy.id;
+
+            const [domain1EntitlementA] = await db.insert(entitlements).values({
+                domainId: domain1Id,
+                offerId: domain1Offer.id,
+                policyId: domain1Policy.id,
+                policyVersion: domain1Policy.version,
+                agentProfileId: domain1Profile.id,
+                paymentHash: `paid-read-a-${crypto.randomUUID().slice(0, 12)}`,
+                status: 'active',
+                remainingReads: 2,
+                activatedAt: new Date()
+            }).returning();
+            domain1EntitlementAId = domain1EntitlementA.id;
+
+            const [domain1EntitlementB] = await db.insert(entitlements).values({
+                domainId: domain1Id,
+                offerId: domain1Offer.id,
+                policyId: domain1Policy.id,
+                policyVersion: domain1Policy.version,
+                agentProfileId: domain1Profile.id,
+                paymentHash: `paid-read-b-${crypto.randomUUID().slice(0, 12)}`,
+                status: 'active',
+                remainingReads: 2,
+                activatedAt: new Date()
+            }).returning();
+            domain1EntitlementBId = domain1EntitlementB.id;
+
+            const [domain2Offer] = await db.insert(offers).values({
+                domainId: domain2Id,
+                slug: `foreign-ent-${crypto.randomUUID().slice(0, 8)}`,
+                name: 'Foreign Subscription Offer',
+                scopeType: 'subscription',
+                scopeRef: null,
+                priceSats: 150,
+                active: true
+            }).returning();
+            domain2OfferId = domain2Offer.id;
+
+            const [domain2Policy] = await db.insert(licensePolicies).values({
+                domainId: domain2Id,
+                offerId: domain2Offer.id,
+                version: 1,
+                maxReads: 2,
+                allowedChannels: ['rest']
+            }).returning();
+            domain2PolicyId = domain2Policy.id;
+
+            const [domain2Entitlement] = await db.insert(entitlements).values({
+                domainId: domain2Id,
+                offerId: domain2Offer.id,
+                policyId: domain2Policy.id,
+                policyVersion: domain2Policy.version,
+                agentProfileId: domain2Profile.id,
+                paymentHash: `foreign-ent-${crypto.randomUUID().slice(0, 12)}`,
+                status: 'active',
+                remainingReads: 2,
+                activatedAt: new Date()
+            }).returning();
+            domain2EntitlementId = domain2Entitlement.id;
+
+            const ambiguousRead = await fastify.inject({
+                method: 'GET',
+                url: `/api/content-items/${domain1Item.id}`,
+                headers: { 'x-api-key': domain1RawKey }
+            });
+
+            expect(ambiguousRead.statusCode).toBe(409);
+            const ambiguousPayload = JSON.parse(ambiguousRead.payload) as {
+                code: string;
+                context: {
+                    candidateEntitlementIds: number[];
+                };
+            };
+            expect(ambiguousPayload.code).toBe('ENTITLEMENT_AMBIGUOUS');
+            expect(ambiguousPayload.context.candidateEntitlementIds).toEqual(
+                expect.arrayContaining([domain1EntitlementA.id, domain1EntitlementB.id])
+            );
+
+            const foreignEntitlementRead = await fastify.inject({
+                method: 'GET',
+                url: `/api/content-items/${domain1Item.id}`,
+                headers: {
+                    'x-api-key': domain1RawKey,
+                    'x-entitlement-id': String(domain2Entitlement.id)
+                }
+            });
+
+            expect(foreignEntitlementRead.statusCode).toBe(404);
+            expect(JSON.parse(foreignEntitlementRead.payload).code).toBe('ENTITLEMENT_NOT_FOUND');
+
+            const selectedRead = await fastify.inject({
+                method: 'GET',
+                url: `/api/content-items/${domain1Item.id}`,
+                headers: {
+                    'x-api-key': domain1RawKey,
+                    'x-entitlement-id': String(domain1EntitlementB.id)
+                }
+            });
+
+            expect(selectedRead.statusCode).toBe(200);
+            const selectedPayload = JSON.parse(selectedRead.payload) as {
+                data: {
+                    id: number;
+                };
+            };
+            expect(selectedPayload.data.id).toBe(domain1Item.id);
+
+            const [unchangedEntitlement] = await db.select().from(entitlements).where(eq(entitlements.id, domain1EntitlementA.id));
+            const [decrementedEntitlement] = await db.select().from(entitlements).where(eq(entitlements.id, domain1EntitlementB.id));
+            expect(unchangedEntitlement.remainingReads).toBe(2);
+            expect(decrementedEntitlement.remainingReads).toBe(1);
+        } finally {
+            if (domain1EntitlementAId) {
+                await db.delete(accessEvents).where(eq(accessEvents.entitlementId, domain1EntitlementAId));
+                await db.delete(entitlements).where(eq(entitlements.id, domain1EntitlementAId));
+            }
+            if (domain1EntitlementBId) {
+                await db.delete(accessEvents).where(eq(accessEvents.entitlementId, domain1EntitlementBId));
+                await db.delete(entitlements).where(eq(entitlements.id, domain1EntitlementBId));
+            }
+            if (domain2EntitlementId) {
+                await db.delete(accessEvents).where(eq(accessEvents.entitlementId, domain2EntitlementId));
+                await db.delete(entitlements).where(eq(entitlements.id, domain2EntitlementId));
+            }
+            if (domain1PolicyId) {
+                await db.delete(licensePolicies).where(eq(licensePolicies.id, domain1PolicyId));
+            }
+            if (domain2PolicyId) {
+                await db.delete(licensePolicies).where(eq(licensePolicies.id, domain2PolicyId));
+            }
+            if (domain1OfferId) {
+                await db.delete(offers).where(eq(offers.id, domain1OfferId));
+            }
+            if (domain2OfferId) {
+                await db.delete(offers).where(eq(offers.id, domain2OfferId));
+            }
+            if (domain1ItemId) {
+                await db.delete(contentItems).where(eq(contentItems.id, domain1ItemId));
+            }
+            if (domain1ProfileId) {
+                await db.delete(agentProfiles).where(eq(agentProfiles.id, domain1ProfileId));
+            }
+            if (domain2ProfileId) {
+                await db.delete(agentProfiles).where(eq(agentProfiles.id, domain2ProfileId));
+            }
+            if (domain1ApiKeyId) {
+                await db.delete(apiKeys).where(eq(apiKeys.id, domain1ApiKeyId));
+            }
+            if (domain2ApiKeyId) {
+                await db.delete(apiKeys).where(eq(apiKeys.id, domain2ApiKeyId));
             }
         }
     });
