@@ -1,0 +1,36 @@
+{
+  "$schema": "https://docs.openclaw.ai/schema/openclaw.json",
+
+  "_comment": [
+    "OpenClaw configuration for WordClaw CMS integration.",
+    "Copy this file to ~/.openclaw/openclaw.json (or merge the mcpServers",
+    "block into your existing config).",
+    "",
+    "Two options are shown below — pick ONE and delete the other:",
+    "  1. 'wordclaw-stdio'  — launches the MCP server as a child process (local dev)",
+    "  2. 'wordclaw-remote' — connects to a running WordClaw instance over HTTP"
+  ],
+
+  "mcpServers": {
+
+    "wordclaw-stdio": {
+      "_comment": "Option 1: Local stdio transport — starts WordClaw MCP as a child process",
+      "command": "npx",
+      "args": ["tsx", "<path-to-wordclaw>/src/mcp/index.ts"],
+      "env": {
+        "DATABASE_URL": "postgres://postgres:postgres@localhost:5432/wordclaw",
+        "AUTH_REQUIRED": "true",
+        "API_KEYS": "writer=content:read|content:write|audit:read"
+      }
+    },
+
+    "wordclaw-remote": {
+      "_comment": "Option 2: Remote Streamable HTTP — connects to a running WordClaw server",
+      "url": "http://localhost:4000/mcp",
+      "headers": {
+        "x-api-key": "writer"
+      }
+    }
+
+  }
+}
