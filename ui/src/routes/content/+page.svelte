@@ -3,6 +3,7 @@
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { deepParseJson, formatJson } from "$lib/utils";
+    import { openDeferredTab } from "$lib/deferred-tab";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
@@ -1424,6 +1425,16 @@
     async function openPreview() {
         if (!selectedItem) return;
 
+        const previewTab = openDeferredTab();
+        if (!previewTab) {
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Preview blocked",
+                message: "Allow pop-ups for this site and try again.",
+            });
+            return;
+        }
+
         openingPreview = true;
         try {
             const response = await fetchApi(
@@ -1434,10 +1445,8 @@
                 },
             );
             const preview = response.data as PreviewTokenResponse;
-            window.open(
+            previewTab.location.replace(
                 new URL(preview.previewPath, window.location.origin).toString(),
-                "_blank",
-                "noopener",
             );
             feedbackStore.pushToast({
                 severity: "success",
@@ -1445,6 +1454,7 @@
                 message: `Scoped preview available until ${formatDateTime(preview.expiresAt)}`,
             });
         } catch (err: any) {
+            previewTab.close();
             feedbackStore.pushToast({
                 severity: "error",
                 title: "Preview unavailable",
