@@ -9,6 +9,7 @@ describe('buildUsage', () => {
         expect(usage).toContain('WordClaw CLI');
         expect(usage).toContain('wordclaw <command> [subcommand] [options]');
         expect(usage).toContain('repl');
+        expect(usage).toContain('provision --agent openclaw|codex|claude-code|cursor [--transport stdio|http] [--scope project|user|local] [--name <value>] [--config-path <path>] [--write]');
         expect(usage).toContain('script run --file <path> [--continue-on-error]');
         expect(usage).toContain('mcp openai-tools');
         expect(usage).toContain('workspace resolve --intent authoring|review|workflow|paid');
@@ -26,6 +27,15 @@ describe('buildUsage', () => {
         expect(usage).toContain('--format <type>');
         expect(usage).toContain('asset -> assets');
         expect(usage).toContain('interactive -> repl');
+    });
+
+    it('builds standalone provision help without a fake subcommand slot', () => {
+        const usage = buildUsage({ command: 'provision' });
+
+        expect(usage).toContain('WordClaw CLI: provision');
+        expect(usage).toContain('wordclaw provision [options]');
+        expect(usage).toContain('wordclaw provision --agent claude-code --transport http --scope project --write');
+        expect(usage).not.toContain('wordclaw provision <subcommand> [options]');
     });
 
     it('builds scoped command help', () => {

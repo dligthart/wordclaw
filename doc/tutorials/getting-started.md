@@ -63,7 +63,7 @@ Before you start, it helps to know which parts of WordClaw are stable versus sti
    | `ASSET_SIGNED_TTL_SECONDS` | `300`                               | Default signed asset access TTL |
    | `ASSET_DIRECT_UPLOAD_TTL_SECONDS` | `900`                        | Direct-provider upload URL/completion TTL |
 
-   `AUTH_REQUIRED=false` only relaxes public discovery. Write-capable requests still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is enabled in a non-production environment. Fresh installs also need at least one domain before creating content types or content items; check `GET /api/deployment-status` to confirm bootstrap readiness. `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). `ALLOW_INSECURE_LOCAL_ADMIN` should stay `false` unless you are intentionally running a local-only dev environment without API keys. The three `ENABLE_EXPERIMENTAL_*` flags stay off by default and should only be enabled if you explicitly want those incubator surfaces available. If you enable experimental autonomous runs, the worker interval and batch-size knobs let you tune execution cadence without changing code. Asset storage defaults to the local filesystem; set `ASSET_STORAGE_PROVIDER=s3` plus the corresponding bucket, region, and credentials if you want S3-compatible object storage or direct provider uploads.
+   `AUTH_REQUIRED=false` only relaxes public discovery. Write-capable requests still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is enabled in a non-production environment. Fresh installs also need at least one domain before creating content types or content items; check `GET /api/deployment-status` to confirm bootstrap readiness. That same deployment snapshot now reports `checks.embeddings` for semantic-index health and `checks.ui` for whether the supervisor is already being served from `/ui/` or still expects `npm run dev:all`. `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). `ALLOW_INSECURE_LOCAL_ADMIN` should stay `false` unless you are intentionally running a local-only dev environment without API keys. The three `ENABLE_EXPERIMENTAL_*` flags stay off by default and should only be enabled if you explicitly want those incubator surfaces available. If you enable experimental autonomous runs, the worker interval and batch-size knobs let you tune execution cadence without changing code. Asset storage defaults to the local filesystem; set `ASSET_STORAGE_PROVIDER=s3` plus the corresponding bucket, region, and credentials if you want S3-compatible object storage or direct provider uploads.
 
 5. **Run database migrations**
 
@@ -125,6 +125,12 @@ For attachable remote MCP clients, use the main HTTP server and connect to:
 http://localhost:4000/mcp
 ```
 
+If you want the API and supervisor UI together for local operator work, run:
+
+```bash
+npm run dev:all
+```
+
 ## Use the CLI
 
 The repo also ships with a JSON-first CLI for MCP and REST automation:
@@ -133,6 +139,8 @@ The repo also ships with a JSON-first CLI for MCP and REST automation:
 # Source mode
 npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
+npx tsx src/cli/index.ts provision --agent claude-code --transport http --scope project
+npx tsx src/cli/index.ts provision --agent cursor --transport stdio --scope project --write
 npx tsx src/cli/index.ts capabilities show
 npx tsx src/cli/index.ts capabilities status
 npx tsx src/cli/index.ts capabilities whoami

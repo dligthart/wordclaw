@@ -25,9 +25,12 @@ import {
     projectContentItems,
     resolveContentItemReadView
 } from './content-item.service.js';
+import { EmbeddingService } from './embedding.js';
 
 describe('projectContentItems', () => {
     beforeEach(() => {
+        EmbeddingService.resetRuntimeStateForTests();
+        delete process.env.OPENAI_API_KEY;
         mocks.dbMock.select.mockReset();
         mocks.dbMock.insert.mockReset();
         mocks.dbMock.update.mockReset();
@@ -149,6 +152,8 @@ describe('projectContentItems', () => {
 
 describe('listContentItems', () => {
     beforeEach(() => {
+        EmbeddingService.resetRuntimeStateForTests();
+        delete process.env.OPENAI_API_KEY;
         mocks.dbMock.select.mockReset();
         mocks.dbMock.insert.mockReset();
         mocks.dbMock.update.mockReset();
@@ -226,6 +231,18 @@ describe('listContentItems', () => {
             resolvedFieldCount: 1,
             fallbackFieldCount: 0,
             unresolvedFields: []
+        });
+        expect(result.items[0].embeddingReadiness).toEqual({
+            enabled: false,
+            state: 'disabled',
+            searchable: false,
+            model: null,
+            targetVersion: 3,
+            indexedChunkCount: 0,
+            expectedChunkCount: 0,
+            inFlight: false,
+            queueDepth: 0,
+            note: 'Semantic indexing is disabled because OPENAI_API_KEY is not configured.',
         });
     });
 });

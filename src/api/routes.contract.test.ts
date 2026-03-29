@@ -46,6 +46,7 @@ import * as assetService from '../services/assets.js';
 import * as referenceUsageService from '../services/reference-usage.js';
 import { issuePublicWriteToken } from '../services/public-write.js';
 import { issuePreviewToken } from '../services/content-preview.js';
+import { EmbeddingService } from '../services/embedding.js';
 
 type ApiErrorBody = {
     error: string;
@@ -182,6 +183,7 @@ function restoreAuthEnv() {
 describe('API Route Contracts', () => {
     beforeEach(() => {
         resetMocks();
+        EmbeddingService.resetRuntimeStateForTests();
         process.env.AUTH_REQUIRED = 'false';
         process.env.ALLOW_INSECURE_LOCAL_ADMIN = 'true';
         delete process.env.API_KEYS;
@@ -190,6 +192,7 @@ describe('API Route Contracts', () => {
 
     afterEach(() => {
         resetMocks();
+        EmbeddingService.resetRuntimeStateForTests();
         restoreAuthEnv();
     });
 
@@ -280,6 +283,13 @@ describe('API Route Contracts', () => {
                         restPath: string;
                         mcpTool: string;
                     };
+                    toolEquivalence: Array<{
+                        intent: string;
+                        rest: string;
+                        mcp: string | null;
+                        graphql: string | null;
+                        cli: string | null;
+                    }>;
                     modules: Array<{
                         id: string;
                         enabled: boolean;
@@ -458,6 +468,18 @@ describe('API Route Contracts', () => {
                 restPath: '/api/search/semantic',
                 mcpTool: 'search_semantic_knowledge',
             }));
+            expect(body.data.toolEquivalence).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    intent: 'inspect-deployment',
+                    rest: 'GET /api/deployment-status',
+                    mcp: 'read system://deployment-status',
+                }),
+                expect.objectContaining({
+                    intent: 'create-domain',
+                    rest: 'POST /api/domains',
+                    mcp: 'create_domain',
+                }),
+            ]));
             expect(body.data.modules).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({ id: 'content-runtime', enabled: true }),
@@ -636,6 +658,7 @@ describe('API Route Contracts', () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
         process.env.ASSET_SIGNED_TTL_SECONDS = '510';
+        delete process.env.OPENAI_API_KEY;
         const app = await buildServer();
 
         try {
@@ -676,6 +699,25 @@ describe('API Route Contracts', () => {
                             restPath: string;
                             mcpTool: string;
                             reason: string;
+                        };
+                        embeddings: {
+                            status: string;
+                            enabled: boolean;
+                            model: string | null;
+                            queueDepth: number;
+                            inFlightSyncCount: number;
+                            pendingItemCount: number;
+                            dailyBudget: number;
+                            dailyBudgetRemaining: number;
+                            maxRequestsPerMinute: number;
+                            reason: string;
+                        };
+                        ui: {
+                            status: string;
+                            servedFromApi: boolean;
+                            routePrefix: string;
+                            devCommand: string;
+                            devUrl: string;
                         };
                         contentRuntime: {
                             status: string;
@@ -788,6 +830,25 @@ describe('API Route Contracts', () => {
                 mcpTool: 'search_semantic_knowledge',
                 reason: 'OPENAI_API_KEY not set',
             }));
+            expect(body.data.checks.embeddings).toEqual(expect.objectContaining({
+                status: 'disabled',
+                enabled: false,
+                model: null,
+                queueDepth: 0,
+                inFlightSyncCount: 0,
+                pendingItemCount: 0,
+                dailyBudget: 2000,
+                dailyBudgetRemaining: 2000,
+                maxRequestsPerMinute: 30,
+                reason: 'OPENAI_API_KEY not set',
+            }));
+            expect(body.data.checks.ui).toEqual(expect.objectContaining({
+                status: expect.any(String),
+                servedFromApi: expect.any(Boolean),
+                routePrefix: '/ui/',
+                devCommand: 'npm run dev:all',
+                devUrl: 'http://localhost:5173/ui/',
+            }));
             expect(body.data.checks.contentRuntime).toEqual(expect.objectContaining({
                 status: 'ready',
                 fieldAwareQueries: expect.objectContaining({
@@ -880,6 +941,7 @@ describe('API Route Contracts', () => {
     it('returns degraded deployment status when no domains are provisioned', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        delete process.env.OPENAI_API_KEY;
         mocks.dbMock.execute
             .mockResolvedValueOnce([{ '?column?': 1 }])
             .mockResolvedValueOnce([{ total: 0 }]);
@@ -3694,6 +3756,7 @@ describe('API Route Contracts', () => {
     });
 
     it('returns localized content items when locale-aware reads are requested', async () => {
+        delete process.env.OPENAI_API_KEY;
         const app = await buildServer();
         const countWhereMock = vi.fn().mockResolvedValue([{ total: 1 }]);
         const offsetMock = vi.fn().mockResolvedValue([
@@ -3762,6 +3825,11 @@ describe('API Route Contracts', () => {
                         fallbackLocale: string;
                         resolvedFieldCount: number;
                     };
+                    embeddingReadiness: {
+                        enabled: boolean;
+                        state: string;
+                        searchable: boolean;
+                    };
                 }>;
             };
 
@@ -3774,6 +3842,11 @@ describe('API Route Contracts', () => {
                 fallbackLocale: 'en',
                 resolvedFieldCount: 1
             });
+            expect(body.data[0].embeddingReadiness).toEqual(expect.objectContaining({
+                enabled: false,
+                state: 'disabled',
+                searchable: false,
+            }));
         } finally {
             await app.close();
         }

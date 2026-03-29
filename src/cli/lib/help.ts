@@ -5,6 +5,7 @@ type HelpScope = {
 
 const USAGE_LINES = [
     'repl',
+    'provision --agent openclaw|codex|claude-code|cursor [--transport stdio|http] [--scope project|user|local] [--name <value>] [--config-path <path>] [--write]',
     'script run --file <path> [--continue-on-error]',
     'mcp inspect',
     'mcp whoami',
@@ -82,6 +83,7 @@ const USAGE_LINES = [
 const EXAMPLES: Record<string, string[]> = {
     root: [
         'wordclaw repl',
+        'wordclaw provision --agent claude-code --transport http --scope project --write',
         'wordclaw capabilities show',
         'wordclaw workspace guide --intent review --limit 5',
         'wordclaw content guide --content-type-id 12',
@@ -96,6 +98,11 @@ const EXAMPLES: Record<string, string[]> = {
     ],
     'repl': [
         'wordclaw repl',
+    ],
+    'provision': [
+        'wordclaw provision --agent claude-code --transport http --scope project --write',
+        'wordclaw provision --agent cursor --transport stdio --scope project',
+        'wordclaw provision --agent codex --transport http --raw',
     ],
     'mcp': [
         'wordclaw mcp inspect',
@@ -161,7 +168,7 @@ const EXAMPLES: Record<string, string[]> = {
     ],
 };
 
-const COMMANDS_WITHOUT_SUBCOMMANDS = new Set(['repl']);
+const COMMANDS_WITHOUT_SUBCOMMANDS = new Set(['repl', 'provision']);
 
 function matchesScope(line: string, scope: HelpScope) {
     if (!scope.command) {

@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { sql } from 'drizzle-orm';
 
 import { isExperimentalAgentRunsEnabled } from '../config/runtime-features.js';
@@ -6,6 +8,7 @@ import { db } from '../db/index.js';
 import { buildCapabilityManifest } from './capability-manifest.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import { jobsWorker } from '../workers/jobs.worker.js';
+import { EmbeddingService } from './embedding.js';
 
 export type DeploymentCheckLevel = 'ready' | 'degraded' | 'disabled';
 
@@ -72,6 +75,31 @@ export type DeploymentStatusSnapshot = {
             mcpTool: string;
             requiredEnvironmentVariables: string[];
             reason: string;
+            note: string;
+        };
+        embeddings: {
+            status: DeploymentCheckLevel;
+            enabled: boolean;
+            model: string | null;
+            queueDepth: number;
+            inFlightSyncCount: number;
+            pendingItemCount: number;
+            dailyBudget: number;
+            dailyBudgetRemaining: number;
+            maxRequestsPerMinute: number;
+            lastSyncCompletedAt: string | null;
+            lastSyncErrorMessage: string | null;
+            lastSyncErroredAt: string | null;
+            reason: string;
+            note: string;
+        };
+        ui: {
+            status: DeploymentCheckLevel;
+            servedFromApi: boolean;
+            routePrefix: string;
+            buildPath: string;
+            devCommand: string;
+            devUrl: string;
             note: string;
         };
         contentRuntime: {
@@ -183,6 +211,34 @@ export type DeploymentStatusSnapshot = {
     };
     warnings: string[];
 };
+
+async function resolveUiStatus(): Promise<DeploymentStatusSnapshot['checks']['ui']> {
+    const buildPath = path.join(__dirname, '../../ui/build/index.html');
+    const routePrefix = '/ui/';
+
+    try {
+        await fs.access(buildPath);
+        return {
+            status: 'ready',
+            servedFromApi: true,
+            routePrefix,
+            buildPath,
+            devCommand: 'npm run dev:all',
+            devUrl: 'http://localhost:5173/ui/',
+            note: 'Built supervisor UI assets are present and are served from the API process at /ui/. Use npm run dev:all when you want live-reload local development instead.',
+        };
+    } catch {
+        return {
+            status: 'degraded',
+            servedFromApi: false,
+            routePrefix,
+            buildPath,
+            devCommand: 'npm run dev:all',
+            devUrl: 'http://localhost:5173/ui/',
+            note: 'Built supervisor UI assets were not found at ui/build/index.html. Run npm --prefix ui run build for API-hosted UI or npm run dev:all for local API plus UI development.',
+        };
+    }
+}
 
 export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSnapshot> {
     const manifest = buildCapabilityManifest();
@@ -335,6 +391,50 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
         reason: manifest.vectorRag.enabled ? 'configured' : 'OPENAI_API_KEY not set',
         note: manifest.vectorRag.note,
     };
+    const embeddingRuntime = EmbeddingService.getRuntimeStatus();
+    const embeddingsStatus: DeploymentStatusSnapshot['checks']['embeddings'] = {
+        status: !embeddingRuntime.enabled
+            ? 'disabled'
+            : embeddingRuntime.lastSyncErrorMessage
+                ? 'degraded'
+                : 'ready',
+        enabled: embeddingRuntime.enabled,
+        model: embeddingRuntime.model,
+        queueDepth: embeddingRuntime.queueDepth,
+        inFlightSyncCount: embeddingRuntime.inFlightSyncCount,
+        pendingItemCount: embeddingRuntime.pendingItemCount,
+        dailyBudget: embeddingRuntime.dailyBudget,
+        dailyBudgetRemaining: embeddingRuntime.dailyBudgetRemaining,
+        maxRequestsPerMinute: embeddingRuntime.maxRequestsPerMinute,
+        lastSyncCompletedAt: embeddingRuntime.lastSyncCompletedAt,
+        lastSyncErrorMessage: embeddingRuntime.lastSyncErrorMessage,
+        lastSyncErroredAt: embeddingRuntime.lastSyncErroredAt,
+        reason: !embeddingRuntime.enabled
+            ? 'OPENAI_API_KEY not set'
+            : embeddingRuntime.lastSyncErrorMessage
+                ? 'last_sync_failed'
+                : embeddingRuntime.pendingItemCount > 0
+                    ? 'sync_in_progress'
+                    : 'idle',
+        note: !embeddingRuntime.enabled
+            ? 'Embeddings are disabled because OPENAI_API_KEY is not configured.'
+            : embeddingRuntime.lastSyncErrorMessage
+                ? 'Embeddings are enabled, but the last sync failed and semantic freshness may be degraded.'
+                : embeddingRuntime.pendingItemCount > 0
+                    ? 'Embeddings are enabled and indexing is currently running in-process.'
+                    : 'Embeddings are enabled and the in-process semantic indexer is idle.',
+    };
+
+    if (embeddingRuntime.enabled && embeddingRuntime.lastSyncErrorMessage) {
+        overallStatus = 'degraded';
+        warnings.push('Embedding sync reported a recent error; semantic search freshness may be degraded until the next successful sync.');
+    }
+
+    const uiStatus = await resolveUiStatus();
+    if (uiStatus.status === 'degraded') {
+        overallStatus = 'degraded';
+        warnings.push('Supervisor UI assets are not currently being served from /ui/. Build the UI or use npm run dev:all for local development.');
+    }
 
     return {
         generatedAt: new Date().toISOString(),
@@ -371,6 +471,8 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                 note: manifest.auth.effective.note,
             },
             vectorRag: vectorRagStatus,
+            embeddings: embeddingsStatus,
+            ui: uiStatus,
             contentRuntime: {
                 status: 'ready',
                 fieldAwareQueries: {

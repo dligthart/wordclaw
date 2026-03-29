@@ -205,6 +205,10 @@ describe('WordClawMcpClient over HTTP', () => {
                 database: expect.objectContaining({
                     status: expect.any(String),
                 }),
+                ui: expect.objectContaining({
+                    routePrefix: '/ui/',
+                    devCommand: 'npm run dev:all',
+                }),
                 contentRuntime: expect.objectContaining({
                     status: expect.any(String),
                     projections: expect.objectContaining({

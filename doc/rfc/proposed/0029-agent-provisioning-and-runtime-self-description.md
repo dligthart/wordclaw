@@ -20,6 +20,12 @@ The goal is not to hide runtime reality from agents. The goal is to make the run
 - first-domain bootstrap is now also available over MCP with `create_domain`
 - `guide_task("bootstrap-workspace")` now returns live actor-aware bootstrap guidance
 - content writes fail with `NO_DOMAIN` on empty installs instead of surfacing a raw database foreign-key failure
+- deployment status now exposes live embedding runtime health, and content reads now expose per-item `embeddingReadiness` for the latest published snapshot
+- capability discovery now includes a `toolEquivalence` map so agents can pivot between REST, MCP, GraphQL compatibility, and CLI during bootstrap
+- deployment status now exposes supervisor UI readiness and startup hints through `checks.ui`
+- the CLI now includes `wordclaw provision --agent <framework>` for OpenClaw, Codex, Claude Code, and Cursor snippets, with explicit `--write` support where safe
+- local operator onboarding now has `npm run dev:all` for API plus supervisor startup
+- integration docs now include framework-specific config-path guidance plus an explicit REST-first bootstrap fallback
 
 ## 2. Motivation
 

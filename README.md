@@ -91,7 +91,7 @@ For a look ahead at what is in active development versus what is experimental, c
     LNBITS_BASE_URL=
     LNBITS_ADMIN_KEY=
     ```
-    `OPENAI_API_KEY` is optional but highly recommended. Supplying it automatically enables native Vector RAG (embeddings and semantic search). `AUTH_REQUIRED=false` only relaxes public discovery; write routes still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is enabled in a non-production environment. Fresh installs also need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status` to confirm bootstrap readiness, then use `POST /api/domains` or MCP `create_domain` when `domainCount` is `0`. For agent sessions, `guide_task("bootstrap-workspace")` is now the canonical bootstrap handoff. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth.
+    `OPENAI_API_KEY` is optional but highly recommended. Supplying it automatically enables native Vector RAG (embeddings and semantic search). `AUTH_REQUIRED=false` only relaxes public discovery; write routes still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is enabled in a non-production environment. Fresh installs also need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status` to confirm bootstrap readiness, then use `POST /api/domains` or MCP `create_domain` when `domainCount` is `0`. That same deployment snapshot now reports `checks.embeddings` for live semantic-index health and `checks.ui` for supervisor availability, while content reads include `embeddingReadiness` so agents can tell whether the latest published snapshot is actually searchable yet. `GET /api/capabilities` now also publishes `toolEquivalence` so agents can switch cleanly between REST, MCP, GraphQL compatibility, and CLI during bootstrap. For agent sessions, `guide_task("bootstrap-workspace")` is now the canonical bootstrap handoff. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth.
 
     Asset storage defaults to `local`. To use a remote object store, set `ASSET_STORAGE_PROVIDER=s3` plus the bucket, region, and credentials shown above. `ASSET_S3_ENDPOINT` and `ASSET_S3_FORCE_PATH_STYLE=true` support S3-compatible providers such as Cloudflare R2, MinIO, or self-hosted gateways. If `s3` is configured without the required settings, WordClaw falls back to the local provider and reports the fallback through `GET /api/capabilities` and `GET /api/deployment-status`. `ASSET_DIRECT_UPLOAD_TTL_SECONDS` controls how long a provider-issued upload URL and completion token remain valid.
 
@@ -160,6 +160,14 @@ npm run dev
 
 The server will start at `http://localhost:4000`.
 
+Start the API and supervisor UI together when you want the full local operator surface:
+
+```bash
+npm run dev:all
+```
+
+That starts the API on `http://localhost:4000` and the live-reload UI on `http://localhost:5173/ui/`.
+
 ### CLI
 
 WordClaw now includes a repo-native CLI for MCP and REST workflows:
@@ -168,6 +176,8 @@ WordClaw now includes a repo-native CLI for MCP and REST workflows:
 # Run from source
 npx tsx src/cli/index.ts mcp inspect
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
+npx tsx src/cli/index.ts provision --agent claude-code --transport http --scope project --write
+npx tsx src/cli/index.ts provision --agent cursor --transport stdio --scope project
 npx tsx src/cli/index.ts capabilities status
 npx tsx src/cli/index.ts l402 guide --item 123
 npx tsx src/cli/index.ts workflow guide
@@ -287,7 +297,7 @@ wordclaw repl
 
 WordClaw APIs are natively self-describing. Instead of guessing API schemas from a flat list, agents can ask the runtime for guidance:
 
-* **Deployment Discovery**: Use `GET /api/capabilities`, `GET /api/deployment-status`, or `mcp inspect`. The manifest reports live readiness, task-oriented routing hints, actor profiles, bootstrap blockers, effective auth posture, and vector-RAG readiness so agents can choose the correct credential and surface.
+* **Deployment Discovery**: Use `GET /api/capabilities`, `GET /api/deployment-status`, or `mcp inspect`. The manifest reports live readiness, task-oriented routing hints, actor profiles, bootstrap blockers, effective auth posture, vector-RAG readiness, semantic-index discovery, and tool-equivalence hints so agents can choose the correct credential and surface.
 * **Identity & Context**: After authentication, use `GET /api/identity`, `GET /api/workspace-context`, `system://current-actor`, or `node dist/cli/index.js workspace guide` to confirm the actor, active domain, and available content models before mutating state.
 * **Smart Targeting**: The workspace snapshot groups the best targets for authoring, workflow review, and paid consumption. Use `GET /api/workspace-target?intent=review` or `node dist/cli/index.js workspace resolve --intent review` to resolve the strongest schema-plus-work-target candidate across the active workspace for a task.
 * **Live CLI Guidance**: Ask the CLI for generated, actor-aware guidance sequences:

@@ -41,6 +41,16 @@ import {
 } from './lib/mcp-client.js';
 import { buildOpenAiFunctionTools } from './lib/openai-tools.js';
 import {
+    buildProvisioningPlan,
+    SUPPORTED_PROVISION_AGENTS,
+    SUPPORTED_PROVISION_SCOPES,
+    SUPPORTED_PROVISION_TRANSPORTS,
+    writeProvisioningPlan,
+    type ProvisionAgent,
+    type ProvisionScope,
+    type ProvisionTransport,
+} from './lib/provisioning.js';
+import {
     RestCliClient,
     RestCliError,
     type RestCliResponse,
@@ -68,6 +78,7 @@ type CliRuntimeOptions = {
 
 const TOP_LEVEL_COMMANDS = [
     'repl',
+    'provision',
     'script',
     'mcp',
     'capabilities',
@@ -385,6 +396,77 @@ function resolveHelpScope(args: ParsedArgs) {
             : {};
     const subcommand = resolveAlias(rawSubcommand, subcommandAliases) ?? rawSubcommand;
     return buildUsage({ command, subcommand });
+}
+
+function resolveProvisionAgent(args: ParsedArgs): ProvisionAgent {
+    const agent = getStringFlag(args, 'agent');
+    if (!agent || !(SUPPORTED_PROVISION_AGENTS as readonly string[]).includes(agent)) {
+        throw new Error(`provision requires --agent ${SUPPORTED_PROVISION_AGENTS.join('|')}.`);
+    }
+
+    return agent as ProvisionAgent;
+}
+
+function resolveProvisionTransport(args: ParsedArgs): ProvisionTransport | undefined {
+    const transport = getStringFlag(args, 'transport');
+    if (transport === undefined) {
+        return undefined;
+    }
+
+    if (!(SUPPORTED_PROVISION_TRANSPORTS as readonly string[]).includes(transport)) {
+        throw new Error(`--transport must be ${SUPPORTED_PROVISION_TRANSPORTS.join('|')}.`);
+    }
+
+    return transport as ProvisionTransport;
+}
+
+function resolveProvisionScope(args: ParsedArgs): ProvisionScope | undefined {
+    const scope = getStringFlag(args, 'scope');
+    if (scope === undefined) {
+        return undefined;
+    }
+
+    if (!(SUPPORTED_PROVISION_SCOPES as readonly string[]).includes(scope)) {
+        throw new Error(`--scope must be ${SUPPORTED_PROVISION_SCOPES.join('|')}.`);
+    }
+
+    return scope as ProvisionScope;
+}
+
+async function handleProvision(repoRoot: string, args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
+    const plan = buildProvisioningPlan({
+        agent: resolveProvisionAgent(args),
+        transport: resolveProvisionTransport(args),
+        scope: resolveProvisionScope(args),
+        serverName: getStringFlag(args, 'name'),
+        repoRoot,
+        baseUrl: runtimeOptions.baseUrl,
+    });
+    const requestedConfigPath = getStringFlag(args, 'config-path');
+    const writeResult = hasFlag(args, 'write')
+        ? await writeProvisioningPlan(plan, requestedConfigPath)
+        : null;
+
+    printStructured(
+        args,
+        {
+            transport: 'local',
+            action: 'provision',
+            agent: plan.agent,
+            mcpTransport: plan.transport,
+            scope: plan.scope,
+            serverName: plan.serverName,
+            configFormat: plan.configFormat,
+            defaultConfigPath: plan.defaultConfigPath,
+            configPath: writeResult?.configPath ?? null,
+            wrote: writeResult !== null,
+            supportsWrite: plan.supportsWrite,
+            installCommand: plan.installCommand,
+            notes: plan.notes,
+            snippet: plan.snippet,
+        },
+        plan.snippet,
+    );
 }
 
 async function handleMcp(repoRoot: string, args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
@@ -2352,6 +2434,10 @@ async function main(args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
     }
     if (command === 'repl') {
         await handleRepl(resolveRepoRoot(), runtimeOptions);
+        return;
+    }
+    if (command === 'provision') {
+        await handleProvision(resolveRepoRoot(), args, runtimeOptions);
         return;
     }
     if (command === 'script') {

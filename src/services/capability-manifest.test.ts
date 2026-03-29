@@ -169,6 +169,31 @@ describe('buildCapabilityManifest', () => {
             mcpTool: 'search_semantic_knowledge',
             note: 'Semantic search is disabled until OPENAI_API_KEY is configured.',
         });
+        expect(manifest.toolEquivalence).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                intent: 'inspect-deployment',
+                rest: 'GET /api/deployment-status',
+                mcp: 'read system://deployment-status',
+                cli: 'node dist/cli/index.js capabilities status',
+            }),
+            expect.objectContaining({
+                intent: 'create-domain',
+                rest: 'POST /api/domains',
+                mcp: 'create_domain',
+            }),
+            expect.objectContaining({
+                intent: 'create-content-type',
+                rest: 'POST /api/content-types',
+                mcp: 'create_content_type',
+                graphql: 'mutation createContentType',
+            }),
+            expect.objectContaining({
+                intent: 'create-content-item',
+                rest: 'POST /api/content-items',
+                mcp: 'create_content_item',
+                graphql: 'mutation createContentItem',
+            }),
+        ]));
         expect(manifest.protocolContract.required).toEqual(['rest', 'mcp']);
         expect(manifest.protocolContract.compatibility).toEqual(['graphql']);
         expect(manifest.paidContent.purchaseFlowSurface).toBe('rest');
@@ -217,6 +242,14 @@ describe('buildCapabilityManifest', () => {
                 createPath: '/api/public/content-types/:id/items',
                 updatePath: '/api/public/content-items/:id',
                 tokenHeader: 'x-public-write-token',
+            }),
+            semanticIndexReadiness: expect.objectContaining({
+                supported: true,
+                deploymentRestPath: '/api/deployment-status',
+                deploymentMcpResource: 'system://deployment-status',
+                contentRestPaths: ['/api/content-items', '/api/content-items/:id', '/api/globals', '/api/globals/:slug'],
+                graphqlFields: ['contentItems', 'contentItem', 'globals', 'global'],
+                mcpTools: ['get_content_items', 'get_content_item', 'list_globals', 'get_global'],
             }),
             lifecycle: expect.objectContaining({
                 supported: true,

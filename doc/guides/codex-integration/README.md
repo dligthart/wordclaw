@@ -14,6 +14,13 @@ MCP server.
 
 ### 1. Register the MCP Server
 
+If you want WordClaw to generate the snippet first, run:
+
+```bash
+wordclaw provision --agent codex --transport stdio
+wordclaw provision --agent codex --transport http --write
+```
+
 Merge one of the example server blocks from `doc/guides/codex-integration/codex.example.toml`
 into your `~/.codex/config.toml`.
 

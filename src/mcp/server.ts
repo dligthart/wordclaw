@@ -49,6 +49,7 @@ import { buildBootstrapWorkspaceGuide } from '../cli/lib/bootstrap-workspace-gui
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { issueSignedAssetAccess } from '../services/asset-access.js';
 import {
+    attachContentItemEmbeddingReadiness,
     ContentItemListError,
     ContentItemProjectionError,
     getLatestPublishedVersionsForItems,
@@ -1071,19 +1072,34 @@ server.tool(
         const latestPublishedVersions = await getLatestPublishedVersionsForItems(
             rows.flatMap((row) => row.item && row.item.status !== 'published' ? [row.item.id] : [])
         );
-        const items = rows.map(({ contentType, item }) => {
-            return {
-                contentType,
-                item: item
-                    ? resolveContentItemReadView(
-                        item,
-                        contentType.schema,
-                        localizedReadOptions,
-                        latestPublishedVersions.get(item.id)
-                    )
-                    : null
-            };
-        });
+        const entries = rows.map(({ contentType, item }) => ({
+            contentType,
+            item,
+            publishedVersion: item ? latestPublishedVersions.get(item.id) ?? null : null,
+            readView: item
+                ? resolveContentItemReadView(
+                    item,
+                    contentType.schema,
+                    localizedReadOptions,
+                    latestPublishedVersions.get(item.id)
+                )
+                : null
+        }));
+        const enrichedReadViews = await attachContentItemEmbeddingReadiness(
+            domainId,
+            entries
+                .filter((entry) => entry.item)
+                .map((entry) => ({
+                    item: entry.item!,
+                    readView: entry.readView,
+                    publishedVersion: entry.publishedVersion
+                }))
+        );
+        let enrichedIndex = 0;
+        const items = entries.map((entry) => ({
+            contentType: entry.contentType,
+            item: entry.item ? enrichedReadViews[enrichedIndex++] ?? null : null
+        }));
 
         return okJson({ items, total: items.length });
     })
@@ -1113,16 +1129,24 @@ server.tool(
         const latestPublishedVersions = await getLatestPublishedVersionsForItems(
             item && item.status !== 'published' ? [item.id] : []
         );
+        const readView = item
+            ? resolveContentItemReadView(
+                item,
+                contentType.schema,
+                localizedReadOptions,
+                latestPublishedVersions.get(item.id)
+            )
+            : null;
+        const [enrichedReadView] = item
+            ? await attachContentItemEmbeddingReadiness(domainId, [{
+                item,
+                readView,
+                publishedVersion: latestPublishedVersions.get(item.id) ?? null
+            }])
+            : [null];
         return okJson({
             contentType,
-            item: item
-                ? resolveContentItemReadView(
-                    item,
-                    contentType.schema,
-                    localizedReadOptions,
-                    latestPublishedVersions.get(item.id)
-                )
-                : null
+            item: enrichedReadView
         });
     })
 );
@@ -2719,12 +2743,18 @@ server.tool(
         const latestPublishedVersions = await getLatestPublishedVersionsForItems(
             item.status === 'published' ? [] : [item.id]
         );
-        return okJson(resolveContentItemReadView(
+        const readView = resolveContentItemReadView(
             item,
             row.schema,
             localizedReadOptions,
             latestPublishedVersions.get(item.id)
-        ));
+        );
+        const [enrichedReadView] = await attachContentItemEmbeddingReadiness(domainId, [{
+            item,
+            readView,
+            publishedVersion: latestPublishedVersions.get(item.id) ?? null
+        }]);
+        return okJson(enrichedReadView);
     }
     ));
 

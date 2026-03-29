@@ -32,6 +32,7 @@ import * as formsService from '../services/forms.js';
 import * as jobsService from '../services/jobs.js';
 import * as referenceUsageService from '../services/reference-usage.js';
 import { jobsWorker } from '../workers/jobs.worker.js';
+import { EmbeddingService } from '../services/embedding.js';
 
 type GraphQLErrorLike = {
     extensions?: {
@@ -50,6 +51,8 @@ function resetMocks() {
 
 describe('GraphQL Resolver Contracts', () => {
     beforeEach(() => {
+        EmbeddingService.resetRuntimeStateForTests();
+        delete process.env.OPENAI_API_KEY;
         resetMocks();
     });
 
@@ -768,7 +771,19 @@ describe('GraphQL Resolver Contracts', () => {
             version: 2,
             publicationState: 'changed',
             workingCopyVersion: 4,
-            publishedVersion: 2
+            publishedVersion: 2,
+            embeddingReadiness: {
+                enabled: false,
+                state: 'disabled',
+                searchable: false,
+                model: null,
+                targetVersion: 2,
+                indexedChunkCount: 0,
+                expectedChunkCount: 0,
+                inFlight: false,
+                queueDepth: 0,
+                note: 'Semantic indexing is disabled because OPENAI_API_KEY is not configured.',
+            }
         });
         expect(JSON.parse(result!.data)).toEqual({
             title: 'Published copy'

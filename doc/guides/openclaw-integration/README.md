@@ -12,6 +12,15 @@ Connect [OpenClaw](https://docs.openclaw.ai) to WordClaw so autonomous agents ca
 
 ### 1. Register the MCP Server
 
+This section assumes an OpenClaw build that supports the `mcpServers` block in `~/.openclaw/openclaw.json`. If your current build does not expose MCP registration in that shape yet, use the REST-first fallback later in this guide and upgrade before switching back to MCP.
+
+If you want WordClaw to generate the snippet for you first, run:
+
+```bash
+wordclaw provision --agent openclaw --transport stdio
+wordclaw provision --agent openclaw --transport http --write
+```
+
 Copy the relevant block from [`openclaw.example.json`](./openclaw.example.json) into your `~/.openclaw/openclaw.json`:
 
 **Option A — Local stdio (dev)**
@@ -63,6 +72,15 @@ Restart OpenClaw (or run `openclaw onboard`) and ask:
 The agent should read the WordClaw discovery resources, call `guide_task` or
 `resolve_workspace_target`, and then explain the available domains and content
 targets.
+
+## REST-First Fallback
+
+If OpenClaw is not ready for MCP registration yet, bootstrap over REST first:
+
+1. Read `GET /api/capabilities` and `GET /api/deployment-status`.
+2. If `domainCount` is `0`, create the first domain with `POST /api/domains`.
+3. If you need the supervisor locally, check `checks.ui`; run `npm run dev:all` when the UI is not yet being served from `/ui/`.
+4. Register the MCP server once the runtime is provisioned and continue with `guide_task("bootstrap-workspace")` or `guide_task("discover-workspace")`.
 
 ## What the Skill Teaches
 

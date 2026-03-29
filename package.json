@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:all": "tsx scripts/dev-all.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:stamp": "tsx src/db/stamp-migrations.ts",
     "build": "tsc",

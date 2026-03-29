@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
-import { contentItems, contentItemEmbeddings, contentTypes } from '../db/schema.js';
-import { eq, and, asc } from 'drizzle-orm';
+import { contentItems, contentItemEmbeddings, contentItemVersions, contentTypes } from '../db/schema.js';
+import { eq, and, asc, inArray } from 'drizzle-orm';
 import { cosineDistance, sql } from 'drizzle-orm';
 import OpenAI from 'openai';
 
@@ -21,12 +21,53 @@ export class EmbeddingServiceError extends Error {
     }
 }
 
+export type EmbeddingRuntimeStatus = {
+    enabled: boolean;
+    model: string | null;
+    queueDepth: number;
+    inFlightSyncCount: number;
+    pendingItemCount: number;
+    maxRequestsPerMinute: number;
+    dailyBudget: number;
+    dailyBudgetRemaining: number;
+    lastSyncCompletedAt: string | null;
+    lastSyncErrorMessage: string | null;
+    lastSyncErroredAt: string | null;
+};
+
+export type ContentEmbeddingReadinessState =
+    | 'disabled'
+    | 'unpublished'
+    | 'empty'
+    | 'syncing'
+    | 'ready'
+    | 'missing'
+    | 'stale';
+
+export type ContentEmbeddingReadiness = {
+    enabled: boolean;
+    state: ContentEmbeddingReadinessState;
+    searchable: boolean;
+    model: string | null;
+    targetVersion: number | null;
+    indexedChunkCount: number;
+    expectedChunkCount: number;
+    inFlight: boolean;
+    queueDepth: number;
+    note: string;
+};
+
 export class EmbeddingService {
     private static syncQueue: Promise<void> = Promise.resolve();
     private static inFlightSyncs = new Map<string, Promise<void>>();
     private static recentEmbeddingCalls: number[] = [];
     private static budgetDay = '';
     private static budgetUsed = 0;
+    private static queuedSyncCount = 0;
+    private static activeSyncCount = 0;
+    private static lastSyncCompletedAt: string | null = null;
+    private static lastSyncErrorMessage: string | null = null;
+    private static lastSyncErroredAt: string | null = null;
     private static readonly maxRequestsPerMinute = Number(process.env.OPENAI_EMBEDDING_MAX_PER_MINUTE || 30);
     private static readonly dailyBudget = Number(process.env.OPENAI_EMBEDDING_DAILY_BUDGET || 2000);
     private static readonly retryAttempts = Number(process.env.OPENAI_EMBEDDING_RETRIES || 3);
@@ -78,6 +119,206 @@ export class EmbeddingService {
     private static markEmbeddingRequest() {
         this.budgetUsed += 1;
         this.recentEmbeddingCalls.push(Date.now());
+    }
+
+    static getRuntimeStatus(): EmbeddingRuntimeStatus {
+        this.resetDailyBudgetIfNeeded();
+
+        return {
+            enabled: Boolean(process.env.OPENAI_API_KEY),
+            model: process.env.OPENAI_API_KEY ? this.embeddingModel : null,
+            queueDepth: this.queuedSyncCount,
+            inFlightSyncCount: this.activeSyncCount,
+            pendingItemCount: this.inFlightSyncs.size,
+            maxRequestsPerMinute: this.maxRequestsPerMinute,
+            dailyBudget: this.dailyBudget,
+            dailyBudgetRemaining: Math.max(0, this.dailyBudget - this.budgetUsed),
+            lastSyncCompletedAt: this.lastSyncCompletedAt,
+            lastSyncErrorMessage: this.lastSyncErrorMessage,
+            lastSyncErroredAt: this.lastSyncErroredAt,
+        };
+    }
+
+    static resetRuntimeStateForTests() {
+        this.syncQueue = Promise.resolve();
+        this.inFlightSyncs.clear();
+        this.recentEmbeddingCalls = [];
+        this.budgetDay = '';
+        this.budgetUsed = 0;
+        this.queuedSyncCount = 0;
+        this.activeSyncCount = 0;
+        this.lastSyncCompletedAt = null;
+        this.lastSyncErrorMessage = null;
+        this.lastSyncErroredAt = null;
+    }
+
+    static isItemSyncInFlight(domainId: number, contentItemId: number): boolean {
+        return this.inFlightSyncs.has(`${domainId}:${contentItemId}`);
+    }
+
+    static async getContentItemEmbeddingReadinessBatch(
+        domainId: number,
+        items: Array<{
+            item: typeof contentItems.$inferSelect;
+            publishedVersion?: typeof contentItemVersions.$inferSelect | null;
+        }>
+    ): Promise<Map<number, ContentEmbeddingReadiness>> {
+        const runtime = this.getRuntimeStatus();
+        const itemIds = items.map((entry) => entry.item.id);
+        const chunkCounts = new Map<number, number>();
+
+        if (runtime.enabled && itemIds.length > 0) {
+            const rows = await db.select({
+                contentItemId: contentItemEmbeddings.contentItemId,
+                chunkCount: sql<number>`count(*)::int`,
+            })
+                .from(contentItemEmbeddings)
+                .where(and(
+                    eq(contentItemEmbeddings.domainId, domainId),
+                    inArray(contentItemEmbeddings.contentItemId, itemIds),
+                ))
+                .groupBy(contentItemEmbeddings.contentItemId);
+
+            for (const row of rows) {
+                chunkCounts.set(row.contentItemId, Number(row.chunkCount) || 0);
+            }
+        }
+
+        const readiness = new Map<number, ContentEmbeddingReadiness>();
+
+        for (const entry of items) {
+            const { item, publishedVersion } = entry;
+            const inFlight = this.isItemSyncInFlight(domainId, item.id);
+            const indexedChunkCount = chunkCounts.get(item.id) ?? 0;
+
+            if (!runtime.enabled) {
+                readiness.set(item.id, {
+                    enabled: false,
+                    state: 'disabled',
+                    searchable: false,
+                    model: null,
+                    targetVersion: item.status === 'published'
+                        ? item.version
+                        : publishedVersion?.version ?? null,
+                    indexedChunkCount,
+                    expectedChunkCount: 0,
+                    inFlight,
+                    queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
+                    note: 'Semantic indexing is disabled because OPENAI_API_KEY is not configured.',
+                });
+                continue;
+            }
+
+            const target = item.status === 'published'
+                ? {
+                    data: item.data,
+                    version: item.version,
+                }
+                : publishedVersion
+                    ? {
+                        data: publishedVersion.data,
+                        version: publishedVersion.version,
+                    }
+                    : null;
+
+            if (!target) {
+                readiness.set(item.id, {
+                    enabled: true,
+                    state: 'unpublished',
+                    searchable: false,
+                    model: runtime.model,
+                    targetVersion: null,
+                    indexedChunkCount,
+                    expectedChunkCount: 0,
+                    inFlight,
+                    queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
+                    note: 'Semantic indexing only applies to published content.',
+                });
+                continue;
+            }
+
+            const expectedChunkCount = this.chunkContent(target.data).length;
+            if (expectedChunkCount === 0) {
+                readiness.set(item.id, {
+                    enabled: true,
+                    state: 'empty',
+                    searchable: false,
+                    model: runtime.model,
+                    targetVersion: target.version,
+                    indexedChunkCount,
+                    expectedChunkCount,
+                    inFlight,
+                    queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
+                    note: 'The published payload does not currently produce any semantic text chunks.',
+                });
+                continue;
+            }
+
+            if (inFlight) {
+                readiness.set(item.id, {
+                    enabled: true,
+                    state: 'syncing',
+                    searchable: indexedChunkCount > 0,
+                    model: runtime.model,
+                    targetVersion: target.version,
+                    indexedChunkCount,
+                    expectedChunkCount,
+                    inFlight,
+                    queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
+                    note: indexedChunkCount > 0
+                        ? 'Semantic indexing is refreshing in the background for the latest published snapshot.'
+                        : 'Semantic indexing has been queued for the latest published snapshot.',
+                });
+                continue;
+            }
+
+            if (indexedChunkCount === 0) {
+                readiness.set(item.id, {
+                    enabled: true,
+                    state: 'missing',
+                    searchable: false,
+                    model: runtime.model,
+                    targetVersion: target.version,
+                    indexedChunkCount,
+                    expectedChunkCount,
+                    inFlight,
+                    queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
+                    note: 'No semantic index exists yet for the latest published snapshot.',
+                });
+                continue;
+            }
+
+            if (indexedChunkCount !== expectedChunkCount) {
+                readiness.set(item.id, {
+                    enabled: true,
+                    state: 'stale',
+                    searchable: true,
+                    model: runtime.model,
+                    targetVersion: target.version,
+                    indexedChunkCount,
+                    expectedChunkCount,
+                    inFlight,
+                    queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
+                    note: 'The semantic index does not match the latest published chunk count and should be refreshed.',
+                });
+                continue;
+            }
+
+            readiness.set(item.id, {
+                enabled: true,
+                state: 'ready',
+                searchable: true,
+                model: runtime.model,
+                targetVersion: target.version,
+                indexedChunkCount,
+                expectedChunkCount,
+                inFlight,
+                queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
+                note: 'Semantic search is ready for the latest published snapshot.',
+            });
+        }
+
+        return readiness;
     }
 
     private static shouldRetryEmbeddingError(error: any): boolean {
@@ -218,45 +459,68 @@ export class EmbeddingService {
             return existingSync;
         }
 
+        this.queuedSyncCount += 1;
         const run = this.syncQueue
             .catch(() => undefined)
             .then(async () => {
-                const itemResults = await db.select()
-                    .from(contentItems)
-                    .where(and(eq(contentItems.domainId, domainId), eq(contentItems.id, contentItemId)));
+                this.queuedSyncCount = Math.max(0, this.queuedSyncCount - 1);
+                this.activeSyncCount += 1;
 
-                const item = itemResults[0];
-                if (!item) return;
+                try {
+                    const itemResults = await db.select()
+                        .from(contentItems)
+                        .where(and(eq(contentItems.domainId, domainId), eq(contentItems.id, contentItemId)));
 
-                const chunks = this.chunkContent(item.data);
-                if (chunks.length === 0) return;
+                    const item = itemResults[0];
+                    if (!item) {
+                        this.lastSyncErrorMessage = null;
+                        return;
+                    }
 
-                const embeddings = await this.requestEmbeddings(chunks);
-                if (embeddings.length !== chunks.length) {
-                    throw new EmbeddingServiceError(
-                        'EMBEDDING_RESPONSE_SIZE_MISMATCH',
-                        `Embedding response size mismatch for content item ${contentItemId}.`,
-                        502
-                    );
+                    const chunks = this.chunkContent(item.data);
+                    if (chunks.length === 0) {
+                        this.lastSyncErrorMessage = null;
+                        this.lastSyncCompletedAt = new Date().toISOString();
+                        return;
+                    }
+
+                    const embeddings = await this.requestEmbeddings(chunks);
+                    if (embeddings.length !== chunks.length) {
+                        throw new EmbeddingServiceError(
+                            'EMBEDDING_RESPONSE_SIZE_MISMATCH',
+                            `Embedding response size mismatch for content item ${contentItemId}.`,
+                            502
+                        );
+                    }
+
+                    await db.transaction(async (tx) => {
+                        await tx.delete(contentItemEmbeddings)
+                            .where(and(
+                                eq(contentItemEmbeddings.domainId, domainId),
+                                eq(contentItemEmbeddings.contentItemId, contentItemId)
+                            ));
+
+                        const insertPayload = chunks.map((chunk, index) => ({
+                            domainId,
+                            contentItemId,
+                            chunkIndex: index,
+                            textChunk: chunk,
+                            embedding: embeddings[index].embedding
+                        }));
+
+                        await tx.insert(contentItemEmbeddings).values(insertPayload);
+                    });
+
+                    this.lastSyncErrorMessage = null;
+                    this.lastSyncErroredAt = null;
+                    this.lastSyncCompletedAt = new Date().toISOString();
+                } catch (error) {
+                    this.lastSyncErrorMessage = (error as Error).message;
+                    this.lastSyncErroredAt = new Date().toISOString();
+                    throw error;
+                } finally {
+                    this.activeSyncCount = Math.max(0, this.activeSyncCount - 1);
                 }
-
-                await db.transaction(async (tx) => {
-                    await tx.delete(contentItemEmbeddings)
-                        .where(and(
-                            eq(contentItemEmbeddings.domainId, domainId),
-                            eq(contentItemEmbeddings.contentItemId, contentItemId)
-                        ));
-
-                    const insertPayload = chunks.map((chunk, index) => ({
-                        domainId,
-                        contentItemId,
-                        chunkIndex: index,
-                        textChunk: chunk,
-                        embedding: embeddings[index].embedding
-                    }));
-
-                    await tx.insert(contentItemEmbeddings).values(insertPayload);
-                });
             });
 
         this.syncQueue = run.then(() => undefined, () => undefined);

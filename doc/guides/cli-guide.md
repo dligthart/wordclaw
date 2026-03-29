@@ -32,6 +32,26 @@ wordclaw content guide --help
 wordclaw workspace resolve --help
 ```
 
+## Provisioning Helpers
+
+Use `provision` when you want WordClaw to print or write MCP client snippets for the supported agent clients without hand-authoring config blocks:
+
+```bash
+wordclaw provision --agent claude-code --transport http --scope project
+wordclaw provision --agent claude-code --transport http --scope project --write
+wordclaw provision --agent cursor --transport stdio --scope project --write
+wordclaw provision --agent codex --transport http --raw
+wordclaw provision --agent openclaw --transport stdio
+```
+
+Notes:
+
+- `openclaw` writes `~/.openclaw/openclaw.json`
+- `codex` writes `~/.codex/config.toml`
+- `claude-code` writes `.mcp.json` only for `--scope project`; local and user scope stay command-driven
+- `cursor` writes `.cursor/mcp.json` for project scope or `~/.cursor/mcp.json` for user scope
+- `--write` is always explicit; without it the CLI only prints the snippet
+
 ## Environment
 
 REST commands use these environment variables by default:
@@ -220,6 +240,7 @@ Important transport note:
 - when running in `stdio` mode, the CLI starts its own local MCP child process
 - when running in `http` mode, the CLI attaches directly to `/mcp`
 - `mcp inspect` now also includes the deployment manifest, deployment status, current actor snapshot, and workspace context when the MCP server exposes `system://capabilities`, `system://deployment-status`, `system://current-actor`, and `system://workspace-context`
+- `capabilities status` now reports both `checks.embeddings` for semantic-index freshness and `checks.ui` for whether the supervisor is being served from `/ui/` or still needs `npm run dev:all`
 - `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, workspace bootstrap, workspace targeting, authoring, review, integrations, provenance checks, and paid-content flows
 - `mcp call create_domain ...` bootstraps the first domain in-band and also supports admin-managed additional domains
 - `mcp openai-tools` exports the current MCP tool inventory as OpenAI-compatible `type: "function"` tools so external agents can reuse the live contract without hand-mapping each tool

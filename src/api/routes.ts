@@ -42,6 +42,7 @@ import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import { jobsWorker } from '../workers/jobs.worker.js';
 import {
+    attachContentItemEmbeddingReadiness,
     ContentItemListError,
     ContentItemProjectionError,
     getLatestPublishedVersionsForItems,
@@ -275,6 +276,27 @@ const ContentReadStateSchema = Type.Object({
     workingCopyVersion: Type.Number(),
     publishedVersion: Type.Union([Type.Number(), Type.Null()])
 });
+const ContentEmbeddingReadinessStateSchema = Type.Union([
+    Type.Literal('disabled'),
+    Type.Literal('unpublished'),
+    Type.Literal('empty'),
+    Type.Literal('syncing'),
+    Type.Literal('ready'),
+    Type.Literal('missing'),
+    Type.Literal('stale')
+]);
+const ContentEmbeddingReadinessSchema = Type.Object({
+    enabled: Type.Boolean(),
+    state: ContentEmbeddingReadinessStateSchema,
+    searchable: Type.Boolean(),
+    model: Type.Union([Type.String(), Type.Null()]),
+    targetVersion: Type.Union([Type.Number(), Type.Null()]),
+    indexedChunkCount: Type.Number(),
+    expectedChunkCount: Type.Number(),
+    inFlight: Type.Boolean(),
+    queueDepth: Type.Number(),
+    note: Type.String()
+});
 const ContentItemReadResponseSchema = Type.Object({
     id: Type.Number(),
     contentTypeId: Type.Number(),
@@ -286,7 +308,8 @@ const ContentItemReadResponseSchema = Type.Object({
     localeResolution: Type.Optional(ContentLocaleResolutionSchema),
     publicationState: ContentPublicationStateSchema,
     workingCopyVersion: Type.Number(),
-    publishedVersion: Type.Union([Type.Number(), Type.Null()])
+    publishedVersion: Type.Union([Type.Number(), Type.Null()]),
+    embeddingReadiness: ContentEmbeddingReadinessSchema
 });
 const ReferenceUsageSchema = Type.Object({
     contentItemId: Type.Number(),
@@ -329,6 +352,13 @@ const CapabilityVectorRagSchema = Type.Object({
     mcpTool: Type.String(),
     note: Type.String()
 });
+const CapabilityToolEquivalenceSchema = Type.Object({
+    intent: Type.String(),
+    rest: Type.String(),
+    mcp: Type.Union([Type.String(), Type.Null()]),
+    graphql: Type.Union([Type.String(), Type.Null()]),
+    cli: Type.Union([Type.String(), Type.Null()]),
+});
 const DeploymentBootstrapCheckSchema = Type.Object({
     status: Type.String(),
     domainCount: Type.Number(),
@@ -357,6 +387,31 @@ const DeploymentVectorRagCheckSchema = Type.Object({
     mcpTool: Type.String(),
     requiredEnvironmentVariables: Type.Array(Type.String()),
     reason: Type.String(),
+    note: Type.String(),
+});
+const DeploymentEmbeddingsCheckSchema = Type.Object({
+    status: Type.String(),
+    enabled: Type.Boolean(),
+    model: Type.Union([Type.String(), Type.Null()]),
+    queueDepth: Type.Number(),
+    inFlightSyncCount: Type.Number(),
+    pendingItemCount: Type.Number(),
+    dailyBudget: Type.Number(),
+    dailyBudgetRemaining: Type.Number(),
+    maxRequestsPerMinute: Type.Number(),
+    lastSyncCompletedAt: Type.Union([Type.String(), Type.Null()]),
+    lastSyncErrorMessage: Type.Union([Type.String(), Type.Null()]),
+    lastSyncErroredAt: Type.Union([Type.String(), Type.Null()]),
+    reason: Type.String(),
+    note: Type.String(),
+});
+const DeploymentUiCheckSchema = Type.Object({
+    status: Type.String(),
+    servedFromApi: Type.Boolean(),
+    routePrefix: Type.String(),
+    buildPath: Type.String(),
+    devCommand: Type.String(),
+    devUrl: Type.String(),
     note: Type.String(),
 });
 const DomainResponseSchema = Type.Object({
@@ -1823,6 +1878,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     }),
                     bootstrap: CapabilityBootstrapSchema,
                     vectorRag: CapabilityVectorRagSchema,
+                    toolEquivalence: Type.Array(CapabilityToolEquivalenceSchema),
                     modules: Type.Array(Type.Object({
                         id: Type.String(),
                         tier: Type.String(),
@@ -2065,6 +2121,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                         bootstrap: DeploymentBootstrapCheckSchema,
                         auth: DeploymentAuthCheckSchema,
                         vectorRag: DeploymentVectorRagCheckSchema,
+                        embeddings: DeploymentEmbeddingsCheckSchema,
+                        ui: DeploymentUiCheckSchema,
                         contentRuntime: Type.Object({
                             status: Type.String(),
                             fieldAwareQueries: Type.Object({
@@ -2190,6 +2248,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                         bootstrap: DeploymentBootstrapCheckSchema,
                         auth: DeploymentAuthCheckSchema,
                         vectorRag: DeploymentVectorRagCheckSchema,
+                        embeddings: DeploymentEmbeddingsCheckSchema,
+                        ui: DeploymentUiCheckSchema,
                         contentRuntime: Type.Object({
                             status: Type.String(),
                             fieldAwareQueries: Type.Object({
@@ -2214,6 +2274,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                                 updatePath: Type.String(),
                                 tokenHeader: Type.String(),
                                 requiresSchemaPolicy: Type.Boolean(),
+                            }),
+                            lifecycle: Type.Object({
+                                supported: Type.Boolean(),
+                                triggerMode: Type.String(),
+                                schemaExtension: Type.String(),
+                                includeArchivedFlag: Type.String(),
+                                defaultArchiveStatus: Type.String(),
                             }),
                             note: Type.String(),
                         }),
@@ -3750,9 +3817,11 @@ export default async function apiRoutes(server: FastifyInstance) {
             rows.flatMap((row) => row.item && row.item.status !== 'published' ? [row.item.id] : [])
         );
 
-        const localizedRows = rows.map((row) => ({
+        const localizedEntries = rows.map((row) => ({
             contentType: row.contentType,
-            item: row.item
+            item: row.item,
+            publishedVersion: row.item ? latestPublishedVersions.get(row.item.id) ?? null : null,
+            readView: row.item
                 ? resolveContentItemReadView(
                     row.item,
                     row.contentType.schema,
@@ -3760,6 +3829,21 @@ export default async function apiRoutes(server: FastifyInstance) {
                     latestPublishedVersions.get(row.item.id)
                 )
                 : null
+        }));
+        const enrichedReadViews = await attachContentItemEmbeddingReadiness(
+            domainId,
+            localizedEntries
+                .filter((entry) => entry.item)
+                .map((entry) => ({
+                    item: entry.item!,
+                    readView: entry.readView,
+                    publishedVersion: entry.publishedVersion
+                }))
+        );
+        let enrichedIndex = 0;
+        const localizedRows = localizedEntries.map((entry) => ({
+            contentType: entry.contentType,
+            item: entry.item ? enrichedReadViews[enrichedIndex++] ?? null : null
         }));
 
         return {
@@ -3815,17 +3899,26 @@ export default async function apiRoutes(server: FastifyInstance) {
             item && item.status !== 'published' ? [item.id] : []
         );
 
+        const readView = item
+            ? resolveContentItemReadView(
+                item,
+                contentType.schema,
+                localizedReadOptions,
+                latestPublishedVersions.get(item.id)
+            )
+            : null;
+        const [enrichedReadView] = item
+            ? await attachContentItemEmbeddingReadiness(domainId, [{
+                item,
+                readView,
+                publishedVersion: latestPublishedVersions.get(item.id) ?? null
+            }])
+            : [null];
+
         return {
             data: {
                 contentType,
-                item: item
-                    ? resolveContentItemReadView(
-                        item,
-                        contentType.schema,
-                        localizedReadOptions,
-                        latestPublishedVersions.get(item.id)
-                    )
-                    : null
+                item: enrichedReadView
             },
             meta: buildMeta(
                 `Update singleton global '${slug}'`,
@@ -5853,6 +5946,12 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
+        const [enrichedPreviewItem] = await attachContentItemEmbeddingReadiness(verification.domainId, [{
+            item,
+            readView: previewItem,
+            publishedVersion: latestPublishedVersions.get(item.id) ?? null
+        }]);
+
         await logAudit(
             verification.domainId,
             'preview',
@@ -5871,7 +5970,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         );
 
         return {
-            data: previewItem,
+            data: enrichedPreviewItem,
             meta: buildMeta(
                 'Preview payload returned by scoped token',
                 [],
@@ -5985,6 +6084,12 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
+        const [enrichedPreviewItem] = await attachContentItemEmbeddingReadiness(verification.domainId, [{
+            item: resolvedItem,
+            readView: previewItem,
+            publishedVersion: latestPublishedVersions.get(resolvedItem.id) ?? null
+        }]);
+
         await logAudit(
             verification.domainId,
             'preview',
@@ -6006,7 +6111,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         return {
             data: {
                 contentType,
-                item: previewItem
+                item: enrichedPreviewItem
             },
             meta: buildMeta(
                 'Preview payload returned by scoped token',
@@ -7427,8 +7532,14 @@ export default async function apiRoutes(server: FastifyInstance) {
             ));
         }
 
+        const [enrichedReadView] = await attachContentItemEmbeddingReadiness(domainId, [{
+            item,
+            readView,
+            publishedVersion: latestPublishedVersions.get(item.id) ?? null
+        }]);
+
         return {
-            data: readView,
+            data: enrichedReadView,
             meta: buildMeta(
                 'Update or publish this item',
                 ['PUT /api/content-items/:id', 'DELETE /api/content-items/:id'],

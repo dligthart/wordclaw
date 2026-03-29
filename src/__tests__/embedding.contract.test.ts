@@ -53,6 +53,7 @@ function mockSingleSelectResult(result: unknown) {
 
 describe('Embedding Service Contracts', () => {
     beforeEach(() => {
+        EmbeddingService.resetRuntimeStateForTests();
         mocks.dbMock.select.mockReset();
         mocks.dbMock.transaction.mockReset();
         mocks.txMock.delete.mockClear();
@@ -134,6 +135,83 @@ describe('Embedding Service Contracts', () => {
             code: 'SEMANTIC_SEARCH_DISABLED',
             statusCode: 503,
         } satisfies Partial<EmbeddingServiceError>);
+    });
+
+    it('reports disabled runtime status and content readiness when semantic search is not configured', async () => {
+        delete process.env.OPENAI_API_KEY;
+
+        const runtime = EmbeddingService.getRuntimeStatus();
+        const readiness = await EmbeddingService.getContentItemEmbeddingReadinessBatch(1, [{
+            item: {
+                id: 7,
+                domainId: 1,
+                contentTypeId: 1,
+                data: JSON.stringify({ title: 'Hello world' }),
+                status: 'published',
+                version: 3,
+                createdAt: new Date('2026-03-29T10:00:00.000Z'),
+                updatedAt: new Date('2026-03-29T10:05:00.000Z'),
+            },
+        }]);
+
+        expect(runtime).toMatchObject({
+            enabled: false,
+            model: null,
+            queueDepth: 0,
+            inFlightSyncCount: 0,
+            pendingItemCount: 0,
+        });
+        expect(readiness.get(7)).toEqual({
+            enabled: false,
+            state: 'disabled',
+            searchable: false,
+            model: null,
+            targetVersion: 3,
+            indexedChunkCount: 0,
+            expectedChunkCount: 0,
+            inFlight: false,
+            queueDepth: 0,
+            note: 'Semantic indexing is disabled because OPENAI_API_KEY is not configured.',
+        });
+    });
+
+    it('reports ready content readiness when published chunk counts match the current index', async () => {
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn(() => ({
+                    groupBy: vi.fn().mockResolvedValue([{
+                        contentItemId: 11,
+                        chunkCount: 1,
+                    }]),
+                })),
+            }),
+        }));
+
+        const readiness = await EmbeddingService.getContentItemEmbeddingReadinessBatch(1, [{
+            item: {
+                id: 11,
+                domainId: 1,
+                contentTypeId: 1,
+                data: JSON.stringify({ title: 'Published copy' }),
+                status: 'published',
+                version: 2,
+                createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                updatedAt: new Date('2026-03-29T10:00:00.000Z'),
+            },
+        }]);
+
+        expect(readiness.get(11)).toEqual({
+            enabled: true,
+            state: 'ready',
+            searchable: true,
+            model: 'text-embedding-3-small',
+            targetVersion: 2,
+            indexedChunkCount: 1,
+            expectedChunkCount: 1,
+            inFlight: false,
+            queueDepth: 0,
+            note: 'Semantic search is ready for the latest published snapshot.',
+        });
     });
 
     it('syncItemEmbeddings deduplicates concurrent sync requests for the same item', async () => {

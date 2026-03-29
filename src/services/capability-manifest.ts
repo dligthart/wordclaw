@@ -708,6 +708,43 @@ export function buildCapabilityManifest() {
                 ? `Semantic search is enabled with embedding model ${vectorRagModel}.`
                 : 'Semantic search is disabled until OPENAI_API_KEY is configured.',
         },
+        toolEquivalence: [
+            {
+                intent: 'inspect-deployment',
+                rest: 'GET /api/deployment-status',
+                mcp: 'read system://deployment-status',
+                graphql: null,
+                cli: 'node dist/cli/index.js capabilities status',
+            },
+            {
+                intent: 'create-domain',
+                rest: 'POST /api/domains',
+                mcp: 'create_domain',
+                graphql: null,
+                cli: 'node dist/cli/index.js rest request POST /domains --body-json <json>',
+            },
+            {
+                intent: 'discover-workspace',
+                rest: 'GET /api/workspace-target',
+                mcp: 'resolve_workspace_target',
+                graphql: null,
+                cli: 'node dist/cli/index.js workspace resolve --intent authoring',
+            },
+            {
+                intent: 'create-content-type',
+                rest: 'POST /api/content-types',
+                mcp: 'create_content_type',
+                graphql: 'mutation createContentType',
+                cli: 'node dist/cli/index.js content-types create --name <value> --slug <value> --schema-file <path>',
+            },
+            {
+                intent: 'create-content-item',
+                rest: 'POST /api/content-items',
+                mcp: 'create_content_item',
+                graphql: 'mutation createContentItem',
+                cli: 'node dist/cli/index.js content create --content-type-id <id> --data-file <path>',
+            },
+        ],
         modules: [
             {
                 id: 'content-runtime',
@@ -809,6 +846,15 @@ export function buildCapabilityManifest() {
                     'node dist/cli/index.js globals preview-token --slug <slug>',
                 ],
                 note: 'Content reads expose the current working copy by default and can prefer the latest published snapshot with draft=false/--published. Preview tokens are short-lived, domain-scoped, and limited to one content item or global.',
+            },
+            semanticIndexReadiness: {
+                supported: true,
+                deploymentRestPath: '/api/deployment-status',
+                deploymentMcpResource: 'system://deployment-status',
+                contentRestPaths: ['/api/content-items', '/api/content-items/:id', '/api/globals', '/api/globals/:slug'],
+                graphqlFields: ['contentItems', 'contentItem', 'globals', 'global'],
+                mcpTools: ['get_content_items', 'get_content_item', 'list_globals', 'get_global'],
+                note: 'Deployment status reports runtime embedding health and queue state, while content reads expose embeddingReadiness for the latest published snapshot of each item or global.',
             },
             localization: {
                 supported: true,

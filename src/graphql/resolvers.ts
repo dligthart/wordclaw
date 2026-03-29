@@ -20,6 +20,7 @@ import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService } from '../services/embedding.js';
 import {
+    attachContentItemEmbeddingReadiness,
     ContentItemListError,
     ContentItemProjectionError,
     getLatestPublishedVersionsForItems,
@@ -1262,10 +1263,11 @@ export const resolvers = {
             const latestPublishedVersions = await getLatestPublishedVersionsForItems(
                 rows.flatMap((row) => row.item && row.item.status !== 'published' ? [row.item.id] : [])
             );
-
-            return rows.map(({ contentType, item }) => ({
+            const entries = rows.map(({ contentType, item }) => ({
                 contentType,
-                item: item
+                item,
+                publishedVersion: item ? latestPublishedVersions.get(item.id) ?? null : null,
+                readView: item
                     ? resolveContentItemReadView(
                         item,
                         contentType.schema,
@@ -1273,6 +1275,22 @@ export const resolvers = {
                         latestPublishedVersions.get(item.id)
                     )
                     : null
+            }));
+            const enrichedReadViews = await attachContentItemEmbeddingReadiness(
+                domainId,
+                entries
+                    .filter((entry) => entry.item)
+                    .map((entry) => ({
+                        item: entry.item!,
+                        readView: entry.readView,
+                        publishedVersion: entry.publishedVersion
+                    }))
+            );
+            let enrichedIndex = 0;
+
+            return entries.map((entry) => ({
+                contentType: entry.contentType,
+                item: entry.item ? enrichedReadViews[enrichedIndex++] ?? null : null
             }));
         }),
 
@@ -1288,16 +1306,24 @@ export const resolvers = {
             const latestPublishedVersions = await getLatestPublishedVersionsForItems(
                 item && item.status !== 'published' ? [item.id] : []
             );
+            const readView = item
+                ? resolveContentItemReadView(
+                    item,
+                    contentType.schema,
+                    localizedReadOptions,
+                    latestPublishedVersions.get(item.id)
+                )
+                : null;
+            const [enrichedReadView] = item
+                ? await attachContentItemEmbeddingReadiness(domainId, [{
+                    item,
+                    readView,
+                    publishedVersion: latestPublishedVersions.get(item.id) ?? null
+                }])
+                : [null];
             return {
                 contentType,
-                item: item
-                    ? resolveContentItemReadView(
-                        item,
-                        contentType.schema,
-                        localizedReadOptions,
-                        latestPublishedVersions.get(item.id)
-                    )
-                    : null
+                item: enrichedReadView
             };
         }),
 
@@ -1426,12 +1452,18 @@ export const resolvers = {
             const latestPublishedVersions = await getLatestPublishedVersionsForItems(
                 item.status === 'published' ? [] : [item.id]
             );
-            return resolveContentItemReadView(
+            const readView = resolveContentItemReadView(
                 item,
                 row.schema,
                 localizedReadOptions,
                 latestPublishedVersions.get(item.id)
             );
+            const [enrichedReadView] = await attachContentItemEmbeddingReadiness(getDomainId(context), [{
+                item,
+                readView,
+                publishedVersion: latestPublishedVersions.get(item.id) ?? null
+            }]);
+            return enrichedReadView;
         }),
 
         contentItemVersions: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {

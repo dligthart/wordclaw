@@ -18,10 +18,12 @@ import { buildServer } from '../server.js';
 import { db } from '../db/index.js';
 import { assets, domains } from '../db/schema.js';
 import { getAssetStorageProvider } from '../services/asset-storage.js';
+import { EmbeddingService } from '../services/embedding.js';
 
 const originalAuthRequired = process.env.AUTH_REQUIRED;
 const originalApiKeys = process.env.API_KEYS;
 const originalAllowInsecureLocalAdmin = process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 
 function restoreEnv() {
     if (originalAuthRequired === undefined) {
@@ -40,6 +42,12 @@ function restoreEnv() {
         delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
     } else {
         process.env.ALLOW_INSECURE_LOCAL_ADMIN = originalAllowInsecureLocalAdmin;
+    }
+
+    if (originalOpenAiApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+    } else {
+        process.env.OPENAI_API_KEY = originalOpenAiApiKey;
     }
 }
 
@@ -75,9 +83,11 @@ describe('MCP HTTP transport', () => {
     let createdDomainIds: number[] = [];
 
     beforeEach(() => {
+        EmbeddingService.resetRuntimeStateForTests();
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'remote-admin=admin';
         process.env.ALLOW_INSECURE_LOCAL_ADMIN = 'false';
+        delete process.env.OPENAI_API_KEY;
         createdAssetIds = [];
         createdDomainIds = [];
         mocks.getWorkspaceContextSnapshotMock.mockImplementation(async (currentActor, options) => ({
@@ -325,6 +335,7 @@ describe('MCP HTTP transport', () => {
         }
 
         restoreEnv();
+        EmbeddingService.resetRuntimeStateForTests();
         mocks.getWorkspaceContextSnapshotMock.mockReset();
         mocks.resolveWorkspaceTargetMock.mockReset();
     });
@@ -494,6 +505,20 @@ describe('MCP HTTP transport', () => {
                 bootstrap: expect.objectContaining({
                     mcpCreateDomainTool: 'create_domain',
                     recommendedGuideTask: 'bootstrap-workspace',
+                }),
+                embeddings: expect.objectContaining({
+                    status: 'disabled',
+                    enabled: false,
+                    model: null,
+                    queueDepth: 0,
+                    inFlightSyncCount: 0,
+                    pendingItemCount: 0,
+                    reason: 'OPENAI_API_KEY not set',
+                }),
+                ui: expect.objectContaining({
+                    routePrefix: '/ui/',
+                    devCommand: 'npm run dev:all',
+                    devUrl: 'http://localhost:5173/ui/',
                 }),
                 assetStorage: expect.objectContaining({
                     enabled: true,

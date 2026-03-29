@@ -2,6 +2,7 @@ import { db } from '../db/index.js';
 import { contentItems, contentItemVersions, contentTypes } from '../db/schema.js';
 import { and, asc, desc, eq, gte, ilike, inArray, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { logAudit } from './audit.js';
+import { EmbeddingService, type ContentEmbeddingReadiness } from './embedding.js';
 import {
     getContentLifecycleSchemaConfig,
     localizeContentItem,
@@ -35,6 +36,14 @@ export type ContentItemReadState = {
     publishedVersion: number | null;
 };
 
+export type ContentItemResolvedReadView = (typeof contentItems.$inferSelect) & ContentItemReadState & {
+    localeResolution?: ContentLocaleResolution;
+};
+
+export type ContentItemReadView = ContentItemResolvedReadView & {
+    embeddingReadiness: ContentEmbeddingReadiness;
+};
+
 export type ListContentItemsInput = {
     contentTypeId?: number;
     status?: string;
@@ -62,7 +71,7 @@ export type ContentItemCursor = {
 };
 
 export type ListContentItemsResult = {
-    items: Array<(typeof contentItems.$inferSelect) & ContentItemReadState & { localeResolution?: ContentLocaleResolution }>;
+    items: ContentItemReadView[];
     total: number;
     limit: number;
     offset?: number;
@@ -253,7 +262,7 @@ export function resolveContentItemReadView(
         unpublishedFallback?: 'current' | 'null';
     } = {},
     publishedVersion?: typeof contentItemVersions.$inferSelect | null
-): ((typeof contentItems.$inferSelect) & ContentItemReadState & { localeResolution?: ContentLocaleResolution }) | null {
+): ContentItemResolvedReadView | null {
     const publicationState = buildPublicationState(item, publishedVersion);
     const readSource = resolveReadSourceItem(item, publishedVersion, options);
     if (!readSource) {
@@ -265,6 +274,45 @@ export function resolveContentItemReadView(
         ...localized,
         ...publicationState
     };
+}
+
+export async function attachContentItemEmbeddingReadiness(
+    domainId: number,
+    entries: Array<{
+        item: typeof contentItems.$inferSelect;
+        readView: ContentItemResolvedReadView | null;
+        publishedVersion?: typeof contentItemVersions.$inferSelect | null;
+    }>
+): Promise<Array<ContentItemReadView | null>> {
+    const readinessByItemId = await EmbeddingService.getContentItemEmbeddingReadinessBatch(
+        domainId,
+        entries.map((entry) => ({
+            item: entry.item,
+            publishedVersion: entry.publishedVersion ?? null
+        }))
+    );
+
+    return entries.map((entry) => {
+        if (!entry.readView) {
+            return null;
+        }
+
+        return {
+            ...entry.readView,
+            embeddingReadiness: readinessByItemId.get(entry.item.id) ?? {
+                enabled: false,
+                state: 'disabled',
+                searchable: false,
+                model: null,
+                targetVersion: null,
+                indexedChunkCount: 0,
+                expectedChunkCount: 0,
+                inFlight: false,
+                queueDepth: 0,
+                note: 'Semantic indexing readiness is unavailable for this content item.',
+            }
+        };
+    });
 }
 
 function parseBooleanFieldValue(value: string): boolean | null {
@@ -617,7 +665,7 @@ export async function listContentItems(domainId: number, input: ListContentItems
     const latestPublishedVersions = await getLatestPublishedVersionsForItems(
         page.filter((row) => row.item.status !== 'published').map((row) => row.item.id)
     );
-    const items = page.flatMap((row) => {
+    const entries = page.flatMap((row) => {
         const readView = resolveContentItemReadView(
             row.item,
             row.schema,
@@ -639,8 +687,14 @@ export async function listContentItems(domainId: number, input: ListContentItems
             }
             : readView;
 
-        return [item];
+        return [{
+            item: row.item,
+            readView: item,
+            publishedVersion: latestPublishedVersions.get(row.item.id) ?? null
+        }];
     });
+
+    const items = (await attachContentItemEmbeddingReadiness(domainId, entries)).flatMap((item) => item ? [item] : []);
 
     return {
         items,

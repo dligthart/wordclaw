@@ -107,6 +107,16 @@ export const schema = `
     singleton
   }
 
+  enum ContentEmbeddingReadinessState {
+    disabled
+    unpublished
+    empty
+    syncing
+    ready
+    missing
+    stale
+  }
+
   enum FormFieldType {
     text
     textarea
@@ -167,6 +177,20 @@ export const schema = `
     unresolvedFields: [String!]!
   }
 
+  """Semantic indexing readiness for the latest published snapshot of a content item."""
+  type ContentEmbeddingReadiness {
+    enabled: Boolean!
+    state: ContentEmbeddingReadinessState!
+    searchable: Boolean!
+    model: String
+    targetVersion: Int
+    indexedChunkCount: Int!
+    expectedChunkCount: Int!
+    inFlight: Boolean!
+    queueDepth: Int!
+    note: String!
+  }
+
   """A versioned content entity that belongs to a content type."""
   type ContentItem {
     """Stable numeric identifier."""
@@ -191,6 +215,8 @@ export const schema = `
     workingCopyVersion: Int!
     """Latest published version number, when one exists."""
     publishedVersion: Int
+    """Semantic indexing readiness for the latest published snapshot."""
+    embeddingReadiness: ContentEmbeddingReadiness!
   }
 
   """An immutable snapshot of a prior content item state."""
