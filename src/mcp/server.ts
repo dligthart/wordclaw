@@ -46,6 +46,7 @@ import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
 import { buildL402Guide } from '../cli/lib/l402-guide.js';
 import { buildAuditGuide } from '../cli/lib/audit-guide.js';
 import { buildBootstrapWorkspaceGuide } from '../cli/lib/bootstrap-workspace-guide.js';
+import { buildDeploymentGuide } from '../cli/lib/deployment-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { issueSignedAssetAccess } from '../services/asset-access.js';
 import {
@@ -4023,37 +4024,10 @@ server.tool(
 
         if (taskId === 'discover-deployment') {
             const deploymentStatus = await getDeploymentStatusSnapshot();
-            const guide = {
-                taskId: 'discover-deployment',
-                overallStatus: deploymentStatus.overallStatus,
-                checks: deploymentStatus.checks,
-                warnings: deploymentStatus.warnings,
-                steps: [
-                    {
-                        id: 'read-manifest',
-                        title: 'Read the deployment manifest',
-                        status: 'ready',
-                        command: 'node dist/cli/index.js capabilities show',
-                        purpose: 'Inspect enabled modules, actor profiles, transport options, and task routing hints.',
-                    },
-                    {
-                        id: 'read-status',
-                        title: 'Read the live deployment status',
-                        status: deploymentStatus.overallStatus === 'ready' ? 'ready' : 'warning',
-                        command: 'node dist/cli/index.js capabilities status',
-                        purpose: 'Confirm database connectivity and live transport/worker readiness before mutating runtime state.',
-                    },
-                    {
-                        id: 'confirm-actor',
-                        title: 'Confirm the current actor after authenticating',
-                        status: currentActor.actorProfileId === 'public-discovery' ? 'optional' : 'ready',
-                        command: currentActor.actorProfileId === 'mcp-local'
-                            ? 'node dist/cli/index.js mcp whoami'
-                            : 'node dist/cli/index.js capabilities whoami',
-                        purpose: 'Verify the credential, domain, and scope set that will execute subsequent actions.',
-                    },
-                ],
-            };
+            const guide = buildDeploymentGuide({
+                currentActor,
+                deploymentStatus,
+            });
 
             return okJson({
                 ...basePayload,

@@ -283,6 +283,7 @@ node dist/cli/index.js domains create --name "Local Development" --hostname loca
 Bootstrap tip:
 
 - Start with `capabilities status` or `mcp resource system://deployment-status`.
+- Use `mcp call guide_task --json '{"taskId":"discover-deployment"}'` when you want the same readiness snapshot packaged as concrete next steps for bootstrap, actor posture, and semantic-search blockers.
 - If `domainCount` is `0`, call `mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`.
 - Prefer `domains create ...` from the CLI when you are bootstrapping locally.
 - Use `mcp call create_domain ...` when you are already attached to MCP, or `rest request POST /domains ...` as the lowest-level fallback.

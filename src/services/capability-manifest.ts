@@ -291,7 +291,20 @@ export function buildCapabilityManifest() {
                         title: 'Read the live deployment status',
                         surface: 'rest',
                         operation: 'GET /api/deployment-status',
-                        purpose: 'Confirm database connectivity, MCP transport health, and any enabled worker readiness before acting.',
+                        purpose: 'Confirm database connectivity, MCP transport health, and whether bootstrap, auth, or vector-RAG blockers still gate the next action.',
+                    },
+                    {
+                        title: 'Escalate first-domain bootstrap when the install is still empty',
+                        surface: 'mcp',
+                        operation: 'guide_task bootstrap-workspace',
+                        purpose: 'If deployment status reports zero domains, switch to the dedicated bootstrap recipe before attempting schema or content writes.',
+                        optional: true,
+                    },
+                    {
+                        title: 'Confirm the write actor after authenticating',
+                        surface: 'rest',
+                        operation: 'GET /api/identity',
+                        purpose: 'If writes require credentials, verify the active domain and scope set before mutating runtime state.',
                     },
                     {
                         title: 'Mirror the manifest inside an MCP session',

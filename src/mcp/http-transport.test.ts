@@ -731,12 +731,37 @@ describe('MCP HTTP transport', () => {
             }),
         }));
         expect(deploymentGuideJson.guide).toEqual(expect.objectContaining({
+            bootstrap: expect.objectContaining({
+                status: 'ready',
+                recommendedGuideTask: 'bootstrap-workspace',
+            }),
+            auth: expect.objectContaining({
+                status: 'ready',
+                writeRequiresCredential: true,
+                actorCanWrite: true,
+            }),
+            vectorRag: expect.objectContaining({
+                status: 'disabled',
+                enabled: false,
+            }),
             steps: expect.arrayContaining([
                 expect.objectContaining({
-                    command: 'node dist/cli/index.js capabilities show',
+                    id: 'resolve-bootstrap-blocker',
+                    status: 'completed',
+                    command: 'node dist/cli/index.js capabilities status',
                 }),
                 expect.objectContaining({
+                    id: 'confirm-write-actor',
+                    status: 'completed',
+                    command: 'node dist/cli/index.js capabilities whoami',
+                }),
+                expect.objectContaining({
+                    id: 'check-semantic-search-posture',
+                    status: 'optional',
                     command: 'node dist/cli/index.js capabilities status',
+                }),
+                expect.objectContaining({
+                    command: 'node dist/cli/index.js capabilities show',
                 }),
             ]),
         }));

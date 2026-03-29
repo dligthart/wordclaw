@@ -430,6 +430,12 @@ describe('buildCapabilityManifest', () => {
                             operation: 'GET /api/deployment-status',
                         }),
                         expect.objectContaining({
+                            operation: 'guide_task bootstrap-workspace',
+                        }),
+                        expect.objectContaining({
+                            operation: 'GET /api/identity',
+                        }),
+                        expect.objectContaining({
                             operation: 'read system://deployment-status',
                         }),
                     ]),

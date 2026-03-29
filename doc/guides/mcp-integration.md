@@ -155,6 +155,8 @@ node dist/cli/index.js mcp call guide_task '{"taskId":"verify-provenance","entit
   --api-key writer
 ```
 
+`guide_task("discover-deployment")` is the blocker-aware preflight entrypoint: it tells the agent whether first-domain bootstrap is still required, whether the current actor can satisfy the effective write posture, and whether semantic search is disabled for environment reasons rather than content reasons.
+
 For `author-content`, `review-workflow`, `manage-integrations`, and `verify-provenance`, `guide_task` now returns a `reactiveRecommendation` block when MCP reactivity can help the current actor stay in sync with runtime changes. That payload is intentionally runnable:
 
 - `recipeId` points to the preferred reactive subscription recipe when one exists

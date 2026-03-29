@@ -15,6 +15,7 @@ The fastest task-oriented preflight sequence is:
 1. `GET /api/capabilities`
 2. `GET /api/deployment-status`
    - if `domainCount` is `0`, bootstrap the first domain with `wordclaw domains create --name <value> --hostname <value>`, `POST /api/domains`, or MCP `create_domain`
+   - MCP `guide_task("discover-deployment")` packages the same readiness snapshot into concrete next steps for bootstrap, write-actor auth posture, and vector-RAG readiness
 3. `GET /api/identity`
 4. `GET /api/workspace-context`
    - supports `intent`, `search`, and `limit` when the agent already knows whether it wants authoring, review, workflow, or paid-content targets

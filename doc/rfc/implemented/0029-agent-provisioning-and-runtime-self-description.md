@@ -256,7 +256,7 @@ Expected behavior:
 - create initial content
 - wait for or verify embedding readiness before semantic search verification
 
-`guide_task("discover-deployment")` should also be upgraded so that it explicitly reports blocked bootstrap conditions, even when the caller has not yet asked for the full bootstrap recipe.
+`guide_task("discover-deployment")` now explicitly reports bootstrap blockers, effective write-actor posture, and semantic-search readiness so agents can pivot into bootstrap or configuration fixes before they attempt writes.
 
 ### 4.5 Effective Auth Posture
 
