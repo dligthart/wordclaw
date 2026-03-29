@@ -15,6 +15,38 @@ export type DrizzleMigrationRecord = DrizzleJournalEntry & {
     sql: string;
 };
 
+export type DrizzleDatabaseInspection = {
+    publicTableCount: number;
+    journalTableExists: boolean;
+    appliedMigrationCount: number;
+};
+
+export type DrizzleDatabaseAssessment =
+    | {
+        kind: 'aligned';
+        expectedMigrationCount: number;
+        appliedMigrationCount: number;
+    }
+    | {
+        kind: 'safe-to-migrate';
+        reason: 'fresh-empty' | 'pending-migrations';
+        expectedMigrationCount: number;
+        appliedMigrationCount: number;
+        nextMissingMigrationTag: string | null;
+    }
+    | {
+        kind: 'baseline-required';
+        reason: 'missing-journal' | 'empty-journal';
+        expectedMigrationCount: number;
+        appliedMigrationCount: number;
+        guidance: string;
+    }
+    | {
+        kind: 'ahead-of-repo';
+        expectedMigrationCount: number;
+        appliedMigrationCount: number;
+    };
+
 type DrizzleJournalFile = {
     version: string;
     dialect: string;
@@ -95,4 +127,75 @@ export const formatBaselineGuidance = (
         `Baseline the journal first: npx tsx src/db/stamp-migrations.ts --through ${defaultTag}`,
         'Then rerun: npx tsx src/db/migrate.ts'
     ].join('\n');
+};
+
+export const assessDrizzleDatabaseState = (
+    migrations: DrizzleMigrationRecord[],
+    inspection: DrizzleDatabaseInspection
+): DrizzleDatabaseAssessment => {
+    const expectedMigrationCount = migrations.length;
+
+    if (!inspection.journalTableExists) {
+        if (inspection.publicTableCount > 0) {
+            return {
+                kind: 'baseline-required',
+                reason: 'missing-journal',
+                expectedMigrationCount,
+                appliedMigrationCount: 0,
+                guidance: formatBaselineGuidance(migrations),
+            };
+        }
+
+        return {
+            kind: 'safe-to-migrate',
+            reason: 'fresh-empty',
+            expectedMigrationCount,
+            appliedMigrationCount: 0,
+            nextMissingMigrationTag: migrations[0]?.tag ?? null,
+        };
+    }
+
+    if (inspection.appliedMigrationCount === 0) {
+        if (inspection.publicTableCount > 0) {
+            return {
+                kind: 'baseline-required',
+                reason: 'empty-journal',
+                expectedMigrationCount,
+                appliedMigrationCount: 0,
+                guidance: formatBaselineGuidance(migrations),
+            };
+        }
+
+        return {
+            kind: 'safe-to-migrate',
+            reason: 'fresh-empty',
+            expectedMigrationCount,
+            appliedMigrationCount: 0,
+            nextMissingMigrationTag: migrations[0]?.tag ?? null,
+        };
+    }
+
+    if (inspection.appliedMigrationCount < expectedMigrationCount) {
+        return {
+            kind: 'safe-to-migrate',
+            reason: 'pending-migrations',
+            expectedMigrationCount,
+            appliedMigrationCount: inspection.appliedMigrationCount,
+            nextMissingMigrationTag: migrations[inspection.appliedMigrationCount]?.tag ?? null,
+        };
+    }
+
+    if (inspection.appliedMigrationCount > expectedMigrationCount) {
+        return {
+            kind: 'ahead-of-repo',
+            expectedMigrationCount,
+            appliedMigrationCount: inspection.appliedMigrationCount,
+        };
+    }
+
+    return {
+        kind: 'aligned',
+        expectedMigrationCount,
+        appliedMigrationCount: inspection.appliedMigrationCount,
+    };
 };

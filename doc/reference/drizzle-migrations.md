@@ -86,6 +86,21 @@ npx drizzle-kit migrate
 npm run db:migrate
 ```
 
+## Test Database Preflight
+
+`npm test` now auto-applies committed repo migrations when the configured `DATABASE_URL`
+points at either:
+
+- a fresh empty database, or
+- a database that already has a Drizzle journal but is simply behind the repo
+
+That keeps local Vitest runs from failing on a routine "new migration landed, local test
+DB is one step behind" case.
+
+Vitest still refuses to guess when the database already contains application tables but
+has no usable Drizzle journal. That is still treated as a legacy baseline scenario, and
+the preflight will stop with `db:stamp` guidance instead of mutating the database.
+
 ## Baseline Existing Local Databases
 
 If your local PostgreSQL database already contains the application tables but

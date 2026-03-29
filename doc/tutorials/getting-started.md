@@ -342,5 +342,9 @@ npm test
 RUN_INTEGRATION=1 npm test
 ```
 
+`npm test` auto-applies committed repo migrations when the configured test database is
+empty or simply behind the repo journal. If the database already has app tables but no
+usable Drizzle journal, the preflight still stops and asks you to baseline it first.
+
 ### Capability Parity Contract
 Core capability coverage is documented in [mcp-integration.md](../guides/mcp-integration.md) and validated in the default `npm test` run. REST and MCP are the required core surfaces; GraphQL is checked when a capability explicitly declares compatibility coverage. Incubator APIs such as agent runs are tested separately and are not part of the default parity matrix.

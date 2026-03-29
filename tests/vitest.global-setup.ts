@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { formatBaselineGuidance, readDrizzleMigrations } from '../src/db/drizzle-migrations.js';
+import { assessDrizzleDatabaseState, readDrizzleMigrations } from '../src/db/drizzle-migrations.js';
+import { inspectDrizzleDatabaseState, runDrizzleMigrations } from '../src/db/migration-runner.js';
 import { applyVitestEnvDefaults } from './vitest.env.js';
 
 const dbBackedTargetMatchers = [
@@ -68,79 +69,41 @@ export default async () => {
 
     try {
         await pool.query('create schema if not exists drizzle');
+        const inspection = await inspectDrizzleDatabaseState(pool);
+        const assessment = assessDrizzleDatabaseState(migrations, inspection);
 
-        const publicTableState = await pool.query<{ count: string }>(`
-            select count(*)::text as count
-            from information_schema.tables
-            where table_schema = 'public'
-              and table_type = 'BASE TABLE'
-              and table_name != '__drizzle_migrations'
-        `);
-        const publicTableCount = Number(publicTableState.rows[0]?.count ?? '0');
-
-        const journalTableState = await pool.query<{ count: string }>(`
-            select count(*)::text as count
-            from information_schema.tables
-            where table_schema = 'drizzle'
-              and table_name = '__drizzle_migrations'
-        `);
-        const journalTableExists = Number(journalTableState.rows[0]?.count ?? '0') > 0;
-
-        if (!journalTableExists) {
-            if (publicTableCount > 0) {
-                throw new Error(
-                    [
-                        'Vitest database preflight failed: existing schema detected without a Drizzle migration journal.',
-                        formatBaselineGuidance(migrations)
-                    ].join('\n')
-                );
-            }
+        if (assessment.kind === 'baseline-required') {
+            const heading = assessment.reason === 'missing-journal'
+                ? 'Vitest database preflight failed: existing schema detected without a Drizzle migration journal.'
+                : 'Vitest database preflight failed: existing schema detected with an empty Drizzle migration journal.';
 
             throw new Error(
+                [
+                    heading,
+                    assessment.guidance
+                ].join('\n')
+            );
+        }
+
+        if (assessment.kind === 'ahead-of-repo') {
+            throw new Error(
                 buildMigrateMessage([
-                    `No Drizzle migration journal exists for ${process.env.DATABASE_URL}.`
+                    `Database has ${assessment.appliedMigrationCount} applied migrations, but the repo only defines ${assessment.expectedMigrationCount}.`
                 ])
             );
         }
 
-        const appliedState = await pool.query<{ count: string }>(
-            'select count(*)::text as count from drizzle.__drizzle_migrations'
-        );
-        const appliedMigrationCount = Number(appliedState.rows[0]?.count ?? '0');
-        const expectedMigrationCount = migrations.length;
+        if (assessment.kind === 'safe-to-migrate') {
+            const autoFixMessage = assessment.reason === 'pending-migrations'
+                ? `applying pending repo migrations (${assessment.appliedMigrationCount}/${assessment.expectedMigrationCount} before run)`
+                : `initializing the database with ${assessment.expectedMigrationCount} repo migration(s)`;
 
-        if (appliedMigrationCount === 0) {
-            if (publicTableCount > 0) {
-                throw new Error(
-                    [
-                        'Vitest database preflight failed: existing schema detected with an empty Drizzle migration journal.',
-                        formatBaselineGuidance(migrations)
-                    ].join('\n')
-                );
-            }
+            console.log(`Vitest database preflight: ${autoFixMessage}.`);
 
-            throw new Error(
-                buildMigrateMessage([
-                    `No migrations have been applied to ${process.env.DATABASE_URL}.`
-                ])
-            );
-        }
-
-        if (appliedMigrationCount < expectedMigrationCount) {
-            throw new Error(
-                buildMigrateMessage([
-                    `Applied migrations: ${appliedMigrationCount}/${expectedMigrationCount}.`,
-                    `Next missing migration: ${migrations[appliedMigrationCount]?.tag ?? 'latest'}.`
-                ])
-            );
-        }
-
-        if (appliedMigrationCount > expectedMigrationCount) {
-            throw new Error(
-                buildMigrateMessage([
-                    `Database has ${appliedMigrationCount} applied migrations, but the repo only defines ${expectedMigrationCount}.`
-                ])
-            );
+            await runDrizzleMigrations({
+                connectionString: process.env.DATABASE_URL!,
+                pool,
+            });
         }
     } catch (error) {
         if (error instanceof Error && error.message.startsWith('Vitest database preflight failed:')) {
