@@ -351,7 +351,7 @@ export function buildCapabilityManifest() {
             },
             {
                 id: 'author-content',
-                goal: 'Create or update schema-bound content with validation, versioning, and optional dry-run checks.',
+                goal: 'Design or select a schema, then create or update schema-bound content with validation, versioning, and optional dry-run checks.',
                 preferredSurface: 'mcp',
                 fallbackSurface: 'rest',
                 recommendedAuth: 'api-key',
@@ -365,7 +365,14 @@ export function buildCapabilityManifest() {
                         title: 'Discover the target schema',
                         surface: 'mcp',
                         operation: 'list_content_types or get_content_type',
-                        purpose: 'Find the content model and inspect its schema before generating data.',
+                        purpose: 'Find the content model and inspect its schema before generating data, or decide that a new schema must be designed first.',
+                    },
+                    {
+                        title: 'Ask for schema design guidance when no target exists',
+                        surface: 'mcp',
+                        operation: 'guide_task { taskId: "author-content" }',
+                        purpose: 'Get manifest-oriented schema patterns for memory, task-log, and checkpoint style content before creating a new model.',
+                        optional: true,
                     },
                     {
                         title: 'Validate a draft without persisting it',
@@ -401,7 +408,7 @@ export function buildCapabilityManifest() {
                             },
                         },
                     },
-                    note: 'Use guide_task author-content for a live actor-aware version once the target schema is known.',
+                    note: 'Use guide_task author-content without contentTypeId to bootstrap schema design, then repeat it with contentTypeId once the target schema is known and reactive follow-up becomes actionable.',
                 },
             },
             {

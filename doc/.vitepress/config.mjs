@@ -28,6 +28,8 @@ export default withMermaid(defineConfig({
                     { text: 'CI Migrations and Tests Troubleshooting', link: '/guides/ci-migrations-troubleshooting' },
                     { text: 'Blog Integration', link: '/guides/blog-integration-guide' },
                     { text: 'CLI Guide', link: '/guides/cli-guide' },
+                    { text: 'Docker Deployment', link: '/guides/docker-deployment' },
+                    { text: 'Demos', link: '/guides/demos' },
                     { text: 'LangGraph MCP Starter', link: '/guides/langgraph-mcp-starter' },
                     { text: 'MCP Integration', link: '/guides/mcp-integration' },
                     { text: 'Vercel Deploy Webhook', link: '/guides/vercel-deploy-webhook' }
@@ -40,7 +42,8 @@ export default withMermaid(defineConfig({
                     { text: 'Architecture Diagram', link: '/reference/architecture' },
                     { text: 'Data Model', link: '/reference/data-model' },
                     { text: 'Drizzle Migrations', link: '/reference/drizzle-migrations' },
-                    { text: 'MCP Servers', link: '/reference/mcp-servers' }
+                    { text: 'MCP Servers', link: '/reference/mcp-servers' },
+                    { text: 'Runtime Configuration', link: '/reference/runtime-configuration' }
                 ]
             },
             {

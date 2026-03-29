@@ -168,18 +168,21 @@ These are cheaper than re-reading the full workspace inventory.
 Preferred sequence:
 
 ```text
-1. resolve_workspace_target { "intent": "authoring", "search": "..." }
-2. guide_task { "taskId": "author-content", "contentTypeId": <id> }
-3. create_content_item or update_content_item with "dryRun": true
-4. Fix validation or policy errors
-5. Repeat without dryRun
-6. Use get_content_item_versions or rollback_content_item if needed
-7. Optionally subscribe_events { "recipeId": "content-lifecycle", "filters": { "contentTypeId": <id> } }
+1. If no schema is known yet, start with guide_task { "taskId": "author-content" }
+2. resolve_workspace_target { "intent": "authoring", "search": "..." }
+3. guide_task { "taskId": "author-content", "contentTypeId": <id> }
+4. create_content_item or update_content_item with "dryRun": true
+5. Fix validation or policy errors
+6. Repeat without dryRun
+7. Use get_content_item_versions or rollback_content_item if needed
+8. Optionally subscribe_events { "recipeId": "content-lifecycle", "filters": { "contentTypeId": <id> } }
 ```
 
 Use `list_content_types` and `get_content_type` when you need full schema
-detail. Use `create_content_items_batch` only when the user actually wants
-coordinated bulk writes.
+detail. When no usable schema exists yet, `guide_task { "taskId": "author-content" }`
+also returns manifest-oriented patterns for memory, task-log, and checkpoint
+content types. Use `create_content_items_batch` only when the user actually
+wants coordinated bulk writes.
 
 After a successful write, keep only `contentTypeId`, `contentItemId`, and the
 next action. Re-read the item later instead of carrying the whole draft body

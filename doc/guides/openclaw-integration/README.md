@@ -118,6 +118,7 @@ Expected behavior:
 - reads `system://current-actor`
 - reads `system://workspace-context` or `system://workspace-target/authoring`
 - calls `resolve_workspace_target` or `guide_task`
+- falls back to `guide_task { "taskId": "author-content" }` when no usable schema exists yet and returns a schema-bootstrap checkpoint instead of guessing
 - returns a compact checkpoint, not a long transcript
 
 ### Prompt 2

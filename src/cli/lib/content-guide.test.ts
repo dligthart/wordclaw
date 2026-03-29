@@ -3,6 +3,56 @@ import { describe, expect, it } from 'vitest';
 import { buildContentGuide } from './content-guide.js';
 
 describe('buildContentGuide', () => {
+    it('builds schema-design guidance when no content type id is provided', () => {
+        const guide = buildContentGuide({
+            currentActor: {
+                actorId: 'api_key:11',
+                actorType: 'api_key',
+                actorSource: 'db',
+                actorProfileId: 'api-key',
+                domainId: 2,
+                scopes: ['content:write'],
+                assignmentRefs: ['api_key:11', '11'],
+            },
+        });
+
+        expect(guide.mode).toBe('schema-design');
+        expect(guide.contentTypeId).toBeNull();
+        expect(guide.schemaDesignGuidance).toEqual(expect.objectContaining({
+            available: true,
+            recommendedSource: 'schemaManifest',
+            patterns: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'memory',
+                    searchableTextFields: ['summary', 'details'],
+                }),
+                expect.objectContaining({
+                    id: 'task-log',
+                }),
+                expect.objectContaining({
+                    id: 'checkpoint',
+                }),
+            ]),
+            embeddingBehavior: expect.objectContaining({
+                skippedTopLevelFields: expect.arrayContaining(['slug', 'coverImage', 'id']),
+            }),
+        }));
+        expect(guide.steps).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'draft-schema-manifest',
+                    status: 'ready',
+                    command: null,
+                }),
+                expect.objectContaining({
+                    id: 'validate-content-type',
+                    status: 'ready',
+                    command: 'node dist/cli/index.js content-types create --name AgentMemory --slug agent-memory --schema-manifest-file memory.manifest.json --dry-run',
+                }),
+            ]),
+        );
+    });
+
     it('builds a ready authoring plan with schema and workflow guidance', () => {
         const guide = buildContentGuide({
             contentTypeId: 12,
@@ -55,6 +105,7 @@ describe('buildContentGuide', () => {
             supportedActorProfile: true,
             requiredScopesSatisfied: true,
         }));
+        expect(guide.mode).toBe('content-authoring');
         expect(guide.schemaSummary).toEqual(expect.objectContaining({
             available: true,
             rootType: 'object',

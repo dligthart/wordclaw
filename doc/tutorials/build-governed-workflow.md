@@ -56,6 +56,8 @@ wordclaw content guide --content-type-id 12
 
 This dynamic response tells you exactly what shape the payload must be, and it also informs you if an approval workflow must be completed before the content reaches a `published` state.
 
+If you do not have a content type yet, start with `wordclaw content guide` first to get schema-design patterns and authoring bootstrap guidance.
+
 ## 3. Authoring the Draft
 
 Let's author some content. We submit this as a `draft`:

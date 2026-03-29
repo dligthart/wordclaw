@@ -48,7 +48,7 @@ const USAGE_LINES = [
     'globals update --slug <value> [--status <value>] [--data-json <json>|--data-file <path>] [--dry-run]',
     'content list [--content-type-id <n>] [--status <value>] [--q <value>] [--published] [--locale <value>] [--fallback-locale <value>] [--created-after <iso>] [--created-before <iso>] [--field-name <value>] [--field-op eq|contains|gte|lte] [--field-value <value>] [--sort-field <value>] [--sort-by updatedAt|createdAt|version] [--sort-dir asc|desc] [--include-archived] [--limit <n>] [--offset <n>] [--cursor <value>]',
     'content project --content-type-id <n> --group-by <value> [--status <value>] [--created-after <iso>] [--created-before <iso>] [--field-name <value>] [--field-op eq|contains|gte|lte] [--field-value <value>] [--metric count|sum|avg|min|max] [--metric-field <value>] [--order-by value|group] [--order-dir asc|desc] [--include-archived] [--limit <n>]',
-    'content guide --content-type-id <n>',
+    'content guide [--content-type-id <n>]',
     'content get --id <n> [--published] [--locale <value>] [--fallback-locale <value>]',
     'content used-by --id <n>',
     'content preview-token --id <n> [--published] [--locale <value>] [--fallback-locale <value>] [--ttl-seconds <n>]',
@@ -86,7 +86,7 @@ const EXAMPLES: Record<string, string[]> = {
         'wordclaw provision --agent claude-code --transport http --scope project --write',
         'wordclaw capabilities show',
         'wordclaw workspace guide --intent review --limit 5',
-        'wordclaw content guide --content-type-id 12',
+        'wordclaw content guide',
         'wordclaw schema generate --out ./generated/wordclaw',
         'wordclaw forms list',
         'wordclaw jobs worker-status',
@@ -128,7 +128,7 @@ const EXAMPLES: Record<string, string[]> = {
         'wordclaw jobs schedule-status --id 88 --status published --run-at 2026-04-01T09:00:00Z',
     ],
     'content': [
-        'wordclaw content guide --content-type-id 12',
+        'wordclaw content guide',
         'wordclaw content used-by --id 88',
         'wordclaw content create --content-type-id 12 --data-file item.json --dry-run',
         'wordclaw content preview-token --id 88',
@@ -161,6 +161,7 @@ const EXAMPLES: Record<string, string[]> = {
         'wordclaw l402 offers --item 123',
     ],
     'content guide': [
+        'wordclaw content guide',
         'wordclaw content guide --content-type-id 12',
     ],
     'workspace resolve': [

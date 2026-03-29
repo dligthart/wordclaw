@@ -3971,7 +3971,7 @@ server.tool(
         intent: z.enum(['all', 'authoring', 'review', 'workflow', 'paid']).optional().describe('Optional workspace intent for discover-workspace guidance'),
         search: z.string().optional().describe('Optional workspace search string for discover-workspace guidance'),
         workspaceLimit: z.number().optional().describe('Optional workspace result limit for discover-workspace guidance'),
-        contentTypeId: z.number().optional().describe('Required for author-content guidance'),
+        contentTypeId: z.number().optional().describe('Optional for author-content guidance; omit it to get schema-design guidance before a target content type exists'),
         reviewTaskId: z.number().optional().describe('Optional review task to prioritize for review-workflow guidance'),
         contentItemId: z.number().optional().describe('Required for consume-paid-content guidance'),
         offerId: z.number().optional().describe('Optional offer id to prioritize for consume-paid-content guidance'),
@@ -4088,10 +4088,6 @@ server.tool(
         }
 
         if (taskId === 'author-content') {
-            if (contentTypeId === undefined) {
-                return err('MISSING_CONTENT_TYPE_ID: guide_task author-content requires contentTypeId.');
-            }
-
             let contentType: {
                 id: number;
                 name: string;
@@ -4117,7 +4113,7 @@ server.tool(
             } | null = null;
             const warnings: string[] = [];
 
-            if (canInspectContent(currentActor)) {
+            if (contentTypeId !== undefined && canInspectContent(currentActor)) {
                 const [type] = await db.select().from(contentTypes).where(and(
                     eq(contentTypes.id, contentTypeId),
                     eq(contentTypes.domainId, domainId),
@@ -4154,7 +4150,7 @@ server.tool(
                         })),
                     };
                 }
-            } else {
+            } else if (contentTypeId !== undefined) {
                 warnings.push('Schema inspection is unavailable until the current actor has content read access.');
             }
 

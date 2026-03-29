@@ -1202,6 +1202,12 @@ describe('MCP HTTP transport', () => {
             data: { id: number };
         };
 
+        const authorSchemaGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'author-content',
+            }
+        });
         const authorGuide = await client.callTool({
             name: 'guide_task',
             arguments: {
@@ -1233,6 +1239,9 @@ describe('MCP HTTP transport', () => {
             }
         });
 
+        const authorSchemaGuideJson = JSON.parse(
+            extractFirstText(authorSchemaGuide.content as Array<{ type: string; text?: string }>),
+        );
         const authorGuideJson = JSON.parse(
             extractFirstText(authorGuide.content as Array<{ type: string; text?: string }>),
         );
@@ -1246,6 +1255,22 @@ describe('MCP HTTP transport', () => {
             extractFirstText(actorProvenanceGuide.content as Array<{ type: string; text?: string }>),
         );
 
+        expect(authorSchemaGuideJson).toEqual(expect.objectContaining({
+            taskId: 'author-content',
+            reactiveRecommendation: null,
+            guide: expect.objectContaining({
+                mode: 'schema-design',
+                contentTypeId: null,
+                schemaDesignGuidance: expect.objectContaining({
+                    available: true,
+                    patterns: expect.arrayContaining([
+                        expect.objectContaining({ id: 'memory' }),
+                        expect.objectContaining({ id: 'task-log' }),
+                        expect.objectContaining({ id: 'checkpoint' }),
+                    ]),
+                }),
+            }),
+        }));
         expect(authorGuideJson).toEqual(expect.objectContaining({
             taskId: 'author-content',
             reactiveRecommendation: expect.objectContaining({

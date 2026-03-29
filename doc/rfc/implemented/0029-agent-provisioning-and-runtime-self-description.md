@@ -1,19 +1,19 @@
 # RFC 0029: Agent Provisioning and Runtime Self-Description
 
 **Author:** Codex  
-**Status:** Rolling out  
+**Status:** Implemented  
 **Date:** 2026-03-29  
 **Tracking Issue:** #175  
 
 ## 1. Summary
 
-Real onboarding sessions with OpenClaw and Claude Code showed that WordClaw's runtime is already strong once an agent is connected, authenticated, and pointed at a valid domain, but the **first-contact provisioning path** is still under-specified. Agents can discover capabilities after connection, yet they still hit avoidable friction around first-domain bootstrap, effective auth posture, vector RAG readiness, embedding completion, agent-oriented schema design, and framework-specific MCP setup.
+Real onboarding sessions with OpenClaw and Claude Code showed that WordClaw's runtime is already strong once an agent is connected, authenticated, and pointed at a valid domain, but the **first-contact provisioning path** was under-specified. Agents could discover capabilities after connection, yet they still hit avoidable friction around first-domain bootstrap, effective auth posture, vector RAG readiness, embedding completion, agent-oriented schema design, and framework-specific MCP setup.
 
 This RFC proposes a **first-contact provisioning contract** across REST, MCP, CLI, and docs. The contract adds explicit bootstrap readiness to `GET /api/capabilities` and `GET /api/deployment-status`, introduces guided domain bootstrap and a new `guide_task("bootstrap-workspace")`, surfaces effective auth and RAG posture without relying on startup logs, makes embedding sync state queryable, and version-gates framework-specific integration guidance with a REST-first fallback.
 
 The goal is not to hide runtime reality from agents. The goal is to make the runtime describe that reality clearly enough that an agent can bootstrap itself without guessing, sleeping blindly, or dropping to SQL.
 
-## 1.1 Implemented So Far
+## 1.1 Implemented
 
 - capability and deployment discovery now surface effective auth posture, domain bootstrap state, and vector RAG readiness in-band
 - first-domain bootstrap is now available over REST with `POST /api/domains`
@@ -21,6 +21,7 @@ The goal is not to hide runtime reality from agents. The goal is to make the run
 - `guide_task("bootstrap-workspace")` now returns live actor-aware bootstrap guidance
 - content writes fail with `NO_DOMAIN` on empty installs instead of surfacing a raw database foreign-key failure
 - deployment status now exposes live embedding runtime health, and content reads now expose per-item `embeddingReadiness` for the latest published snapshot
+- `guide_task("author-content")` and `content guide` now return schema-design guidance, starter schema-manifest patterns, and embedding/chunking notes when no content type is known yet
 - capability discovery now includes a `toolEquivalence` map so agents can pivot between REST, MCP, GraphQL compatibility, and CLI during bootstrap
 - deployment status now exposes supervisor UI readiness and startup hints through `checks.ui`
 - the CLI now includes `wordclaw provision --agent <framework>` for OpenClaw, Codex, Claude Code, and Cursor snippets, with explicit `--write` support where safe

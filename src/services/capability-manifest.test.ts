@@ -454,6 +454,11 @@ describe('buildCapabilityManifest', () => {
                     id: 'author-content',
                     dryRunRecommended: true,
                     recommendedApiKeyScopes: ['content:write'],
+                    steps: expect.arrayContaining([
+                        expect.objectContaining({
+                            operation: 'guide_task { taskId: "author-content" }',
+                        }),
+                    ]),
                     reactiveFollowUp: expect.objectContaining({
                         recipeId: 'content-lifecycle',
                         recommendedFilters: ['contentTypeId'],

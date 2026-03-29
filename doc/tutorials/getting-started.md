@@ -65,6 +65,8 @@ Before you start, it helps to know which parts of WordClaw are stable versus sti
 
    `AUTH_REQUIRED=false` only relaxes public discovery. Write-capable requests still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is enabled in a non-production environment. Fresh installs also need at least one domain before creating content types or content items; check `GET /api/deployment-status` to confirm bootstrap readiness. That same deployment snapshot now reports `checks.embeddings` for semantic-index health and `checks.ui` for whether the supervisor is already being served from `/ui/` or still expects `npm run dev:all`. `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). `ALLOW_INSECURE_LOCAL_ADMIN` should stay `false` unless you are intentionally running a local-only dev environment without API keys. The three `ENABLE_EXPERIMENTAL_*` flags stay off by default and should only be enabled if you explicitly want those incubator surfaces available. If you enable experimental autonomous runs, the worker interval and batch-size knobs let you tune execution cadence without changing code. Asset storage defaults to the local filesystem; set `ASSET_STORAGE_PROVIDER=s3` plus the corresponding bucket, region, and credentials if you want S3-compatible object storage or direct provider uploads.
 
+   For the fuller environment reference, see [Runtime Configuration](../reference/runtime-configuration.md).
+
 5. **Run database migrations**
 
    ```bash
@@ -111,6 +113,8 @@ docker run --rm -p 4000:4000 \
 
 Set `RUN_DB_MIGRATIONS=false` if you need to manage migrations separately from the container startup.
 
+For the GitHub Container Registry path and deployment-specific notes, see [Docker Deployment](../guides/docker-deployment.md).
+
 ## Start the Local MCP Server
 
 For AI agent integration over local stdio:
@@ -145,6 +149,7 @@ npx tsx src/cli/index.ts capabilities show
 npx tsx src/cli/index.ts capabilities status
 npx tsx src/cli/index.ts capabilities whoami
 npx tsx src/cli/index.ts workspace guide
+npx tsx src/cli/index.ts content guide
 npx tsx src/cli/index.ts content guide --content-type-id 1
 npx tsx src/cli/index.ts integrations guide
 npx tsx src/cli/index.ts audit guide --entity-type content_item --entity-id 123
@@ -239,6 +244,7 @@ node dist/cli/index.js workspace guide --intent authoring --search article
 node dist/cli/index.js workspace resolve --intent review
 
 # 5. Ask for task-specific guidance
+node dist/cli/index.js content guide
 node dist/cli/index.js content guide --content-type-id 1
 node dist/cli/index.js audit guide --entity-type content_item --entity-id 123
 node dist/cli/index.js workflow guide

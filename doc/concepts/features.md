@@ -13,6 +13,7 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 - **Reverse References** — Content items and assets expose usage graphs derived from current rows plus historical versions, so operators can inspect impact before deleting, purging, or restructuring linked records.
 - **Preview Tokens** — Short-lived, domain-scoped preview tokens expose one content item or global through dedicated preview paths without turning draft access into a general-purpose bypass.
 - **Schema Manifests** — Optional editor-oriented manifests compile into canonical JSON Schema so supervisors can model fields, arrays, groups, references, and constrained block sets without hand-authoring raw schemas for every routine change.
+- **Guided Schema Bootstrap** — `content guide` and `guide_task("author-content")` can now return starter schema-manifest patterns for `memory`, `task-log`, and `checkpoint` models before a content type exists, along with semantic-indexing notes for retrieval-friendly field design.
 - **Generated Client Artifacts** — The CLI can generate runtime helpers, TypeScript types, Zod validators, and a small client wrapper from live content schemas plus capability metadata.
 - **Public Write Lanes and Lifecycle Policies** — Schemas can explicitly allow bounded public writes and TTL-based lifecycle archival for ephemeral session-like content.
 - **Reusable Forms** — First-class form definitions map bounded public intake flows onto content types, optional workflow transitions, optional L402 payment enforcement, and job-backed webhook follow-ups.

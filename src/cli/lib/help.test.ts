@@ -43,7 +43,7 @@ describe('buildUsage', () => {
 
         expect(usage).toContain('WordClaw CLI: content');
         expect(usage).toContain('wordclaw content <subcommand> [options]');
-        expect(usage).toContain('content guide --content-type-id <n>');
+        expect(usage).toContain('content guide [--content-type-id <n>]');
         expect(usage).toContain('content project --content-type-id <n> --group-by <value>');
         expect(usage).toContain('content list [--content-type-id <n>] [--status <value>] [--q <value>] [--published] [--locale <value>] [--fallback-locale <value>] [--created-after <iso>] [--created-before <iso>] [--field-name <value>] [--field-op eq|contains|gte|lte] [--field-value <value>] [--sort-field <value>]');
         expect(usage).toContain('content used-by --id <n>');
@@ -59,7 +59,7 @@ describe('buildUsage', () => {
         expect(usage).toContain('assets list [--q <value>] [--access-mode public|signed|entitled]');
         expect(usage).toContain('assets used-by --id <n>');
         expect(usage).toContain('wordclaw assets create --content-file ./hero.png --mime-type image/png --access-mode signed');
-        expect(usage).not.toContain('content guide --content-type-id <n>');
+        expect(usage).not.toContain('content guide [--content-type-id <n>]');
     });
 
     it('builds scoped schema help', () => {

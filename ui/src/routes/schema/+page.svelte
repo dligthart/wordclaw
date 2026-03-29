@@ -34,6 +34,7 @@
         description?: string;
         required?: boolean;
         localized?: boolean;
+        options?: string[];
         itemType?: string;
         fields?: ManifestField[];
         blocks?: ManifestBlock[];
@@ -71,6 +72,15 @@
         required: boolean;
         kind: "field" | "container" | "block";
         description?: string;
+    };
+    type ManifestStarter = {
+        id: string;
+        name: string;
+        slug: string;
+        description: string;
+        summary: string;
+        searchableFields: string[];
+        manifest: ManifestDocument;
     };
 
     let types = $state<ContentType[]>([]);
@@ -137,6 +147,122 @@
         null,
         2,
     );
+    const manifestStarters: ManifestStarter[] = [
+        {
+            id: "memory",
+            name: "Agent Memory",
+            slug: "agent-memory",
+            description:
+                "Durable memory entries optimized for search and resumable agent workflows.",
+            summary:
+                "Stores durable facts with a stable key, compact summary text, tags, lifecycle state, and provenance.",
+            searchableFields: ["summary", "details"],
+            manifest: {
+                title: "Agent Memory",
+                description:
+                    "Durable memory entries optimized for retrieval.",
+                fields: [
+                    { name: "memoryKey", type: "text", required: true },
+                    { name: "subjectId", type: "text", required: true },
+                    { name: "summary", type: "text", required: true },
+                    { name: "details", type: "textarea" },
+                    { name: "tags", type: "array", itemType: "text" },
+                    {
+                        name: "status",
+                        type: "select",
+                        required: true,
+                        options: ["active", "stale", "archived"],
+                    },
+                    {
+                        name: "provenance",
+                        type: "group",
+                        fields: [
+                            { name: "source", type: "text" },
+                            { name: "capturedBy", type: "text" },
+                            { name: "capturedAt", type: "text" },
+                        ],
+                    },
+                ],
+            },
+        },
+        {
+            id: "task-log",
+            name: "Task Log",
+            slug: "task-log",
+            description:
+                "Execution log entries for agent runs with lifecycle retention and audit-oriented provenance.",
+            summary:
+                "Captures per-run checkpoints with short searchable summaries and optional long-form detail.",
+            searchableFields: ["summary", "detail"],
+            manifest: {
+                title: "Task Log",
+                description: "Execution log entries for agent runs.",
+                lifecycle: {
+                    ttlSeconds: 2592000,
+                    archiveStatus: "expired",
+                    clock: "updatedAt",
+                },
+                fields: [
+                    { name: "runId", type: "text", required: true },
+                    { name: "stepKey", type: "text", required: true },
+                    { name: "summary", type: "text", required: true },
+                    { name: "detail", type: "textarea" },
+                    { name: "tags", type: "array", itemType: "text" },
+                    {
+                        name: "status",
+                        type: "select",
+                        required: true,
+                        options: ["queued", "running", "succeeded", "failed"],
+                    },
+                    {
+                        name: "provenance",
+                        type: "group",
+                        fields: [
+                            { name: "actorId", type: "text" },
+                            { name: "actorType", type: "text" },
+                            { name: "source", type: "text" },
+                        ],
+                    },
+                ],
+            },
+        },
+        {
+            id: "checkpoint",
+            name: "Checkpoint",
+            slug: "checkpoint",
+            description:
+                "Resumable state snapshots for agent handoff and low-memory continuation.",
+            summary:
+                "Stores stable checkpoint ids, searchable summaries, state payloads, and provenance for resume flows.",
+            searchableFields: ["summary"],
+            manifest: {
+                title: "Checkpoint",
+                description: "Resumable agent checkpoint snapshots.",
+                fields: [
+                    { name: "checkpointKey", type: "text", required: true },
+                    { name: "parentCheckpointKey", type: "text" },
+                    { name: "summary", type: "text", required: true },
+                    { name: "stateJson", type: "textarea" },
+                    { name: "tags", type: "array", itemType: "text" },
+                    {
+                        name: "status",
+                        type: "select",
+                        required: true,
+                        options: ["active", "superseded", "invalid"],
+                    },
+                    {
+                        name: "provenance",
+                        type: "group",
+                        fields: [
+                            { name: "reason", type: "text" },
+                            { name: "capturedBy", type: "text" },
+                            { name: "capturedAt", type: "text" },
+                        ],
+                    },
+                ],
+            },
+        },
+    ];
 
     onMount(async () => {
         await loadTypes();
@@ -558,6 +684,20 @@
         };
     }
 
+    function applyManifestStarter(starter: ManifestStarter) {
+        editingSourceMode = "manifest";
+        editingSchemaManifestStr = JSON.stringify(starter.manifest, null, 2);
+        compiledSchemaPreviewStr = "";
+        compiledSchemaPreviewError = null;
+        schemaError = null;
+
+        if (isCreating) {
+            if (!editingName.trim()) editingName = starter.name;
+            if (!editingSlug.trim()) editingSlug = starter.slug;
+            if (!editingDesc.trim()) editingDesc = starter.description;
+        }
+    }
+
     async function refreshManifestPreview() {
         schemaError = null;
         compiledSchemaPreviewError = null;
@@ -718,7 +858,8 @@
                 Schema Manager
             </h2>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Govern the data shapes that content agents produce.
+                Govern the data shapes that content agents produce, including
+                manifest-first starter patterns for resumable agent workflows.
             </p>
         </div>
         <Button onclick={startCreate} disabled={isCreating}>
@@ -884,6 +1025,97 @@
                                         : "Schema mode edits the canonical JSON Schema directly and clears any stored manifest on save."}
                                 </p>
                             </div>
+                            {#if editingSourceMode === "manifest"}
+                                <Surface tone="muted" class="p-4">
+                                    <div
+                                        class="flex items-start justify-between gap-3"
+                                    >
+                                        <div>
+                                            <h4
+                                                class="text-sm font-semibold text-slate-900 dark:text-slate-100"
+                                            >
+                                                Agent Starter Manifests
+                                            </h4>
+                                            <p
+                                                class="mt-1 text-[0.72rem] text-slate-500 dark:text-slate-400"
+                                            >
+                                                Use these schema-design
+                                                starters when no content model
+                                                exists yet and the runtime needs
+                                                an agent-friendly memory,
+                                                task-log, or checkpoint shape.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 grid gap-3">
+                                        {#each manifestStarters as starter}
+                                            <button
+                                                type="button"
+                                                onclick={() =>
+                                                    applyManifestStarter(starter)}
+                                                disabled={!isEditing}
+                                                class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950/40 dark:hover:border-slate-600 dark:hover:bg-slate-900/60"
+                                            >
+                                                <div
+                                                    class="flex items-start justify-between gap-3"
+                                                >
+                                                    <div>
+                                                        <div
+                                                            class="text-sm font-semibold text-slate-900 dark:text-slate-100"
+                                                        >
+                                                            {starter.name}
+                                                        </div>
+                                                        <p
+                                                            class="mt-1 text-[0.74rem] text-slate-500 dark:text-slate-400"
+                                                        >
+                                                            {starter.summary}
+                                                        </p>
+                                                    </div>
+                                                    <span
+                                                        class="rounded-full bg-slate-100 px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                                    >
+                                                        {starter.searchableFields.join(
+                                                            ", ",
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        {/each}
+                                    </div>
+                                    <div
+                                        class="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-[0.72rem] text-slate-600 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-300"
+                                    >
+                                        Semantic indexing currently favors
+                                        top-level summary/title/body-style
+                                        fields and skips metadata keys such as
+                                        <code class="font-mono text-[0.68rem]"
+                                            >slug</code
+                                        >,
+                                        <code class="font-mono text-[0.68rem]"
+                                            >coverImage</code
+                                        >,
+                                        <code class="font-mono text-[0.68rem]"
+                                            >authorId</code
+                                        >,
+                                        <code class="font-mono text-[0.68rem]"
+                                            >category</code
+                                        >,
+                                        <code class="font-mono text-[0.68rem]"
+                                            >readTimeMinutes</code
+                                        >,
+                                        <code class="font-mono text-[0.68rem]"
+                                            >avatarUrl</code
+                                        >,
+                                        <code class="font-mono text-[0.68rem]"
+                                            >socialLinks</code
+                                        >, and
+                                        <code class="font-mono text-[0.68rem]"
+                                            >id</code
+                                        >. Keep retrieval-critical text in
+                                        concise top-level fields.
+                                    </div>
+                                </Surface>
+                            {/if}
                             <div class="flex gap-4">
                                 <div class="flex-1">
                                     <label

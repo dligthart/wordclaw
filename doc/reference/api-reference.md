@@ -24,7 +24,7 @@ The fastest task-oriented preflight sequence is:
    - `mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`
    - `workspace guide`
    - `workspace resolve --intent <intent>`
-   - `content guide --content-type-id <id>`
+   - `content guide` or `content guide --content-type-id <id>`
    - `workflow guide`
    - `integrations guide`
    - `audit guide --entity-type <type> --entity-id <id>`

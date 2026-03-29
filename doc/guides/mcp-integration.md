@@ -159,6 +159,7 @@ For `author-content`, `review-workflow`, `manage-integrations`, and `verify-prov
 - `filters` narrows the runtime stream to the current schema, review task, actor, or entity
 - `subscribe` contains the exact `subscribe_events` arguments the agent can send next
 - `available=false` and `subscribe=null` mean the current actor is missing the scopes required for the recommended stream
+- `author-content` returns `reactiveRecommendation=null` until a concrete `contentTypeId` is known, because the schema-design bootstrap path has nothing specific to subscribe to yet
 
 ## Starting the Local MCP Server
 
@@ -447,7 +448,7 @@ Current task ids exposed through `guide_task`:
 
 - `discover-deployment`
 - `discover-workspace`
-- `author-content` with `contentTypeId`
+- `author-content` with optional `contentTypeId`
 - `review-workflow` with optional `reviewTaskId`
 - `manage-integrations`
 - `verify-provenance` with optional `actorId`, `actorType`, `entityType`, `entityId`, `action`, and `limit`
@@ -455,7 +456,7 @@ Current task ids exposed through `guide_task`:
 
 Reactive guidance today is attached to these `guide_task` flows:
 
-- `author-content` recommends the `content-lifecycle` recipe scoped by `contentTypeId`
+- `author-content` returns schema-design guidance when `contentTypeId` is omitted, and recommends the `content-lifecycle` recipe once `contentTypeId` is known
 - `review-workflow` recommends the `review-decisions` recipe and narrows to `reviewTaskId` when provided
 - `manage-integrations` recommends the `integration-admin` recipe for API key and webhook changes
 - `verify-provenance` recommends either a scoped recipe (`content-lifecycle`, `schema-governance`, `integration-admin`) or a filtered `audit.*` subscription for actor-centric provenance checks
@@ -464,7 +465,7 @@ Static discovery surfaces now expose the same idea one layer earlier:
 
 - `system://agent-guidance` and `GET /api/capabilities` include `taskRecipes[*].reactiveFollowUp`
 - `task-guidance` includes the same follow-up as text, including an example `subscribe_events` payload
-- `guide_task` remains the live refinement layer when the agent knows concrete ids such as `contentTypeId`, `reviewTaskId`, or an actor/entity filter set
+- `guide_task` remains the live refinement layer when the agent knows concrete ids such as `contentTypeId`, `reviewTaskId`, or an actor/entity filter set, but `guide_task { "taskId": "author-content" }` is also the bootstrap path when no schema exists yet
 
 ## Response Format
 

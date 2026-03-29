@@ -1657,10 +1657,6 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
 
     if (action === 'guide') {
         const contentTypeId = getNumberFlag(args, 'content-type-id');
-        if (contentTypeId === undefined) {
-            throw new Error('content guide requires --content-type-id.');
-        }
-
         const actorResult = await tryFetchCurrentActor(client);
         const currentActor = actorResult.currentActor;
         const warnings = [...actorResult.warnings];
@@ -1690,44 +1686,46 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
         let contentType: ContentGuideContentType | null = null;
         let workflow: ContentGuideWorkflow | null | undefined = undefined;
 
-        try {
-            const response = await client.request({
-                method: 'GET',
-                path: `/content-types/${contentTypeId}`,
-            });
-            const body = requireJsonMap(response.body, 'Content guide response');
-            const data = body.data;
-            if (data && typeof data === 'object' && !Array.isArray(data)) {
-                contentType = data as ContentGuideContentType;
-            }
-        } catch (error) {
-            const code = extractErrorCode(error);
-            if (isMissingActorErrorCode(code)) {
-                warnings.push('Schema inspection is unavailable until an authenticated actor with content access is configured.');
-            } else {
-                throw error;
-            }
-        }
-
-        if (contentType) {
+        if (contentTypeId !== undefined) {
             try {
                 const response = await client.request({
                     method: 'GET',
-                    path: `/content-types/${contentTypeId}/workflows/active`,
+                    path: `/content-types/${contentTypeId}`,
                 });
-                const body = requireJsonMap(response.body, 'Content guide workflow response');
+                const body = requireJsonMap(response.body, 'Content guide response');
                 const data = body.data;
                 if (data && typeof data === 'object' && !Array.isArray(data)) {
-                    workflow = data as ContentGuideWorkflow;
+                    contentType = data as ContentGuideContentType;
                 }
             } catch (error) {
                 const code = extractErrorCode(error);
-                if (code === 'WORKFLOW_NOT_FOUND') {
-                    workflow = null;
-                } else if (isMissingActorErrorCode(code)) {
-                    warnings.push('Active workflow inspection is unavailable until an authenticated actor with content access is configured.');
+                if (isMissingActorErrorCode(code)) {
+                    warnings.push('Schema inspection is unavailable until an authenticated actor with content access is configured.');
                 } else {
                     throw error;
+                }
+            }
+
+            if (contentType) {
+                try {
+                    const response = await client.request({
+                        method: 'GET',
+                        path: `/content-types/${contentTypeId}/workflows/active`,
+                    });
+                    const body = requireJsonMap(response.body, 'Content guide workflow response');
+                    const data = body.data;
+                    if (data && typeof data === 'object' && !Array.isArray(data)) {
+                        workflow = data as ContentGuideWorkflow;
+                    }
+                } catch (error) {
+                    const code = extractErrorCode(error);
+                    if (code === 'WORKFLOW_NOT_FOUND') {
+                        workflow = null;
+                    } else if (isMissingActorErrorCode(code)) {
+                        warnings.push('Active workflow inspection is unavailable until an authenticated actor with content access is configured.');
+                    } else {
+                        throw error;
+                    }
                 }
             }
         }

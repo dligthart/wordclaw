@@ -206,6 +206,7 @@ node dist/cli/index.js mcp prompt task-guidance --json '{"taskId":"author-conten
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-deployment"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-workspace"}'
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"author-content"}'
 node dist/cli/index.js mcp call create_domain --json '{"name":"Local Development","hostname":"local.development"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"manage-integrations"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}'
@@ -529,6 +530,7 @@ node dist/cli/index.js content list --content-type-id 12 --limit 20 --cursor <ne
 node dist/cli/index.js content list --content-type-id 12 --include-archived --limit 20
 node dist/cli/index.js content project --content-type-id 12 --group-by characterClass --metric avg --metric-field score
 node dist/cli/index.js content project --content-type-id 12 --group-by sessionId --include-archived
+node dist/cli/index.js content guide
 node dist/cli/index.js content guide --content-type-id 12
 node dist/cli/index.js content ls --status draft --raw
 node dist/cli/index.js content get --id 345
@@ -544,7 +546,7 @@ node dist/cli/index.js content delete --id 345
 
 Supported features:
 
-- actor-aware authoring guidance for a target content schema
+- actor-aware authoring guidance, including schema-design help before a target content type exists
 - filtered list views
 - cursor pagination via `--cursor` for large result sets
 - locale-aware reads via `--locale` and `--fallback-locale`
@@ -561,19 +563,27 @@ Supported features:
 - delete
 - dry-run mode where the REST API supports it
 
-`content guide` is the quickest way for an agent to prepare a write. It combines:
+`content guide` is the quickest way for an agent to prepare a write or bootstrap a new authoring model.
+
+With `--content-type-id`, it combines:
 
 - the current actor snapshot from `/api/identity`
 - the selected content type schema from `/api/content-types/:id`
 - the active workflow, if any, from `/api/content-types/:id/workflows/active`
 
+Without `--content-type-id`, it returns schema-design guidance instead:
+
+- starter schema-manifest patterns for `memory`, `task-log`, and `checkpoint`
+- explicit embedding/chunking notes, including which top-level fields are skipped during semantic indexing
+- guidance on stable identifiers, tags, lifecycle, provenance, and concise searchable summary fields
+
 The guide tells you:
 
-- whether the current actor can write against this schema
-- which top-level fields are required
-- an example draft payload shape
-- whether an active review workflow exists
-- the recommended dry-run, create, and submit-for-review commands
+- whether the current actor can write against the selected schema or create a new one
+- which top-level fields are required when a concrete schema is selected
+- an example draft payload shape for schema-bound writes
+- whether an active review workflow exists for the selected schema
+- the recommended schema-create, dry-run, create, and submit-for-review commands for the current mode
 
 ### Assets
 
