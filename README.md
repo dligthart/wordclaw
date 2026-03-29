@@ -85,6 +85,7 @@ Live verification helpers now live under `scripts/verification/` and are exposed
 ### Agent and Operator Surfaces
 
 - [CLI Guide](doc/guides/cli-guide.md)
+- [Claude/OpenClaw Memory + RAG](doc/guides/claude-openclaw-memory-rag.md)
 - [MCP Integration](doc/guides/mcp-integration.md)
 - [API Reference](doc/reference/api-reference.md)
 - [LangGraph MCP Starter](doc/guides/langgraph-mcp-starter.md)

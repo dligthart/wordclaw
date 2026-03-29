@@ -171,6 +171,7 @@ wordclaw mcp call create_webhook '{
 
 ## Further Reading
 
+- [Using WordClaw as Durable Memory and RAG for Claude Code and OpenClaw](../claude-openclaw-memory-rag.md)
 - [WordClaw MCP Integration Guide](../mcp-integration.md)
 - [WordClaw CLI Guide](../cli-guide.md)
 - [OpenClaw Documentation](https://docs.openclaw.ai)

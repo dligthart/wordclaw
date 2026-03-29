@@ -26,6 +26,8 @@ Different agent clients expect MCP config in different places. Use `wordclaw pro
 | Claude Code | `wordclaw provision --agent claude-code --scope project` | `.mcp.json` | `~/.claude.json` | WordClaw only writes project-scoped `.mcp.json` directly |
 | Cursor | `wordclaw provision --agent cursor --scope project` | `.cursor/mcp.json` | `~/.cursor/mcp.json` | JSON config for project or user scope |
 
+For the durable-memory and semantic-retrieval pattern on top of those MCP connections, see [Using WordClaw as Durable Memory and RAG for Claude Code and OpenClaw](./claude-openclaw-memory-rag.md).
+
 ## REST-First Fallback
 
 Some client builds lag on MCP registry UX, and some operators want to bootstrap the workspace before wiring MCP at all. The supported fallback is:

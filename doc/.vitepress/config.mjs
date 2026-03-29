@@ -25,6 +25,7 @@ export default withMermaid(defineConfig({
                 text: 'Guides',
                 items: [
                     { text: 'Documentation Standards', link: '/guides/documentation-standards' },
+                    { text: 'Claude/OpenClaw Memory + RAG', link: '/guides/claude-openclaw-memory-rag' },
                     { text: 'CI Migrations and Tests Troubleshooting', link: '/guides/ci-migrations-troubleshooting' },
                     { text: 'Blog Integration', link: '/guides/blog-integration-guide' },
                     { text: 'CLI Guide', link: '/guides/cli-guide' },

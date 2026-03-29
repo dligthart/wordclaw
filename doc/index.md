@@ -25,6 +25,7 @@ features:
 ## Quick Paths
 
 - [Run WordClaw locally](/tutorials/getting-started) to start the API, database, supervisor UI, and MCP surface.
+- [Use WordClaw as durable memory and RAG for Claude Code and OpenClaw](/guides/claude-openclaw-memory-rag) when you want agent memory outside the chat transcript.
 - [Review runtime configuration](/reference/runtime-configuration) before changing auth, embeddings, asset storage, previews, or payments.
 - [Check the roadmap](/reference/roadmap) for current product direction and release focus.
 - [Connect an external agent with MCP](/guides/mcp-integration) to inspect tools, resources, prompts, actor identity, and workspace context.
