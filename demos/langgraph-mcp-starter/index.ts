@@ -49,8 +49,16 @@ const DEMO_TASKS: Record<string, string> = {
     authoring: [
         "Inspect WordClaw first.",
         "Then resolve the current authoring workspace and identify the best content schema to write against.",
-        "If a schema is available, explain the required fields and propose the exact next create_content_item payload for a draft item.",
+        "If no schema exists yet, call guide_task for author-content and summarize the memory, task-log, and checkpoint starter patterns.",
+        "If a schema is available, explain the required fields and propose the exact next create_content_item payload for a dry-run draft item.",
         "Do not create the item unless I explicitly ask you to.",
+    ].join(" "),
+    memory: [
+        "Inspect WordClaw first.",
+        "Then determine whether the workspace already has a suitable memory or checkpoint schema.",
+        "If not, call guide_task for author-content and summarize the starter schema-manifest patterns for memory, task-log, and checkpoint content.",
+        "If a memory-like schema does exist, explain how to write durable facts with create_content_item dry runs, how to read them back deterministically, and when to use search_semantic_knowledge for fuzzy retrieval.",
+        "Do not mutate data unless I explicitly ask you to.",
     ].join(" "),
     review: [
         "Inspect WordClaw first.",
@@ -65,7 +73,7 @@ function printUsage() {
 Usage:
   npx tsx demos/langgraph-mcp-starter/index.ts inspect [--transport stdio|http] [--mcp-url URL] [--api-key KEY]
   npx tsx demos/langgraph-mcp-starter/index.ts run --task "..." [--model gpt-4o-mini] [--transport stdio|http] [--mcp-url URL] [--api-key KEY]
-  npx tsx demos/langgraph-mcp-starter/index.ts demo <workspace|authoring|review> [--model gpt-4o-mini] [--transport stdio|http] [--mcp-url URL] [--api-key KEY]
+  npx tsx demos/langgraph-mcp-starter/index.ts demo <workspace|authoring|memory|review> [--model gpt-4o-mini] [--transport stdio|http] [--mcp-url URL] [--api-key KEY]
 
 Examples:
   npx tsx demos/langgraph-mcp-starter/index.ts inspect
@@ -105,7 +113,7 @@ function parseArgs(argv: string[]): CliOptions {
     if (command === "demo") {
         demoName = commandArgs[0];
         if (!demoName || demoName.startsWith("--")) {
-            throw new Error("Missing demo name. Use one of: workspace, authoring, review.");
+            throw new Error("Missing demo name. Use one of: workspace, authoring, memory, review.");
         }
     }
 

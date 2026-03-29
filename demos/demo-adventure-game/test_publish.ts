@@ -1,12 +1,44 @@
 import fetch from 'node-fetch';
 import * as dotenv from 'dotenv';
+import { eq } from 'drizzle-orm';
+
+import { db } from '../../src/db/index.js';
+import { domains } from '../../src/db/schema.js';
+import { createApiKey } from '../../src/services/api-key.js';
+
 dotenv.config({ path: '../../.env' });
 dotenv.config();
 
-const WORDCLAW_API_KEY = process.env.WORDCLAW_API_KEY;
+let WORDCLAW_API_KEY = process.env.WORDCLAW_API_KEY;
 const WORDCLAW_API_URL = process.env.WORDCLAW_API_URL || 'http://localhost:4000/api';
 
+async function ensureWordClawApiKey() {
+    if (WORDCLAW_API_KEY) {
+        return WORDCLAW_API_KEY;
+    }
+
+    let [domain] = await db.insert(domains).values({
+        name: 'Adventure Game Demo',
+        hostname: 'adventure-game.demo.local'
+    }).onConflictDoNothing().returning();
+
+    if (!domain) {
+        [domain] = await db.select().from(domains).where(eq(domains.hostname, 'adventure-game.demo.local')).limit(1);
+    }
+
+    const { plaintext } = await createApiKey({
+        domainId: domain.id,
+        name: 'Adventure Game Test Publish Key',
+        scopes: ['content:read', 'content:write']
+    });
+
+    WORDCLAW_API_KEY = plaintext;
+    return WORDCLAW_API_KEY;
+}
+
 async function seedMockData() {
+    await ensureWordClawApiKey();
+
     // 1. Get published-story-v3 ContentType ID
     console.log("Fetching schemas...");
     const snRes = await fetch(`${WORDCLAW_API_URL}/content-types?limit=500`, {

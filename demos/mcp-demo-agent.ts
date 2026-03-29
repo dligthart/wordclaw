@@ -5,8 +5,11 @@
  *   npx tsx demos/mcp-demo-agent.ts inspect
  *   npx tsx demos/mcp-demo-agent.ts smoke
  *   npx tsx demos/mcp-demo-agent.ts call list_content_types '{}'
+ *   npx tsx demos/mcp-demo-agent.ts call guide_task '{"taskId":"author-content"}'
+ *   npx tsx demos/mcp-demo-agent.ts call search_semantic_knowledge '{"query":"approval workflow","limit":3}'
  *   npx tsx demos/mcp-demo-agent.ts prompt workflow-guidance
- *   npx tsx demos/mcp-demo-agent.ts resource system://capabilities
+  *   npx tsx demos/mcp-demo-agent.ts resource system://capabilities
+ *   npx tsx demos/mcp-demo-agent.ts resource system://deployment-status
  *   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin --once
  *   npx tsx demos/mcp-demo-agent.ts watch api_key.create --transport http --api-key remote-admin --once
  *   npx tsx demos/mcp-demo-agent.ts watch --recipe integration-admin --transport http --api-key remote-admin --once
@@ -85,9 +88,12 @@ Usage:
 Examples:
   npx tsx demos/mcp-demo-agent.ts inspect
   npx tsx demos/mcp-demo-agent.ts call list_content_types
+  npx tsx demos/mcp-demo-agent.ts call guide_task '{"taskId":"author-content"}'
+  npx tsx demos/mcp-demo-agent.ts call search_semantic_knowledge '{"query":"approval workflow","limit":3}'
   npx tsx demos/mcp-demo-agent.ts call get_content_items '{"status":"draft","limit":5}'
   npx tsx demos/mcp-demo-agent.ts prompt content-generation-template '{"contentTypeId":"12","topic":"AI governance"}'
   npx tsx demos/mcp-demo-agent.ts resource system://capabilities
+  npx tsx demos/mcp-demo-agent.ts resource system://deployment-status
   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin
   npx tsx demos/mcp-demo-agent.ts watch content_item.published --transport http --api-key remote-admin --filters '{"contentTypeId":12}'
   npx tsx demos/mcp-demo-agent.ts watch api_key.create --transport http --api-key remote-admin --once
@@ -473,6 +479,21 @@ async function main() {
         if (command === 'inspect') {
             const discovery = await inspectCapabilities(client);
             console.log('\n=== Discovery ===');
+            if (discovery.currentActor) {
+                console.log('Current actor:');
+                console.log(JSON.stringify(discovery.currentActor, null, 2));
+            }
+
+            if (discovery.deploymentStatus) {
+                console.log('\nDeployment status:');
+                console.log(JSON.stringify(discovery.deploymentStatus, null, 2));
+            }
+
+            if (discovery.workspaceContext) {
+                console.log('\nWorkspace context:');
+                console.log(JSON.stringify(discovery.workspaceContext, null, 2));
+            }
+
             console.log(`Tools (${discovery.tools.length})`);
             for (const tool of discovery.tools) {
                 console.log(`- ${tool.name}${tool.description ? `: ${tool.description}` : ''}`);

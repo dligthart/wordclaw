@@ -11,7 +11,28 @@ import { domains } from '../src/db/schema.js';
 import { createApiKey } from '../src/services/api-key.js';
 import { eq } from 'drizzle-orm';
 
-const API_URL = 'http://localhost:4000/api';
+const API_URL = process.env.WORDCLAW_API_URL || 'http://localhost:4000/api';
+
+async function preflightRuntime() {
+    const statusUrl = API_URL.endsWith('/api')
+        ? `${API_URL}/deployment-status`
+        : `${API_URL}/api/deployment-status`;
+
+    try {
+        const response = await fetch(statusUrl);
+        if (!response.ok) {
+            console.warn(`[AGENT] Runtime preflight returned ${response.status}. Continuing...`);
+            return;
+        }
+
+        const payload = await response.json() as any;
+        const bootstrapStatus = payload?.data?.checks?.bootstrap?.status ?? 'unknown';
+        const embeddingsStatus = payload?.data?.checks?.embeddings?.status ?? 'unknown';
+        console.log(`[AGENT] Runtime preflight: bootstrap=${bootstrapStatus}, embeddings=${embeddingsStatus}`);
+    } catch (error) {
+        console.warn(`[AGENT] Runtime preflight failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
 
 async function request(path: string, options: RequestInit = {}, apiKey?: string): Promise<any> {
     const url = `${API_URL}${path}`;
@@ -129,6 +150,7 @@ async function runAgentDemo() {
     console.log("===========================================\n");
 
     try {
+        await preflightRuntime();
         const { apiKey, contentTypeId } = await setupAgentEnvironment();
 
         console.log("\n[AGENT] I am an autonomous AI agent.");

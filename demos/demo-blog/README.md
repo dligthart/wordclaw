@@ -2,13 +2,15 @@
 
 This demo shows a schema-driven blog frontend backed by WordClaw content models.
 
-It reads two content schemas from WordClaw:
+It reads two collection content schemas and one singleton global from WordClaw:
 
 - `demo-author`
 - `demo-blog-post`
+- `demo-blog-settings`
 
 The blog then renders:
 
+- site shell copy from a singleton global
 - a richer post index with featured content
 - author directory and author detail pages
 - category archive pages
@@ -64,6 +66,7 @@ The seeded demo content intentionally exercises:
 ## Notes
 
 - `VITE_WORDCLAW_URL` should point to the WordClaw API base, typically `http://localhost:4000/api`
-- the demo expects WordClaw to return blog and author item payloads in the `data` field
+- the demo reads published snapshots via the current `draft=false` read contract rather than relying on working-copy state
+- the demo expects WordClaw to return blog, author, and global item payloads in the `data` field
 - this demo is read-only; publishing and editorial workflow actions stay in the main WordClaw supervisor/runtime
 - if the page still shows no posts, rerun `npm run demo:seed-blog` so the local `.env` and the demo domain contents are refreshed

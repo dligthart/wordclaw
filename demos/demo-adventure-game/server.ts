@@ -4,23 +4,23 @@ import * as dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { eq } from 'drizzle-orm';
+
+import { db } from '../../src/db/index.js';
+import { domains } from '../../src/db/schema.js';
+import { createApiKey } from '../../src/services/api-key.js';
 
 // Load environment variables
 dotenv.config({ path: '../../.env' });
 dotenv.config();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const WORDCLAW_API_KEY = process.env.WORDCLAW_API_KEY;
+let WORDCLAW_API_KEY = process.env.WORDCLAW_API_KEY;
 // Connect to the local unauthenticated docker environment or your deployed wordclaw api base url
 const WORDCLAW_API_URL = process.env.WORDCLAW_API_URL || 'http://localhost:4000/api';
 
 if (!OPENAI_API_KEY) {
     console.error("❌ OPENAI_API_KEY is not set in .env");
-    process.exit(1);
-}
-
-if (!WORDCLAW_API_KEY) {
-    console.error("❌ WORDCLAW_API_KEY is not set in .env");
     process.exit(1);
 }
 
@@ -33,6 +33,54 @@ let publishedStoryContentTypeId: number | null = null;
 let gameSessionContentTypeId: number | null = null;
 let themePackContentTypeId: number | null = null;
 let characterClassContentTypeId: number | null = null;
+
+async function ensureWordClawApiKey() {
+    if (WORDCLAW_API_KEY) {
+        return WORDCLAW_API_KEY;
+    }
+
+    console.log('🔐 WORDCLAW_API_KEY not provided. Bootstrapping a local demo domain and API key...');
+
+    let [domain] = await db.insert(domains).values({
+        name: 'Adventure Game Demo',
+        hostname: 'adventure-game.demo.local'
+    }).onConflictDoNothing().returning();
+
+    if (!domain) {
+        [domain] = await db.select().from(domains).where(eq(domains.hostname, 'adventure-game.demo.local')).limit(1);
+    }
+
+    const { plaintext } = await createApiKey({
+        domainId: domain.id,
+        name: 'Adventure Game Demo Key',
+        scopes: ['content:read', 'content:write']
+    });
+
+    WORDCLAW_API_KEY = plaintext;
+    console.log('✅ Adventure Game demo key created for local use.');
+    return WORDCLAW_API_KEY;
+}
+
+async function preflightWordClaw() {
+    const deploymentStatusUrl = WORDCLAW_API_URL.endsWith('/api')
+        ? `${WORDCLAW_API_URL}/deployment-status`
+        : `${WORDCLAW_API_URL}/api/deployment-status`;
+
+    try {
+        const response = await fetch(deploymentStatusUrl);
+        if (!response.ok) {
+            console.warn(`⚠️ Deployment preflight returned ${response.status}. Continuing with direct demo bootstrap.`);
+            return;
+        }
+
+        const payload = await response.json() as any;
+        const domainCount = payload?.data?.checks?.bootstrap?.domainCount ?? payload?.data?.domainCount ?? 'unknown';
+        const embeddingsStatus = payload?.data?.checks?.embeddings?.status ?? 'unknown';
+        console.log(`🔎 WordClaw preflight: domainCount=${domainCount}, embeddings=${embeddingsStatus}`);
+    } catch (error) {
+        console.warn(`⚠️ Deployment preflight failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
 
 // Initial setup logic
 async function setupWordclawSchemas() {
@@ -716,7 +764,7 @@ app.get('/api/themes', async (req, res) => {
     try {
         // Fetch published, enabled theme packs from WordClaw CMS
         const fetchRes = await fetch(
-            `${WORDCLAW_API_URL}/content-items?contentTypeId=${themePackContentTypeId}&status=published&fieldName=enabled&fieldOp=eq&fieldValue=true&limit=50`,
+            `${WORDCLAW_API_URL}/content-items?contentTypeId=${themePackContentTypeId}&draft=false&fieldName=enabled&fieldOp=eq&fieldValue=true&limit=50`,
             { headers: { 'x-api-key': WORDCLAW_API_KEY! } }
         );
         const data = await fetchRes.json() as any;
@@ -747,7 +795,7 @@ app.get('/api/themes', async (req, res) => {
 app.get('/api/classes', async (req, res) => {
     try {
         const fetchRes = await fetch(
-            `${WORDCLAW_API_URL}/content-items?contentTypeId=${characterClassContentTypeId}&status=published&fieldName=enabled&fieldOp=eq&fieldValue=true&limit=50`,
+            `${WORDCLAW_API_URL}/content-items?contentTypeId=${characterClassContentTypeId}&draft=false&fieldName=enabled&fieldOp=eq&fieldValue=true&limit=50`,
             { headers: { 'x-api-key': WORDCLAW_API_KEY! } }
         );
         const data = await fetchRes.json() as any;
@@ -780,7 +828,7 @@ app.get('/api/leaderboard', async (req, res) => {
     try {
         // Fetch published stories sorted by final_score descending
         const fetchRes = await fetch(
-            `${WORDCLAW_API_URL}/content-items?contentTypeId=${publishedStoryContentTypeId}&status=published&sortField=final_score&sortDir=desc&limit=25`,
+            `${WORDCLAW_API_URL}/content-items?contentTypeId=${publishedStoryContentTypeId}&draft=false&sortBy=final_score&sortDir=desc&limit=25`,
             { headers: { 'x-api-key': WORDCLAW_API_KEY! } }
         );
         const data = await fetchRes.json() as any;
@@ -1164,7 +1212,7 @@ app.post('/api/load', async (req, res) => {
 
 app.get('/api/stories', async (req, res) => {
     try {
-        const fetchRes = await fetch(`${WORDCLAW_API_URL}/content-items?contentTypeId=${publishedStoryContentTypeId}&status=published&limit=50&sortBy=createdAt&sortDir=desc`, {
+        const fetchRes = await fetch(`${WORDCLAW_API_URL}/content-items?contentTypeId=${publishedStoryContentTypeId}&draft=false&limit=50&sortBy=createdAt&sortDir=desc`, {
             headers: {
                 'x-api-key': WORDCLAW_API_KEY!
             }
@@ -1246,7 +1294,9 @@ app.post('/api/publish', async (req, res) => {
 });
 
 const PORT = 8080;
-setupWordclawSchemas().then(async () => {
+ensureWordClawApiKey().then(async () => {
+    await preflightWordClaw();
+    await setupWordclawSchemas();
     await seedCmsData();
     app.listen(PORT, () => {
         console.log(`🎮 Game Engine Server running on http://localhost:${PORT}`);

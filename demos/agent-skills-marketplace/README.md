@@ -2,8 +2,9 @@
 
 This demo shows the current supported WordClaw paid-content flow:
 
+- deployment and actor discovery before paid reads
 - **Smart Workspace Targeting**: instead of hardcoding content type IDs, the frontend asks the runtime (`GET /api/workspace-target?intent=paid`) to auto-resolve the best capability payload schema
-- published content items as capability payloads
+- published-snapshot content reads as capability payloads
 - attached offers and license policies
 - L402 purchase challenges
 - entitlement activation
@@ -45,6 +46,7 @@ It intentionally no longer tells the old AP2 or revenue-routing marketplace stor
 
 ## What To Look For
 
+- the frontend checks the current runtime state and actor before browsing paid content
 - `Library` shows published capability content items.
 - Each paid item exposes its current offer and price.
 - `Start purchase` triggers the real `POST /api/offers/:id/purchase` L402 challenge.

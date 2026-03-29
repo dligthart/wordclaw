@@ -49,6 +49,12 @@ npx tsx demos/langgraph-mcp-starter/index.ts demo workspace \
   --transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
+
+OPENAI_API_KEY=sk-... \
+npx tsx demos/langgraph-mcp-starter/index.ts demo memory \
+  --transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
 ```
 
 Run a custom task:
@@ -65,7 +71,8 @@ npx tsx demos/langgraph-mcp-starter/index.ts run \
 ## Built-in demos
 
 - `workspace`: summarize actor, transports, and current workspace targets
-- `authoring`: identify the best schema and propose the next draft payload
+- `authoring`: identify the best schema and propose the next dry-run payload or schema-bootstrap path
+- `memory`: inspect whether WordClaw should be used as durable memory, checkpoint storage, and semantic retrieval for the current workspace
 - `review`: inspect pending review work and recommend the next action
 
 ## Notes
@@ -77,3 +84,4 @@ npx tsx demos/langgraph-mcp-starter/index.ts run \
   - `get_wordclaw_prompt`
 - This keeps the example focused on orchestration while preserving WordClaw's real MCP semantics.
 - Use `http` mode when you want the LangGraph agent to attach to an already-running WordClaw server.
+- For current WordClaw best practice, the demos should inspect deployment and workspace state first, then use `guide_task("author-content")` when no schema exists yet instead of guessing a write payload from memory.

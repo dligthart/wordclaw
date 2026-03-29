@@ -31,6 +31,28 @@ type SeedPost = {
     readTimeMinutes: number;
 };
 
+type DemoBlogSettings = {
+    siteTitle: string;
+    siteTagline: string;
+    homeEyebrow: string;
+    homeBody: string;
+    primaryCtaLabel: string;
+    primaryCtaHref: string;
+    secondaryCtaLabel: string;
+    secondaryCtaHref: string;
+};
+
+const demoBlogSettings: DemoBlogSettings = {
+    siteTitle: 'WordClaw Demo Blog',
+    siteTagline: 'Structured publishing for humans, agents, and governed runtime workflows.',
+    homeEyebrow: 'Published from WordClaw',
+    homeBody: 'This frontend reads published snapshots from WordClaw collections plus a singleton settings document, so the site shell and editorial content stay aligned.',
+    primaryCtaLabel: 'Browse archive',
+    primaryCtaHref: '/archive',
+    secondaryCtaLabel: 'Get Started',
+    secondaryCtaHref: '/get-started',
+};
+
 const demoAuthors: SeedAuthor[] = [
     {
         name: 'Alice Builder',
@@ -252,9 +274,9 @@ Always inspect the Contract before trusting a system interaction. Always inspect
 
 WordClaw is a headless CMS designed for both human developers and AI agents. Building a custom frontend for your content is straightforward using the REST API. 
 
-## Fetching Content Types and Items
+## Fetching Content Types, Globals, and Published Items
 
-The typical workflow in your frontend application (e.g., Vite + React) will involve fetching both the Content Types and the Content Items to resolve relationships.
+The typical workflow in your frontend application (e.g., Vite + React) will involve fetching both the Content Types and the published Content Items to resolve relationships, plus any singleton globals you want to render into the site shell.
 
 \`\`\`typescript
 // 1. Fetch Content Types to resolve IDs by slug
@@ -265,21 +287,28 @@ const authorType = types.find(t => t.slug === 'author');
 const postType = types.find(t => t.slug === 'blog-post');
 
 if (authorType && postType) {
-  // 2. Fetch the actual content items
+  // 2. Fetch any singleton/global settings you need for the site chrome
+  const settingsRes = await fetch('/api/globals/demo-blog-settings?draft=false').then(res => res.json());
+
+  // 3. Fetch the actual content items
   const [authorsRes, postsRes] = await Promise.all([
-    fetch(\`/api/content-items?contentTypeId=\${authorType.id}\`).then(res => res.json()),
-    fetch(\`/api/content-items?contentTypeId=\${postType.id}\`).then(res => res.json())
+    fetch(\`/api/content-items?contentTypeId=\${authorType.id}&draft=false\`).then(res => res.json()),
+    fetch(\`/api/content-items?contentTypeId=\${postType.id}&draft=false\`).then(res => res.json())
   ]);
 
-  // WordClaw returns the user-defined \`data\` as a stringified JSON payload
-  const parsedAuthors = authorsRes.data.map(item => ({...item, data: JSON.parse(item.data)}));
-  const parsedPosts = postsRes.data.map(item => ({...item, data: JSON.parse(item.data)}));
+  const normalize = (value) => typeof value === 'string' ? JSON.parse(value) : value;
+
+  // WordClaw may return the user-defined \`data\` either as JSON text or a parsed object
+  const parsedAuthors = authorsRes.data.map(item => ({ ...item, data: normalize(item.data) }));
+  const parsedPosts = postsRes.data.map(item => ({ ...item, data: normalize(item.data) }));
+  const parsedSettings = settingsRes.data?.item ? normalize(settingsRes.data.item.data) : null;
 }
 \`\`\`
 
 ## Developer Tips
 
 - **Dry Run Mode**: Agents or CLI tools interacting with the WordClaw API can simulate writes using the \`?mode=dry_run\` query parameter. This guarantees the schema validation will run, but the item will not be physically inserted into the database.
+- **Published Reads**: Frontends should use \`draft=false\` when they need the latest published snapshot instead of any working copy.
 - **Embeddings**: When \`status\` is set to \`"published"\`, WordClaw automatically generates vector embeddings for semantic search. Consider utilizing \`GET /api/search/semantic?query=xyz\`.
 `,
         coverImage: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=2872&auto=format&fit=crop',
@@ -665,6 +694,46 @@ async function setupBlogDemo() {
         });
 
         console.log('Setting up Content Types...');
+        const [settingsSchema] = await db
+            .insert(contentTypes)
+            .values({
+                domainId: blogDomain.id,
+                name: 'Demo Blog Settings',
+                slug: 'demo-blog-settings',
+                kind: 'singleton',
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: {
+                        siteTitle: { type: 'string' },
+                        siteTagline: { type: 'string' },
+                        homeEyebrow: { type: 'string' },
+                        homeBody: { type: 'string' },
+                        primaryCtaLabel: { type: 'string' },
+                        primaryCtaHref: { type: 'string' },
+                        secondaryCtaLabel: { type: 'string' },
+                        secondaryCtaHref: { type: 'string' },
+                    },
+                    required: ['siteTitle', 'siteTagline', 'primaryCtaLabel', 'primaryCtaHref'],
+                }),
+            })
+            .onConflictDoNothing()
+            .returning();
+
+        let settingsSchemaId = settingsSchema?.id;
+        if (!settingsSchemaId) {
+            const [contentType] = await db
+                .select()
+                .from(contentTypes)
+                .where(
+                    and(
+                        eq(contentTypes.domainId, blogDomain.id),
+                        eq(contentTypes.slug, 'demo-blog-settings'),
+                    ),
+                )
+                .limit(1);
+            settingsSchemaId = contentType.id;
+        }
+
         const [authorSchema] = await db
             .insert(contentTypes)
             .values({
@@ -744,6 +813,13 @@ async function setupBlogDemo() {
         console.log('Seeding Database...');
         await db.delete(contentItems).where(eq(contentItems.domainId, blogDomain.id));
 
+        await db.insert(contentItems).values({
+            domainId: blogDomain.id,
+            contentTypeId: settingsSchemaId,
+            status: 'published',
+            data: JSON.stringify(demoBlogSettings),
+        });
+
         const createdAuthors = await db
             .insert(contentItems)
             .values(
@@ -794,7 +870,7 @@ async function setupBlogDemo() {
 
         console.log('\n✅ Demo seeded successfully!');
         console.log(`Blog API Key: ${apiKeyResult.plaintext}`);
-        console.log(`Seeded ${demoAuthors.length} authors and ${demoPosts.length} posts.`);
+        console.log(`Seeded 1 global settings item, ${demoAuthors.length} authors, and ${demoPosts.length} posts.`);
 
         if (process.env.OPENAI_API_KEY) {
             console.log('🧠 OPENAI_API_KEY detected! Generating pgvector embeddings for demo content...');

@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "WORDCLAW_API_KEY=wcak_e776f5247a88b300373dd3f42ad3e726b94112560962cbbf npx tsx server.ts",
+    "dev": "npx tsx server.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

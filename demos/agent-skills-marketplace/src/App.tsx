@@ -90,6 +90,14 @@ type ApiEnvelope<T> = {
   };
 };
 
+type RuntimeSummary = {
+  actorId: string | null;
+  domainId: number | null;
+  bootstrapStatus: string;
+  embeddingsStatus: string | null;
+  paidTargetSlug: string | null;
+};
+
 function getErrorMessage(payload: unknown, fallback: string) {
   if (!payload || typeof payload !== 'object') return fallback;
   const candidate = payload as {
@@ -141,6 +149,7 @@ export default function App() {
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [runtimeSummary, setRuntimeSummary] = useState<RuntimeSummary | null>(null);
   const [activeView, setActiveView] = useState<'library' | 'flow'>('library');
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
@@ -203,14 +212,32 @@ export default function App() {
       setError(null);
 
       try {
-        const targetResponse = await fetch(`${API_URL}/workspace-target?intent=paid`, {
-          headers: { 'x-api-key': API_KEY },
-        });
+        const [targetResponse, deploymentStatusResponse, identityResponse] = await Promise.all([
+          fetch(`${API_URL}/workspace-target?intent=paid`, {
+            headers: { 'x-api-key': API_KEY },
+          }),
+          fetch(`${API_URL}/deployment-status`, {
+            headers: { 'x-api-key': API_KEY },
+          }),
+          fetch(`${API_URL}/identity`, {
+            headers: { 'x-api-key': API_KEY },
+          }),
+        ]);
 
         const targetPayload = (await targetResponse.json()) as ApiEnvelope<{
           bestTarget?: {
             contentType?: { id: number; slug: string };
           };
+        }>;
+        const deploymentStatusPayload = (await deploymentStatusResponse.json()) as ApiEnvelope<{
+          checks?: {
+            bootstrap?: { status?: string };
+            embeddings?: { status?: string };
+          };
+        }>;
+        const identityPayload = (await identityResponse.json()) as ApiEnvelope<{
+          actorId?: string;
+          domainId?: number;
         }>;
 
         if (!targetResponse.ok) {
@@ -230,6 +257,18 @@ export default function App() {
           );
         }
 
+        if (!cancelled) {
+          setRuntimeSummary({
+            actorId: identityPayload.data?.actorId ?? null,
+            domainId: identityPayload.data?.domainId ?? null,
+            bootstrapStatus:
+              deploymentStatusPayload.data?.checks?.bootstrap?.status ?? 'unknown',
+            embeddingsStatus:
+              deploymentStatusPayload.data?.checks?.embeddings?.status ?? null,
+            paidTargetSlug: capabilityType.slug ?? null,
+          });
+        }
+
         const contentItems: Array<{
           id: number;
           contentTypeId: number;
@@ -241,12 +280,12 @@ export default function App() {
         }> = []
         let cursor: string | null | undefined = undefined
 
-        do {
-          const query = new URLSearchParams({
-            contentTypeId: String(capabilityType.id),
-            status: 'published',
-            limit: '50',
-          })
+          do {
+            const query = new URLSearchParams({
+              contentTypeId: String(capabilityType.id),
+              draft: 'false',
+              limit: '50',
+            })
 
           if (cursor) {
             query.set('cursor', cursor)
@@ -424,7 +463,7 @@ export default function App() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_URL}/content-items/${selectedCapability.id}`, {
+      const response = await fetch(`${API_URL}/content-items/${selectedCapability.id}?draft=false`, {
         headers,
       });
       const payload = (await response.json()) as ApiEnvelope<{
@@ -673,6 +712,25 @@ export default function App() {
                 <KeyRound className="h-4 w-4 text-amber-300" />
                 API-key scoped ownership
               </div>
+              {runtimeSummary ? (
+                <>
+                  <div className="mt-4 border-t border-white/10 pt-4 text-xs uppercase tracking-[0.18em] text-stone-500">
+                    Live runtime
+                  </div>
+                  <div className="mt-3 text-sm text-stone-200">
+                    Paid target: <span className="text-amber-300">{runtimeSummary.paidTargetSlug || 'n/a'}</span>
+                  </div>
+                  <div className="mt-2 text-sm text-stone-200">
+                    Actor: <span className="text-amber-300">{runtimeSummary.actorId || 'n/a'}</span>
+                  </div>
+                  <div className="mt-2 text-sm text-stone-200">
+                    Bootstrap: <span className="text-amber-300">{runtimeSummary.bootstrapStatus}</span>
+                  </div>
+                  <div className="mt-2 text-sm text-stone-200">
+                    Embeddings: <span className="text-amber-300">{runtimeSummary.embeddingsStatus || 'unknown'}</span>
+                  </div>
+                </>
+              ) : null}
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-6 text-stone-400">
               Seed the demo with:
@@ -701,29 +759,29 @@ export default function App() {
           >
             {[
               {
-                title: '1. Resolve workspace target',
+                title: 'Resolve workspace target',
                 body:
                   'Instead of guessing the API schema, the client asks the runtime for `intent=paid` guidance to auto-resolve the best schema target from the workspace context.',
               },
               {
-                title: '2. Model capabilities as content',
+                title: 'Model capabilities as content',
                 body:
                   'Capability payloads are plain WordClaw content items. The demo setup script creates the agent-skill content type and publishes several paid capability entries.',
               },
               {
-                title: '2. Attach offers and policies',
+                title: 'Attach offers and policies',
                 body:
                   'Each capability gets a normal offer plus a license policy. The runtime decides which offer applies when the agent tries to read the content.',
               },
               {
-                title: '3. Trigger an L402 purchase challenge',
+                title: 'Trigger an L402 purchase challenge',
                 body:
                   'The client starts POST /api/offers/:id/purchase and receives a 402 response with invoice, macaroon, and payment hash. That is the supported purchase handshake today.',
               },
               {
-                title: '4. Activate entitlement and read',
+                title: 'Activate entitlement and read',
                 body:
-                  'After payment confirmation, WordClaw activates the entitlement. The caller can then read the item with its owned entitlement instead of relying on marketplace or payout semantics.',
+                  'After payment confirmation, WordClaw activates the entitlement. The caller can then read the published capability snapshot with its owned entitlement instead of relying on marketplace or payout semantics.',
               },
             ].map((step, index) => (
               <div

@@ -76,6 +76,17 @@ interface ContentItemRecord {
   updatedAt?: string
 }
 
+interface BlogSettingsData {
+  siteTitle: string
+  siteTagline: string
+  homeEyebrow: string
+  homeBody: string
+  primaryCtaLabel: string
+  primaryCtaHref: string
+  secondaryCtaLabel: string
+  secondaryCtaHref: string
+}
+
 interface ApiEnvelope<T> {
   data: T
   meta?: {
@@ -87,6 +98,7 @@ interface ApiEnvelope<T> {
 type DemoLoadResult = {
   posts: BlogPost[]
   authors: Author[]
+  settings: BlogSettingsData | null
   loading: boolean
   error: string | null
   emptyReason: string | null
@@ -137,6 +149,7 @@ function useWordClawDataSource(): DemoLoadResult {
   const [state, setState] = useState<DemoLoadResult>({
     posts: [],
     authors: [],
+    settings: null,
     loading: true,
     error: null,
     emptyReason: null,
@@ -186,7 +199,7 @@ function useWordClawDataSource(): DemoLoadResult {
           do {
             const query = new URLSearchParams({
               contentTypeId: String(contentTypeId),
-              status: 'published',
+              draft: 'false',
               limit: String(pageSize),
             })
 
@@ -210,9 +223,21 @@ function useWordClawDataSource(): DemoLoadResult {
           ? (JSON.parse(item.data) as T)
           : (item.data as T))
 
-        const typesResponse = await fetchEnvelope<ContentTypeRecord[]>(
-          '/content-types?limit=500',
-        )
+        const [typesResponse, settingsResponse] = await Promise.all([
+          fetchEnvelope<ContentTypeRecord[]>(
+            '/content-types?limit=500',
+          ),
+          (async () => {
+            try {
+              return await fetchEnvelope<{
+                contentType: ContentTypeRecord
+                item: ContentItemRecord | null
+              }>('/globals/demo-blog-settings?draft=false')
+            } catch {
+              return null
+            }
+          })(),
+        ])
         const types = typesResponse.data
 
         const authorType = types.find((entry) => entry.slug === 'demo-author')
@@ -222,6 +247,7 @@ function useWordClawDataSource(): DemoLoadResult {
           setState({
             posts: [],
             authors: [],
+            settings: null,
             loading: false,
             error: null,
             emptyReason:
@@ -234,6 +260,10 @@ function useWordClawDataSource(): DemoLoadResult {
           fetchContentItemCollection(authorType.id),
           fetchContentItemCollection(postType.id),
         ])
+
+        const settings = settingsResponse?.data?.item
+          ? parseItemData<BlogSettingsData>(settingsResponse.data.item)
+          : null
 
         const authors = fetchedAuthors.map(
           (item) =>
@@ -256,6 +286,7 @@ function useWordClawDataSource(): DemoLoadResult {
         setState({
           posts,
           authors,
+          settings,
           loading: false,
           error: null,
           emptyReason:
@@ -267,6 +298,7 @@ function useWordClawDataSource(): DemoLoadResult {
         setState({
           posts: [],
           authors: [],
+          settings: null,
           loading: false,
           error:
             error instanceof Error
@@ -652,7 +684,7 @@ function MarkdownArticle({ content }: { content: string }) {
 }
 
 function HomePage() {
-  const { posts, authors } = useDemoData()
+  const { posts, authors, settings } = useDemoData()
   const [visiblePostCount, setVisiblePostCount] = useState(4)
   const featuredPost = posts[0]
   const additionalPosts = posts.slice(1)
@@ -670,7 +702,10 @@ function HomePage() {
       <section className="grid gap-8 xl:grid-cols-[1.08fr_0.92fr] xl:items-stretch">
         <div className="demo-surface rounded-[2rem] p-8 sm:p-10">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-500">
-            Featured article
+            {settings?.homeEyebrow || 'Featured article'}
+          </p>
+          <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--muted-foreground)]">
+            {settings?.homeBody || 'This frontend reads published content snapshots from WordClaw and renders them into a schema-backed editorial surface.'}
           </p>
           <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight text-[var(--foreground)] sm:text-5xl">
             {featuredPost.data.title}
@@ -688,15 +723,15 @@ function HomePage() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               className="inline-flex h-11 items-center justify-center rounded-full bg-brand-500 px-5 text-sm font-semibold text-white shadow-[0_12px_24px_-16px_rgba(59,96,204,0.8)] transition-colors hover:bg-brand-600"
-              to={`/post/${featuredPost.data.slug}`}
+              to={settings?.primaryCtaHref || `/post/${featuredPost.data.slug}`}
             >
-              Read article
+              {settings?.primaryCtaLabel || 'Read article'}
             </Link>
             <Link
               className="inline-flex h-11 items-center justify-center rounded-full border border-[var(--border)] bg-white/80 px-5 text-sm font-semibold text-[var(--foreground)] transition-colors hover:border-brand-300 hover:text-brand-500"
-              to="/archive"
+              to={settings?.secondaryCtaHref || '/archive'}
             >
-              Browse archive
+              {settings?.secondaryCtaLabel || 'Browse archive'}
             </Link>
           </div>
         </div>
@@ -1320,7 +1355,7 @@ function GetStartedPage() {
             <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm">
               <h2 className="text-2xl font-semibold text-[var(--foreground)]">Define schemas first</h2>
               <p className="mt-4 leading-8 text-[var(--muted-foreground)]">
-                The demo blog works because `demo-author` and `demo-blog-post` exist as explicit JSON schemas in WordClaw. The frontend does not hardcode fields blindly; it queries the runtime and then renders content shaped by those models.
+                The demo blog works because `demo-author` and `demo-blog-post` exist as explicit JSON schemas in WordClaw, while `demo-blog-settings` is seeded as a singleton global. The frontend does not hardcode fields blindly; it queries the runtime and renders published snapshots shaped by those models.
               </p>
             </section>
 
@@ -1368,6 +1403,7 @@ wordclaw mcp call guide_task --json '{"taskId":"author-content"}'`}
 }
 
 function Layout({ children }: { children: ReactNode }) {
+  const { settings } = useDemoData()
   const navItems = [
     { to: '/', label: 'Blog', icon: BookOpenText },
     { to: '/authors', label: 'Authors', icon: Users },
@@ -1384,9 +1420,14 @@ function Layout({ children }: { children: ReactNode }) {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/25">
               <LayoutDashboard size={18} />
             </div>
-            <span>
-              WordClaw <span className="font-light text-brand-500">Demo</span>
-            </span>
+            <div className="flex flex-col">
+              <span>
+                {settings?.siteTitle || 'WordClaw'} <span className="font-light text-brand-500">Demo</span>
+              </span>
+              <span className="hidden text-[0.65rem] font-medium uppercase tracking-[0.3em] text-[var(--muted-foreground)] md:block">
+                {settings?.siteTagline || 'Published snapshots and schema-backed content'}
+              </span>
+            </div>
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm font-medium md:flex">

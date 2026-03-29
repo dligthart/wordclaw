@@ -22,8 +22,9 @@ The application is built with a Node.js/Express backend (`server.ts`) and a vani
 1. Make sure your WordClaw server is running (`npm run dev` at the repository root).
 2. Make sure you have an `.env` file at the repository root containing:
    - `OPENAI_API_KEY=sk-...`
+3. Optionally set `WORDCLAW_API_URL` if your API is not running at `http://localhost:4000/api`.
 
-*(Note: The game script automatically provisions a local WordClaw API key if run via `npm run dev` and your WordClaw instance is accessible at `http://localhost:4000/api`)*
+The demo now auto-bootstraps its own local WordClaw domain and API key when `WORDCLAW_API_KEY` is not already set, so it no longer depends on a stale hardcoded key in `package.json`.
 
 ## Running the Demo
 
@@ -33,3 +34,9 @@ npm run dev
 ```
 
 Once the server boots, the game UI will be available in your browser at **`http://localhost:8080`**.
+
+## Compatibility Notes
+
+- the server now preflights WordClaw deployment status before seeding schemas
+- schema creation and dry-run validation still happen through the supported API contract
+- published stories, theme packs, and character classes continue to use the runtime's published content path

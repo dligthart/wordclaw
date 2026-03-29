@@ -269,22 +269,11 @@
         </div>
     </div>
 
+    <script src="./tenant-config.js"></script>
     <script>
-        const API_URL = 'http://localhost:4000/api';
-        
-        // Use the actual keys generated from the setup script
-        const TENANTS = {
-            acme: {
-                name: 'Acme Corp',
-                key: 'wcak_53b38c55c26d479c1c5ec0ea287ea1aeebc5e184a29f2013',
-                class: 'acme'
-            },
-            globex: {
-                name: 'Globex Inc',
-                key: 'wcak_393f870561be2d3149ae8f7d2b8d9f855678af58b9057dba',
-                class: 'globex'
-            }
-        };
+        const RUNTIME_CONFIG = window.WORDCLAW_MULTI_TENANT_CONFIG || null;
+        const API_URL = RUNTIME_CONFIG?.apiUrl || 'http://localhost:4000/api';
+        const TENANTS = RUNTIME_CONFIG?.tenants || null;
 
         let currentTenant = 'acme';
 
@@ -328,6 +317,11 @@
             const infoTenantName = document.getElementById('info-tenant-name');
             const infoApiKey = document.getElementById('info-api-key');
 
+            if (!TENANTS) {
+                grid.innerHTML = '<p style="color:var(--text-muted); text-align:center; grid-column:1/-1;">Run <code>npx tsx scripts/setup-multi-tenant.ts</code> from the repo root first. The setup script now generates <code>demos/multi-tenant/tenant-config.js</code> with fresh tenant API keys.</p>';
+                return;
+            }
+
             const tenant = TENANTS[currentTenant];
             
             // Update UI
@@ -358,7 +352,7 @@
                     grid.innerHTML = '<p style="color:var(--text-muted); text-align:center; grid-column:1/-1;">No products found for this tenant.</p>';
                 } else {
                     items.forEach(item => {
-                        const product = JSON.parse(item.data);
+                        const product = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
                         
                         // Formatting currency
                         const formatter = new Intl.NumberFormat('en-US', {

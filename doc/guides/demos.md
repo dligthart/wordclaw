@@ -6,7 +6,7 @@ This page is the catalog for the runnable demo surfaces in `demos/`.
 
 ### Demo Blog
 
-Frontend demo for structured blog content over the WordClaw REST API.
+Frontend demo for structured blog content over the WordClaw REST API, including a singleton global for site settings and published-snapshot reads.
 
 ```bash
 npm run demo:seed-blog
@@ -19,7 +19,7 @@ See `demos/demo-blog/README.md` for demo-specific setup.
 
 ### Multi-Tenant Isolation
 
-Minimal UI proving domain isolation with different API keys.
+Minimal UI proving domain isolation with different API keys. The setup now generates `demos/multi-tenant/tenant-config.js` instead of baking secrets into the HTML file.
 
 ```bash
 npx tsx scripts/setup-multi-tenant.ts
@@ -29,22 +29,25 @@ python3 -m http.server 5175
 
 ### MCP Demo Agent
 
-Headless MCP client for inspection and smoke testing.
+Headless MCP client for inspection, bootstrap/discovery visibility, semantic-search calls, and reactive smoke testing.
 
 ```bash
 npx tsx demos/mcp-demo-agent.ts inspect
 npx tsx demos/mcp-demo-agent.ts smoke
 npx tsx demos/mcp-demo-agent.ts call list_content_types '{"limit":5}'
+npx tsx demos/mcp-demo-agent.ts call guide_task '{"taskId":"author-content"}'
+npx tsx demos/mcp-demo-agent.ts call search_semantic_knowledge '{"query":"approval workflow","limit":3}'
 ```
 
 ### LangGraph MCP Starter
 
-Minimal LangGraph agent that attaches through MCP.
+Minimal LangGraph agent that attaches through MCP and now includes schema-bootstrap and durable-memory walkthroughs.
 
 ```bash
 npx tsx demos/langgraph-mcp-starter/index.ts inspect
 npx tsx demos/langgraph-mcp-starter/index.ts inspect --transport http --mcp-url http://localhost:4000/mcp --api-key writer
 OPENAI_API_KEY=sk-... npx tsx demos/langgraph-mcp-starter/index.ts demo workspace --transport http --mcp-url http://localhost:4000/mcp --api-key writer
+OPENAI_API_KEY=sk-... npx tsx demos/langgraph-mcp-starter/index.ts demo memory --transport http --mcp-url http://localhost:4000/mcp --api-key writer
 ```
 
 See `demos/langgraph-mcp-starter/README.md` for walkthroughs.
@@ -69,7 +72,7 @@ OPENAI_API_KEY=sk-... npx tsx demos/agentkit-l402-client.ts
 
 ### Paid Capability Library
 
-Frontend showcase for published paid-capability items, offers, entitlements, and local execution after unlock.
+Frontend showcase for paid-capability content using workspace-target discovery, published reads, offers, entitlements, and local execution after unlock.
 
 ```bash
 npx tsx scripts/setup-skills-marketplace.ts
@@ -84,13 +87,13 @@ See `demos/agent-skills-marketplace/README.md` for details.
 
 ### Adventure Game
 
-Interactive text-adventure demo built on WordClaw-backed content flows.
+Interactive text-adventure demo built on WordClaw-backed content flows. It now auto-bootstraps a local demo API key when one is not already configured.
 
 See `demos/demo-adventure-game/README.md` for the current run flow and requirements.
 
 ### Lightheart Site
 
-Standalone marketing-site feasibility demo based on Lightheart-style content patterns.
+Standalone marketing-site feasibility demo based on Lightheart-style content patterns, updated to reflect current WordClaw globals, localization, forms, jobs, and preview capabilities.
 
 See `demos/demo-lightheart-site/README.md` for the current run flow and constraints.
 

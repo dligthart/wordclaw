@@ -29,7 +29,28 @@ import { eq } from 'drizzle-orm';
 
 dotenv.config();
 
-const API_URL = 'http://localhost:4000/api';
+const API_URL = process.env.WORDCLAW_API_URL || 'http://localhost:4000/api';
+
+async function preflightRuntime() {
+    const statusUrl = API_URL.endsWith('/api')
+        ? `${API_URL}/deployment-status`
+        : `${API_URL}/api/deployment-status`;
+
+    try {
+        const response = await fetch(statusUrl);
+        if (!response.ok) {
+            console.warn(`[AgentKit] Runtime preflight returned ${response.status}. Continuing...`);
+            return;
+        }
+
+        const payload = await response.json() as any;
+        const bootstrapStatus = payload?.data?.checks?.bootstrap?.status ?? 'unknown';
+        const embeddingsStatus = payload?.data?.checks?.embeddings?.status ?? 'unknown';
+        console.log(`[AgentKit] Runtime preflight: bootstrap=${bootstrapStatus}, embeddings=${embeddingsStatus}`);
+    } catch (error) {
+        console.warn(`[AgentKit] Runtime preflight failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
 
 /**
  * 1. Define the Custom Action Provider for L402 / Lightning
@@ -135,6 +156,7 @@ async function runAgentKitDemo() {
             process.exit(1);
         }
 
+        await preflightRuntime();
         const { apiKey, contentTypeId } = await setupAgentEnvironment();
 
         console.log("\nInitializing Coinbase AgentKit...");

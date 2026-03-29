@@ -1,6 +1,6 @@
 # Demo Lightheart Site
 
-This demo recreates the core Lightheart marketing-site patterns inside `wordclaw/demos/` so we can judge whether a site like `lightheart.tech` can sit on top of WordClaw.
+This demo recreates the core Lightheart marketing-site patterns inside `wordclaw/demos/` so we can judge whether a site like `lightheart.tech` can sit on top of the current WordClaw runtime.
 
 It is intentionally a standalone front-end demo instead of a full WordClaw-backed integration. The UI and content structure are based on the local source repo at `/Users/daveligthart/GitHub/lightheart-website`, but the content is condensed into local typed fixtures so the demo stays self-contained.
 
@@ -32,11 +32,18 @@ This demo suggests a content model like:
 - `case_study`
 - `contact_request`
 
-The main gaps are not about storing the content. They are about authoring and site-delivery ergonomics:
+The current WordClaw runtime now directly covers more of this than the original demo assumed:
 
-- first-class localization workflow
+- singleton globals for site settings and shared CTAs
+- localized fields with locale-aware reads and fallback
+- assets and preview-oriented published vs working-copy reads
+- reusable forms, jobs, and webhook-driven follow-up paths
+
+The main remaining gaps are not about storing the content. They are about marketing-site authoring and delivery ergonomics:
+
 - visual page composition / preview
 - SSR or static-site delivery helpers for marketing routes
-- contact-form routing and outbound integrations
+- translation management workflow
+- contact-form routing and downstream delivery integrations
 
 That means the answer is broadly: yes, a site like Lightheart can be created using WordClaw as the content runtime, but not yet as a complete marketing-site platform without custom front-end and workflow work.

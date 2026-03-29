@@ -913,19 +913,21 @@ export const siteData: Record<Locale, SiteContent> = {
       eyebrow: 'WordClaw fit',
       title: 'Can a Lightheart-style website be built on WordClaw?',
       description:
-        'Yes, with an important caveat: the content model fits well, but some of the marketing-site ergonomics still sit outside the product and need custom front-end or workflow work.',
+        'Yes, with an important caveat: the structured content and workflow model fits well, but some marketing-site delivery ergonomics still sit outside the product and need custom front-end work.',
       strongFitsTitle: 'What maps cleanly to WordClaw',
       strongFits: [
+        'Singleton globals fit cleanly for site settings, navigation, footer content, and reusable CTAs.',
         'Marketing pages can be modeled as structured page records with section arrays and typed fields.',
         'Services, FAQs, case studies, leadership roles, and CTA strips all fit repeatable content types cleanly.',
         'Hero visuals, logos, and support imagery map to WordClaw asset records and delivery URLs.',
+        'Localized fields now cover multilingual page copy and locale-aware reads across globals and collections.',
         'Approval-aware publishing is a good match for marketing copy review and controlled rollout.',
       ],
       gapsTitle: 'Current gaps or custom work',
       gaps: [
         {
           title: 'Localization workflow',
-          text: 'WordClaw can store localized fields, but it does not yet ship a first-class translation workflow, locale fallback model, or bilingual editor UX.',
+          text: 'WordClaw now supports localized fields and locale fallback reads, but translation management, editorial assignment, and bilingual side-by-side authoring still need custom workflow design.',
         },
         {
           title: 'Visual page composition',
@@ -933,11 +935,11 @@ export const siteData: Record<Locale, SiteContent> = {
         },
         {
           title: 'Website delivery tooling',
-          text: 'SSR or static generation, route-aware SEO metadata, sitemap generation, and cache/preview ergonomics still belong to a custom front-end implementation.',
+          text: 'Preview tokens, published-vs-working-copy reads, and structured route data exist, but SSR or static generation, sitemap generation, and front-end cache strategy still belong to the site implementation.',
         },
         {
           title: 'Forms and outbound integrations',
-          text: 'Contact routing, email delivery, and CRM or webhook integrations are outside the core product and need custom API or workflow glue.',
+          text: 'WordClaw now has reusable forms, jobs, and webhook primitives, but contact routing, email delivery, and CRM-specific integration logic still need project-specific composition.',
         },
       ],
       contentModelTitle: 'Suggested WordClaw content model',
@@ -945,7 +947,7 @@ export const siteData: Record<Locale, SiteContent> = {
         {
           name: 'site_settings',
           purpose: 'Header, footer, navigation, locale defaults, and global CTAs.',
-          notes: 'One record per brand or per domain.',
+          notes: 'Best modeled as a singleton global per brand or domain.',
         },
         {
           name: 'marketing_page',
@@ -965,7 +967,7 @@ export const siteData: Record<Locale, SiteContent> = {
         {
           name: 'contact_request',
           purpose: 'Inbound form payloads captured for review, routing, or follow-up.',
-          notes: 'Needs a custom public-write or API workflow on top of WordClaw.',
+          notes: 'Can be backed by WordClaw forms plus jobs or webhook delivery for downstream systems.',
         },
       ],
       verdictTitle: 'Verdict',
@@ -1618,19 +1620,21 @@ export const siteData: Record<Locale, SiteContent> = {
       eyebrow: 'WordClaw-fit',
       title: 'Kan een Lightheart-achtige website op WordClaw worden gebouwd?',
       description:
-        'Ja, met een belangrijke kanttekening: het contentmodel past goed, maar een deel van de ergonomie van een marketingsite ligt nog buiten het product en vraagt om custom front-end- of workflowwerk.',
+        'Ja, met een belangrijke kanttekening: het gestructureerde content- en workflowmodel past goed, maar een deel van de delivery-ergonomie van een marketingsite vraagt nog om custom front-endwerk.',
       strongFitsTitle: 'Wat schoon op WordClaw past',
       strongFits: [
+        'Singleton-globals passen schoon voor site-instellingen, navigatie, footercontent en herbruikbare CTA\'s.',
         'Marketingpagina\'s kunnen worden gemodelleerd als gestructureerde paginarecords met sectie-arrays en getypeerde velden.',
         'Diensten, FAQ\'s, cases, teamrollen en CTA-strips passen schoon in herhaalbare contenttypes.',
         'Hero-afbeeldingen, logo\'s en ondersteunende beelden passen op WordClaw-assetrecords en delivery-URL\'s.',
+        'Gelokaliseerde velden dekken meertalige paginacopy en locale-aware reads over globals en collecties.',
         'Approval-aware publishing is een goede match voor review en gecontroleerde uitrol van marketingcopy.',
       ],
       gapsTitle: 'Huidige gaten of custom werk',
       gaps: [
         {
           title: 'Lokalisatieworkflow',
-          text: 'WordClaw kan gelokaliseerde velden opslaan, maar levert nog geen first-class vertaalworkflow, locale-fallbackmodel of tweetalige editor-UX.',
+          text: 'WordClaw ondersteunt nu gelokaliseerde velden en locale-fallback reads, maar vertaalmanagement, redactionele toewijzing en tweetalige side-by-side authoring vragen nog om custom workflowontwerp.',
         },
         {
           title: 'Visuele paginacompositie',
@@ -1638,11 +1642,11 @@ export const siteData: Record<Locale, SiteContent> = {
         },
         {
           title: 'Website-delivery tooling',
-          text: 'SSR of static generation, route-afhankelijke SEO-metadata, sitemapgeneratie en cache/preview-ergonomie horen nog bij een custom front-endimplementatie.',
+          text: 'Preview-tokens, published-vs-working-copy reads en gestructureerde routedata bestaan al, maar SSR of static generation, sitemapgeneratie en front-end cache-strategie horen nog bij de site-implementatie.',
         },
         {
           title: 'Formulieren en outbound-integraties',
-          text: 'Contactrouting, e-maildelivery en CRM- of webhookintegraties vallen buiten het kernproduct en vragen om custom API- of workflowlijm.',
+          text: 'WordClaw heeft nu herbruikbare formulieren, jobs en webhook-primitieven, maar contactrouting, e-maildelivery en CRM-specifieke integratielogica vragen nog om projectspecifieke compositie.',
         },
       ],
       contentModelTitle: 'Voorgesteld WordClaw-contentmodel',
@@ -1650,7 +1654,7 @@ export const siteData: Record<Locale, SiteContent> = {
         {
           name: 'site_settings',
           purpose: 'Header, footer, navigatie, locale-standaarden en globale CTA\'s.',
-          notes: 'Een record per merk of per domein.',
+          notes: 'Bij voorkeur gemodelleerd als singleton-global per merk of domein.',
         },
         {
           name: 'marketing_page',
@@ -1670,7 +1674,7 @@ export const siteData: Record<Locale, SiteContent> = {
         {
           name: 'contact_request',
           purpose: 'Inkomende formulierpayloads vastleggen voor review, routing of opvolging.',
-          notes: 'Vraagt om een custom public-write of API-workflow boven op WordClaw.',
+          notes: 'Kan worden ondersteund door WordClaw-formulieren plus jobs of webhook-delivery richting downstream-systemen.',
         },
       ],
       verdictTitle: 'Oordeel',

@@ -1,10 +1,20 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { db } from '../src/db/index.js';
-import { domains } from '../src/db/schema.js';
+import { contentItems, domains } from '../src/db/schema.js';
 import { createApiKey } from '../src/services/api-key.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+
+const API_URL = process.env.WORDCLAW_API_URL || 'http://localhost:4000/api';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const REPO_ROOT = path.resolve(__dirname, '..');
+const MULTI_TENANT_CONFIG_PATH = path.join(REPO_ROOT, 'demos', 'multi-tenant', 'tenant-config.js');
 
 async function request(path, options = {}, apiKey) {
-    const url = `http://localhost:4000/api${path}`;
+    const url = `${API_URL}${path}`;
     const headers = {
         'Content-Type': 'application/json',
         ...(apiKey ? { 'x-api-key': apiKey } : {}),
@@ -66,8 +76,8 @@ async function setupTenant(name, hostname) {
         required: ["name", "slug", "price"]
     };
 
-    let ctListRes = await request('/content-types', {}, plaintext);
-    let productCtId = ctListRes.data?.data?.find(ct => ct.slug === productSlug)?.id;
+    const ctListRes = await request('/content-types?limit=500', {}, plaintext);
+    let productCtId = ctListRes.data?.find(ct => ct.slug === productSlug)?.id;
 
     if (!productCtId) {
         console.log(`   Creating Product Content Type for ${name}...`);
@@ -94,12 +104,36 @@ async function setupTenant(name, hostname) {
     ];
 
     for (const p of products) {
+        const existing = await db.select().from(contentItems).where(and(
+            eq(contentItems.domainId, domain.id),
+            eq(contentItems.contentTypeId, productCtId)
+        ));
+        const match = existing.find((item) => {
+            try {
+                const parsed = JSON.parse(item.data);
+                return parsed?.slug === p.slug;
+            } catch {
+                return false;
+            }
+        });
+
+        if (match) {
+            await request(`/content-items/${match.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    data: p,
+                    status: 'published'
+                })
+            }, plaintext);
+            continue;
+        }
+
         await request('/content-items', {
             method: 'POST',
             body: JSON.stringify({
                 contentTypeId: productCtId,
                 data: p,
-                status: "published"
+                status: 'published'
             })
         }, plaintext);
     }
@@ -115,10 +149,30 @@ async function run() {
         const acmeKey = await setupTenant("Acme Corp", "acme.local");
         const globexKey = await setupTenant("Globex Inc", "globex.local");
 
+        fs.writeFileSync(
+            MULTI_TENANT_CONFIG_PATH,
+            `window.WORDCLAW_MULTI_TENANT_CONFIG = ${JSON.stringify({
+                apiUrl: API_URL,
+                tenants: {
+                    acme: {
+                        name: 'Acme Corp',
+                        key: acmeKey,
+                        class: 'acme'
+                    },
+                    globex: {
+                        name: 'Globex Inc',
+                        key: globexKey,
+                        class: 'globex'
+                    }
+                }
+            }, null, 2)};\n`
+        );
+
         console.log("=== DONE ===");
         console.log("Use the following keys in your multi-tenant frontend app:");
         console.log(`ACME_KEY=${acmeKey}`);
         console.log(`GLOBEX_KEY=${globexKey}`);
+        console.log(`Wrote browser config to ${MULTI_TENANT_CONFIG_PATH}`);
 
         process.exit(0);
     } catch (e) {
