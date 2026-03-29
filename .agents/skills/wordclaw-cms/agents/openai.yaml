@@ -1,0 +1,4 @@
+interface:
+  display_name: "WordClaw CMS"
+  short_description: "Guide Codex through WordClaw discovery, authoring, review, and paid-content flows"
+  default_prompt: "Discover the active WordClaw workspace, use guide_task or resolve_workspace_target, and complete the requested CMS task with dry runs when supported."

@@ -8,6 +8,28 @@ import { agentRunWorker } from '../workers/agent-run.worker.js';
 
 export type DeploymentCheckLevel = 'ready' | 'degraded' | 'disabled';
 
+function extractNumericCell(result: unknown, keys: string[]) {
+    const firstRow = Array.isArray(result)
+        ? result[0]
+        : Array.isArray((result as { rows?: unknown[] } | null | undefined)?.rows)
+            ? (result as { rows: unknown[] }).rows[0]
+            : null;
+
+    if (!firstRow || typeof firstRow !== 'object') {
+        return 0;
+    }
+
+    for (const key of keys) {
+        const candidate = (firstRow as Record<string, unknown>)[key];
+        const numeric = Number(candidate);
+        if (Number.isFinite(numeric)) {
+            return numeric;
+        }
+    }
+
+    return 0;
+}
+
 export type DeploymentStatusSnapshot = {
     generatedAt: string;
     overallStatus: 'ready' | 'degraded';
@@ -19,6 +41,35 @@ export type DeploymentStatusSnapshot = {
         restApi: {
             status: DeploymentCheckLevel;
             basePath: string;
+            note: string;
+        };
+        bootstrap: {
+            status: DeploymentCheckLevel;
+            domainCount: number;
+            contentWritesRequireDomain: boolean;
+            supportsInBandDomainCreation: boolean;
+            restCreateDomainPath: string | null;
+            mcpCreateDomainTool: string | null;
+            nextAction: string;
+            note: string;
+        };
+        auth: {
+            status: DeploymentCheckLevel;
+            authRequired: boolean;
+            writeRequiresCredential: boolean;
+            insecureLocalAdminEnabled: boolean;
+            recommendedActorProfile: string;
+            recommendedScopes: string[];
+            note: string;
+        };
+        vectorRag: {
+            status: DeploymentCheckLevel;
+            enabled: boolean;
+            model: string | null;
+            restPath: string;
+            mcpTool: string;
+            requiredEnvironmentVariables: string[];
+            reason: string;
             note: string;
         };
         contentRuntime: {
@@ -143,6 +194,23 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
         warnings.push('Database connectivity failed, so write and read operations may not be reliable.');
     }
 
+    let domainCount = 0;
+    if (databaseStatus.status !== 'degraded') {
+        try {
+            const domainCountResult = await db.execute(sql`SELECT COUNT(*)::int AS total FROM domains`);
+            domainCount = extractNumericCell(domainCountResult, ['total', 'count', '?column?']);
+        } catch (error) {
+            overallStatus = 'degraded';
+            warnings.push(`Domain bootstrap check failed: ${(error as Error).message}`);
+        }
+    }
+
+    const bootstrapBlocked = databaseStatus.status !== 'degraded' && domainCount === 0;
+    if (bootstrapBlocked) {
+        overallStatus = 'degraded';
+        warnings.push('No domains are provisioned yet, so content-type and content-item writes are blocked until bootstrap completes.');
+    }
+
     const agentRunsEnabled = isExperimentalAgentRunsEnabled();
     const workerStatus = agentRunWorker.getStatus();
     let agentRunsStatus: DeploymentStatusSnapshot['checks']['agentRuns'] = {
@@ -221,10 +289,21 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
 
     if (manifest.assetStorage.fallbackApplied) {
         overallStatus = 'degraded';
-        warnings.push(
-            `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unavailable; the runtime fell back to "${manifest.assetStorage.effectiveProvider}".`
+            warnings.push(
+                `Configured asset provider "${manifest.assetStorage.configuredProvider}" is unavailable; the runtime fell back to "${manifest.assetStorage.effectiveProvider}".`
         );
     }
+
+    const vectorRagStatus: DeploymentStatusSnapshot['checks']['vectorRag'] = {
+        status: manifest.vectorRag.enabled ? 'ready' : 'disabled',
+        enabled: manifest.vectorRag.enabled,
+        model: manifest.vectorRag.model,
+        restPath: manifest.vectorRag.restPath,
+        mcpTool: manifest.vectorRag.mcpTool,
+        requiredEnvironmentVariables: [...manifest.vectorRag.requiredEnvironmentVariables],
+        reason: manifest.vectorRag.enabled ? 'configured' : 'OPENAI_API_KEY not set',
+        note: manifest.vectorRag.note,
+    };
 
     return {
         generatedAt: new Date().toISOString(),
@@ -236,6 +315,30 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                 basePath: manifest.protocolSurfaces.rest.basePath,
                 note: 'REST API is reachable on the main HTTP server.',
             },
+            bootstrap: {
+                status: bootstrapBlocked ? 'degraded' : 'ready',
+                domainCount,
+                contentWritesRequireDomain: manifest.bootstrap.contentWritesRequireDomain,
+                supportsInBandDomainCreation: manifest.bootstrap.supportsInBandDomainCreation,
+                restCreateDomainPath: manifest.bootstrap.restCreateDomainPath,
+                mcpCreateDomainTool: manifest.bootstrap.mcpCreateDomainTool,
+                nextAction: bootstrapBlocked
+                    ? 'Create the first domain before attempting content-type or content-item writes.'
+                    : 'Bootstrap prerequisites are satisfied for content writes.',
+                note: bootstrapBlocked
+                    ? 'The runtime has no provisioned domains yet, so the first write must bootstrap the workspace.'
+                    : 'At least one domain is provisioned for content writes.',
+            },
+            auth: {
+                status: 'ready',
+                authRequired: manifest.auth.effective.authRequired,
+                writeRequiresCredential: manifest.auth.effective.writeRequiresCredential,
+                insecureLocalAdminEnabled: manifest.auth.effective.insecureLocalAdminEnabled,
+                recommendedActorProfile: manifest.auth.effective.recommendedActorProfile,
+                recommendedScopes: [...manifest.auth.effective.recommendedScopes],
+                note: manifest.auth.effective.note,
+            },
+            vectorRag: vectorRagStatus,
             contentRuntime: {
                 status: 'ready',
                 fieldAwareQueries: {

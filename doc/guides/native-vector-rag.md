@@ -10,7 +10,7 @@ This guide breaks down exactly what it does, how it works, and how you can utili
 
 WordClaw utilizes PostgreSQL and the `pgvector` extension to handle everything internally. Because this happens entirely inside the CMS, your vectors can never drift out of sync with your true content state. If you edit a published blog post, the embeddings are automatically recalculated.
 
-1. **Auto-Enablement**: If you place an `OPENAI_API_KEY` into your WordClaw `.env` file, the native RAG feature turns itself on automatically upon server startup.
+1. **Auto-Enablement**: If you place an `OPENAI_API_KEY` into your WordClaw `.env` file, the native RAG feature turns itself on automatically upon server startup. You can confirm that in-band through `GET /api/capabilities` or `GET /api/deployment-status`, which now report whether vector RAG is enabled and why.
 2. **Background Chunking and Embedding**: Whenever a Content Item's workflow status changes to **"published"**, WordClaw catches that event and tosses it into an internal background worker queue.
 3. **Clean Data Extraction**: The worker parses the JSON document, strips away hidden metadata (like `slate`, `coverImage`, or `authorId`), and flattens the readable data into paragraphs.
 4. **Native Postgres Storage**: The worker breaks the clean text down into smaller semantic chunks, calls the OpenAI Embeddings API (`text-embedding-3-small`), and stores the resulting vectors directly inside your existing Postgres database.
@@ -33,6 +33,8 @@ curl -H "x-api-key: your-api-key" \
 ```
 
 The API returns a sorted list of the most semantically relevant content chunks (along with their `similarity` scores and references to the parent Content Item), so the agent can load them directly into its prompt context window.
+
+If `OPENAI_API_KEY` is missing, `GET /api/search/semantic` returns `503 SEMANTIC_SEARCH_DISABLED`. Agents should check discovery surfaces first instead of learning that only after a failed query.
 
 ### 2. By Frontend Applications
 

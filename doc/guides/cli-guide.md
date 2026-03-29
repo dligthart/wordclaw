@@ -3,7 +3,7 @@
 The WordClaw CLI is a JSON-first command-line interface for agents and operators. It wraps both of the product's primary agent surfaces:
 
 - `MCP` for local tool discovery or remote MCP attachment
-- `REST` for content operations, content-runtime queries, public write lanes, asset storage, workflows, and L402 purchase/entitlement flows
+- `REST` for content operations, globals, locale-aware published reads, preview flows, public write lanes, asset storage, workflows, and L402 purchase/entitlement flows
 
 Use the CLI when you want a scriptable interface without writing a custom MCP client or hand-rolling HTTP requests.
 
@@ -233,7 +233,12 @@ Usability details:
 Current asset and content-runtime examples:
 
 ```bash
+wordclaw globals list
+wordclaw globals get --slug site-settings --published --locale nl
 wordclaw content list --content-type-id 12 --field-name characterClass --field-op eq --field-value Chronomancer
+wordclaw content get --id 345 --published --locale nl
+wordclaw content preview-token --id 345 --locale nl
+wordclaw globals preview-token --slug site-settings
 wordclaw content project --content-type-id 12 --group-by characterClass --metric avg --metric-field score
 wordclaw content list --content-type-id 18 --include-archived
 wordclaw assets create --content-file ./hero.png --mime-type image/png --access-mode signed
@@ -246,6 +251,8 @@ Use the generic request command when a dedicated subcommand does not exist yet:
 
 ```bash
 node dist/cli/index.js rest request GET /content-types
+node dist/cli/index.js rest request POST /domains \
+  --body-json '{"name":"Local Development","hostname":"local.development"}'
 node dist/cli/index.js rest request POST /auth/keys \
   --body-json '{"name":"Example","scopes":["content:read","content:write"]}'
 ```
@@ -362,7 +369,7 @@ node dist/cli/index.js capabilities whoami
 The manifest reports:
 
 - required vs compatibility protocol surfaces
-- live deployment readiness across database, REST, MCP, and enabled background workers
+- live deployment readiness across database, bootstrap, auth posture, REST, MCP, vector RAG, and enabled background workers
 - MCP transport behavior
 - auth and domain-context expectations
 - reusable actor profiles for API keys, supervisor sessions, local MCP, and public discovery
@@ -371,6 +378,8 @@ The manifest reports:
 - task-oriented routing hints and recommended recipes for common agent jobs
 - a workspace-context discovery path for domains and content-model targeting after authentication
 - a dedicated provenance-verification recipe with audit-scope expectations
+
+Use `capabilities status` before the first write on a fresh install. If the deployment reports `domainCount: 0`, bootstrap the first domain over REST before creating content types or content items.
 
 When you need to confirm the active credential before a mutation, use:
 
@@ -392,10 +401,11 @@ node dist/cli/index.js content-types list --limit 10 --include-stats
 node dist/cli/index.js ct ls --limit 10 --raw
 node dist/cli/index.js content-types get --id 12
 node dist/cli/index.js content-types create \
-  --name "Article" \
-  --slug article \
+  --name "Site Settings" \
+  --slug site-settings \
+  --kind singleton \
   --schema-file schema.json
-node dist/cli/index.js content-types update --id 12 --description "Updated description"
+node dist/cli/index.js content-types update --id 12 --kind collection --description "Updated description"
 node dist/cli/index.js content-types delete --id 12 --dry-run
 ```
 
@@ -406,13 +416,34 @@ Supported features:
 - create content types
 - update content types
 - delete content types
+- choose `collection` or `singleton` with `--kind`
 - create paid content types with `--base-price`
 - dry-run mode for create, update, and delete
+
+### Globals
+
+```bash
+node dist/cli/index.js globals list
+node dist/cli/index.js globals list --published --locale nl
+node dist/cli/index.js globals get --slug site-settings
+node dist/cli/index.js globals get --slug site-settings --published --locale nl --fallback-locale en
+node dist/cli/index.js globals update --slug site-settings --data-file settings.json
+node dist/cli/index.js globals preview-token --slug site-settings --locale nl --ttl-seconds 120
+```
+
+Supported features:
+
+- list singleton/global content types together with their current item state
+- read globals as either the working copy or the latest published snapshot with `--published`
+- resolve localized global reads with `--locale` and `--fallback-locale`
+- update singleton/global documents without manually finding the underlying content item ID
+- issue short-lived preview tokens for one global at a time
 
 ### Content Items
 
 ```bash
 node dist/cli/index.js content list --content-type-id 12 --status draft --limit 20
+node dist/cli/index.js content list --content-type-id 12 --published --locale nl --limit 20
 node dist/cli/index.js content list --content-type-id 12 --limit 20 --cursor <nextCursor>
 node dist/cli/index.js content list --content-type-id 12 --include-archived --limit 20
 node dist/cli/index.js content project --content-type-id 12 --group-by characterClass --metric avg --metric-field score
@@ -420,8 +451,11 @@ node dist/cli/index.js content project --content-type-id 12 --group-by sessionId
 node dist/cli/index.js content guide --content-type-id 12
 node dist/cli/index.js content ls --status draft --raw
 node dist/cli/index.js content get --id 345
+node dist/cli/index.js content get --id 345 --published --locale nl --fallback-locale en
+node dist/cli/index.js content used-by --id 345
 node dist/cli/index.js content create --content-type-id 12 --data-file item.json
 node dist/cli/index.js content update --id 345 --data-json '{"title":"Updated"}'
+node dist/cli/index.js content preview-token --id 345 --published --ttl-seconds 120
 node dist/cli/index.js content versions --id 345
 node dist/cli/index.js content rollback --id 345 --version 2 --dry-run
 node dist/cli/index.js content delete --id 345
@@ -432,6 +466,11 @@ Supported features:
 - actor-aware authoring guidance for a target content schema
 - filtered list views
 - cursor pagination via `--cursor` for large result sets
+- locale-aware reads via `--locale` and `--fallback-locale`
+- published-snapshot reads via `--published`, which maps to `draft=false`
+- derived read metadata including `publicationState`, `workingCopyVersion`, and `publishedVersion`
+- reverse-reference inspection via `content used-by --id <id>`
+- short-lived preview-token issuance for one content item at a time
 - grouped read models via `content project` for lightweight leaderboard and analytics views
 - lifecycle-aware list/projection reads for TTL-managed content, with `--include-archived` when operators want expired session rows back in view
 - item reads
@@ -465,6 +504,7 @@ node dist/cli/index.js assets list --status deleted --limit 20 --cursor <nextCur
 node dist/cli/index.js assets list --source-asset-id 44
 node dist/cli/index.js asset ls --raw
 node dist/cli/index.js assets get --id 44
+node dist/cli/index.js assets used-by --id 44
 node dist/cli/index.js assets create \
   --content-file ./hero.png \
   --mime-type image/png \
@@ -494,6 +534,7 @@ Supported features:
 
 - filtered list views with cursor pagination
 - asset metadata reads
+- reverse-reference inspection via `assets used-by --id <id>`
 - derivative variant creation and derivative family listing
 - multipart upload from `--content-file`
 - JSON/base64 upload from `--content-base64` or `--content-base64-file`

@@ -48,7 +48,7 @@ Before you start, it helps to know which parts of WordClaw are stable versus sti
    |-----------------|--------------------------------------------------|----------------------------------|
    | `PORT`          | `4000`                                           | HTTP server port                 |
    | `DATABASE_URL`  | `postgres://postgres:postgres@localhost:5432/wordclaw` | PostgreSQL connection string     |
-   | `AUTH_REQUIRED` | `true`                                           | Require API key authentication   |
+   | `AUTH_REQUIRED` | `true`                                           | Require API keys on `/api` routes; setting it to `false` does not make write routes anonymous by itself |
    | `ALLOW_INSECURE_LOCAL_ADMIN` | `false`                            | Local-only escape hatch for development without API keys |
    | `API_KEYS`      | *(see .env.example)*                             | Comma-separated key definitions  |
    | `ENABLE_EXPERIMENTAL_REVENUE` | `false`                           | Enable experimental earnings and payout surfaces |
@@ -63,7 +63,7 @@ Before you start, it helps to know which parts of WordClaw are stable versus sti
    | `ASSET_SIGNED_TTL_SECONDS` | `300`                               | Default signed asset access TTL |
    | `ASSET_DIRECT_UPLOAD_TTL_SECONDS` | `900`                        | Direct-provider upload URL/completion TTL |
 
-   `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). `ALLOW_INSECURE_LOCAL_ADMIN` should stay `false` unless you are intentionally running a local-only dev environment without API keys. The three `ENABLE_EXPERIMENTAL_*` flags stay off by default and should only be enabled if you explicitly want those incubator surfaces available. If you enable experimental autonomous runs, the worker interval and batch-size knobs let you tune execution cadence without changing code. Asset storage defaults to the local filesystem; set `ASSET_STORAGE_PROVIDER=s3` plus the corresponding bucket, region, and credentials if you want S3-compatible object storage or direct provider uploads.
+   `AUTH_REQUIRED=false` only relaxes public discovery. Write-capable requests still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is enabled in a non-production environment. Fresh installs also need at least one domain before creating content types or content items; check `GET /api/deployment-status` to confirm bootstrap readiness. `OPENAI_API_KEY` is required for semantic search endpoints (`/api/search/semantic`). `ALLOW_INSECURE_LOCAL_ADMIN` should stay `false` unless you are intentionally running a local-only dev environment without API keys. The three `ENABLE_EXPERIMENTAL_*` flags stay off by default and should only be enabled if you explicitly want those incubator surfaces available. If you enable experimental autonomous runs, the worker interval and batch-size knobs let you tune execution cadence without changing code. Asset storage defaults to the local filesystem; set `ASSET_STORAGE_PROVIDER=s3` plus the corresponding bucket, region, and credentials if you want S3-compatible object storage or direct provider uploads.
 
 5. **Run database migrations**
 

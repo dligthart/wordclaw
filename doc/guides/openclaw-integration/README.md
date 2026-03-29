@@ -6,6 +6,7 @@ Connect [OpenClaw](https://docs.openclaw.ai) to WordClaw so autonomous agents ca
 
 - **OpenClaw** installed (`npm install -g openclaw@latest`)
 - **WordClaw** running locally or remotely with the database migrated
+- On a fresh install, read `system://deployment-status` or `GET /api/deployment-status` first. If no domains are provisioned yet, bootstrap the first one with `POST /api/domains` before asking the agent to author content.
 
 ## Quick Start
 

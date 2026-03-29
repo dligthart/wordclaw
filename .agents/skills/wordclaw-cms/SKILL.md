@@ -1,7 +1,7 @@
 ---
 name: wordclaw-cms
 description: >
-  Use when OpenClaw is connected to a WordClaw MCP server or WordClaw-backed
+  Use when Codex is connected to a WordClaw MCP server or WordClaw-backed
   REST runtime. Start with system://capabilities, system://deployment-status,
   system://current-actor, and system://workspace-context, then use guide_task
   or resolve_workspace_target before writing. Covers schema-bound authoring,
@@ -23,9 +23,13 @@ when the runtime can tell you what to do. Prefer the built-in discovery
 resources, `guide_task`, and `resolve_workspace_target` over guessing tool
 order from memory.
 
+If the WordClaw MCP resources or tools are not available in the current Codex
+session, say that clearly and ask for the MCP server to be configured instead
+of fabricating runtime state.
+
 ## Session Start
 
-For every new session, or whenever the actor/domain may have changed:
+For every new session, or whenever the actor or domain may have changed:
 
 1. Read `system://capabilities`
 2. Read `system://deployment-status`
@@ -33,12 +37,16 @@ For every new session, or whenever the actor/domain may have changed:
 4. Read `system://workspace-context` or `system://workspace-context/{intent}`
 5. If you do not know which task model to use, read `system://agent-guidance`
 6. Call `guide_task` for the current job, or `resolve_workspace_target` when
-   you need the single best content/work target
+   you need the single best content or work target
 
-If deployment status reports `domainCount: 0`, bootstrap the first domain over
-REST with `POST /api/domains` before calling any content write tool.
+If deployment status reports `domainCount: 0`, call
+`guide_task("bootstrap-workspace")`, then bootstrap the first domain with MCP
+`create_domain` or the REST fallback `POST /api/domains` before calling any
+content write tool.
 
 `guide_task` supports these live task IDs:
+
+- `bootstrap-workspace`
 - `discover-deployment`
 - `discover-workspace`
 - `author-content`
@@ -60,15 +68,15 @@ it explicit that the cached workspace state is still valid.
 - Respect the active domain from `system://current-actor` and `system://workspace-context`.
 - Never auto-approve a review task without inspecting the content and any review comments.
 - Asset bytes and paid content are REST-first, even when discovery happens over MCP.
-- If a read returns `PAYMENT_REQUIRED` or `OFFER_REQUIRED`, switch to the REST offer/purchase flow.
+- If a read returns `PAYMENT_REQUIRED` or `OFFER_REQUIRED`, switch to the REST offer and purchase flow.
 - If a paid read returns `ENTITLEMENT_AMBIGUOUS`, retry with `x-entitlement-id`.
 - Prefer `subscribe_events` recipe subscriptions over polling when you need to stay attached to live state.
 
 ## Low-Memory Operating Pattern
 
-Treat **WordClaw as the durable state layer** and **OpenClaw as the planner**.
+Treat **WordClaw as the durable state layer** and **Codex as the planner**.
 Do not keep large schema dumps, full item payloads, or long reasoning traces in
-OpenClaw memory when WordClaw can rehydrate them on demand.
+Codex context when WordClaw can rehydrate them on demand.
 
 Prefer this compact checkpoint shape between turns or sessions:
 
@@ -222,7 +230,7 @@ Rules:
 - `signed` assets use short-lived access guidance or signed URLs.
 - `entitled` assets require REST offer discovery and entitlement-backed reads.
 - MCP is metadata-first for asset bytes. Use REST for actual content delivery.
-- Keep asset IDs and delivery mode, not the byte payload, in OpenClaw memory.
+- Keep asset IDs and delivery mode, not the byte payload, in Codex context.
 
 ### Paid Content
 
@@ -255,73 +263,31 @@ Rules:
 - Never fabricate or replay payment tokens.
 - Purchases and confirmations are API-key- and domain-scoped.
 - If the environment cannot pay Lightning invoices or perform REST calls, stop and ask for a human settlement step.
-- After settlement, keep only `offerId`, `entitlementId`, and `paymentHash` when a confirm or resume step still depends on them.
 
 ### Manage Integrations
-
-Use:
-
-```json
-guide_task { "taskId": "manage-integrations" }
-```
-
-Then operate with:
-
-- `create_api_key`
-- `list_api_keys`
-- `revoke_api_key`
-- `create_webhook`
-- `list_webhooks`
-- `get_webhook`
-- `update_webhook`
-- `delete_webhook`
-
-Use `subscribe_events { "recipeId": "integration-admin" }` when you need to
-watch API key and webhook changes.
-
-### Verify Provenance
-
-Use:
-
-```json
-guide_task {
-  "taskId": "verify-provenance",
-  "entityType": "content_item",
-  "entityId": 123
-}
-```
 
 Preferred sequence:
 
 ```text
-1. Read system://current-actor
-2. guide_task { "taskId": "verify-provenance", ...filters }
-3. Read get_audit_logs for the narrowed actor or entity
-4. Subscribe to the recipe or audit topics returned by the guidance when follow-up monitoring matters
+1. guide_task { "taskId": "manage-integrations" }
+2. Inspect the recommended webhook, API key, or audit action
+3. Create or update webhooks and API keys only after confirming the target domain and scopes
+4. Re-read the integration or audit surface after the change instead of assuming success from local state
 ```
 
-This is the preferred way to rebuild context across sessions without replaying
-old chat state.
+Use discovery outputs to stay actor-aware. Integration operations are often
+domain-scoped and can be admin-only.
 
-### Projections and Filtered Reads
+### Verify Provenance
 
-Use `project_content_items` for grouped analytics or leaderboard-style views.
-Use `get_content_items` for filtered reads, and include
-`"includeArchived": true` when lifecycle-managed archived content should
-still be visible.
+Preferred sequence:
 
-## Error Cues
+```text
+1. guide_task { "taskId": "verify-provenance", "entityType": "...", "entityId": <id> }
+2. Fetch the relevant audit trail with get_audit_logs or REST audit endpoints
+3. Follow recommendedNextAction for deeper entity or actor inspection
+4. Use subscribe_events when you need continued monitoring after the initial check
+```
 
-- `AUTH_*` or scope errors: reread `system://current-actor`.
-- `CONTENT_TYPE_NOT_FOUND`, `CONTENT_ITEM_NOT_FOUND`, `ASSET_NOT_FOUND`, `OFFER_NOT_FOUND`: re-check target resolution and active domain.
-- `PAYMENT_REQUIRED` or `OFFER_REQUIRED`: switch to the REST paid-content flow.
-- `ENTITLEMENT_AMBIGUOUS`: choose a candidate entitlement ID and retry with `x-entitlement-id`.
-- `ENTITLEMENT_NOT_FOUND`, `ENTITLEMENT_NOT_ACTIVE`, `ENTITLEMENT_EXPIRED`, `ENTITLEMENT_EXHAUSTED`: inspect the current entitlement state, then purchase again or switch entitlements.
-- Dry-run failure: do not perform the real write until the validation problem is fixed.
-
-## Safety Rules
-
-1. Always dry-run destructive or multi-item mutations unless the user explicitly opts out.
-2. Never bypass review workflows or tenant isolation.
-3. Audit logs are immutable.
-4. `purge_asset` is permanent. Confirm with the user before calling it.
+Keep provenance work entity-scoped and cursor-based. Do not replay the entire
+audit history when a filtered delta is enough.

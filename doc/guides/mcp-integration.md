@@ -11,7 +11,11 @@ WordClaw now exposes MCP in two ways:
 - **Local stdio** for embedded or developer-run MCP sessions
 - **Streamable HTTP** at `/mcp` for attachable remote clients
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption. The MCP section now also includes a reactive contract block describing whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which session header is used, which filter fields are supported, and which topics are currently supported. The manifest also now exposes the content-runtime query contract, including field-aware content listing, grouped projection support for leaderboard and analytics-style views, and TTL lifecycle semantics for session-like content. MCP callers can pass `includeArchived` to `get_content_items` or `project_content_items` when they need lifecycle-archived rows instead of the default active-only read model. The agent-guidance task recipes now also expose static `reactiveFollowUp` examples so an agent can discover likely subscription recipes and filters before it asks for a live `guide_task` refinement. For the live readiness layer, read `system://deployment-status`. That snapshot mirrors the reactive MCP status with the active transport, notification method, supported filter fields, and supported topic count. It now also reports the readiness of the content-runtime query layer, including grouped projections and lifecycle support. For the authenticated workspace layer, read `system://workspace-context`. That workspace snapshot now also groups the strongest authoring, workflow, review, and paid-content targets for the active actor. If you already know the task class and want the best schema plus the next concrete work target immediately, use `system://workspace-target/<intent>` or the `resolve_workspace_target` tool. That resolution now prioritizes the strongest actionable candidate across the active workspace rather than only picking the busiest schema first. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption. The MCP section now also includes a reactive contract block describing whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which session header is used, which filter fields are supported, and which topics are currently supported. The manifest also now exposes the content-runtime query contract, including singleton globals, localized fields, working-copy versus published reads, reverse-reference usage graphs for content and assets, field-aware content listing, grouped projection support for leaderboard and analytics-style views, and TTL lifecycle semantics for session-like content. It also reports bootstrap and effective auth posture: whether content writes require a provisioned domain, whether writes are still credentialed even when public discovery is open, and whether vector RAG is currently enabled. MCP callers can pass `draft=false` to `get_content_items`, `get_content_item`, `list_globals`, or `get_global` when they need the latest published snapshot instead of the current working copy, and can pass `locale` plus `fallbackLocale` for localized reads. MCP callers can still pass `includeArchived` to `get_content_items` or `project_content_items` when they need lifecycle-archived rows instead of the default active-only read model. The agent-guidance task recipes now also expose static `reactiveFollowUp` examples so an agent can discover likely subscription recipes and filters before it asks for a live `guide_task` refinement. For the live readiness layer, read `system://deployment-status`. That snapshot mirrors the reactive MCP status with the active transport, notification method, supported filter fields, and supported topic count. It now also reports bootstrap readiness, effective auth posture, vector RAG readiness, and the readiness of the content-runtime query layer, including grouped projections, localization, globals, reverse references, and working-copy preview support. For the authenticated workspace layer, read `system://workspace-context`. That workspace snapshot now also groups the strongest authoring, workflow, review, and paid-content targets for the active actor. If you already know the task class and want the best schema plus the next concrete work target immediately, use `system://workspace-target/<intent>` or the `resolve_workspace_target` tool. That resolution now prioritizes the strongest actionable candidate across the active workspace rather than only picking the busiest schema first. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
+
+Bootstrap note: MCP discovery will tell you when the install has `domainCount: 0`, but domain creation is still a REST path today. If bootstrap is blocked, create the first domain with `POST /api/domains`, then continue the normal MCP flow.
+
+Preview-token issuance remains a REST and CLI path today. MCP covers locale-aware working-copy and published reads, but it does not mint public preview tokens directly.
 
 The same discovery surfaces now expose the asset contract too:
 
@@ -27,6 +31,7 @@ Asset discovery is available in-band too:
 - `content://assets` lists the current domain asset catalog snapshot
 - `content://assets/{id}` returns a single asset metadata snapshot
 - `content://assets/{id}/derivatives` lists the current derivative family for a source asset
+- `get_asset_usage` returns the active plus historical content references for an asset
 - `get_asset_access` explains which REST path to read, whether auth is required, and whether an entitlement-backed offer applies
 - `create_asset` accepts `sourceAssetId`, `variantKey`, and `transformSpec` when you need to create a managed derivative variant
 - `issue_direct_asset_upload` returns a provider upload URL plus a completion token for S3-compatible direct upload flows
@@ -68,6 +73,16 @@ node dist/cli/index.js mcp resource system://workspace-target/review \
   --api-key writer
 
 node dist/cli/index.js mcp resource system://agent-guidance \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
+node dist/cli/index.js mcp call list_globals --json '{"locale":"nl"}' \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key writer
+
+node dist/cli/index.js mcp call get_content_item --json '{"id":345,"draft":false,"locale":"nl","fallbackLocale":"en"}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
@@ -259,21 +274,37 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | `update_content_type`  | Update schema or name          |
 | `delete_content_type`  | Delete a content type          |
 
+### Global Tools
+
+| Tool             | Description                                                |
+|------------------|------------------------------------------------------------|
+| `list_globals`   | List singleton/global documents with locale and draft flags |
+| `get_global`     | Get one singleton/global by slug                           |
+| `update_global`  | Update the singleton/global document for a slug            |
+
 ### Content Item Tools
 
 | Tool                          | Description                            |
 |-------------------------------|----------------------------------------|
 | `create_content_item`         | Create a single content item           |
 | `create_content_items_batch`  | Batch create (supports atomic mode)    |
-| `get_content_items`           | List with filters and cursor paging    |
+| `get_content_items`           | List with filters, locale options, and cursor paging |
 | `project_content_items`       | Build grouped buckets for leaderboard and analytics-style views |
-| `get_content_item`            | Get by ID                              |
+| `get_content_item`            | Get by ID with locale and draft options |
+| `get_content_item_usage`      | Inspect active and historical reverse references for a content item |
 | `update_content_item`         | Update (auto-versions)                 |
 | `update_content_items_batch`  | Batch update                           |
 | `delete_content_item`         | Delete single                          |
 | `delete_content_items_batch`  | Batch delete                           |
 | `get_content_item_versions`   | View version history                   |
 | `rollback_content_item`       | Rollback to a previous version         |
+
+Read tools now return derived publication metadata too:
+
+- `publicationState`
+- `workingCopyVersion`
+- `publishedVersion`
+- `localeResolution` when a localized read was requested
 
 ### Asset Tools
 
@@ -285,6 +316,7 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | `complete_direct_asset_upload` | Finalize a previously issued direct asset upload into an asset record |
 | `list_assets`      | List assets with optional filters and cursor paging                  |
 | `get_asset`        | Read a single asset metadata record                                  |
+| `get_asset_usage`  | Inspect active and historical reverse references for an asset        |
 | `get_asset_access` | Return REST delivery guidance, auth requirements, and available offers |
 | `issue_asset_access` | Issue a short-lived signed asset URL or direct public delivery guidance |
 | `delete_asset`     | Soft-delete an asset so it can no longer be newly referenced         |
@@ -332,14 +364,14 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 
 | Resource         | Description                           |
 |------------------|---------------------------------------|
-| `capabilities`   | Deployment capability manifest as JSON |
-| `deployment-status` | Live readiness snapshot for database, REST, MCP, and enabled workers |
+| `capabilities`   | Deployment capability manifest as JSON, including bootstrap, auth, and vector-RAG posture |
+| `deployment-status` | Live readiness snapshot for database, bootstrap, auth, REST, MCP, vector RAG, and enabled workers |
 | `current-actor`  | Canonical actor, domain, and scope snapshot for the current MCP session |
 | `workspace-context` | Current domain, accessible domains, and content-model inventory for the active actor |
 | `agent-guidance` | Task-oriented routing hints and recipes for agent workflows |
 | `content-types`  | Returns the content type catalog as text |
 
-Resources give agents read-only context about the system state.
+Resources give agents read-only context about the system state. If `system://deployment-status` shows `domainCount: 0`, bootstrap the first domain over REST before attempting MCP authoring writes.
 
 ## Prompts
 

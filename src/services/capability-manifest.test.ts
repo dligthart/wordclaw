@@ -8,6 +8,10 @@ const originalExperimentalAgentRuns = process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS
 const originalNodeEnv = process.env.NODE_ENV;
 const originalAssetStorageProvider = process.env.ASSET_STORAGE_PROVIDER;
 const originalAssetSignedTtl = process.env.ASSET_SIGNED_TTL_SECONDS;
+const originalAuthRequired = process.env.AUTH_REQUIRED;
+const originalAllowInsecureLocalAdmin = process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+const originalOpenAiEmbeddingModel = process.env.OPENAI_EMBEDDING_MODEL;
 
 function restoreEnv() {
     if (originalExperimentalRevenue === undefined) {
@@ -45,6 +49,30 @@ function restoreEnv() {
     } else {
         process.env.ASSET_SIGNED_TTL_SECONDS = originalAssetSignedTtl;
     }
+
+    if (originalAuthRequired === undefined) {
+        delete process.env.AUTH_REQUIRED;
+    } else {
+        process.env.AUTH_REQUIRED = originalAuthRequired;
+    }
+
+    if (originalAllowInsecureLocalAdmin === undefined) {
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+    } else {
+        process.env.ALLOW_INSECURE_LOCAL_ADMIN = originalAllowInsecureLocalAdmin;
+    }
+
+    if (originalOpenAiApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+    } else {
+        process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    }
+
+    if (originalOpenAiEmbeddingModel === undefined) {
+        delete process.env.OPENAI_EMBEDDING_MODEL;
+    } else {
+        process.env.OPENAI_EMBEDDING_MODEL = originalOpenAiEmbeddingModel;
+    }
 }
 
 describe('buildCapabilityManifest', () => {
@@ -57,6 +85,10 @@ describe('buildCapabilityManifest', () => {
         delete process.env.ENABLE_EXPERIMENTAL_DELEGATION;
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
         process.env.ASSET_SIGNED_TTL_SECONDS = '420';
+        process.env.AUTH_REQUIRED = 'false';
+        process.env.ALLOW_INSECURE_LOCAL_ADMIN = 'false';
+        delete process.env.OPENAI_API_KEY;
+        delete process.env.OPENAI_EMBEDDING_MODEL;
 
         const manifest = buildCapabilityManifest();
 
@@ -112,6 +144,30 @@ describe('buildCapabilityManifest', () => {
         );
         expect(manifest.auth.mcp.endpoint).toBe('/mcp');
         expect(manifest.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
+        expect(manifest.auth.effective).toEqual({
+            authRequired: false,
+            writeRequiresCredential: true,
+            insecureLocalAdminEnabled: false,
+            recommendedActorProfile: 'api-key',
+            recommendedScopes: ['content:write'],
+            note: 'Read-only discovery can be unauthenticated, but writes still require a credential because insecure local admin is not enabled.',
+        });
+        expect(manifest.bootstrap).toEqual({
+            contentWritesRequireDomain: true,
+            supportsInBandDomainCreation: true,
+            restCreateDomainPath: '/api/domains',
+            mcpCreateDomainTool: null,
+            noDomainErrorCode: 'NO_DOMAIN',
+            note: 'Read deployment status before the first write to confirm that the active deployment already has a provisioned domain.',
+        });
+        expect(manifest.vectorRag).toEqual({
+            enabled: false,
+            model: null,
+            requiredEnvironmentVariables: ['OPENAI_API_KEY'],
+            restPath: '/api/search/semantic',
+            mcpTool: 'search_semantic_knowledge',
+            note: 'Semantic search is disabled until OPENAI_API_KEY is configured.',
+        });
         expect(manifest.protocolContract.required).toEqual(['rest', 'mcp']);
         expect(manifest.protocolContract.compatibility).toEqual(['graphql']);
         expect(manifest.paidContent.purchaseFlowSurface).toBe('rest');
@@ -159,6 +215,12 @@ describe('buildCapabilityManifest', () => {
                 defaultClock: 'updatedAt',
                 defaultArchiveStatus: 'archived',
                 includeArchivedFlag: 'includeArchived',
+            }),
+            reverseReferences: expect.objectContaining({
+                supported: true,
+                restPaths: ['/api/content-items/:id/used-by', '/api/assets/:id/used-by'],
+                graphqlFields: ['contentItemUsedBy', 'assetUsedBy'],
+                mcpTools: ['get_content_item_usage', 'get_asset_usage'],
             }),
         }));
         expect(manifest.assetStorage).toEqual(expect.objectContaining({

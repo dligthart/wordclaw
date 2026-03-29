@@ -6,14 +6,15 @@ import SwaggerUI from '../.vitepress/components/SwaggerUI.vue'
 
 This document covers WordClaw's primary HTTP surface: the REST API. MCP is the primary agent-native companion surface; see [mcp-integration.md](../guides/mcp-integration). GraphQL remains available at `/graphql` as a compatibility layer. Experimental revenue, payout, delegation, and agent-run endpoints are intentionally hidden from the default API reference unless an operator explicitly enables those incubator modules in runtime configuration.
 
-The prose examples below are the current reference point for the newest runtime layers such as public write lanes, direct asset upload, and the latest asset lifecycle flows. The embedded OpenAPI viewer still emphasizes the longest-stable core contract while those newer slices continue to be expanded there.
+The prose examples below are the current reference point for the newest runtime layers such as globals, locale-aware reads, working-copy versus published reads, preview tokens, reverse-reference usage graphs, public write lanes, direct asset upload, and the latest asset lifecycle flows. The embedded OpenAPI viewer still emphasizes the longest-stable core contract while those newer slices continue to be expanded there.
 
-For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, and task-oriented agent recipes in one machine-readable document. It now also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, supported providers (`local`, `s3`), fallback state when remote storage is misconfigured, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. It now also publishes the content-runtime query contract: field-aware listing constraints, queryable scalar field kinds, grouped projection support for lightweight leaderboard and analytics-style read models, and TTL lifecycle semantics for session-like content via `x-wordclaw-lifecycle` plus the `includeArchived` override on list/projection reads. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, REST/MCP availability, content-runtime query surfaces, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
+For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, and task-oriented agent recipes in one machine-readable document. It now also includes bootstrap and effective auth posture so clients can tell whether content writes still need a credential, whether insecure local admin is active, and whether a first domain still needs to be provisioned. It also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, supported providers (`local`, `s3`), fallback state when remote storage is misconfigured, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. It now also publishes the content-runtime query contract: field-aware listing constraints, queryable scalar field kinds, grouped projection support for lightweight leaderboard and analytics-style read models, and TTL lifecycle semantics for session-like content via `x-wordclaw-lifecycle` plus the `includeArchived` override on list/projection reads. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, bootstrap state, REST/MCP availability, vector RAG readiness, content-runtime query surfaces, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
 
 The fastest task-oriented preflight sequence is:
 
 1. `GET /api/capabilities`
 2. `GET /api/deployment-status`
+   - if `domainCount` is `0`, bootstrap the first domain with `POST /api/domains`
 3. `GET /api/identity`
 4. `GET /api/workspace-context`
    - supports `intent`, `search`, and `limit` when the agent already knows whether it wants authoring, review, workflow, or paid-content targets
@@ -27,6 +28,18 @@ The fastest task-oriented preflight sequence is:
    - `integrations guide`
    - `audit guide --entity-type <type> --entity-id <id>`
    - `l402 guide --item <id>`
+
+## Content-State Contract
+
+The current REST content contract includes a few authoring-state primitives that matter for agents and supervisors:
+
+- `GET /api/content-items`, `GET /api/content-items/:id`, `GET /api/globals`, and `GET /api/globals/:slug` accept `draft`, `locale`, and `fallbackLocale`.
+- Reads default to `draft=true`, which means the latest working copy is returned.
+- `draft=false` prefers the latest published snapshot while still returning publication metadata for the current working copy.
+- Content item and global reads now include `publicationState`, `workingCopyVersion`, `publishedVersion`, and optional `localeResolution`.
+- Short-lived preview tokens are issued through `POST /api/content-items/:id/preview-token` and `POST /api/globals/:slug/preview-token`, then redeemed through `/api/preview/...` paths.
+- Reverse-reference usage graphs are available through `GET /api/content-items/:id/used-by` and `GET /api/assets/:id/used-by`.
+- Preview reads stay scoped to one item or global, remain auditable, and currently reject paywalled targets.
 
 ## Common Examples
 
@@ -61,7 +74,34 @@ curl -H "x-api-key: writer" "http://localhost:4000/api/workspace-context?intent=
 }
 ```
 
-### 2. Creating Content (Authoring)
+### 2. Bootstrapping the First Domain
+
+If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`.
+
+**Request:**
+```bash
+curl -X POST http://localhost:4000/api/domains \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Local Development",
+    "hostname": "local.development"
+  }'
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "id": 1,
+    "name": "Local Development",
+    "hostname": "local.development",
+    "createdAt": "2026-03-29T09:00:00.000Z"
+  }
+}
+```
+
+### 3. Creating Content (Authoring)
 
 Author a new draft into an existing schema (`id: 15`).
 
@@ -97,7 +137,7 @@ curl -X POST http://localhost:4000/api/content-items \
 }
 ```
 
-### 3. Listing Content with Cursor Pagination
+### 4. Listing Content with Cursor Pagination
 
 List content safely in pages without fetching the entire dataset up front. Reuse the returned `meta.nextCursor` for the next request.
 
@@ -134,7 +174,7 @@ curl -H "x-api-key: writer" \
   "http://localhost:4000/api/content-items?contentTypeId=15&status=draft&limit=2&cursor=eyJjcmVhdGVkQXQiOiIyMDI0LTAzLTI0VDEyOjAwOjAwLjAwMFoiLCJpZCI6ODh9"
 ```
 
-### 4. Building a Grouped Content Projection
+### 5. Building a Grouped Content Projection
 
 Build a leaderboard- or analytics-style grouped read model directly from content data. In this first pass the runtime groups by one top-level scalar schema field and supports `count`, `sum`, `avg`, `min`, and `max`.
 
@@ -171,7 +211,7 @@ curl -H "x-api-key: writer" \
 }
 ```
 
-### 5. TTL-Managed Session Content
+### 6. TTL-Managed Session Content
 
 For ephemeral session-like models, declare a lifecycle policy in the content type schema and let the runtime lazily archive stale rows on touch. List and projection reads exclude those archived rows by default; operators can opt back in with `includeArchived=true`.
 
@@ -198,7 +238,137 @@ curl -H "x-api-key: writer" \
   "http://localhost:4000/api/content-items?contentTypeId=15&includeArchived=true&limit=20"
 ```
 
-### 6. Uploading an Asset
+### 7. Reading Globals
+
+Read singleton/global documents through the dedicated globals surface instead of treating them like ordinary collection rows.
+
+**Request:**
+```bash
+curl -H "x-api-key: writer" \
+  "http://localhost:4000/api/globals?locale=nl"
+```
+
+**Response excerpt:**
+```json
+{
+  "data": [
+    {
+      "contentType": {
+        "id": 11,
+        "slug": "site-settings",
+        "kind": "singleton"
+      },
+      "item": {
+        "id": 81,
+        "status": "published",
+        "publicationState": "published",
+        "workingCopyVersion": 2,
+        "publishedVersion": 2,
+        "data": "{\"title\":\"Instellingen\"}"
+      }
+    }
+  ]
+}
+```
+
+### 8. Reading the Latest Published Snapshot
+
+Use `draft=false` when a caller explicitly wants the latest published representation instead of the newest working copy.
+
+**Request:**
+```bash
+curl -H "x-api-key: writer" \
+  "http://localhost:4000/api/content-items/345?draft=false&locale=nl&fallbackLocale=en"
+```
+
+**Response excerpt:**
+```json
+{
+  "data": {
+    "id": 345,
+    "status": "published",
+    "version": 7,
+    "publicationState": "changed",
+    "workingCopyVersion": 9,
+    "publishedVersion": 7,
+    "data": "{\"title\":\"Hallo wereld\"}",
+    "localeResolution": {
+      "requestedLocale": "nl",
+      "fallbackLocale": "en",
+      "resolvedFieldCount": 1
+    }
+  }
+}
+```
+
+### 9. Issuing and Redeeming a Preview Token
+
+Preview tokens are the explicit draft-access contract for one content item or global. They are short-lived, domain-scoped, and must be supplied on the preview read.
+
+**Issue the token:**
+```bash
+curl -X POST http://localhost:4000/api/content-items/345/preview-token \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "draft": true,
+    "locale": "nl",
+    "fallbackLocale": "en",
+    "ttlSeconds": 120
+  }'
+```
+
+**Response excerpt:**
+```json
+{
+  "data": {
+    "contentItemId": 345,
+    "draft": true,
+    "ttlSeconds": 120,
+    "token": "<preview-token>",
+    "previewPath": "/api/preview/content-items/345?token=<preview-token>"
+  }
+}
+```
+
+**Redeem the preview token:**
+```bash
+curl "http://localhost:4000/api/preview/content-items/345?token=<preview-token>"
+```
+
+### 10. Inspecting Reverse References
+
+Use the usage graph endpoints before deleting, purging, or restructuring linked content and assets.
+
+**Request:**
+```bash
+curl -H "x-api-key: writer" \
+  "http://localhost:4000/api/content-items/345/used-by"
+```
+
+**Response excerpt:**
+```json
+{
+  "data": {
+    "activeReferenceCount": 2,
+    "historicalReferenceCount": 1,
+    "activeReferences": [
+      {
+        "contentItemId": 401,
+        "contentTypeName": "Landing Page",
+        "contentTypeSlug": "landing-page",
+        "path": "/featuredPosts/0",
+        "version": 7,
+        "status": "published"
+      }
+    ]
+  }
+}
+```
+
+The same shape is returned by `GET /api/assets/:id/used-by`.
+
+### 11. Uploading an Asset
 
 Create a signed asset and attach metadata without leaving the core runtime.
 
@@ -236,7 +406,7 @@ curl -X POST http://localhost:4000/api/assets \
 }
 ```
 
-### 7. Issuing a Public Write Token
+### 11. Issuing a Public Write Token
 
 For bounded player/session-like writes, issue a short-lived token from a schema that explicitly allows public writes.
 
@@ -276,7 +446,7 @@ curl -X POST http://localhost:4000/api/public/content-types/15/items \
   }'
 ```
 
-### 8. Direct Asset Upload Through a Storage Provider
+### 12. Direct Asset Upload Through a Storage Provider
 
 For large files or browser-friendly flows, ask WordClaw for a provider upload URL first, then complete the asset after the object write succeeds.
 
@@ -335,7 +505,7 @@ curl -X POST http://localhost:4000/api/assets/direct-upload/complete \
   }'
 ```
 
-### 9. Inspecting Derivative Asset Variants
+### 13. Inspecting Derivative Asset Variants
 
 List the managed variants attached to a source asset, such as a web-optimized image or thumbnail derivative.
 
@@ -367,7 +537,7 @@ curl http://localhost:4000/api/assets/44/derivatives \
 }
 ```
 
-### 10. Inspecting Asset Storage Readiness
+### 14. Inspecting Asset Storage Readiness
 
 Check which asset storage provider is configured, which provider is actually active, and whether the runtime fell back to local storage because remote configuration is incomplete.
 
@@ -390,7 +560,7 @@ curl http://localhost:4000/api/deployment-status
 }
 ```
 
-### 11. Paying an L402 Invoice
+### 15. Paying an L402 Invoice
 
 Confirming a purchase locally with a simulated payment backend.
 

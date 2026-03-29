@@ -1,0 +1,22 @@
+# Codex configuration for WordClaw CMS integration.
+#
+# Merge one of the server blocks below into ~/.codex/config.toml and restart
+# Codex afterwards.
+#
+# Pick ONE option:
+#   1. [mcp_servers.wordclaw_stdio]  launches the local MCP server as a child process
+#   2. [mcp_servers.wordclaw_remote] connects to a running WordClaw instance over HTTP
+
+[mcp_servers.wordclaw_stdio]
+command = "npx"
+args = ["tsx", "src/mcp/index.ts"]
+cwd = "/absolute/path/to/wordclaw"
+env = { DATABASE_URL = "postgres://postgres:postgres@localhost:5432/wordclaw", AUTH_REQUIRED = "true", API_KEYS = "writer=content:read|content:write|audit:read" }
+required = true
+startup_timeout_sec = 20.0
+
+# [mcp_servers.wordclaw_remote]
+# url = "http://localhost:4000/mcp"
+# env_http_headers = { "x-api-key" = "WORDCLAW_API_KEY" }
+# required = true
+# startup_timeout_sec = 20.0
