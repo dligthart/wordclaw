@@ -1,3 +1,10 @@
+# [1.37.0](https://github.com/dligthart/wordclaw/compare/v1.36.1...v1.37.0) (2026-03-29)
+
+
+### Features
+
+* add codex wordclaw skill ([272dfa3](https://github.com/dligthart/wordclaw/commit/272dfa36c78038d15185647180572fba419ff19a))
+
 ## [1.36.1](https://github.com/dligthart/wordclaw/compare/v1.36.0...v1.36.1) (2026-03-28)
 
 
