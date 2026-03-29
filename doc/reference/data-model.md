@@ -7,19 +7,24 @@ erDiagram
   content_types ||--o{ content_items : "contentTypeId"
   content_items ||--o{ content_item_versions : "contentItemId"
   content_items ||--o{ content_item_embeddings : "contentItemId"
+  content_types ||--o{ form_definitions : "contentTypeId"
   users ||--o{ api_keys : "createdBy"
   api_keys ||--o{ audit_logs : "userId"
   payments ||--|| entitlements : "paymentHash"
 
   content_types {
     int id PK
+    int domainId
     text name
     text slug
+    text kind
+    jsonb schemaManifest
     text schema
   }
 
   content_items {
     int id PK
+    int domainId
     int contentTypeId FK
     text status
     int version
@@ -36,6 +41,22 @@ erDiagram
     int contentItemId FK
     int domainId
     vector embedding
+  }
+
+  form_definitions {
+    int id PK
+    int domainId
+    int contentTypeId FK
+    text slug
+    boolean active
+  }
+
+  jobs {
+    int id PK
+    int domainId
+    text kind
+    text queue
+    text status
   }
 
   users {
@@ -93,22 +114,26 @@ Defines the shape of content items via a JSON schema.
 | Column      | Type      | Notes                     |
 |-------------|-----------|---------------------------|
 | `id`        | serial PK | Auto-increment            |
+| `domainId`  | integer   | Tenant boundary           |
 | `name`      | text      | Required                  |
 | `slug`      | text      | Unique, URL-safe          |
+| `kind`      | text      | `collection` or `singleton` |
+| `schemaManifest` | jsonb | Optional editor-oriented schema manifest |
 | `schema`    | text      | JSON schema string        |
 | `createdAt` | timestamp | Default `now()`           |
 | `updatedAt` | timestamp | Updated on mutation       |
 
 ### content_items
 
-Versioned content entities. The `data` field is validated against the parent content type's schema on every write.
+Versioned content entities. The `data` field is validated against the parent content type's schema on every write. The current `content_items` row is the latest working copy; published reads can resolve against the most recent published snapshot in `content_item_versions`.
 
 | Column          | Type      | Notes                                  |
 |-----------------|-----------|----------------------------------------|
 | `id`            | serial PK |                                        |
+| `domainId`      | integer   | Tenant boundary                        |
 | `contentTypeId` | integer   | FK → `content_types.id`               |
 | `data`          | text      | JSON content                           |
-| `status`        | text      | `draft`, `published`, or `archived`    |
+| `status`        | text      | Workflow/runtime state, including `draft` and `published` |
 | `version`       | integer   | Auto-incremented on update             |
 | `createdAt`     | timestamp |                                        |
 | `updatedAt`     | timestamp |                                        |
@@ -125,6 +150,65 @@ Immutable snapshots created before every content item update. Cascade-deleted wh
 | `status`        | text      | Snapshot of status at version  |
 | `version`       | integer   | Version number                 |
 | `createdAt`     | timestamp |                                |
+
+## Derived Runtime Read Model
+
+These are current runtime concepts exposed by REST, MCP, GraphQL compatibility, and the supervisor UI, but they are derived rather than persisted as top-level columns:
+
+- **Globals** — A `content_types.kind = singleton` model is read and written through the dedicated globals surface. The schema remains on `content_types`; the singleton document remains a normal `content_items` row.
+- **Publication State** — Reads expose `publicationState`, `workingCopyVersion`, and `publishedVersion`. `published` means the current row is live, `changed` means a newer working copy exists than the last published snapshot, and `draft` means no published snapshot exists yet.
+- **Localized Reads** — Localization is declared in schema metadata via `x-wordclaw-localization` and per-field `x-wordclaw-localized`. Stored data remains canonical locale maps; localized read values and `localeResolution` are computed at read time.
+- **Preview Tokens** — Preview access is stateless and signed. Tokens are not persisted in the database; they are issued and verified from the runtime signing secret.
+- **Reverse References** — Usage graphs for content items and assets are derived from `content_items` plus `content_item_versions`. They are query-time projections rather than separate stored join tables.
+- **Generated Artifacts** — Generated TypeScript/Zod/client files are built from `content_types.schema`, `content_types.schemaManifest`, and the capability manifest; the artifacts themselves are not stored in the database.
+
+### form_definitions
+
+Reusable bounded public-intake definitions backed by a target content type.
+
+| Column                 | Type      | Notes                                                      |
+|------------------------|-----------|------------------------------------------------------------|
+| `id`                   | serial PK |                                                            |
+| `domainId`             | integer   | Tenant boundary                                            |
+| `name`                 | text      | Human-readable operator label                              |
+| `slug`                 | text      | Public form identifier within the domain                   |
+| `description`          | text      | Optional operator-facing description                       |
+| `contentTypeId`        | integer   | FK → `content_types.id`                                    |
+| `fields`               | jsonb     | Allowed public fields mapped onto top-level schema fields  |
+| `defaultData`          | jsonb     | Optional bounded defaults merged before validation         |
+| `active`               | boolean   | Submission enable/disable switch                           |
+| `publicRead`           | boolean   | Whether the sanitized public contract is exposed           |
+| `submissionStatus`     | text      | Initial status assigned to created content items           |
+| `workflowTransitionId` | integer   | Optional auto-submit review transition                     |
+| `requirePayment`       | boolean   | Enables L402 challenge on the public submission route      |
+| `webhookUrl`           | text      | Optional follow-up callback target                         |
+| `webhookSecret`        | text      | Optional HMAC signing secret for follow-up delivery        |
+| `successMessage`       | text      | Optional message returned after successful submission      |
+| `createdAt`            | timestamp |                                                            |
+| `updatedAt`            | timestamp |                                                            |
+
+### jobs
+
+Domain-scoped background work queue for scheduled and deferred runtime tasks.
+
+| Column         | Type      | Notes                                                            |
+|----------------|-----------|------------------------------------------------------------------|
+| `id`           | serial PK |                                                                  |
+| `domainId`     | integer   | Tenant boundary                                                  |
+| `kind`         | text      | `content_status_transition` or `outbound_webhook`                |
+| `queue`        | text      | Logical lane such as `content` or `webhooks`                     |
+| `status`       | text      | `queued`, `running`, `succeeded`, `failed`, or `cancelled`       |
+| `payload`      | jsonb     | Kind-specific execution payload                                  |
+| `result`       | jsonb     | Optional execution result payload                                |
+| `attempts`     | integer   | Claimed attempt count                                            |
+| `maxAttempts`  | integer   | Retry ceiling                                                    |
+| `runAt`        | timestamp | When the worker is allowed to claim the job                      |
+| `claimedAt`    | timestamp | When the current/last worker claim happened                      |
+| `startedAt`    | timestamp | Handler start time                                               |
+| `completedAt`  | timestamp | Final completion time for terminal states                        |
+| `lastError`    | text      | Last error message when the handler fails                        |
+| `createdAt`    | timestamp |                                                                  |
+| `updatedAt`    | timestamp |                                                                  |
 
 ### content_item_embeddings (RFC 0012)
 
@@ -147,7 +231,7 @@ Every mutation emits an audit record.
 |--------------|-----------|---------------------------------------------|
 | `id`         | serial PK |                                             |
 | `action`     | text      | `create`, `update`, `delete`, `rollback`    |
-| `entityType` | text      | `content_type`, `content_item`, `webhook`, `api_key` |
+| `entityType` | text      | `content_type`, `content_item`, `form_definition`, `job`, `webhook`, `api_key` |
 | `entityId`   | integer   |                                             |
 | `details`    | text      | JSON payload of the change                  |
 | `userId`     | integer   | FK → API key ID (nullable)                  |

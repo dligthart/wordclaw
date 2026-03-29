@@ -6,7 +6,7 @@ import SwaggerUI from '../.vitepress/components/SwaggerUI.vue'
 
 This document covers WordClaw's primary HTTP surface: the REST API. MCP is the primary agent-native companion surface; see [mcp-integration.md](../guides/mcp-integration). GraphQL remains available at `/graphql` as a compatibility layer. Experimental revenue, payout, delegation, and agent-run endpoints are intentionally hidden from the default API reference unless an operator explicitly enables those incubator modules in runtime configuration.
 
-The prose examples below are the current reference point for the newest runtime layers such as globals, locale-aware reads, working-copy versus published reads, preview tokens, reverse-reference usage graphs, public write lanes, direct asset upload, and the latest asset lifecycle flows. The embedded OpenAPI viewer still emphasizes the longest-stable core contract while those newer slices continue to be expanded there.
+The prose examples below are the current reference point for the newest runtime layers such as globals, locale-aware reads, working-copy versus published reads, preview tokens, reverse-reference usage graphs, reusable forms, background jobs, public write lanes, direct asset upload, and the latest asset lifecycle flows. The embedded OpenAPI viewer still emphasizes the longest-stable core contract while those newer slices continue to be expanded there.
 
 For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, and task-oriented agent recipes in one machine-readable document. It now also includes bootstrap and effective auth posture so clients can tell whether content writes still need a credential, whether insecure local admin is active, and whether a first domain still needs to be provisioned. It also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, supported providers (`local`, `s3`), fallback state when remote storage is misconfigured, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. It now also publishes the content-runtime query contract: field-aware listing constraints, queryable scalar field kinds, grouped projection support for lightweight leaderboard and analytics-style read models, and TTL lifecycle semantics for session-like content via `x-wordclaw-lifecycle` plus the `includeArchived` override on list/projection reads. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, bootstrap state, REST/MCP availability, vector RAG readiness, content-runtime query surfaces, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
 
@@ -14,13 +14,14 @@ The fastest task-oriented preflight sequence is:
 
 1. `GET /api/capabilities`
 2. `GET /api/deployment-status`
-   - if `domainCount` is `0`, bootstrap the first domain with `POST /api/domains`
+   - if `domainCount` is `0`, bootstrap the first domain with `POST /api/domains` or MCP `create_domain`
 3. `GET /api/identity`
 4. `GET /api/workspace-context`
    - supports `intent`, `search`, and `limit` when the agent already knows whether it wants authoring, review, workflow, or paid-content targets
 5. `GET /api/workspace-target`
    - resolves the best schema target plus the next concrete work target for `authoring`, `review`, `workflow`, or `paid`
 6. Use the matching CLI helper:
+   - `mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`
    - `workspace guide`
    - `workspace resolve --intent <intent>`
    - `content guide --content-type-id <id>`
@@ -39,6 +40,8 @@ The current REST content contract includes a few authoring-state primitives that
 - Content item and global reads now include `publicationState`, `workingCopyVersion`, `publishedVersion`, and optional `localeResolution`.
 - Short-lived preview tokens are issued through `POST /api/content-items/:id/preview-token` and `POST /api/globals/:slug/preview-token`, then redeemed through `/api/preview/...` paths.
 - Reverse-reference usage graphs are available through `GET /api/content-items/:id/used-by` and `GET /api/assets/:id/used-by`.
+- Reusable forms are managed through `GET/POST /api/forms`, `GET/PUT/DELETE /api/forms/:id`, and the public submission surface at `GET /api/public/forms/:slug` plus `POST /api/public/forms/:slug/submissions`.
+- Background jobs are managed through `GET/POST /api/jobs`, `GET/DELETE /api/jobs/:id`, `GET /api/jobs/worker-status`, and `POST /api/content-items/:id/schedule-status`.
 - Preview reads stay scoped to one item or global, remain auditable, and currently reject paywalled targets.
 
 ## Common Examples
@@ -76,7 +79,7 @@ curl -H "x-api-key: writer" "http://localhost:4000/api/workspace-context?intent=
 
 ### 2. Bootstrapping the First Domain
 
-If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`.
+If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`. The MCP equivalent is `create_domain`, and the recommended bootstrap planner is `guide_task("bootstrap-workspace")`.
 
 **Request:**
 ```bash
@@ -368,7 +371,117 @@ curl -H "x-api-key: writer" \
 
 The same shape is returned by `GET /api/assets/:id/used-by`.
 
-### 11. Uploading an Asset
+### 11. Managing Form Definitions
+
+Forms turn bounded external intake into a first-class runtime contract instead of one-off public-write glue.
+
+**Create a form definition:**
+```bash
+curl -X POST http://localhost:4000/api/forms \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Contact",
+    "slug": "contact",
+    "contentTypeId": 15,
+    "fields": [
+      { "name": "email", "type": "text", "required": true },
+      { "name": "message", "type": "textarea", "required": true }
+    ],
+    "publicRead": true,
+    "submissionStatus": "draft"
+  }'
+```
+
+**Response excerpt:**
+```json
+{
+  "data": {
+    "id": 21,
+    "slug": "contact",
+    "contentTypeSlug": "lead",
+    "active": true,
+    "publicRead": true,
+    "submissionStatus": "draft",
+    "fields": [
+      { "name": "email", "type": "text", "required": true },
+      { "name": "message", "type": "textarea", "required": true }
+    ]
+  }
+}
+```
+
+**Read the sanitized public contract:**
+```bash
+curl "http://localhost:4000/api/public/forms/contact?domainId=1"
+```
+
+**Submit a public payload:**
+```bash
+curl -X POST "http://localhost:4000/api/public/forms/contact/submissions?domainId=1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "email": "operator@example.com",
+      "message": "Hello from the public form lane."
+    }
+  }'
+```
+
+### 12. Queueing Background Jobs
+
+Jobs make slow or scheduled side effects explicit and inspectable.
+
+**Queue an outbound webhook job:**
+```bash
+curl -X POST http://localhost:4000/api/jobs \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "kind": "outbound_webhook",
+    "runAt": "2026-03-29T18:00:00Z",
+    "payload": {
+      "url": "https://example.com/hooks/wordclaw",
+      "body": {
+        "event": "demo",
+        "source": "docs"
+      }
+    }
+  }'
+```
+
+**Response excerpt:**
+```json
+{
+  "data": {
+    "id": 44,
+    "kind": "outbound_webhook",
+    "queue": "webhooks",
+    "status": "queued",
+    "attempts": 0,
+    "maxAttempts": 3
+  }
+}
+```
+
+**Schedule a content status change:**
+```bash
+curl -X POST http://localhost:4000/api/content-items/345/schedule-status \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetStatus": "published",
+    "runAt": "2026-03-29T18:30:00Z"
+  }'
+```
+
+**Inspect worker health:**
+```bash
+curl -H "x-api-key: writer" \
+  "http://localhost:4000/api/jobs/worker-status"
+```
+
+### 13. Uploading an Asset
 
 Create a signed asset and attach metadata without leaving the core runtime.
 
@@ -406,7 +519,7 @@ curl -X POST http://localhost:4000/api/assets \
 }
 ```
 
-### 11. Issuing a Public Write Token
+### 14. Issuing a Public Write Token
 
 For bounded player/session-like writes, issue a short-lived token from a schema that explicitly allows public writes.
 

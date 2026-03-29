@@ -9,6 +9,9 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0017: Tenant Boundary and Contract Hardening (partially implemented)](/archive/rfc/0017-tenant-boundary-and-contract-hardening)
 - [RFC-0021: Core Product Focus and Feature Pruning (accepted)](/archive/rfc/0021-core-product-focus-and-feature-pruning)
 - [RFC-0025: Reactive Agentic Webhooks via MCP (rolling out)](/rfc/proposed/0025-agentic-webhooks)
+- [RFC-0027: Structured Marketing Website Support Without Page Builder Drift (proposed)](/rfc/proposed/0027-structured-marketing-website-support)
+- [RFC-0028: Content Modeling and Supervisor Ergonomics (implemented)](/rfc/implemented/0028-content-modeling-and-supervisor-ergonomics)
+- [RFC-0029: Agent Provisioning and Runtime Self-Description (rolling out)](/rfc/proposed/0029-agent-provisioning-and-runtime-self-description)
 
 ## Historical / Non-Core Proposals
 

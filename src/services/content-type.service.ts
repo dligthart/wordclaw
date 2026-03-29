@@ -1,7 +1,26 @@
 import { db } from '../db/index.js';
-import { contentTypes } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { contentItems, contentTypes } from '../db/schema.js';
+import { eq, and, desc, ne, sql } from 'drizzle-orm';
 import { logAudit } from './audit.js';
+
+export const CONTENT_TYPE_KINDS = ['collection', 'singleton'] as const;
+export type ContentTypeKind = typeof CONTENT_TYPE_KINDS[number];
+
+export function normalizeContentTypeKind(value: unknown): ContentTypeKind | null {
+    if (value === 'collection' || value === 'singleton') {
+        return value;
+    }
+
+    return null;
+}
+
+export function resolveContentTypeKind(value: unknown): ContentTypeKind {
+    return normalizeContentTypeKind(value) ?? 'collection';
+}
+
+export function isSingletonContentType(value: unknown): boolean {
+    return resolveContentTypeKind(value) === 'singleton';
+}
 
 // --- Types ---
 
@@ -9,14 +28,18 @@ export interface CreateContentTypeInput {
     domainId: number;
     name: string;
     slug: string;
+    kind?: ContentTypeKind;
     description?: string;
+    schemaManifest?: string | null;
     schema: string;
 }
 
 export interface UpdateContentTypeInput {
     name?: string;
     slug?: string;
+    kind?: ContentTypeKind;
     description?: string;
+    schemaManifest?: string | null;
     schema?: string;
 }
 
@@ -40,6 +63,68 @@ export async function getContentType(id: number, domainId: number) {
 export async function getContentTypeBySlug(slug: string, domainId: number) {
     const [type] = await db.select().from(contentTypes).where(and(eq(contentTypes.slug, slug), eq(contentTypes.domainId, domainId)));
     return type ?? null;
+}
+
+export async function listGlobalContentTypes(domainId: number) {
+    return db.select()
+        .from(contentTypes)
+        .where(and(
+            eq(contentTypes.domainId, domainId),
+            eq(contentTypes.kind, 'singleton')
+        ));
+}
+
+export async function getGlobalContentTypeBySlug(slug: string, domainId: number) {
+    const [type] = await db.select()
+        .from(contentTypes)
+        .where(and(
+            eq(contentTypes.slug, slug),
+            eq(contentTypes.domainId, domainId),
+            eq(contentTypes.kind, 'singleton')
+        ));
+
+    return type ?? null;
+}
+
+export async function getSingletonContentItem(domainId: number, contentTypeId: number) {
+    const [item] = await db.select()
+        .from(contentItems)
+        .where(and(
+            eq(contentItems.domainId, domainId),
+            eq(contentItems.contentTypeId, contentTypeId)
+        ))
+        .orderBy(desc(contentItems.updatedAt), desc(contentItems.id));
+
+    return item ?? null;
+}
+
+export async function countContentItemsForContentType(domainId: number, contentTypeId: number) {
+    const [result] = await db.select({
+        total: sql<number>`count(*)::int`
+    })
+        .from(contentItems)
+        .where(and(
+            eq(contentItems.domainId, domainId),
+            eq(contentItems.contentTypeId, contentTypeId)
+        ));
+
+    return result?.total ?? 0;
+}
+
+export async function findSingletonContentConflict(domainId: number, contentTypeId: number, excludeContentItemId?: number) {
+    const [existing] = await db.select({
+        id: contentItems.id,
+        contentTypeId: contentItems.contentTypeId
+    })
+        .from(contentItems)
+        .where(and(
+            eq(contentItems.domainId, domainId),
+            eq(contentItems.contentTypeId, contentTypeId),
+            excludeContentItemId !== undefined ? ne(contentItems.id, excludeContentItemId) : undefined
+        ))
+        .orderBy(desc(contentItems.updatedAt), desc(contentItems.id));
+
+    return existing ?? null;
 }
 
 export async function updateContentType(id: number, domainId: number, input: UpdateContentTypeInput) {

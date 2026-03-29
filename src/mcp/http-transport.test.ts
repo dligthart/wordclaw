@@ -16,7 +16,7 @@ vi.mock('../services/workspace-context.js', () => ({
 
 import { buildServer } from '../server.js';
 import { db } from '../db/index.js';
-import { assets } from '../db/schema.js';
+import { assets, domains } from '../db/schema.js';
 import { getAssetStorageProvider } from '../services/asset-storage.js';
 
 const originalAuthRequired = process.env.AUTH_REQUIRED;
@@ -72,12 +72,14 @@ describe('MCP HTTP transport', () => {
     let app: FastifyInstance | null = null;
     let client: Client | null = null;
     let createdAssetIds: number[] = [];
+    let createdDomainIds: number[] = [];
 
     beforeEach(() => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'remote-admin=admin';
         process.env.ALLOW_INSECURE_LOCAL_ADMIN = 'false';
         createdAssetIds = [];
+        createdDomainIds = [];
         mocks.getWorkspaceContextSnapshotMock.mockImplementation(async (currentActor, options) => ({
             generatedAt: '2026-03-11T12:00:00.000Z',
             currentActor,
@@ -317,6 +319,11 @@ describe('MCP HTTP transport', () => {
             createdAssetIds = [];
         }
 
+        if (createdDomainIds.length > 0) {
+            await db.delete(domains).where(inArray(domains.id, createdDomainIds));
+            createdDomainIds = [];
+        }
+
         restoreEnv();
         mocks.getWorkspaceContextSnapshotMock.mockReset();
         mocks.resolveWorkspaceTargetMock.mockReset();
@@ -377,6 +384,12 @@ describe('MCP HTTP transport', () => {
                 taskId: 'discover-deployment',
             }
         });
+        const bootstrapGuide = await client.callTool({
+            name: 'guide_task',
+            arguments: {
+                taskId: 'bootstrap-workspace',
+            }
+        });
         const workspaceGuide = await client.callTool({
             name: 'guide_task',
             arguments: {
@@ -402,6 +415,7 @@ describe('MCP HTTP transport', () => {
         expect(tools.tools.some((tool) => tool.name === 'evaluate_policy')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'guide_task')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'resolve_workspace_target')).toBe(true);
+        expect(tools.tools.some((tool) => tool.name === 'create_domain')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'create_asset')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'list_assets')).toBe(true);
         expect(tools.tools.some((tool) => tool.name === 'get_asset')).toBe(true);
@@ -421,6 +435,10 @@ describe('MCP HTTP transport', () => {
         const manifestText = capabilityResource.contents.find((entry) => 'text' in entry)?.text;
         expect(typeof manifestText).toBe('string');
         expect(JSON.parse(manifestText as string)).toEqual(expect.objectContaining({
+            bootstrap: expect.objectContaining({
+                mcpCreateDomainTool: 'create_domain',
+                recommendedGuideTask: 'bootstrap-workspace',
+            }),
             assetStorage: expect.objectContaining({
                 configuredProvider: 'local',
                 effectiveProvider: 'local',
@@ -473,6 +491,10 @@ describe('MCP HTTP transport', () => {
                     endpoint: '/mcp',
                     transports: ['stdio', 'streamable-http'],
                 }),
+                bootstrap: expect.objectContaining({
+                    mcpCreateDomainTool: 'create_domain',
+                    recommendedGuideTask: 'bootstrap-workspace',
+                }),
                 assetStorage: expect.objectContaining({
                     enabled: true,
                     configuredProvider: 'local',
@@ -510,6 +532,11 @@ describe('MCP HTTP transport', () => {
                 }),
             ]),
             taskRecipes: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'bootstrap-workspace',
+                    preferredActorProfile: 'mcp-local',
+                    recommendedApiKeyScopes: ['admin'],
+                }),
                 expect.objectContaining({
                     id: 'discover-workspace',
                     preferredActorProfile: 'api-key',
@@ -587,6 +614,12 @@ describe('MCP HTTP transport', () => {
             ]),
             capabilities: expect.arrayContaining([
                 expect.objectContaining({
+                    id: 'create_domain',
+                    mcp: expect.objectContaining({
+                        tool: 'create_domain',
+                    }),
+                }),
+                expect.objectContaining({
                     id: 'create_asset',
                     mcp: expect.objectContaining({
                         tool: 'create_asset',
@@ -604,6 +637,7 @@ describe('MCP HTTP transport', () => {
         const taskGuideText = extractFirstText(taskGuide.content as Array<{ type: string; text?: string }>);
         const resolvedWorkspaceTargetText = extractFirstText(resolvedWorkspaceTarget.content as Array<{ type: string; text?: string }>);
         const deploymentGuideText = extractFirstText(deploymentGuide.content as Array<{ type: string; text?: string }>);
+        const bootstrapGuideText = extractFirstText(bootstrapGuide.content as Array<{ type: string; text?: string }>);
         const workspaceGuideText = extractFirstText(workspaceGuide.content as Array<{ type: string; text?: string }>);
         const filteredWorkspaceGuideText = extractFirstText(filteredWorkspaceGuide.content as Array<{ type: string; text?: string }>);
         const taskGuideJson = JSON.parse(taskGuideText);
@@ -648,6 +682,27 @@ describe('MCP HTTP transport', () => {
                     command: 'node dist/cli/index.js capabilities status',
                 }),
             ]),
+        }));
+        expect(JSON.parse(bootstrapGuideText)).toEqual(expect.objectContaining({
+            taskId: 'bootstrap-workspace',
+            preferredSurface: 'mcp',
+            guide: expect.objectContaining({
+                taskId: 'bootstrap-workspace',
+                bootstrap: expect.objectContaining({
+                    mcpCreateDomainTool: 'create_domain',
+                    recommendedGuideTask: 'bootstrap-workspace',
+                }),
+                steps: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'create-domain',
+                        status: 'completed',
+                    }),
+                    expect.objectContaining({
+                        id: 'handoff-discover-workspace',
+                        status: 'ready',
+                    }),
+                ]),
+            }),
         }));
         expect(JSON.parse(workspaceGuideText)).toEqual(expect.objectContaining({
             taskId: 'discover-workspace',
@@ -711,6 +766,73 @@ describe('MCP HTTP transport', () => {
         expect(JSON.parse(decisionText)).toEqual(expect.objectContaining({
             outcome: 'allow'
         }));
+    });
+
+    it('creates domains over MCP for admin actors and blocks non-admin actors once bootstrap is complete', async () => {
+        process.env.API_KEYS = 'remote-admin=admin,writer=content:write';
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-domain-bootstrap-test',
+            version: '1.0.0'
+        });
+
+        const adminTransport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'remote-admin'
+                }
+            }
+        });
+
+        await client.connect(adminTransport);
+
+        const hostname = `bootstrap-${Date.now()}.example.test`;
+        const created = await client.callTool({
+            name: 'create_domain',
+            arguments: {
+                name: 'Bootstrap Domain',
+                hostname,
+            }
+        });
+        const createdPayload = JSON.parse(
+            extractFirstText(created.content as Array<{ type: string; text?: string }>),
+        ) as { id: number; hostname: string; bootstrap: boolean };
+        createdDomainIds.push(createdPayload.id);
+
+        expect(created.isError).not.toBe(true);
+        expect(createdPayload).toEqual(expect.objectContaining({
+            hostname,
+            bootstrap: false,
+        }));
+
+        await client.close();
+        client = new Client({
+            name: 'wordclaw-domain-bootstrap-blocked-test',
+            version: '1.0.0'
+        });
+
+        const writerTransport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'writer'
+                }
+            }
+        });
+
+        await client.connect(writerTransport);
+
+        const forbidden = await client.callTool({
+            name: 'create_domain',
+            arguments: {
+                name: 'Forbidden Domain',
+                hostname: `forbidden-${Date.now()}.example.test`,
+            }
+        });
+
+        expect(forbidden.isError).toBe(true);
+        expect(extractFirstText(forbidden.content as Array<{ type: string; text?: string }>)).toContain('DOMAIN_CREATE_FORBIDDEN');
     });
 
     it('supports MCP asset management while keeping byte delivery REST-first', async () => {

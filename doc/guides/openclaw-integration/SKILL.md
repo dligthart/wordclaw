@@ -35,10 +35,13 @@ For every new session, or whenever the actor/domain may have changed:
 6. Call `guide_task` for the current job, or `resolve_workspace_target` when
    you need the single best content/work target
 
-If deployment status reports `domainCount: 0`, bootstrap the first domain over
-REST with `POST /api/domains` before calling any content write tool.
+If deployment status reports `domainCount: 0`, call
+`guide_task("bootstrap-workspace")`, then bootstrap the first domain with MCP
+`create_domain` or the REST fallback `POST /api/domains` before calling any
+content write tool.
 
 `guide_task` supports these live task IDs:
+- `bootstrap-workspace`
 - `discover-deployment`
 - `discover-workspace`
 - `author-content`

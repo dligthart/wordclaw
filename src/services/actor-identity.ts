@@ -1,5 +1,5 @@
-export type ActorType = 'supervisor' | 'api_key' | 'env_key' | 'mcp' | 'anonymous' | 'system';
-export type ActorSource = 'cookie' | 'db' | 'env' | 'local' | 'anonymous' | 'system' | 'test';
+export type ActorType = 'supervisor' | 'api_key' | 'env_key' | 'mcp' | 'anonymous' | 'system' | 'preview_token';
+export type ActorSource = 'cookie' | 'db' | 'env' | 'local' | 'anonymous' | 'system' | 'test' | 'token';
 export type ActorProfileId = 'public-discovery' | 'api-key' | 'env-key' | 'supervisor-session' | 'mcp-local' | 'anonymous-local-dev';
 
 export type ActorIdentity = {
@@ -227,6 +227,14 @@ export function resolveActorIdentityRef(ref: string | null | undefined): ActorId
             actorId: normalized,
             actorType: 'supervisor',
             actorSource: 'cookie'
+        };
+    }
+
+    if (normalized.startsWith('preview_token:')) {
+        return {
+            actorId: normalized,
+            actorType: 'preview_token',
+            actorSource: 'token'
         };
     }
 

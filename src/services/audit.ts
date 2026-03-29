@@ -7,10 +7,13 @@ import { toAuditActor, type AuditActor } from './actor-identity.js';
 
 // --- Typed enums ---
 
-export type AuditAction = 'create' | 'update' | 'delete' | 'rollback' | 'restore' | 'purge';
+export type AuditAction = 'create' | 'update' | 'delete' | 'rollback' | 'restore' | 'purge' | 'preview';
 export type EntityType =
+    | 'domain'
     | 'content_type'
     | 'content_item'
+    | 'form_definition'
+    | 'job'
     | 'asset'
     | 'api_key'
     | 'webhook'

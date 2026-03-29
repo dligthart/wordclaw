@@ -39,6 +39,7 @@ import { db } from '../db/index.js';
 import { webhooks } from '../db/schema.js';
 import type { AuditEventPayload } from './event-bus.js';
 import { logAudit } from './audit.js';
+import { enqueueAuditWebhookJobs } from './jobs.js';
 
 type CreateWebhookInput = {
     domainId: number;
@@ -54,10 +55,6 @@ type UpdateWebhookInput = {
     secret?: string;
     active?: boolean;
 };
-
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export function normalizeWebhookEvents(events: string[]): string[] {
     const normalized = Array.from(
@@ -95,72 +92,39 @@ function shouldDeliver(events: string[], payload: AuditEventPayload): boolean {
     return candidates.some((candidate) => events.includes(candidate));
 }
 
-async function deliverWebhook(url: string, secret: string, payload: AuditEventPayload): Promise<boolean> {
-    const body = JSON.stringify(payload);
-    const signature = signWebhookPayload(secret, body);
-    const retryDelays = [100, 300, 900];
-
-    for (let attempt = 0; attempt < retryDelays.length + 1; attempt += 1) {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'content-type': 'application/json',
-                    'x-wordclaw-signature': signature
-                },
-                body,
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-
-            if (response.ok) {
-                return true;
-            }
-        } catch {
-            // retry with backoff
-        }
-
-        if (attempt < retryDelays.length) {
-            await sleep(retryDelays[attempt]);
-        }
-    }
-
-    return false;
-}
-
 export async function emitAuditWebhookEvents(domainId: number, payload: AuditEventPayload): Promise<void> {
     const targets = await db.select().from(webhooks).where(and(eq(webhooks.active, true), eq(webhooks.domainId, domainId)));
     if (targets.length === 0) {
         return;
     }
 
-    // Fire and forget: don't block the caller (the HTTP request)
-    Promise.allSettled(
-        targets.map(async (hook) => {
-            const events = parseWebhookEvents(hook.events);
-            if (!shouldDeliver(events, payload)) {
-                return;
-            }
+    Promise.resolve().then(async () => {
+        const matchingTargets = targets.filter((hook) => shouldDeliver(parseWebhookEvents(hook.events), payload));
+        if (matchingTargets.length === 0) {
+            return;
+        }
 
-            const delivered = await deliverWebhook(hook.url, hook.secret, payload);
-            if (!delivered) {
-                console.error(`Webhook delivery failed for webhook ${hook.id} (${hook.url})`);
-                await logAudit(
-                    domainId,
-                    'update',
-                    'webhook',
-                    hook.id,
-                    { delivered: false, url: hook.url, triggerAction: payload.action, triggerEntityType: payload.entityType, triggerEntityId: payload.entityId },
-                    undefined,
-                    undefined,
-                    true // skipWebhooks — prevent infinite recursion
-                );
-            }
-        })
-    ).catch(e => console.error('Background webhook dispatch failed', e));
+        await enqueueAuditWebhookJobs(domainId, payload as unknown as Record<string, unknown>);
+    }).catch(async (error) => {
+        console.error('Background webhook job enqueue failed', error);
+        await Promise.allSettled(targets.map((hook) => logAudit(
+            domainId,
+            'update',
+            'webhook',
+            hook.id,
+            {
+                enqueued: false,
+                url: hook.url,
+                triggerAction: payload.action,
+                triggerEntityType: payload.entityType,
+                triggerEntityId: payload.entityId,
+                error: error instanceof Error ? error.message : String(error),
+            },
+            undefined,
+            undefined,
+            true
+        )));
+    });
 }
 
 export async function createWebhook(input: CreateWebhookInput) {

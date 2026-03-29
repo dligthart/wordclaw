@@ -6,13 +6,20 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 
 ### Structured Content
 
-- **Content Types** — Define reusable JSON schemas that content items must conform to. Schemas are validated on creation and enforced on every content write.
-- **Content Items** — Versioned content entities with `draft`, `published`, and `archived` status. Every update auto-increments the version and stores an immutable snapshot.
-- **Content Runtime Queries** — Schema-aware field filters, scalar field sorting, grouped projections, and cursor pagination let agents build targeted list and leaderboard-style reads without shipping a separate query layer.
+- **Content Types** — Define reusable JSON schemas that content items must conform to. Schemas are validated on creation and enforced on every content write. Content types can now be `collection` or `singleton`, which makes globals first-class instead of a convention layered on top of normal collections.
+- **Content Items** — Versioned content entities with workflow-aware statuses, a current working copy row, and a derived publication state of `draft`, `published`, or `changed`. Every update auto-increments the version and stores an immutable snapshot.
+- **Localization and Globals** — Schemas can declare `x-wordclaw-localization`, fields can opt into `x-wordclaw-localized`, and all core read surfaces can resolve locale plus fallback across both collections and singleton globals.
+- **Content Runtime Queries** — Schema-aware field filters, scalar field sorting, grouped projections, cursor pagination, and `draft=false` published-snapshot reads let agents build targeted list and leaderboard-style reads without shipping a separate query layer.
+- **Reverse References** — Content items and assets expose usage graphs derived from current rows plus historical versions, so operators can inspect impact before deleting, purging, or restructuring linked records.
+- **Preview Tokens** — Short-lived, domain-scoped preview tokens expose one content item or global through dedicated preview paths without turning draft access into a general-purpose bypass.
+- **Schema Manifests** — Optional editor-oriented manifests compile into canonical JSON Schema so supervisors can model fields, arrays, groups, references, and constrained block sets without hand-authoring raw schemas for every routine change.
+- **Generated Client Artifacts** — The CLI can generate runtime helpers, TypeScript types, Zod validators, and a small client wrapper from live content schemas plus capability metadata.
 - **Public Write Lanes and Lifecycle Policies** — Schemas can explicitly allow bounded public writes and TTL-based lifecycle archival for ephemeral session-like content.
+- **Reusable Forms** — First-class form definitions map bounded public intake flows onto content types, optional workflow transitions, optional L402 payment enforcement, and job-backed webhook follow-ups.
 - **Media Assets** — Domain-scoped asset records with schema-aware references, multipart upload, `local` or S3-compatible storage backends, `public`/`signed`/`entitled` delivery modes, and restore/purge lifecycle controls.
 - **Batch Operations** — Create, update, or delete multiple items in a single call in atomic or partial mode.
 - **Version History and Rollback** — Browse the full history of any content item and restore prior versions without losing auditability.
+- **Background Jobs** — Queue outbound webhook delivery, scheduled content-state transitions, and future deferred work through one domain-scoped jobs subsystem with retries and worker health visibility.
 
 ### Governance and Safety
 
@@ -43,8 +50,10 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 
 - **Dashboard** — System health and activity telemetry.
 - **Audit Log Viewer** — Searchable history of mutations and raw payloads.
-- **Content Browser** — Read-only oversight with rollback access.
+- **Content Browser** — Oversight for globals and collections with publication-state visibility, localized reads, rollback access, and scoped preview actions.
 - **Schema Manager** — Visual schema administration for content models.
+- **Forms Workspace** — Configure reusable public forms, inspect their sanitized public contract, and send test submissions through the same REST path external clients use.
+- **Jobs Workspace** — Inspect worker health, browse queued/running/completed jobs, enqueue generic background work, and schedule content status changes without dropping to the CLI.
 - **Approval Queue** — Review and decide pending workflow items.
 - **API Keys** — Provision, rotate, and revoke API credentials for agents and operator integrations.
 - **Asset Library** — Upload assets, inspect delivery policy, preview image content, and manage delete/restore/purge lifecycle without dropping to the CLI.

@@ -1,11 +1,13 @@
 import { db } from '../db/index.js';
 import { contentItems, contentItemVersions, contentTypes } from '../db/schema.js';
-import { and, asc, desc, eq, gte, ilike, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { logAudit } from './audit.js';
 import {
     getContentLifecycleSchemaConfig,
+    localizeContentItem,
     listQueryableContentFields,
     type QueryableContentFieldType,
+    type ContentLocaleResolution,
     redactPremiumFields
 } from './content-schema.js';
 import { archiveExpiredContentItemsForSchema, ensureContentItemLifecycleState } from './content-lifecycle.js';
@@ -25,10 +27,21 @@ export interface UpdateContentItemInput {
     status?: string;
 }
 
+export type ContentPublicationState = 'draft' | 'published' | 'changed';
+
+export type ContentItemReadState = {
+    publicationState: ContentPublicationState;
+    workingCopyVersion: number;
+    publishedVersion: number | null;
+};
+
 export type ListContentItemsInput = {
     contentTypeId?: number;
     status?: string;
     q?: string;
+    draft?: boolean;
+    locale?: string;
+    fallbackLocale?: string;
     createdAfter?: Date | null;
     createdBefore?: Date | null;
     fieldName?: string;
@@ -49,7 +62,7 @@ export type ContentItemCursor = {
 };
 
 export type ListContentItemsResult = {
-    items: Array<typeof contentItems.$inferSelect>;
+    items: Array<(typeof contentItems.$inferSelect) & ContentItemReadState & { localeResolution?: ContentLocaleResolution }>;
     total: number;
     limit: number;
     offset?: number;
@@ -149,6 +162,109 @@ export function decodeContentItemsCursor(cursor: string): ContentItemCursor | nu
 
 function normalizeQueryableFieldMap(schemaText: string): Map<string, QueryableContentFieldType> {
     return new Map(listQueryableContentFields(schemaText).map((field) => [field.name, field.type]));
+}
+
+function buildPublicationState(
+    item: typeof contentItems.$inferSelect,
+    publishedVersion: typeof contentItemVersions.$inferSelect | null | undefined
+): ContentItemReadState {
+    if (item.status === 'published') {
+        return {
+            publicationState: 'published',
+            workingCopyVersion: item.version,
+            publishedVersion: item.version
+        };
+    }
+
+    if (publishedVersion) {
+        return {
+            publicationState: 'changed',
+            workingCopyVersion: item.version,
+            publishedVersion: publishedVersion.version
+        };
+    }
+
+    return {
+        publicationState: 'draft',
+        workingCopyVersion: item.version,
+        publishedVersion: null
+    };
+}
+
+function resolveReadSourceItem(
+    item: typeof contentItems.$inferSelect,
+    publishedVersion: typeof contentItemVersions.$inferSelect | null | undefined,
+    options: {
+        draft?: boolean;
+        unpublishedFallback?: 'current' | 'null';
+    }
+): typeof contentItems.$inferSelect | null {
+    if (options.draft !== false) {
+        return item;
+    }
+
+    if (item.status === 'published') {
+        return item;
+    }
+
+    if (publishedVersion) {
+        return {
+            ...item,
+            data: publishedVersion.data,
+            status: publishedVersion.status,
+            version: publishedVersion.version,
+            updatedAt: publishedVersion.createdAt
+        };
+    }
+
+    return options.unpublishedFallback === 'null' ? null : item;
+}
+
+export async function getLatestPublishedVersionsForItems(itemIds: number[]) {
+    if (itemIds.length === 0) {
+        return new Map<number, typeof contentItemVersions.$inferSelect>();
+    }
+
+    const publishedVersions = await db.select()
+        .from(contentItemVersions)
+        .where(and(
+            inArray(contentItemVersions.contentItemId, itemIds),
+            eq(contentItemVersions.status, 'published')
+        ))
+        .orderBy(desc(contentItemVersions.version));
+
+    const latestByItemId = new Map<number, typeof contentItemVersions.$inferSelect>();
+    for (const version of publishedVersions) {
+        if (!latestByItemId.has(version.contentItemId)) {
+            latestByItemId.set(version.contentItemId, version);
+        }
+    }
+
+    return latestByItemId;
+}
+
+export function resolveContentItemReadView(
+    item: typeof contentItems.$inferSelect,
+    schema: string,
+    options: {
+        draft?: boolean;
+        locale?: string;
+        fallbackLocale?: string;
+        unpublishedFallback?: 'current' | 'null';
+    } = {},
+    publishedVersion?: typeof contentItemVersions.$inferSelect | null
+): ((typeof contentItems.$inferSelect) & ContentItemReadState & { localeResolution?: ContentLocaleResolution }) | null {
+    const publicationState = buildPublicationState(item, publishedVersion);
+    const readSource = resolveReadSourceItem(item, publishedVersion, options);
+    if (!readSource) {
+        return null;
+    }
+
+    const localized = localizeContentItem(readSource, schema, options);
+    return {
+        ...localized,
+        ...publicationState
+    };
 }
 
 function parseBooleanFieldValue(value: string): boolean | null {
@@ -311,6 +427,9 @@ export async function listContentItems(domainId: number, input: ListContentItems
         contentTypeId,
         status,
         q,
+        draft,
+        locale,
+        fallbackLocale,
         createdAfter,
         createdBefore,
         fieldName,
@@ -495,15 +614,32 @@ export async function listContentItems(domainId: number, input: ListContentItems
     const page = cursor && hasMore ? rawItems.slice(0, limit) : rawItems;
     const last = page[page.length - 1];
     const nextCursor = cursor && hasMore && last ? encodeContentItemsCursor(last.item.createdAt, last.item.id) : null;
-    const items = page.map((row) => {
-        if ((row.basePrice || 0) > 0) {
-            return {
-                ...row.item,
-                data: redactPremiumFields(row.schema, row.item.data)
-            };
+    const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+        page.filter((row) => row.item.status !== 'published').map((row) => row.item.id)
+    );
+    const items = page.flatMap((row) => {
+        const readView = resolveContentItemReadView(
+            row.item,
+            row.schema,
+            {
+                draft,
+                locale,
+                fallbackLocale
+            },
+            latestPublishedVersions.get(row.item.id)
+        );
+        if (!readView) {
+            return [];
         }
 
-        return row.item;
+        const item = (row.basePrice || 0) > 0
+            ? {
+                ...readView,
+                data: redactPremiumFields(row.schema, readView.data)
+            }
+            : readView;
+
+        return [item];
     });
 
     return {
@@ -658,7 +794,16 @@ export async function projectContentItems(domainId: number, input: ProjectConten
     };
 }
 
-export async function getContentItem(id: number, domainId: number) {
+export async function getContentItem(
+    id: number,
+    domainId: number,
+    options: {
+        draft?: boolean;
+        locale?: string;
+        fallbackLocale?: string;
+        unpublishedFallback?: 'current' | 'null';
+    } = {}
+) {
     const [row] = await db.select({
         item: contentItems,
         schema: contentTypes.schema
@@ -671,7 +816,11 @@ export async function getContentItem(id: number, domainId: number) {
         return null;
     }
 
-    return ensureContentItemLifecycleState(row.item, row.schema);
+    const item = await ensureContentItemLifecycleState(row.item, row.schema);
+    const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+        item.status === 'published' ? [] : [item.id]
+    );
+    return resolveContentItemReadView(item, row.schema, options, latestPublishedVersions.get(item.id));
 }
 
 /**

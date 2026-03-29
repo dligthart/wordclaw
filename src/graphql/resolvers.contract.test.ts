@@ -26,6 +26,12 @@ vi.mock('../services/audit.js', () => ({
 import { resolvers } from './resolvers.js';
 import { WorkflowService } from '../services/workflow.js';
 import { AgentRunService, AgentRunServiceError } from '../services/agent-runs.js';
+import * as assetService from '../services/assets.js';
+import * as contentTypeService from '../services/content-type.service.js';
+import * as formsService from '../services/forms.js';
+import * as jobsService from '../services/jobs.js';
+import * as referenceUsageService from '../services/reference-usage.js';
+import { jobsWorker } from '../workers/jobs.worker.js';
 
 type GraphQLErrorLike = {
     extensions?: {
@@ -57,8 +63,34 @@ describe('GraphQL Resolver Contracts', () => {
 
         expect(result.id).toBe(0);
         expect(result.name).toBe('Dry Run Type');
+        expect(result.kind).toBe('collection');
         expect(mocks.dbMock.insert).not.toHaveBeenCalled();
         expect(mocks.logAuditMock).not.toHaveBeenCalled();
+    });
+
+    it('createContentType dry-run compiles schema manifests without writes', async () => {
+        const result = await resolvers.Mutation.createContentType({}, {
+            name: 'Manifest Type',
+            slug: 'manifest-type',
+            schemaManifest: {
+                fields: [
+                    {
+                        name: 'title',
+                        type: 'text',
+                        required: true
+                    }
+                ]
+            },
+            dryRun: true
+        }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {});
+
+        expect(result.id).toBe(0);
+        expect(result.schemaManifest).toContain('"fields"');
+        expect(JSON.parse(result.schema)).toMatchObject({
+            type: 'object',
+            required: ['title']
+        });
+        expect(mocks.dbMock.insert).not.toHaveBeenCalled();
     });
 
     it('updateContentItem rejects empty payload with EMPTY_UPDATE_BODY', async () => {
@@ -118,11 +150,59 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('updateContentType rejects singleton conversion when multiple items already exist', async () => {
+        const countSpy = vi.spyOn(contentTypeService, 'countContentItemsForContentType').mockResolvedValue(2);
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        name: 'Site Settings',
+                        slug: 'site-settings',
+                        kind: 'collection',
+                        description: null,
+                        schema: '{"type":"object"}',
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                    }]),
+                }),
+            }));
+
+        await expect(
+            resolvers.Mutation.updateContentType({}, {
+                id: '1',
+                kind: 'singleton'
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'SINGLETON_CONTENT_TYPE_REQUIRES_ONE_ITEM'
+            }
+        } satisfies GraphQLErrorLike);
+
+        countSpy.mockRestore();
+    });
+
     it('updateContentType maps duplicate slug to CONTENT_TYPE_SLUG_CONFLICT', async () => {
         const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
             code: '23505',
             constraint: 'content_types_domain_slug_unique'
         });
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 1,
+                    name: 'Article',
+                    slug: 'article',
+                    kind: 'collection',
+                    description: null,
+                    schema: '{"type":"object"}',
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                }]),
+            }),
+        }));
 
         mocks.dbMock.update.mockImplementation(() => ({
             set: vi.fn().mockReturnValue({
@@ -142,6 +222,139 @@ describe('GraphQL Resolver Contracts', () => {
                 code: 'CONTENT_TYPE_SLUG_CONFLICT'
             }
         } satisfies GraphQLErrorLike);
+    });
+
+    it('lists form definitions through GraphQL', async () => {
+        const listFormsSpy = vi.spyOn(formsService, 'listFormDefinitions').mockResolvedValue([{
+            id: 7,
+            domainId: 1,
+            name: 'Contact',
+            slug: 'contact',
+            description: 'Inbound contact form',
+            contentTypeId: 12,
+            contentTypeName: 'Lead',
+            contentTypeSlug: 'lead',
+            active: true,
+            publicRead: true,
+            submissionStatus: 'draft',
+            workflowTransitionId: null,
+            requirePayment: false,
+            successMessage: 'Submitted',
+            fields: [{
+                name: 'email',
+                label: 'Email',
+                type: 'text',
+                required: true,
+            }],
+            defaultData: {},
+            createdAt: new Date('2026-03-29T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-29T10:05:00.000Z'),
+        }]);
+
+        const result = await resolvers.Query.forms(
+            {},
+            {},
+            { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } },
+            {},
+        );
+
+        expect(result).toHaveLength(1);
+        expect(result[0]).toMatchObject({
+            id: 7,
+            slug: 'contact',
+            contentTypeSlug: 'lead',
+            fields: [{ name: 'email', type: 'text', required: true }],
+        });
+
+        listFormsSpy.mockRestore();
+    });
+
+    it('createForm maps duplicate slug to FORM_DEFINITION_SLUG_CONFLICT', async () => {
+        const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+            code: '23505',
+            constraint: 'form_definitions_domain_slug_unique'
+        });
+        const createFormSpy = vi.spyOn(formsService, 'createFormDefinition').mockRejectedValue(duplicateError);
+
+        await expect(
+            resolvers.Mutation.createForm({}, {
+                name: 'Contact',
+                slug: 'contact',
+                contentTypeId: '12',
+                fields: [{ name: 'email', type: 'text', required: true }]
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'FORM_DEFINITION_SLUG_CONFLICT'
+            }
+        } satisfies GraphQLErrorLike);
+
+        createFormSpy.mockRestore();
+    });
+
+    it('cancelJob maps non-queued jobs to JOB_CANCEL_FORBIDDEN', async () => {
+        const cancelJobSpy = vi.spyOn(jobsService, 'cancelJob').mockImplementation(async () => null as never);
+        const getJobSpy = vi.spyOn(jobsService, 'getJob').mockResolvedValue({
+            id: 14,
+            domainId: 1,
+            kind: 'outbound_webhook',
+            queue: 'webhooks',
+            status: 'running',
+            payload: { url: 'https://example.com', body: { ok: true } },
+            result: null,
+            attempts: 1,
+            maxAttempts: 4,
+            runAt: new Date('2026-03-29T10:00:00.000Z'),
+            claimedAt: new Date('2026-03-29T10:01:00.000Z'),
+            startedAt: new Date('2026-03-29T10:01:00.000Z'),
+            completedAt: null,
+            lastError: null,
+            createdAt: new Date('2026-03-29T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-29T10:01:00.000Z'),
+        });
+
+        await expect(
+            resolvers.Mutation.cancelJob({}, {
+                id: '14',
+            }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'JOB_CANCEL_FORBIDDEN'
+            }
+        } satisfies GraphQLErrorLike);
+
+        cancelJobSpy.mockRestore();
+        getJobSpy.mockRestore();
+    });
+
+    it('exposes background jobs worker status through GraphQL', async () => {
+        const workerSpy = vi.spyOn(jobsWorker, 'getStatus').mockReturnValue({
+            started: true,
+            sweepInProgress: false,
+            intervalMs: 30000,
+            maxJobsPerSweep: 25,
+            lastSweepStartedAt: '2026-03-29T10:00:00.000Z',
+            lastSweepCompletedAt: '2026-03-29T10:00:01.000Z',
+            lastSweepProcessedJobs: 3,
+            totalSweeps: 5,
+            totalProcessedJobs: 9,
+            lastError: null,
+        });
+
+        const result = await resolvers.Query.jobsWorkerStatus(
+            {},
+            {},
+            { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } },
+            {},
+        );
+
+        expect(result).toMatchObject({
+            started: true,
+            totalProcessedJobs: 9,
+            lastError: null,
+        });
+
+        workerSpy.mockRestore();
     });
 
     it('maps TARGET_VERSION_NOT_FOUND to GraphQL error code', async () => {
@@ -288,6 +501,16 @@ describe('GraphQL Resolver Contracts', () => {
         } satisfies GraphQLErrorLike);
     });
 
+    it('contentItems rejects fallbackLocale without locale with deterministic code', async () => {
+        await expect(
+            resolvers.Query.contentItems({}, { fallbackLocale: 'en' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
+        ).rejects.toMatchObject({
+            extensions: {
+                code: 'CONTENT_LOCALE_REQUIRED'
+            }
+        } satisfies GraphQLErrorLike);
+    });
+
     it('contentItems rejects field filters without contentTypeId with deterministic code', async () => {
         await expect(
             resolvers.Query.contentItems({}, { fieldName: 'enabled', fieldValue: 'true' }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {})
@@ -391,6 +614,233 @@ describe('GraphQL Resolver Contracts', () => {
                 code: 'CONTENT_ITEMS_CURSOR_OFFSET_CONFLICT'
             }
         } satisfies GraphQLErrorLike);
+    });
+
+    it('contentItems resolves localized fields when locale-aware reads are requested', async () => {
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ total: 1 }])
+                })
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: vi.fn(() => ({
+                        where: vi.fn(() => ({
+                            orderBy: vi.fn(() => ({
+                                limit: vi.fn(() => ({
+                                    offset: vi.fn().mockResolvedValue([{
+                                        item: {
+                                            id: 9,
+                                            domainId: 1,
+                                            contentTypeId: 7,
+                                            data: JSON.stringify({
+                                                title: {
+                                                    en: 'Hello',
+                                                    nl: 'Hallo'
+                                                }
+                                            }),
+                                            status: 'published',
+                                            version: 3,
+                                            createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                                            updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                                        },
+                                        schema: JSON.stringify({
+                                            type: 'object',
+                                            properties: {
+                                                title: {
+                                                    type: 'string',
+                                                    'x-wordclaw-localized': true
+                                                }
+                                            },
+                                            required: ['title'],
+                                            'x-wordclaw-localization': {
+                                                supportedLocales: ['en', 'nl'],
+                                                defaultLocale: 'en'
+                                            }
+                                        }),
+                                        basePrice: 0
+                                    }])
+                                }))
+                            }))
+                        }))
+                    }))
+                })
+            }));
+
+        const result = await resolvers.Query.contentItems({}, {
+            locale: 'nl'
+        }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {});
+
+        expect(result).toHaveLength(1);
+        expect(JSON.parse(result[0].data)).toEqual({
+            title: 'Hallo'
+        });
+        expect(result[0].localeResolution).toMatchObject({
+            requestedLocale: 'nl',
+            fallbackLocale: 'en',
+            resolvedFieldCount: 1
+        });
+    });
+
+    it('contentItem returns the published snapshot when draft=false and a newer working copy exists', async () => {
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 42,
+                        domainId: 1,
+                        contentTypeId: 7,
+                        data: '{"title":"Draft copy"}',
+                        status: 'draft',
+                        version: 4,
+                        createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                        updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        domainId: 1,
+                        name: 'Article',
+                        slug: 'article',
+                        kind: 'collection',
+                        description: null,
+                        schema: '{"type":"object","properties":{"title":{"type":"string"}}}',
+                        basePrice: 0,
+                        createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                        updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn(() => ({
+                        limit: vi.fn().mockResolvedValue([]),
+                    })),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: vi.fn(() => ({
+                        where: vi.fn().mockResolvedValue([{
+                            item: {
+                                id: 42,
+                                domainId: 1,
+                                contentTypeId: 7,
+                                data: '{"title":"Draft copy"}',
+                                status: 'draft',
+                                version: 4,
+                                createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                                updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                            },
+                            basePrice: 0,
+                            schema: '{"type":"object","properties":{"title":{"type":"string"}}}'
+                        }]),
+                    })),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn(() => ({
+                        orderBy: vi.fn().mockResolvedValue([{
+                            id: 9,
+                            contentItemId: 42,
+                            version: 2,
+                            data: '{"title":"Published copy"}',
+                            status: 'published',
+                            createdAt: new Date('2026-03-27T08:00:00.000Z')
+                        }]),
+                    })),
+                }),
+            }));
+
+        const result = await resolvers.Query.contentItem({}, {
+            id: '42',
+            draft: false
+        }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {});
+
+        expect(result).toMatchObject({
+            id: 42,
+            status: 'published',
+            version: 2,
+            publicationState: 'changed',
+            workingCopyVersion: 4,
+            publishedVersion: 2
+        });
+        expect(JSON.parse(result!.data)).toEqual({
+            title: 'Published copy'
+        });
+    });
+
+    it('global returns the published snapshot when draft=false and a newer working copy exists', async () => {
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 11,
+                        domainId: 1,
+                        name: 'Site Settings',
+                        slug: 'site-settings',
+                        kind: 'singleton',
+                        description: null,
+                        schema: '{"type":"object","properties":{"title":{"type":"string"}}}',
+                        basePrice: 0,
+                        createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                        updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn(() => ({
+                        orderBy: vi.fn().mockResolvedValue([{
+                            id: 81,
+                            domainId: 1,
+                            contentTypeId: 11,
+                            data: '{"title":"Draft settings"}',
+                            status: 'draft',
+                            version: 4,
+                            createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                            updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                        }]),
+                    })),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn(() => ({
+                        orderBy: vi.fn().mockResolvedValue([{
+                            id: 10,
+                            contentItemId: 81,
+                            version: 2,
+                            data: '{"title":"Published settings"}',
+                            status: 'published',
+                            createdAt: new Date('2026-03-27T08:00:00.000Z')
+                        }]),
+                    })),
+                }),
+            }));
+
+        const result = await resolvers.Query.global({}, {
+            slug: 'site-settings',
+            draft: false
+        }, { authPrincipal: { scopes: new Set(['admin']), domainId: 1 } }, {});
+
+        expect(result?.contentType.slug).toBe('site-settings');
+        expect(result?.item).toMatchObject({
+            id: 81,
+            status: 'published',
+            version: 2,
+            publicationState: 'changed',
+            workingCopyVersion: 4,
+            publishedVersion: 2
+        });
+        expect(JSON.parse(result!.item!.data)).toEqual({
+            title: 'Published settings'
+        });
     });
 
     it('agentRuns rejects invalid status filter with deterministic code', async () => {
@@ -555,6 +1005,100 @@ describe('GraphQL Resolver Contracts', () => {
             });
         } finally {
             addCommentSpy.mockRestore();
+        }
+    });
+
+    it('contentItemUsedBy returns reverse-reference counts', async () => {
+        mocks.dbMock.select.mockReturnValue({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{ id: 42 }])
+            })
+        });
+        const usageSpy = vi.spyOn(referenceUsageService, 'findContentItemUsage').mockResolvedValue({
+            activeReferences: [{
+                contentItemId: 90,
+                contentTypeId: 7,
+                contentTypeName: 'Article',
+                contentTypeSlug: 'article',
+                path: '/related/0',
+                version: 5,
+                status: 'published'
+            }],
+            historicalReferences: []
+        });
+
+        try {
+            const result = await resolvers.Query.contentItemUsedBy({}, {
+                id: '42'
+            }, {
+                authPrincipal: { scopes: new Set(['admin']), domainId: 1 }
+            }, {});
+
+            expect(result).toMatchObject({
+                activeReferenceCount: 1,
+                historicalReferenceCount: 0
+            });
+            expect(usageSpy).toHaveBeenCalledWith(1, 42);
+        } finally {
+            usageSpy.mockRestore();
+        }
+    });
+
+    it('assetUsedBy returns reverse-reference counts', async () => {
+        const assetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
+            id: 18,
+            domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
+            filename: 'hero.png',
+            originalFilename: 'hero.png',
+            mimeType: 'image/png',
+            sizeBytes: 2048,
+            byteHash: 'hash-18',
+            storageProvider: 'local',
+            storageKey: '1/hero.png',
+            accessMode: 'public',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
+            status: 'active',
+            metadata: {},
+            uploaderActorId: null,
+            uploaderActorType: null,
+            uploaderActorSource: null,
+            createdAt: new Date('2026-03-29T08:00:00.000Z'),
+            updatedAt: new Date('2026-03-29T08:00:00.000Z'),
+            deletedAt: null
+        } as any);
+        const usageSpy = vi.spyOn(referenceUsageService, 'findAssetUsage').mockResolvedValue({
+            activeReferences: [],
+            historicalReferences: [{
+                contentItemId: 91,
+                contentItemVersionId: 12,
+                contentTypeId: 8,
+                contentTypeName: 'Landing Page',
+                contentTypeSlug: 'landing-page',
+                path: '/hero',
+                version: 2
+            }]
+        });
+
+        try {
+            const result = await resolvers.Query.assetUsedBy({}, {
+                id: '18'
+            }, {
+                authPrincipal: { scopes: new Set(['admin']), domainId: 1 }
+            }, {});
+
+            expect(result).toMatchObject({
+                activeReferenceCount: 0,
+                historicalReferenceCount: 1
+            });
+            expect(assetSpy).toHaveBeenCalledWith(18, 1, { includeDeleted: true });
+            expect(usageSpy).toHaveBeenCalledWith(1, 18);
+        } finally {
+            assetSpy.mockRestore();
+            usageSpy.mockRestore();
         }
     });
 });

@@ -17,6 +17,8 @@ The goal is not to hide runtime reality from agents. The goal is to make the run
 
 - capability and deployment discovery now surface effective auth posture, domain bootstrap state, and vector RAG readiness in-band
 - first-domain bootstrap is now available over REST with `POST /api/domains`
+- first-domain bootstrap is now also available over MCP with `create_domain`
+- `guide_task("bootstrap-workspace")` now returns live actor-aware bootstrap guidance
 - content writes fail with `NO_DOMAIN` on empty installs instead of surfacing a raw database foreign-key failure
 
 ## 2. Motivation

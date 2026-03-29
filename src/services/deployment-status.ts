@@ -5,6 +5,7 @@ import { getAssetSignedTtlSeconds } from '../config/assets.js';
 import { db } from '../db/index.js';
 import { buildCapabilityManifest } from './capability-manifest.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
+import { jobsWorker } from '../workers/jobs.worker.js';
 
 export type DeploymentCheckLevel = 'ready' | 'degraded' | 'disabled';
 
@@ -50,6 +51,7 @@ export type DeploymentStatusSnapshot = {
             supportsInBandDomainCreation: boolean;
             restCreateDomainPath: string | null;
             mcpCreateDomainTool: string | null;
+            recommendedGuideTask: string | null;
             nextAction: string;
             note: string;
         };
@@ -169,6 +171,15 @@ export type DeploymentStatusSnapshot = {
             lastErrorMessage: string | null;
             note: string;
         };
+        backgroundJobs: {
+            status: DeploymentCheckLevel;
+            enabled: boolean;
+            workerStarted: boolean;
+            sweepInProgress: boolean;
+            lastSweepCompletedAt: string | null;
+            lastErrorMessage: string | null;
+            note: string;
+        };
     };
     warnings: string[];
 };
@@ -213,6 +224,7 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
 
     const agentRunsEnabled = isExperimentalAgentRunsEnabled();
     const workerStatus = agentRunWorker.getStatus();
+    const jobsStatusSnapshot = jobsWorker.getStatus();
     let agentRunsStatus: DeploymentStatusSnapshot['checks']['agentRuns'] = {
         status: 'disabled',
         enabled: false,
@@ -245,6 +257,25 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                 : 'Autonomous run orchestration is enabled and the worker is healthy.',
         };
     }
+
+    const backgroundJobsDegraded = !jobsStatusSnapshot.started || jobsStatusSnapshot.lastError !== null;
+    if (jobsStatusSnapshot.lastError !== null) {
+        warnings.push(
+            'Background jobs worker reported an error; deferred webhook and schedule execution may be unreliable.',
+        );
+    }
+
+    const backgroundJobsStatus: DeploymentStatusSnapshot['checks']['backgroundJobs'] = {
+        status: backgroundJobsDegraded ? 'degraded' : 'ready',
+        enabled: true,
+        workerStarted: jobsStatusSnapshot.started,
+        sweepInProgress: jobsStatusSnapshot.sweepInProgress,
+        lastSweepCompletedAt: jobsStatusSnapshot.lastSweepCompletedAt,
+        lastErrorMessage: jobsStatusSnapshot.lastError?.message ?? null,
+        note: backgroundJobsDegraded
+            ? 'Background jobs are enabled but not fully healthy.'
+            : 'Background jobs worker is enabled and healthy.',
+    };
 
     const assetStorageStatus: DeploymentStatusSnapshot['checks']['assetStorage'] = {
         status: manifest.assetStorage.fallbackApplied ? 'degraded' : 'ready',
@@ -322,6 +353,7 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                 supportsInBandDomainCreation: manifest.bootstrap.supportsInBandDomainCreation,
                 restCreateDomainPath: manifest.bootstrap.restCreateDomainPath,
                 mcpCreateDomainTool: manifest.bootstrap.mcpCreateDomainTool,
+                recommendedGuideTask: manifest.bootstrap.recommendedGuideTask,
                 nextAction: bootstrapBlocked
                     ? 'Create the first domain before attempting content-type or content-item writes.'
                     : 'Bootstrap prerequisites are satisfied for content writes.',
@@ -393,6 +425,7 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
             },
             assetStorage: assetStorageStatus,
             agentRuns: agentRunsStatus,
+            backgroundJobs: backgroundJobsStatus,
         },
         warnings,
     };

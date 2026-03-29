@@ -17,7 +17,7 @@ features:
   - title: Capability Manifest
     details: Discover enabled modules, actor profiles, transports, and task recipes before an agent starts mutating state.
   - title: Governed Content Ops
-    details: Structured content, approval workflows, audit trails, idempotency, and tenant isolation in one runtime.
+    details: Structured content, singleton globals, localized reads, publication-state awareness, preview loops, reusable forms, background jobs, approval workflows, audit trails, idempotency, and tenant isolation in one runtime.
   - title: Guided Agent Workflows
     details: Use CLI and MCP guidance paths for content authoring, workflow review, integration setup, provenance verification, and paid-content consumption.
 ---

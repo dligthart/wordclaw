@@ -5,3 +5,4 @@ dist
 coverage
 .drizzle
 storage/
+.playwright-cli/

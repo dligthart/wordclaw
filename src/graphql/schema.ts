@@ -102,6 +102,32 @@ const agentRunMutationDefs = isExperimentalAgentRunsEnabled() ? `
 export const schema = `
   scalar JSON
 
+  enum ContentTypeKind {
+    collection
+    singleton
+  }
+
+  enum FormFieldType {
+    text
+    textarea
+    number
+    checkbox
+    select
+  }
+
+  enum JobKind {
+    content_status_transition
+    outbound_webhook
+  }
+
+  enum JobStatus {
+    queued
+    running
+    succeeded
+    failed
+    cancelled
+  }
+
   """A reusable content schema definition used to validate content items."""
   type ContentType {
     """Stable numeric identifier."""
@@ -110,14 +136,35 @@ export const schema = `
     name: String!
     """Unique machine slug."""
     slug: String!
+    """Collection or singleton document model."""
+    kind: ContentTypeKind!
     """Optional description for operators and agents."""
     description: String
+    """Optional editor-oriented schema manifest that compiles into the canonical schema."""
+    schemaManifest: JSON
     """JSON schema string that validates content payloads."""
     schema: JSON!
     """Creation timestamp (ISO-8601)."""
     createdAt: String
     """Last update timestamp (ISO-8601)."""
     updatedAt: String
+  }
+
+  """A singleton/global content type paired with its current item, if one exists."""
+  type GlobalContent {
+    contentType: ContentType!
+    item: ContentItem
+  }
+
+  """Summary of localized field resolution for a locale-aware read."""
+  type ContentLocaleResolution {
+    requestedLocale: String!
+    fallbackLocale: String!
+    defaultLocale: String!
+    localizedFieldCount: Int!
+    resolvedFieldCount: Int!
+    fallbackFieldCount: Int!
+    unresolvedFields: [String!]!
   }
 
   """A versioned content entity that belongs to a content type."""
@@ -136,6 +183,14 @@ export const schema = `
     createdAt: String
     """Last update timestamp (ISO-8601)."""
     updatedAt: String
+    """Locale resolution summary when locale-aware reads are requested."""
+    localeResolution: ContentLocaleResolution
+    """Derived publication state for the current working copy."""
+    publicationState: String!
+    """Version number currently stored in the working copy head."""
+    workingCopyVersion: Int!
+    """Latest published version number, when one exists."""
+    publishedVersion: Int
   }
 
   """An immutable snapshot of a prior content item state."""
@@ -152,6 +207,111 @@ export const schema = `
     status: String!
     """Snapshot timestamp (ISO-8601)."""
     createdAt: String
+  }
+
+  """One content-item reference discovered in live or historical data."""
+  type ReferenceUsage {
+    """Referencing content item identifier."""
+    contentItemId: ID!
+    """Referencing content type identifier."""
+    contentTypeId: ID!
+    """Referencing content type name."""
+    contentTypeName: String!
+    """Referencing content type slug."""
+    contentTypeSlug: String!
+    """JSON pointer path where the reference was found."""
+    path: String!
+    """Version where the reference was observed."""
+    version: Int!
+    """Current live status when the reference is active."""
+    status: String
+    """Historical version row id when the reference came from a prior snapshot."""
+    contentItemVersionId: ID
+  }
+
+  """Summary of active and historical reverse references for an entity."""
+  type ReferenceUsageSummary {
+    """Count of active live references."""
+    activeReferenceCount: Int!
+    """Count of historical version-only references."""
+    historicalReferenceCount: Int!
+    """Active live references."""
+    activeReferences: [ReferenceUsage!]!
+    """Historical version references."""
+    historicalReferences: [ReferenceUsage!]!
+  }
+
+  type FormFieldOption {
+    label: String
+    value: String!
+  }
+
+  type FormField {
+    name: String!
+    label: String
+    description: String
+    type: FormFieldType!
+    required: Boolean!
+    placeholder: String
+    options: [FormFieldOption!]!
+  }
+
+  type FormDefinition {
+    id: ID!
+    domainId: ID!
+    name: String!
+    slug: String!
+    description: String
+    contentTypeId: ID!
+    contentTypeName: String!
+    contentTypeSlug: String!
+    active: Boolean!
+    publicRead: Boolean!
+    submissionStatus: String!
+    workflowTransitionId: ID
+    requirePayment: Boolean!
+    successMessage: String
+    fields: [FormField!]!
+    defaultData: JSON!
+    createdAt: String
+    updatedAt: String
+  }
+
+  type Job {
+    id: ID!
+    domainId: ID!
+    kind: JobKind!
+    queue: String!
+    status: JobStatus!
+    payload: JSON!
+    result: JSON
+    attempts: Int!
+    maxAttempts: Int!
+    runAt: String
+    claimedAt: String
+    startedAt: String
+    completedAt: String
+    lastError: String
+    createdAt: String
+    updatedAt: String
+  }
+
+  type JobWorkerError {
+    message: String!
+    at: String!
+  }
+
+  type JobWorkerStatus {
+    started: Boolean!
+    sweepInProgress: Boolean!
+    intervalMs: Int!
+    maxJobsPerSweep: Int!
+    lastSweepStartedAt: String
+    lastSweepCompletedAt: String
+    lastSweepProcessedJobs: Int!
+    totalSweeps: Int!
+    totalProcessedJobs: Int!
+    lastError: JobWorkerError
   }
 
   """A grouped read-model bucket derived from content items."""
@@ -352,10 +512,21 @@ ${agentRunTypeDefs}
     contentTypes(limit: Int = 50, offset: Int = 0): [ContentType!]!
     """Get one content type by id."""
     contentType(id: ID!): ContentType
+    """List singleton/global content types with their current item."""
+    globals(draft: Boolean = true, locale: String, fallbackLocale: String): [GlobalContent!]!
+    """Get one singleton/global content type by slug."""
+    global(slug: String!, draft: Boolean = true, locale: String, fallbackLocale: String): GlobalContent
+    """List reusable form definitions for the current domain."""
+    forms: [FormDefinition!]!
+    """Get one reusable form definition by id."""
+    form(id: ID!): FormDefinition
     """List content items with optional filtering and pagination."""
     contentItems(
       contentTypeId: ID,
       status: String,
+      draft: Boolean = true,
+      locale: String,
+      fallbackLocale: String,
       createdAfter: String,
       createdBefore: String,
       fieldName: String,
@@ -385,9 +556,13 @@ ${agentRunTypeDefs}
       limit: Int = 50
     ): [ContentProjectionBucket!]!
     """Get one content item by id."""
-    contentItem(id: ID!): ContentItem
+    contentItem(id: ID!, draft: Boolean = true, locale: String, fallbackLocale: String): ContentItem
     """List historical versions for a content item."""
     contentItemVersions(id: ID!): [ContentItemVersion!]!
+    """Inspect which content items reference the target content item."""
+    contentItemUsedBy(id: ID!): ReferenceUsageSummary!
+    """Inspect which content items reference the target asset."""
+    assetUsedBy(id: ID!): ReferenceUsageSummary!
     """List audit logs with optional filters and cursor pagination input."""
     auditLogs(entityType: String, entityId: ID, action: String, limit: Int = 50, cursor: String): [AuditLog!]!
     """List payments with limit/offset pagination."""
@@ -398,6 +573,12 @@ ${agentRunTypeDefs}
     webhooks: [Webhook!]!
     """Get one webhook registration by id."""
     webhook(id: ID!): Webhook
+    """List background jobs for the current domain."""
+    jobs(status: JobStatus, kind: JobKind, limit: Int = 50, offset: Int = 0): [Job!]!
+    """Get one background job by id."""
+    job(id: ID!): Job
+    """Inspect worker health for the background jobs sweep loop."""
+    jobsWorkerStatus: JobWorkerStatus!
 ${agentRunQueryDefs}
   }
 
@@ -420,8 +601,10 @@ ${agentRunQueryDefs}
     createContentType(
       name: String!,
       slug: String!,
+      kind: ContentTypeKind = collection,
       description: String,
-      schema: JSON!,
+      schema: JSON,
+      schemaManifest: JSON,
       dryRun: Boolean = false
     ): ContentType!
     """Update a content type."""
@@ -429,12 +612,58 @@ ${agentRunQueryDefs}
       id: ID!,
       name: String,
       slug: String,
+      kind: ContentTypeKind,
       description: String,
       schema: JSON,
+      schemaManifest: JSON,
       dryRun: Boolean = false
     ): ContentType!
     """Delete a content type."""
     deleteContentType(id: ID!, dryRun: Boolean = false): DeleteResult!
+    """Create or update the singleton item for a global content type."""
+    updateGlobal(
+      slug: String!,
+      data: JSON!,
+      status: String,
+      dryRun: Boolean = false
+    ): GlobalContent!
+    """Create a reusable form definition."""
+    createForm(
+      name: String!,
+      slug: String!,
+      description: String,
+      contentTypeId: ID!,
+      fields: JSON!,
+      defaultData: JSON,
+      active: Boolean = true,
+      publicRead: Boolean = true,
+      submissionStatus: String,
+      workflowTransitionId: ID,
+      requirePayment: Boolean = false,
+      webhookUrl: String,
+      webhookSecret: String,
+      successMessage: String
+    ): FormDefinition!
+    """Update a reusable form definition."""
+    updateForm(
+      id: ID!,
+      name: String,
+      slug: String,
+      description: String,
+      contentTypeId: ID,
+      fields: JSON,
+      defaultData: JSON,
+      active: Boolean,
+      publicRead: Boolean,
+      submissionStatus: String,
+      workflowTransitionId: ID,
+      requirePayment: Boolean,
+      webhookUrl: String,
+      webhookSecret: String,
+      successMessage: String
+    ): FormDefinition!
+    """Delete a reusable form definition."""
+    deleteForm(id: ID!): DeleteResult!
     """Create a single content item."""
     createContentItem(
       contentTypeId: ID!,
@@ -483,6 +712,23 @@ ${agentRunQueryDefs}
     ): Webhook!
     """Delete a webhook registration."""
     deleteWebhook(id: ID!): DeleteResult!
+    """Create a background job."""
+    createJob(
+      kind: JobKind!,
+      payload: JSON!,
+      queue: String,
+      runAt: String,
+      maxAttempts: Int
+    ): Job!
+    """Cancel a queued background job."""
+    cancelJob(id: ID!): Job!
+    """Schedule a background status transition for a content item."""
+    scheduleContentStatusChange(
+      contentItemId: ID!,
+      targetStatus: String!,
+      runAt: String!,
+      maxAttempts: Int
+    ): Job!
     """Rollback a content item to a previous version."""
     rollbackContentItem(id: ID!, version: Int!, dryRun: Boolean = false): RollbackResult!
     """Evaluate a policy decision without side effects."""

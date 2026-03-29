@@ -51,6 +51,7 @@ import { buildL402Guide } from './lib/l402-guide.js';
 import { buildWorkflowGuide } from './lib/workflow-guide.js';
 import { buildAuditGuide } from './lib/audit-guide.js';
 import { buildWorkspaceGuide } from './lib/workspace-guide.js';
+import { generateSchemaArtifacts, writeSchemaArtifacts, type ArtifactCapabilitySnapshot, type ArtifactContentType } from './lib/schema-artifacts.js';
 import type { CurrentActorSnapshot } from '../services/actor-identity.js';
 import type { WorkspaceContextSnapshot } from '../services/workspace-context.js';
 
@@ -73,8 +74,12 @@ const TOP_LEVEL_COMMANDS = [
     'workspace',
     'audit',
     'rest',
+    'schema',
     'integrations',
+    'forms',
+    'jobs',
     'content-types',
+    'globals',
     'content',
     'assets',
     'workflow',
@@ -86,10 +91,14 @@ const CAPABILITY_SUBCOMMANDS = ['show', 'status', 'whoami'] as const;
 const WORKSPACE_SUBCOMMANDS = ['guide', 'resolve'] as const;
 const AUDIT_SUBCOMMANDS = ['list', 'guide'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
+const SCHEMA_SUBCOMMANDS = ['generate'] as const;
 const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
+const FORMS_SUBCOMMANDS = ['list', 'get', 'public', 'create', 'update', 'delete', 'submit'] as const;
+const JOBS_SUBCOMMANDS = ['list', 'get', 'worker-status', 'create', 'cancel', 'schedule-status'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
-const CONTENT_SUBCOMMANDS = ['list', 'project', 'guide', 'get', 'create', 'update', 'versions', 'rollback', 'delete'] as const;
-const ASSETS_SUBCOMMANDS = ['list', 'get', 'create', 'offers', 'access', 'delete', 'restore', 'purge'] as const;
+const GLOBALS_SUBCOMMANDS = ['list', 'get', 'update', 'preview-token'] as const;
+const CONTENT_SUBCOMMANDS = ['list', 'project', 'guide', 'get', 'used-by', 'create', 'update', 'versions', 'preview-token', 'rollback', 'delete'] as const;
+const ASSETS_SUBCOMMANDS = ['list', 'get', 'used-by', 'create', 'offers', 'access', 'delete', 'restore', 'purge'] as const;
 const WORKFLOW_SUBCOMMANDS = ['active', 'guide', 'submit', 'tasks', 'decide'] as const;
 const L402_SUBCOMMANDS = ['offers', 'guide', 'purchase', 'confirm', 'entitlements', 'entitlement', 'read'] as const;
 
@@ -155,6 +164,23 @@ function printResponse(args: ParsedArgs, response: RestCliResponse) {
 
 function maybeNumber(value: number | undefined): number | undefined {
     return value === undefined ? undefined : value;
+}
+
+function maybeBooleanFlag(args: ParsedArgs, name: string): boolean | undefined {
+    const raw = getStringFlag(args, name);
+    if (raw === undefined) {
+        return undefined;
+    }
+
+    if (raw === 'true') {
+        return true;
+    }
+
+    if (raw === 'false') {
+        return false;
+    }
+
+    throw new Error(`--${name} must be true or false.`);
 }
 
 function omitUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
@@ -602,6 +628,129 @@ async function handleRest(client: RestCliClient, args: ParsedArgs) {
     printResponse(args, response);
 }
 
+async function fetchAllContentTypesForArtifacts(client: RestCliClient): Promise<ArtifactContentType[]> {
+    const limit = 500;
+    const items: ArtifactContentType[] = [];
+    let offset = 0;
+
+    while (true) {
+        const response = await client.request({
+            method: 'GET',
+            path: '/content-types',
+            query: {
+                limit,
+                offset
+            }
+        });
+        const body = requireJsonMap(response.body, 'Schema generation content-type response');
+        const data = Array.isArray(body.data) ? body.data : [];
+
+        items.push(...data.flatMap((entry) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                return [];
+            }
+
+            const candidate = entry as Record<string, unknown>;
+            if (
+                typeof candidate.id !== 'number'
+                || typeof candidate.name !== 'string'
+                || typeof candidate.slug !== 'string'
+                || typeof candidate.schema !== 'string'
+            ) {
+                return [];
+            }
+
+            return [{
+                id: candidate.id,
+                name: candidate.name,
+                slug: candidate.slug,
+                kind: candidate.kind === 'singleton' ? 'singleton' : 'collection',
+                description: typeof candidate.description === 'string' ? candidate.description : null,
+                schema: candidate.schema
+            } satisfies ArtifactContentType];
+        }));
+
+        if (data.length < limit) {
+            break;
+        }
+        offset += limit;
+    }
+
+    return items;
+}
+
+async function handleSchema(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'schema subcommand',
+        SCHEMA_SUBCOMMANDS,
+    );
+
+    if (action !== 'generate') {
+        throw new Error(`Unsupported schema action: ${action}`);
+    }
+
+    const outputDir = requireStringFlag(args, 'out');
+    const packageName = getStringFlag(args, 'package-name') ?? 'wordclaw-generated';
+    const requestedSlugs = getStringFlag(args, 'content-type-slugs')
+        ?.split(',')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+
+    const [capabilityResponse, contentTypes] = await Promise.all([
+        client.request({
+            method: 'GET',
+            path: '/capabilities'
+        }),
+        fetchAllContentTypesForArtifacts(client)
+    ]);
+
+    const capabilityBody = requireJsonMap(capabilityResponse.body, 'Schema generation capability response');
+    const capabilityData = requireJsonMap(capabilityBody.data, 'Schema generation capability data') as ArtifactCapabilitySnapshot;
+
+    const filteredContentTypes = requestedSlugs && requestedSlugs.length > 0
+        ? contentTypes.filter((contentType) => requestedSlugs.includes(contentType.slug))
+        : contentTypes;
+
+    if (filteredContentTypes.length === 0) {
+        throw new Error(
+            requestedSlugs && requestedSlugs.length > 0
+                ? `No content types matched --content-type-slugs=${requestedSlugs.join(',')}.`
+                : 'No content types were returned by the runtime.'
+        );
+    }
+
+    if (requestedSlugs && requestedSlugs.length > 0) {
+        const matchedSlugs = new Set(filteredContentTypes.map((contentType) => contentType.slug));
+        const missingSlugs = requestedSlugs.filter((slug) => !matchedSlugs.has(slug));
+        if (missingSlugs.length > 0) {
+            throw new Error(`Unknown content-type slugs: ${missingSlugs.join(', ')}.`);
+        }
+    }
+
+    const artifacts = generateSchemaArtifacts({
+        contentTypes: filteredContentTypes,
+        capabilitySnapshot: capabilityData,
+        packageName
+    });
+    const writtenFiles = await writeSchemaArtifacts(outputDir, artifacts);
+
+    printStructured(args, {
+        transport: 'local',
+        action: 'schema-generate',
+        packageName,
+        outputDir: path.resolve(outputDir),
+        contentTypeCount: filteredContentTypes.length,
+        contentTypes: filteredContentTypes.map((contentType) => ({
+            id: contentType.id,
+            slug: contentType.slug,
+            kind: contentType.kind
+        })),
+        files: writtenFiles
+    });
+}
+
 async function handleIntegrations(client: RestCliClient, args: ParsedArgs) {
     resolveSupportedSubcommand(
         args,
@@ -935,8 +1084,12 @@ async function handleContentTypes(client: RestCliClient, args: ParsedArgs) {
 
     if (action === 'create') {
         const schema = await loadJsonFlag(args, 'schema-json', 'schema-file');
-        if (schema === undefined) {
-            throw new Error('content-types create requires --schema-json or --schema-file.');
+        const schemaManifest = await loadJsonFlag(args, 'schema-manifest-json', 'schema-manifest-file');
+        if (schema !== undefined && schemaManifest !== undefined) {
+            throw new Error('content-types create accepts either schema or schema manifest input, but not both.');
+        }
+        if (schema === undefined && schemaManifest === undefined) {
+            throw new Error('content-types create requires --schema-json, --schema-file, --schema-manifest-json, or --schema-manifest-file.');
         }
 
         const response = await client.request({
@@ -948,8 +1101,10 @@ async function handleContentTypes(client: RestCliClient, args: ParsedArgs) {
             body: omitUndefined({
                 name: requireStringFlag(args, 'name'),
                 slug: requireStringFlag(args, 'slug'),
+                kind: getStringFlag(args, 'kind'),
                 description: getStringFlag(args, 'description'),
                 schema,
+                schemaManifest,
                 basePrice: maybeNumber(getNumberFlag(args, 'base-price')),
             }),
             acceptStatuses: hasFlag(args, 'dry-run') ? [200] : undefined,
@@ -965,11 +1120,17 @@ async function handleContentTypes(client: RestCliClient, args: ParsedArgs) {
         }
 
         const schema = await loadJsonFlag(args, 'schema-json', 'schema-file');
+        const schemaManifest = await loadJsonFlag(args, 'schema-manifest-json', 'schema-manifest-file');
+        if (schema !== undefined && schemaManifest !== undefined) {
+            throw new Error('content-types update accepts either schema or schema manifest input, but not both.');
+        }
         const body = omitUndefined({
             name: getStringFlag(args, 'name'),
             slug: getStringFlag(args, 'slug'),
+            kind: getStringFlag(args, 'kind'),
             description: getStringFlag(args, 'description'),
             schema,
+            schemaManifest,
             basePrice: maybeNumber(getNumberFlag(args, 'base-price')),
         });
         assertHasUpdateFields(body, 'content-types update');
@@ -1001,6 +1162,343 @@ async function handleContentTypes(client: RestCliClient, args: ParsedArgs) {
     printResponse(args, response);
 }
 
+async function handleGlobals(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'globals subcommand',
+        GLOBALS_SUBCOMMANDS,
+    );
+
+    if (action === 'list') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/globals',
+            query: {
+                draft: hasFlag(args, 'published') ? false : undefined,
+                locale: getStringFlag(args, 'locale'),
+                fallbackLocale: getStringFlag(args, 'fallback-locale'),
+            },
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    const slug = getStringFlag(args, 'slug');
+    if (!slug) {
+        throw new Error(`globals ${action} requires --slug.`);
+    }
+
+    if (action === 'get') {
+        const response = await client.request({
+            method: 'GET',
+            path: `/globals/${slug}`,
+            query: {
+                draft: hasFlag(args, 'published') ? false : undefined,
+                locale: getStringFlag(args, 'locale'),
+                fallbackLocale: getStringFlag(args, 'fallback-locale'),
+            },
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'preview-token') {
+        const response = await client.request({
+            method: 'POST',
+            path: `/globals/${slug}/preview-token`,
+            body: omitUndefined({
+                draft: hasFlag(args, 'published') ? false : undefined,
+                locale: getStringFlag(args, 'locale'),
+                fallbackLocale: getStringFlag(args, 'fallback-locale'),
+                ttlSeconds: maybeNumber(getNumberFlag(args, 'ttl-seconds')),
+            }),
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    const data = await loadJsonFlag(args, 'data-json', 'data-file');
+    if (data === undefined) {
+        throw new Error('globals update requires --data-json or --data-file.');
+    }
+
+    const response = await client.request({
+        method: 'PUT',
+        path: `/globals/${slug}`,
+        query: {
+            mode: hasFlag(args, 'dry-run') ? 'dry_run' : undefined,
+        },
+        body: omitUndefined({
+            data,
+            status: getStringFlag(args, 'status'),
+        }),
+        acceptStatuses: hasFlag(args, 'dry-run') ? [200, 201] : undefined,
+    });
+    printResponse(args, response);
+}
+
+async function handleForms(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'forms subcommand',
+        FORMS_SUBCOMMANDS,
+    );
+
+    if (action === 'list') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/forms',
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'get') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('forms get requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: `/forms/${id}`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'public') {
+        const slug = getStringFlag(args, 'slug');
+        const domainId = getNumberFlag(args, 'domain-id');
+        if (!slug || domainId === undefined) {
+            throw new Error('forms public requires --slug and --domain-id.');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: `/public/forms/${slug}`,
+            query: { domainId },
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'submit') {
+        const slug = getStringFlag(args, 'slug');
+        const domainId = getNumberFlag(args, 'domain-id');
+        if (!slug || domainId === undefined) {
+            throw new Error('forms submit requires --slug and --domain-id.');
+        }
+
+        const data = await loadJsonFlag(args, 'data-json', 'data-file');
+        if (data === undefined) {
+            throw new Error('forms submit requires --data-json or --data-file.');
+        }
+
+        const response = await client.request({
+            method: 'POST',
+            path: `/public/forms/${slug}/submissions`,
+            query: { domainId },
+            body: { data },
+            acceptStatuses: [201, 402],
+        });
+        printResponse(args, response);
+        if (!response.ok) {
+            process.exitCode = 1;
+        }
+        return;
+    }
+
+    if (action === 'create') {
+        const fields = await loadJsonFlag(args, 'fields-json', 'fields-file');
+        if (fields === undefined) {
+            throw new Error('forms create requires --fields-json or --fields-file.');
+        }
+
+        const defaultData = await loadJsonFlag(args, 'default-data-json', 'default-data-file');
+        const response = await client.request({
+            method: 'POST',
+            path: '/forms',
+            body: omitUndefined({
+                name: requireStringFlag(args, 'name'),
+                slug: requireStringFlag(args, 'slug'),
+                description: getStringFlag(args, 'description'),
+                contentTypeId: maybeNumber(getNumberFlag(args, 'content-type-id')),
+                fields,
+                defaultData,
+                active: maybeBooleanFlag(args, 'active'),
+                publicRead: maybeBooleanFlag(args, 'public-read'),
+                submissionStatus: getStringFlag(args, 'submission-status'),
+                workflowTransitionId: maybeNumber(getNumberFlag(args, 'workflow-transition-id')),
+                requirePayment: maybeBooleanFlag(args, 'require-payment'),
+                webhookUrl: getStringFlag(args, 'webhook-url'),
+                webhookSecret: getStringFlag(args, 'webhook-secret'),
+                successMessage: getStringFlag(args, 'success-message'),
+            }),
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'update') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('forms update requires --id.');
+        }
+
+        const fields = await loadJsonFlag(args, 'fields-json', 'fields-file');
+        const defaultData = await loadJsonFlag(args, 'default-data-json', 'default-data-file');
+        const body = omitUndefined({
+            name: getStringFlag(args, 'name'),
+            slug: getStringFlag(args, 'slug'),
+            description: getStringFlag(args, 'description'),
+            contentTypeId: maybeNumber(getNumberFlag(args, 'content-type-id')),
+            fields,
+            defaultData,
+            active: maybeBooleanFlag(args, 'active'),
+            publicRead: maybeBooleanFlag(args, 'public-read'),
+            submissionStatus: getStringFlag(args, 'submission-status'),
+            workflowTransitionId: getStringFlag(args, 'workflow-transition-id') === 'null'
+                ? null
+                : maybeNumber(getNumberFlag(args, 'workflow-transition-id')),
+            requirePayment: maybeBooleanFlag(args, 'require-payment'),
+            webhookUrl: getStringFlag(args, 'webhook-url'),
+            webhookSecret: getStringFlag(args, 'webhook-secret'),
+            successMessage: getStringFlag(args, 'success-message'),
+        });
+        assertHasUpdateFields(body, 'forms update');
+
+        const response = await client.request({
+            method: 'PUT',
+            path: `/forms/${id}`,
+            body,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'delete') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('forms delete requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'DELETE',
+            path: `/forms/${id}`,
+        });
+        printResponse(args, response);
+        return;
+    }
+}
+
+async function handleJobs(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'jobs subcommand',
+        JOBS_SUBCOMMANDS,
+    );
+
+    if (action === 'list') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/jobs',
+            query: {
+                status: getStringFlag(args, 'status'),
+                kind: getStringFlag(args, 'kind'),
+                limit: maybeNumber(getNumberFlag(args, 'limit')),
+                offset: maybeNumber(getNumberFlag(args, 'offset')),
+            },
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'get') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('jobs get requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: `/jobs/${id}`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'worker-status') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/jobs/worker-status',
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'create') {
+        const kind = getStringFlag(args, 'kind');
+        if (!kind) {
+            throw new Error('jobs create requires --kind.');
+        }
+
+        const payload = await loadJsonFlag(args, 'payload-json', 'payload-file');
+        if (payload === undefined) {
+            throw new Error('jobs create requires --payload-json or --payload-file.');
+        }
+
+        const response = await client.request({
+            method: 'POST',
+            path: '/jobs',
+            body: omitUndefined({
+                kind,
+                payload,
+                queue: getStringFlag(args, 'queue'),
+                runAt: getStringFlag(args, 'run-at'),
+                maxAttempts: maybeNumber(getNumberFlag(args, 'max-attempts')),
+            }),
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'cancel') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('jobs cancel requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'DELETE',
+            path: `/jobs/${id}`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    const id = getNumberFlag(args, 'id');
+    const targetStatus = getStringFlag(args, 'status');
+    const runAt = getStringFlag(args, 'run-at');
+    if (id === undefined || !targetStatus || !runAt) {
+        throw new Error('jobs schedule-status requires --id, --status, and --run-at.');
+    }
+
+    const response = await client.request({
+        method: 'POST',
+        path: `/content-items/${id}/schedule-status`,
+        body: omitUndefined({
+            targetStatus,
+            runAt,
+            maxAttempts: maybeNumber(getNumberFlag(args, 'max-attempts')),
+        }),
+    });
+    printResponse(args, response);
+}
+
 async function handleContent(client: RestCliClient, args: ParsedArgs) {
     const action = resolveSupportedSubcommand(
         args,
@@ -1018,6 +1516,9 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
                 contentTypeId: maybeNumber(getNumberFlag(args, 'content-type-id')),
                 status: getStringFlag(args, 'status'),
                 q: getStringFlag(args, 'q'),
+                draft: hasFlag(args, 'published') ? false : undefined,
+                locale: getStringFlag(args, 'locale'),
+                fallbackLocale: getStringFlag(args, 'fallback-locale'),
                 createdAfter: getStringFlag(args, 'created-after'),
                 createdBefore: getStringFlag(args, 'created-before'),
                 fieldName: getStringFlag(args, 'field-name'),
@@ -1180,6 +1681,45 @@ async function handleContent(client: RestCliClient, args: ParsedArgs) {
         const response = await client.request({
             method: 'GET',
             path: `/content-items/${id}`,
+            query: {
+                draft: hasFlag(args, 'published') ? false : undefined,
+                locale: getStringFlag(args, 'locale'),
+                fallbackLocale: getStringFlag(args, 'fallback-locale'),
+            },
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'used-by') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('content used-by requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: `/content-items/${id}/used-by`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'preview-token') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('content preview-token requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'POST',
+            path: `/content-items/${id}/preview-token`,
+            body: omitUndefined({
+                draft: hasFlag(args, 'published') ? false : undefined,
+                locale: getStringFlag(args, 'locale'),
+                fallbackLocale: getStringFlag(args, 'fallback-locale'),
+                ttlSeconds: maybeNumber(getNumberFlag(args, 'ttl-seconds')),
+            }),
         });
         printResponse(args, response);
         return;
@@ -1323,6 +1863,20 @@ async function handleAssets(client: RestCliClient, args: ParsedArgs) {
         const response = await client.request({
             method: 'GET',
             path: `/assets/${id}`,
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    if (action === 'used-by') {
+        const id = getNumberFlag(args, 'id');
+        if (id === undefined) {
+            throw new Error('assets used-by requires --id.');
+        }
+
+        const response = await client.request({
+            method: 'GET',
+            path: `/assets/${id}/used-by`,
         });
         printResponse(args, response);
         return;
@@ -1815,8 +2369,20 @@ async function main(args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
         await handleRest(client, args);
         return;
     }
+    if (command === 'schema') {
+        await handleSchema(client, args);
+        return;
+    }
     if (command === 'integrations') {
         await handleIntegrations(client, args);
+        return;
+    }
+    if (command === 'forms') {
+        await handleForms(client, args);
+        return;
+    }
+    if (command === 'jobs') {
+        await handleJobs(client, args);
         return;
     }
     if (command === 'capabilities') {
@@ -1833,6 +2399,10 @@ async function main(args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
     }
     if (command === 'content-types') {
         await handleContentTypes(client, args);
+        return;
+    }
+    if (command === 'globals') {
+        await handleGlobals(client, args);
         return;
     }
     if (command === 'content') {

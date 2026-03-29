@@ -21,7 +21,9 @@ export const contentTypes = pgTable('content_types', {
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
+    kind: text('kind').notNull().default('collection'),
     description: text('description'),
+    schemaManifest: text('schema_manifest'),
     schema: text('schema').notNull(),
     basePrice: integer('base_price'), // Minimum cost in Satoshis for creating an item of this type
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -236,6 +238,57 @@ export const reviewComments = pgTable('review_comments', {
     authorActorSource: text('author_actor_source'),
     comment: text('comment').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const formDefinitions = pgTable('form_definitions', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    description: text('description'),
+    contentTypeId: integer('content_type_id').references(() => contentTypes.id, { onDelete: 'cascade' }).notNull(),
+    fields: jsonb('fields').notNull().default([]),
+    defaultData: jsonb('default_data').notNull().default({}),
+    active: boolean('active').notNull().default(true),
+    publicRead: boolean('public_read').notNull().default(true),
+    submissionStatus: text('submission_status').notNull().default('draft'),
+    workflowTransitionId: integer('workflow_transition_id').references(() => workflowTransitions.id, { onDelete: 'set null' }),
+    requirePayment: boolean('require_payment').notNull().default(false),
+    webhookUrl: text('webhook_url'),
+    webhookSecret: text('webhook_secret'),
+    successMessage: text('success_message'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        formDefinitionsDomainSlugUniqueIdx: uniqueIndex('form_definitions_domain_slug_unique').on(table.domainId, table.slug),
+        formDefinitionsDomainContentTypeIdx: index('form_definitions_domain_content_type_idx').on(table.domainId, table.contentTypeId),
+    };
+});
+
+export const jobs = pgTable('jobs', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    kind: text('kind').notNull(),
+    queue: text('queue').notNull().default('default'),
+    status: text('status').notNull().default('queued'),
+    payload: jsonb('payload').notNull().default({}),
+    result: jsonb('result'),
+    runAt: timestamp('run_at').defaultNow().notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(3),
+    lastError: text('last_error'),
+    claimedAt: timestamp('claimed_at'),
+    startedAt: timestamp('started_at'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        jobsDomainStatusRunAtIdx: index('jobs_domain_status_run_at_idx').on(table.domainId, table.status, table.runAt),
+        jobsKindRunAtIdx: index('jobs_kind_run_at_idx').on(table.kind, table.runAt),
+        jobsQueueStatusIdx: index('jobs_queue_status_idx').on(table.queue, table.status),
+    };
 });
 
 export const contentItemEmbeddings = pgTable("content_item_embeddings", {

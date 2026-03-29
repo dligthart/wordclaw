@@ -32,7 +32,7 @@ Add a **Distribution Orchestrator** executing plans via a PostgreSQL queue:
 
 ### 5.2 Postgres Queue, Snapshotting & Adapters
 *   **Infrastructure**: We will use a PostgreSQL-backed queue (e.g., `pgboss` or native `SKIP LOCKED`) to avoid adding Redis to the WordClaw deployment topology.
-*   **Payload Snapshotting:** To prevent data drift, the job queue isolates the payload at enqueue time into `payloadSnapshotJson`. Changes to the `contentItem` while jobs are in the queue will not affect the outgoing payloads.
+*   **Delivery Snapshotting:** To prevent data drift, the job queue isolates the payload at enqueue time into `payloadSnapshotJson`. Changes to the `contentItem` while jobs are in the queue will not affect the outgoing payloads.
 *   **Adapters**: Define an interface that implements `transform(content, policy)` and `deliver(payload)`. Transforms handle markdown-to-HTML, truncation, and metadata injection.
     ```typescript
     interface TransformPolicy {
@@ -77,5 +77,4 @@ Valid `distribution_plans.status` transitions:
 3.  **Phase 3**: Implement Webhook, RSS, and Email adapters mapped to a `TransformPolicy`.
 4.  **Phase 4**: Add cancellation, deduplication, dry-run, and synchronous `awaitDelivery` API concepts.
 5.  **Phase 5**: Add Webhook event emissions for completions and failures.
-
 

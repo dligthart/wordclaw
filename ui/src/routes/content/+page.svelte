@@ -38,6 +38,9 @@
         contentTypeId: number;
         status: string;
         version: number;
+        publicationState: "draft" | "published" | "changed";
+        workingCopyVersion: number;
+        publishedVersion: number | null;
         data: unknown;
         createdAt: string;
         updatedAt: string;
@@ -104,6 +107,32 @@
         hasMore: boolean;
     };
 
+    type PreviewTokenResponse = {
+        token: string;
+        previewPath: string;
+        draft: boolean;
+        ttlSeconds: number;
+        expiresAt: string;
+    };
+
+    type ReferenceUsage = {
+        contentItemId: number;
+        contentTypeId: number;
+        contentTypeName: string;
+        contentTypeSlug: string;
+        path: string;
+        version: number;
+        status?: string;
+        contentItemVersionId?: number;
+    };
+
+    type ReferenceUsageSummary = {
+        activeReferenceCount: number;
+        historicalReferenceCount: number;
+        activeReferences: ReferenceUsage[];
+        historicalReferences: ReferenceUsage[];
+    };
+
     type ItemSortDir = "asc" | "desc";
     type FieldFilterOperator = "eq" | "contains" | "gte" | "lte";
 
@@ -164,6 +193,7 @@
     let selectedItem = $state<ContentItem | null>(null);
     let versions = $state<ContentVersion[]>([]);
     let comments = $state<ReviewComment[]>([]);
+    let itemUsage = $state<ReferenceUsageSummary | null>(null);
     let activeWorkflow = $state<ActiveWorkflow | null>(null);
 
     let itemSearch = $state("");
@@ -181,8 +211,10 @@
     let selectedVersionForDiff = $state<number | null>(null);
     let newComment = $state("");
     let submittingReview = $state(false);
+    let openingPreview = $state(false);
     let loading = $state(true);
     let loadingItems = $state(false);
+    let loadingUsage = $state(false);
     let error = $state<any>(null);
     let rollingBack = $state(false);
     let showModelFilterModal = $state(false);
@@ -458,6 +490,22 @@
         if (status === "published") return "success";
         if (status === "in_review") return "warning";
         if (status === "archived") return "danger";
+        return "muted";
+    }
+
+    function formatPublicationStateLabel(
+        state: ContentItem["publicationState"],
+    ): string {
+        if (state === "changed") return "Changed";
+        if (state === "published") return "Published view";
+        return "Draft only";
+    }
+
+    function resolvePublicationBadgeVariant(
+        state: ContentItem["publicationState"],
+    ): "muted" | "success" | "warning" | "danger" {
+        if (state === "published") return "success";
+        if (state === "changed") return "warning";
         return "muted";
     }
 
@@ -967,6 +1015,7 @@
         selectedItem = null;
         versions = [];
         comments = [];
+        itemUsage = null;
         selectedVersionForDiff = null;
         newComment = "";
     }
@@ -1085,24 +1134,56 @@
         selectedItem = item;
         versions = [];
         comments = [];
+        itemUsage = null;
         selectedVersionForDiff = null;
         error = null;
 
         try {
-            const response = await fetchApi(
-                `/content-items/${item.id}/versions`,
-            );
-            versions = response.data;
-            selectedVersionForDiff = response.data[0]?.version ?? null;
+            const followUps: Promise<void>[] = [
+                (async () => {
+                    const response = await fetchApi(
+                        `/content-items/${item.id}/versions`,
+                    );
+                    versions = response.data;
+                    selectedVersionForDiff = response.data[0]?.version ?? null;
+                })(),
+                loadContentItemUsage(item.id),
+            ];
 
             if (activeWorkflow) {
-                const commentsRes = await fetchApi(
-                    `/content-items/${item.id}/comments`,
+                followUps.push(
+                    (async () => {
+                        const commentsRes = await fetchApi(
+                            `/content-items/${item.id}/comments`,
+                        );
+                        comments = commentsRes.data;
+                    })(),
                 );
-                comments = commentsRes.data;
             }
+
+            await Promise.all(followUps);
         } catch (err: any) {
             error = err;
+        }
+    }
+
+    async function loadContentItemUsage(id: number) {
+        loadingUsage = true;
+        try {
+            const response = await fetchApi(`/content-items/${id}/used-by`);
+            itemUsage = response.data ?? null;
+        } catch (err) {
+            itemUsage = null;
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Failed to load reference usage",
+                message:
+                    err instanceof ApiError
+                        ? err.message
+                        : "The usage graph could not be loaded.",
+            });
+        } finally {
+            loadingUsage = false;
         }
     }
 
@@ -1337,6 +1418,43 @@
                 remediation:
                     err instanceof ApiError ? err.remediation : undefined,
             });
+        }
+    }
+
+    async function openPreview() {
+        if (!selectedItem) return;
+
+        openingPreview = true;
+        try {
+            const response = await fetchApi(
+                `/content-items/${selectedItem.id}/preview-token`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({ draft: true }),
+                },
+            );
+            const preview = response.data as PreviewTokenResponse;
+            window.open(
+                new URL(preview.previewPath, window.location.origin).toString(),
+                "_blank",
+                "noopener",
+            );
+            feedbackStore.pushToast({
+                severity: "success",
+                title: "Preview opened",
+                message: `Scoped preview available until ${formatDateTime(preview.expiresAt)}`,
+            });
+        } catch (err: any) {
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Preview unavailable",
+                message: err.message,
+                code: err instanceof ApiError ? err.code : undefined,
+                remediation:
+                    err instanceof ApiError ? err.remediation : undefined,
+            });
+        } finally {
+            openingPreview = false;
         }
     }
 
@@ -1915,6 +2033,15 @@
                                 >
                                     {formatStatusLabel(selectedItem.status)}
                                 </Badge>
+                                <Badge
+                                    variant={resolvePublicationBadgeVariant(
+                                        selectedItem.publicationState,
+                                    )}
+                                >
+                                    {formatPublicationStateLabel(
+                                        selectedItem.publicationState,
+                                    )}
+                                </Badge>
                             </div>
                             <p
                                 class="mt-2 text-sm text-slate-600 dark:text-slate-300"
@@ -2002,8 +2129,151 @@
                                         v{selectedItem.version}
                                     </dd>
                                 </div>
+                                <div>
+                                    <dt class="font-semibold uppercase">
+                                        Published
+                                    </dt>
+                                    <dd
+                                        class="mt-1 text-sm text-slate-900 dark:text-slate-50"
+                                    >
+                                        {selectedItem.publishedVersion === null
+                                            ? "Not published"
+                                            : `v${selectedItem.publishedVersion}`}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt class="font-semibold uppercase">
+                                        Working copy
+                                    </dt>
+                                    <dd
+                                        class="mt-1 text-sm text-slate-900 dark:text-slate-50"
+                                    >
+                                        v{selectedItem.workingCopyVersion}
+                                    </dd>
+                                </div>
                             </div>
                         </dl>
+                    </Surface>
+
+                    <Surface tone="subtle" class="p-4">
+                        <div
+                            class="flex items-start justify-between gap-3 flex-wrap"
+                        >
+                            <div>
+                                <p
+                                    class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                >
+                                    Referenced by
+                                </p>
+                                <p
+                                    class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                >
+                                    Review current and historical references before deleting or restructuring this item.
+                                </p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline">
+                                    {itemUsage?.activeReferenceCount ?? 0} active
+                                </Badge>
+                                <Badge variant="outline">
+                                    {itemUsage?.historicalReferenceCount ?? 0} historical
+                                </Badge>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 space-y-3">
+                            {#if loadingUsage}
+                                <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-950/30">
+                                    <LoadingSpinner size="sm" />
+                                    <p class="text-sm text-slate-500 dark:text-slate-400">
+                                        Loading reverse references…
+                                    </p>
+                                </div>
+                            {:else if itemUsage}
+                                <div class="grid gap-3 lg:grid-cols-2">
+                                    <div class="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-950/30">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                            Active references
+                                        </p>
+                                        {#if itemUsage.activeReferences.length > 0}
+                                            <div class="mt-3 space-y-3">
+                                                {#each itemUsage.activeReferences.slice(0, 5) as reference}
+                                                    <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                                                        <p class="text-sm font-medium text-slate-900 dark:text-slate-50">
+                                                            {reference.contentTypeName} #{reference.contentItemId}
+                                                        </p>
+                                                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                            {reference.contentTypeSlug} · {reference.path} · v{reference.version}{reference.status ? ` · ${reference.status}` : ""}
+                                                        </p>
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                        {:else}
+                                            <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                                                No active items currently reference this record.
+                                            </p>
+                                        {/if}
+                                    </div>
+
+                                    <div class="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-950/30">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                            Historical references
+                                        </p>
+                                        {#if itemUsage.historicalReferences.length > 0}
+                                            <div class="mt-3 space-y-3">
+                                                {#each itemUsage.historicalReferences.slice(0, 5) as reference}
+                                                    <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                                                        <p class="text-sm font-medium text-slate-900 dark:text-slate-50">
+                                                            {reference.contentTypeName} #{reference.contentItemId}
+                                                        </p>
+                                                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                            {reference.contentTypeSlug} · {reference.path} · v{reference.version}
+                                                        </p>
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                        {:else}
+                                            <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                                                No historical version snapshots reference this record.
+                                            </p>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {:else}
+                                <p class="text-sm text-slate-500 dark:text-slate-400">
+                                    Reverse-reference data is not available for this item.
+                                </p>
+                            {/if}
+                        </div>
+                    </Surface>
+
+                    <Surface tone="subtle" class="p-4">
+                        <div
+                            class="flex items-start justify-between gap-3 flex-wrap"
+                        >
+                            <div>
+                                <p
+                                    class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                >
+                                    Preview
+                                </p>
+                                <p
+                                    class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                >
+                                    Issue a short-lived draft preview token and
+                                    open the runtime preview payload in a new
+                                    tab.
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                size="sm"
+                                onclick={() => void openPreview()}
+                                disabled={openingPreview}
+                            >
+                                Open preview
+                            </Button>
+                        </div>
                     </Surface>
 
                     {#if activeWorkflow}

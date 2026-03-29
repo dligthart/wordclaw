@@ -1,0 +1,371 @@
+import { describe, expect, it } from 'vitest';
+
+import { buildBootstrapWorkspaceGuide } from './bootstrap-workspace-guide.js';
+
+describe('buildBootstrapWorkspaceGuide', () => {
+    it('builds an actionable first-domain bootstrap guide when no domains exist yet', () => {
+        const guide = buildBootstrapWorkspaceGuide({
+            currentActor: {
+                actorId: 'mcp-local',
+                actorType: 'mcp',
+                actorSource: 'local',
+                actorProfileId: 'mcp-local',
+                domainId: 1,
+                scopes: ['admin'],
+                assignmentRefs: ['mcp-local'],
+            },
+            deploymentStatus: {
+                generatedAt: '2026-03-29T09:00:00.000Z',
+                overallStatus: 'degraded',
+                checks: {
+                    database: {
+                        status: 'ready',
+                        note: 'ok',
+                    },
+                    restApi: {
+                        status: 'ready',
+                        basePath: '/api',
+                        note: 'ok',
+                    },
+                    bootstrap: {
+                        status: 'degraded',
+                        domainCount: 0,
+                        contentWritesRequireDomain: true,
+                        supportsInBandDomainCreation: true,
+                        restCreateDomainPath: '/api/domains',
+                        mcpCreateDomainTool: 'create_domain',
+                        recommendedGuideTask: 'bootstrap-workspace',
+                        nextAction: 'Create the first domain before attempting content-type or content-item writes.',
+                        note: 'The runtime has no provisioned domains yet, so the first write must bootstrap the workspace.',
+                    },
+                    auth: {
+                        status: 'ready',
+                        authRequired: true,
+                        writeRequiresCredential: true,
+                        insecureLocalAdminEnabled: false,
+                        recommendedActorProfile: 'api-key',
+                        recommendedScopes: ['content:write'],
+                        note: 'ok',
+                    },
+                    vectorRag: {
+                        status: 'disabled',
+                        enabled: false,
+                        model: null,
+                        restPath: '/api/search/semantic',
+                        mcpTool: 'search_semantic_knowledge',
+                        requiredEnvironmentVariables: ['OPENAI_API_KEY'],
+                        reason: 'OPENAI_API_KEY not set',
+                        note: 'disabled',
+                    },
+                    contentRuntime: {
+                        status: 'ready',
+                        fieldAwareQueries: {
+                            supported: true,
+                            restPath: '/api/content-items',
+                            mcpTool: 'get_content_items',
+                            graphqlField: 'contentItems',
+                            requiresContentTypeId: true,
+                        },
+                        projections: {
+                            supported: true,
+                            restPath: '/api/content-items/projections',
+                            mcpTool: 'project_content_items',
+                            graphqlField: 'contentItemProjection',
+                            metrics: ['count'],
+                            requiresContentTypeId: true,
+                        },
+                        publicWriteLane: {
+                            supported: true,
+                            issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                            createPath: '/api/public/content-types/:id/items',
+                            updatePath: '/api/public/content-items/:id',
+                            tokenHeader: 'x-public-write-token',
+                            requiresSchemaPolicy: true,
+                        },
+                        lifecycle: {
+                            supported: true,
+                            triggerMode: 'lazy-on-touch',
+                            schemaExtension: 'x-wordclaw-lifecycle',
+                            includeArchivedFlag: 'includeArchived',
+                            defaultArchiveStatus: 'archived',
+                        },
+                        note: 'ok',
+                    },
+                    mcp: {
+                        status: 'ready',
+                        endpoint: '/mcp',
+                        transports: ['stdio', 'streamable-http'],
+                        attachable: true,
+                        reactive: {
+                            supported: true,
+                            transport: 'streamable-http',
+                            subscriptionTool: 'subscribe_events',
+                            notificationMethod: 'notifications/wordclaw/event',
+                            supportedTopicCount: 1,
+                            supportedRecipeCount: 1,
+                            supportedFilterFields: ['contentTypeId'],
+                        },
+                        note: 'ok',
+                    },
+                    assetStorage: {
+                        status: 'ready',
+                        enabled: true,
+                        configuredProvider: 'local',
+                        effectiveProvider: 'local',
+                        fallbackApplied: false,
+                        supportedProviders: ['local'],
+                        restUploadModes: ['json-base64'],
+                        mcpUploadModes: ['inline-base64'],
+                        directProviderUpload: {
+                            enabled: false,
+                            issuePath: '/api/assets/direct-upload',
+                            completePath: '/api/assets/direct-upload/complete',
+                            method: 'PUT',
+                            providers: ['s3'],
+                        },
+                        deliveryModes: ['public'],
+                        signedAccess: {
+                            enabled: true,
+                            defaultTtlSeconds: 300,
+                            issuePath: '/api/assets/:id/access',
+                            issueTool: 'issue_asset_access',
+                        },
+                        entitlementDelivery: {
+                            enabled: true,
+                            offersPath: '/api/assets/:id/offers',
+                            contentPath: '/api/assets/:id/content',
+                        },
+                        derivatives: {
+                            supported: true,
+                            listPath: '/api/assets/:id/derivatives',
+                            listTool: 'list_asset_derivatives',
+                            sourceField: 'sourceAssetId',
+                            variantKeyField: 'variantKey',
+                            transformSpecField: 'transformSpec',
+                        },
+                        note: 'ok',
+                    },
+                    agentRuns: {
+                        status: 'disabled',
+                        enabled: false,
+                        workerStarted: false,
+                        sweepInProgress: false,
+                        lastSweepCompletedAt: null,
+                        lastErrorMessage: null,
+                        note: 'disabled',
+                    },
+                    backgroundJobs: {
+                        status: 'ready',
+                        enabled: true,
+                        workerStarted: true,
+                        sweepInProgress: false,
+                        lastSweepCompletedAt: '2026-03-29T08:55:00.000Z',
+                        lastErrorMessage: null,
+                        note: 'healthy',
+                    },
+                },
+                warnings: ['No domains are provisioned yet, so content-type and content-item writes are blocked until bootstrap completes.'],
+            },
+        });
+
+        expect(guide.taskId).toBe('bootstrap-workspace');
+        expect(guide.actorReadiness.status).toBe('ready');
+        expect(guide.bootstrap).toEqual(expect.objectContaining({
+            status: 'blocked',
+            domainCount: 0,
+            mcpCreateDomainTool: 'create_domain',
+            recommendedGuideTask: 'bootstrap-workspace',
+        }));
+        expect(guide.steps).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                id: 'create-domain',
+                status: 'ready',
+                command: "node dist/cli/index.js mcp call create_domain --json '{\"name\":\"Local Dev\",\"hostname\":\"local-dev.example.test\"}'",
+            }),
+            expect.objectContaining({
+                id: 'handoff-discover-workspace',
+                status: 'blocked',
+            }),
+        ]));
+    });
+
+    it('hands off to workspace discovery once bootstrap is already complete', () => {
+        const guide = buildBootstrapWorkspaceGuide({
+            currentActor: {
+                actorId: 'api_key:7',
+                actorType: 'api_key',
+                actorSource: 'db',
+                actorProfileId: 'api-key',
+                domainId: 7,
+                scopes: ['content:write'],
+                assignmentRefs: ['api_key:7', '7'],
+            },
+            deploymentStatus: {
+                generatedAt: '2026-03-29T09:00:00.000Z',
+                overallStatus: 'ready',
+                checks: {
+                    database: {
+                        status: 'ready',
+                        note: 'ok',
+                    },
+                    restApi: {
+                        status: 'ready',
+                        basePath: '/api',
+                        note: 'ok',
+                    },
+                    bootstrap: {
+                        status: 'ready',
+                        domainCount: 2,
+                        contentWritesRequireDomain: true,
+                        supportsInBandDomainCreation: true,
+                        restCreateDomainPath: '/api/domains',
+                        mcpCreateDomainTool: 'create_domain',
+                        recommendedGuideTask: 'bootstrap-workspace',
+                        nextAction: 'Bootstrap prerequisites are satisfied for content writes.',
+                        note: 'At least one domain is provisioned for content writes.',
+                    },
+                    auth: {
+                        status: 'ready',
+                        authRequired: true,
+                        writeRequiresCredential: true,
+                        insecureLocalAdminEnabled: false,
+                        recommendedActorProfile: 'api-key',
+                        recommendedScopes: ['content:write'],
+                        note: 'ok',
+                    },
+                    vectorRag: {
+                        status: 'disabled',
+                        enabled: false,
+                        model: null,
+                        restPath: '/api/search/semantic',
+                        mcpTool: 'search_semantic_knowledge',
+                        requiredEnvironmentVariables: ['OPENAI_API_KEY'],
+                        reason: 'OPENAI_API_KEY not set',
+                        note: 'disabled',
+                    },
+                    contentRuntime: {
+                        status: 'ready',
+                        fieldAwareQueries: {
+                            supported: true,
+                            restPath: '/api/content-items',
+                            mcpTool: 'get_content_items',
+                            graphqlField: 'contentItems',
+                            requiresContentTypeId: true,
+                        },
+                        projections: {
+                            supported: true,
+                            restPath: '/api/content-items/projections',
+                            mcpTool: 'project_content_items',
+                            graphqlField: 'contentItemProjection',
+                            metrics: ['count'],
+                            requiresContentTypeId: true,
+                        },
+                        publicWriteLane: {
+                            supported: true,
+                            issueTokenPath: '/api/content-types/:id/public-write-tokens',
+                            createPath: '/api/public/content-types/:id/items',
+                            updatePath: '/api/public/content-items/:id',
+                            tokenHeader: 'x-public-write-token',
+                            requiresSchemaPolicy: true,
+                        },
+                        lifecycle: {
+                            supported: true,
+                            triggerMode: 'lazy-on-touch',
+                            schemaExtension: 'x-wordclaw-lifecycle',
+                            includeArchivedFlag: 'includeArchived',
+                            defaultArchiveStatus: 'archived',
+                        },
+                        note: 'ok',
+                    },
+                    mcp: {
+                        status: 'ready',
+                        endpoint: '/mcp',
+                        transports: ['stdio', 'streamable-http'],
+                        attachable: true,
+                        reactive: {
+                            supported: true,
+                            transport: 'streamable-http',
+                            subscriptionTool: 'subscribe_events',
+                            notificationMethod: 'notifications/wordclaw/event',
+                            supportedTopicCount: 1,
+                            supportedRecipeCount: 1,
+                            supportedFilterFields: ['contentTypeId'],
+                        },
+                        note: 'ok',
+                    },
+                    assetStorage: {
+                        status: 'ready',
+                        enabled: true,
+                        configuredProvider: 'local',
+                        effectiveProvider: 'local',
+                        fallbackApplied: false,
+                        supportedProviders: ['local'],
+                        restUploadModes: ['json-base64'],
+                        mcpUploadModes: ['inline-base64'],
+                        directProviderUpload: {
+                            enabled: false,
+                            issuePath: '/api/assets/direct-upload',
+                            completePath: '/api/assets/direct-upload/complete',
+                            method: 'PUT',
+                            providers: ['s3'],
+                        },
+                        deliveryModes: ['public'],
+                        signedAccess: {
+                            enabled: true,
+                            defaultTtlSeconds: 300,
+                            issuePath: '/api/assets/:id/access',
+                            issueTool: 'issue_asset_access',
+                        },
+                        entitlementDelivery: {
+                            enabled: true,
+                            offersPath: '/api/assets/:id/offers',
+                            contentPath: '/api/assets/:id/content',
+                        },
+                        derivatives: {
+                            supported: true,
+                            listPath: '/api/assets/:id/derivatives',
+                            listTool: 'list_asset_derivatives',
+                            sourceField: 'sourceAssetId',
+                            variantKeyField: 'variantKey',
+                            transformSpecField: 'transformSpec',
+                        },
+                        note: 'ok',
+                    },
+                    agentRuns: {
+                        status: 'disabled',
+                        enabled: false,
+                        workerStarted: false,
+                        sweepInProgress: false,
+                        lastSweepCompletedAt: null,
+                        lastErrorMessage: null,
+                        note: 'disabled',
+                    },
+                    backgroundJobs: {
+                        status: 'ready',
+                        enabled: true,
+                        workerStarted: true,
+                        sweepInProgress: false,
+                        lastSweepCompletedAt: '2026-03-29T08:55:00.000Z',
+                        lastErrorMessage: null,
+                        note: 'healthy',
+                    },
+                },
+                warnings: [],
+            },
+        });
+
+        expect(guide.actorReadiness.status).toBe('warning');
+        expect(guide.bootstrap.status).toBe('ready');
+        expect(guide.steps).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                id: 'create-domain',
+                status: 'completed',
+            }),
+            expect.objectContaining({
+                id: 'handoff-discover-workspace',
+                status: 'ready',
+                command: `node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-workspace"}'`,
+            }),
+        ]));
+    });
+});

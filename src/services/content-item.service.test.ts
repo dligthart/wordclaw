@@ -19,7 +19,12 @@ vi.mock('./audit.js', () => ({
     logAudit: mocks.logAuditMock
 }));
 
-import { ContentItemProjectionError, projectContentItems } from './content-item.service.js';
+import {
+    ContentItemProjectionError,
+    listContentItems,
+    projectContentItems,
+    resolveContentItemReadView
+} from './content-item.service.js';
 
 describe('projectContentItems', () => {
     beforeEach(() => {
@@ -139,5 +144,162 @@ describe('projectContentItems', () => {
         ).rejects.toMatchObject({
             code: 'CONTENT_ITEMS_PROJECTION_METRIC_FIELD_NOT_NUMERIC'
         } satisfies Partial<ContentItemProjectionError>);
+    });
+});
+
+describe('listContentItems', () => {
+    beforeEach(() => {
+        mocks.dbMock.select.mockReset();
+        mocks.dbMock.insert.mockReset();
+        mocks.dbMock.update.mockReset();
+        mocks.dbMock.delete.mockReset();
+        mocks.dbMock.transaction.mockReset();
+        mocks.logAuditMock.mockReset();
+    });
+
+    it('resolves localized fields when locale-aware reads are requested', async () => {
+        const offsetMock = vi.fn().mockResolvedValue([
+            {
+                item: {
+                    id: 9,
+                    domainId: 1,
+                    contentTypeId: 7,
+                    data: JSON.stringify({
+                        title: {
+                            en: 'Hello',
+                            nl: 'Hallo'
+                        }
+                    }),
+                    status: 'published',
+                    version: 3,
+                    createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                    updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                },
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: {
+                        title: {
+                            type: 'string',
+                            'x-wordclaw-localized': true
+                        }
+                    },
+                    required: ['title'],
+                    'x-wordclaw-localization': {
+                        supportedLocales: ['en', 'nl'],
+                        defaultLocale: 'en'
+                    }
+                }),
+                basePrice: 0
+            }
+        ]);
+        const limitMock = vi.fn(() => ({ offset: offsetMock }));
+        const orderByMock = vi.fn(() => ({ limit: limitMock }));
+        const whereMock = vi.fn(() => ({ orderBy: orderByMock }));
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ total: 1 }])
+                })
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: vi.fn(() => ({
+                        where: whereMock
+                    }))
+                })
+            }));
+
+        const result = await listContentItems(1, {
+            locale: 'nl'
+        });
+
+        expect(result.items).toHaveLength(1);
+        expect(JSON.parse(result.items[0].data)).toEqual({
+            title: 'Hallo'
+        });
+        expect(result.items[0].localeResolution).toEqual({
+            requestedLocale: 'nl',
+            fallbackLocale: 'en',
+            defaultLocale: 'en',
+            localizedFieldCount: 1,
+            resolvedFieldCount: 1,
+            fallbackFieldCount: 0,
+            unresolvedFields: []
+        });
+    });
+});
+
+describe('resolveContentItemReadView', () => {
+    it('returns the published snapshot when draft reads are disabled and a published version exists', () => {
+        const readView = resolveContentItemReadView(
+            {
+                id: 12,
+                domainId: 1,
+                contentTypeId: 7,
+                data: JSON.stringify({ title: 'Draft copy' }),
+                status: 'draft',
+                version: 4,
+                createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                updatedAt: new Date('2026-03-29T10:00:00.000Z')
+            },
+            JSON.stringify({
+                type: 'object',
+                properties: {
+                    title: { type: 'string' }
+                }
+            }),
+            {
+                draft: false,
+                unpublishedFallback: 'null'
+            },
+            {
+                id: 99,
+                contentItemId: 12,
+                version: 2,
+                data: JSON.stringify({ title: 'Published copy' }),
+                status: 'published',
+                createdAt: new Date('2026-03-27T08:00:00.000Z')
+            }
+        );
+
+        expect(readView).not.toBeNull();
+        expect(readView).toMatchObject({
+            status: 'published',
+            version: 2,
+            publicationState: 'changed',
+            workingCopyVersion: 4,
+            publishedVersion: 2
+        });
+        expect(JSON.parse(readView!.data)).toEqual({
+            title: 'Published copy'
+        });
+    });
+
+    it('returns null for published-only reads when an item has never been published', () => {
+        const readView = resolveContentItemReadView(
+            {
+                id: 14,
+                domainId: 1,
+                contentTypeId: 7,
+                data: JSON.stringify({ title: 'Draft only' }),
+                status: 'draft',
+                version: 1,
+                createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                updatedAt: new Date('2026-03-29T10:00:00.000Z')
+            },
+            JSON.stringify({
+                type: 'object',
+                properties: {
+                    title: { type: 'string' }
+                }
+            }),
+            {
+                draft: false,
+                unpublishedFallback: 'null'
+            }
+        );
+
+        expect(readView).toBeNull();
     });
 });

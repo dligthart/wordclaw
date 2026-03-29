@@ -1,10 +1,10 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { Type } from '@sinclair/typebox';
-import { and, asc, desc, eq, gte, ilike, inArray, lte, or, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, lte, ne, or, lt, sql } from 'drizzle-orm';
 
 import { getAssetSignedTtlSeconds } from '../config/assets.js';
 import { db } from '../db/index.js';
-import { assets, auditLogs, contentItemVersions, contentItems, contentTypes, domains, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
+import { assets, auditLogs, contentItemVersions, contentItems, contentTypes, domains, formDefinitions, jobs, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import {
     isExperimentalAgentRunsEnabled,
@@ -13,11 +13,12 @@ import {
 } from '../config/runtime-features.js';
 import {
     getPublicWriteSchemaConfig,
+    localizeContentItem,
     getContentLifecycleSchemaConfig,
     getPublicWriteSubjectValue,
+    resolveContentTypeSchemaSource,
     type PublicWriteOperation,
     validateContentDataAgainstSchema,
-    validateContentTypeSchema,
     ValidationFailure,
     redactPremiumFields
 } from '../services/content-schema.js';
@@ -27,7 +28,7 @@ import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey 
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from '../services/policy-adapters.js';
-import { createL402Challenge, l402Middleware } from '../middleware/l402.js';
+import { createL402Challenge, enforceL402Payment, l402Middleware } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
 import { WorkflowService } from '../services/workflow.js';
 import { EmbeddingService, EmbeddingServiceError } from '../services/embedding.js';
@@ -39,11 +40,14 @@ import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgent
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
+import { jobsWorker } from '../workers/jobs.worker.js';
 import {
     ContentItemListError,
     ContentItemProjectionError,
+    getLatestPublishedVersionsForItems,
     listContentItems,
-    projectContentItems
+    projectContentItems,
+    resolveContentItemReadView
 } from '../services/content-item.service.js';
 import { issueSignedAssetAccess, verifySignedAssetAccess } from '../services/asset-access.js';
 import {
@@ -76,7 +80,38 @@ import { buildCapabilityManifest } from '../services/capability-manifest.js';
 import { getDeploymentStatusSnapshot } from '../services/deployment-status.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import { issuePublicWriteToken, verifyPublicWriteToken } from '../services/public-write.js';
+import { issuePreviewToken, verifyPreviewToken } from '../services/content-preview.js';
 import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
+import {
+    countContentItemsForContentType,
+    findSingletonContentConflict,
+    getGlobalContentTypeBySlug,
+    getSingletonContentItem,
+    isSingletonContentType,
+    listGlobalContentTypes,
+    normalizeContentTypeKind,
+} from '../services/content-type.service.js';
+import { findAssetUsage, findContentItemUsage, type ReferenceUsageSummary } from '../services/reference-usage.js';
+import {
+    FormServiceError,
+    type ResolvedFormDefinition,
+    createFormDefinition,
+    deleteFormDefinition,
+    getFormDefinitionById,
+    getFormDefinitionBySlug,
+    listFormDefinitions,
+    submitFormDefinition,
+    updateFormDefinition,
+} from '../services/forms.js';
+import {
+    cancelJob,
+    createJob,
+    getJob,
+    listJobs,
+    scheduleContentStatusTransition,
+    serializeJob,
+    type ListJobsOptions,
+} from '../services/jobs.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -86,6 +121,9 @@ type ContentItemsQuery = {
     contentTypeId?: number;
     status?: string;
     q?: string;
+    draft?: boolean;
+    locale?: string;
+    fallbackLocale?: string;
     createdAfter?: string;
     createdBefore?: string;
     fieldName?: string;
@@ -98,6 +136,17 @@ type ContentItemsQuery = {
     limit?: number;
     offset?: number;
     cursor?: string;
+};
+type LocalizedReadQuery = {
+    draft?: boolean;
+    locale?: string;
+    fallbackLocale?: string;
+};
+type PreviewTokenIssueBody = {
+    ttlSeconds?: number;
+    draft?: boolean;
+    locale?: string;
+    fallbackLocale?: string;
 };
 type ContentItemsProjectionQuery = {
     contentTypeId: number;
@@ -207,6 +256,249 @@ const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
     'content_types_slug_unique',
     'content_types_domain_slug_unique'
 ]);
+const ContentLocaleResolutionSchema = Type.Object({
+    requestedLocale: Type.String(),
+    fallbackLocale: Type.String(),
+    defaultLocale: Type.String(),
+    localizedFieldCount: Type.Number(),
+    resolvedFieldCount: Type.Number(),
+    fallbackFieldCount: Type.Number(),
+    unresolvedFields: Type.Array(Type.String())
+});
+const ContentPublicationStateSchema = Type.Union([
+    Type.Literal('draft'),
+    Type.Literal('published'),
+    Type.Literal('changed')
+]);
+const ContentReadStateSchema = Type.Object({
+    publicationState: ContentPublicationStateSchema,
+    workingCopyVersion: Type.Number(),
+    publishedVersion: Type.Union([Type.Number(), Type.Null()])
+});
+const ContentItemReadResponseSchema = Type.Object({
+    id: Type.Number(),
+    contentTypeId: Type.Number(),
+    data: Type.String(),
+    status: Type.String(),
+    version: Type.Number(),
+    createdAt: Type.String(),
+    updatedAt: Type.String(),
+    localeResolution: Type.Optional(ContentLocaleResolutionSchema),
+    publicationState: ContentPublicationStateSchema,
+    workingCopyVersion: Type.Number(),
+    publishedVersion: Type.Union([Type.Number(), Type.Null()])
+});
+const ReferenceUsageSchema = Type.Object({
+    contentItemId: Type.Number(),
+    contentTypeId: Type.Number(),
+    contentTypeName: Type.String(),
+    contentTypeSlug: Type.String(),
+    path: Type.String(),
+    version: Type.Number(),
+    status: Type.Optional(Type.String()),
+    contentItemVersionId: Type.Optional(Type.Number())
+});
+const ReferenceUsageSummarySchema = Type.Object({
+    activeReferenceCount: Type.Number(),
+    historicalReferenceCount: Type.Number(),
+    activeReferences: Type.Array(ReferenceUsageSchema),
+    historicalReferences: Type.Array(ReferenceUsageSchema)
+});
+const CapabilityEffectiveAuthSchema = Type.Object({
+    authRequired: Type.Boolean(),
+    writeRequiresCredential: Type.Boolean(),
+    insecureLocalAdminEnabled: Type.Boolean(),
+    recommendedActorProfile: Type.String(),
+    recommendedScopes: Type.Array(Type.String()),
+    note: Type.String()
+});
+const CapabilityBootstrapSchema = Type.Object({
+    contentWritesRequireDomain: Type.Boolean(),
+    supportsInBandDomainCreation: Type.Boolean(),
+    restCreateDomainPath: Type.String(),
+    mcpCreateDomainTool: Type.Union([Type.String(), Type.Null()]),
+    recommendedGuideTask: Type.Union([Type.String(), Type.Null()]),
+    noDomainErrorCode: Type.String(),
+    note: Type.String()
+});
+const CapabilityVectorRagSchema = Type.Object({
+    enabled: Type.Boolean(),
+    model: Type.Union([Type.String(), Type.Null()]),
+    requiredEnvironmentVariables: Type.Array(Type.String()),
+    restPath: Type.String(),
+    mcpTool: Type.String(),
+    note: Type.String()
+});
+const DeploymentBootstrapCheckSchema = Type.Object({
+    status: Type.String(),
+    domainCount: Type.Number(),
+    contentWritesRequireDomain: Type.Boolean(),
+    supportsInBandDomainCreation: Type.Boolean(),
+    restCreateDomainPath: Type.Union([Type.String(), Type.Null()]),
+    mcpCreateDomainTool: Type.Union([Type.String(), Type.Null()]),
+    recommendedGuideTask: Type.Union([Type.String(), Type.Null()]),
+    nextAction: Type.String(),
+    note: Type.String(),
+});
+const DeploymentAuthCheckSchema = Type.Object({
+    status: Type.String(),
+    authRequired: Type.Boolean(),
+    writeRequiresCredential: Type.Boolean(),
+    insecureLocalAdminEnabled: Type.Boolean(),
+    recommendedActorProfile: Type.String(),
+    recommendedScopes: Type.Array(Type.String()),
+    note: Type.String(),
+});
+const DeploymentVectorRagCheckSchema = Type.Object({
+    status: Type.String(),
+    enabled: Type.Boolean(),
+    model: Type.Union([Type.String(), Type.Null()]),
+    restPath: Type.String(),
+    mcpTool: Type.String(),
+    requiredEnvironmentVariables: Type.Array(Type.String()),
+    reason: Type.String(),
+    note: Type.String(),
+});
+const DomainResponseSchema = Type.Object({
+    id: Type.Number(),
+    name: Type.String(),
+    hostname: Type.String(),
+    createdAt: Type.String()
+});
+const JsonTextOrObjectSchema = Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })]);
+const ContentTypeSchemaSourceBodySchema = {
+    schema: Type.Optional(JsonTextOrObjectSchema),
+    schemaManifest: Type.Optional(JsonTextOrObjectSchema)
+} as const;
+const ContentTypeResponseSchema = Type.Object({
+    id: Type.Number(),
+    name: Type.String(),
+    slug: Type.String(),
+    kind: Type.Union([Type.Literal('collection'), Type.Literal('singleton')]),
+    description: Type.Optional(Type.String()),
+    schemaManifest: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    schema: Type.String(),
+    basePrice: Type.Optional(Type.Number()),
+    createdAt: Type.Optional(Type.String()),
+    updatedAt: Type.Optional(Type.String())
+});
+const ContentTypeReadResponseSchema = Type.Object({
+    id: Type.Number(),
+    name: Type.String(),
+    slug: Type.String(),
+    kind: Type.Union([Type.Literal('collection'), Type.Literal('singleton')]),
+    description: Type.Optional(Type.String()),
+    schemaManifest: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    schema: Type.String(),
+    basePrice: Type.Optional(Type.Number()),
+    createdAt: Type.String(),
+    updatedAt: Type.String()
+});
+const GlobalContentTypeResponseSchema = Type.Object({
+    id: Type.Number(),
+    name: Type.String(),
+    slug: Type.String(),
+    kind: Type.Literal('singleton'),
+    description: Type.Optional(Type.String()),
+    schemaManifest: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    schema: Type.String(),
+    basePrice: Type.Optional(Type.Number()),
+    createdAt: Type.String(),
+    updatedAt: Type.String()
+});
+const FormFieldResponseSchema = Type.Object({
+    name: Type.String(),
+    label: Type.Optional(Type.String()),
+    description: Type.Optional(Type.String()),
+    type: Type.Union([
+        Type.Literal('text'),
+        Type.Literal('textarea'),
+        Type.Literal('number'),
+        Type.Literal('checkbox'),
+        Type.Literal('select'),
+    ]),
+    required: Type.Boolean(),
+    placeholder: Type.Optional(Type.String()),
+    options: Type.Optional(Type.Array(Type.Object({
+        value: Type.String(),
+        label: Type.Optional(Type.String()),
+    }))),
+});
+const FormDefinitionResponseSchema = Type.Object({
+    id: Type.Number(),
+    domainId: Type.Number(),
+    name: Type.String(),
+    slug: Type.String(),
+    description: Type.Union([Type.String(), Type.Null()]),
+    contentTypeId: Type.Number(),
+    contentTypeName: Type.String(),
+    contentTypeSlug: Type.String(),
+    active: Type.Boolean(),
+    publicRead: Type.Boolean(),
+    submissionStatus: Type.String(),
+    workflowTransitionId: Type.Union([Type.Number(), Type.Null()]),
+    requirePayment: Type.Boolean(),
+    successMessage: Type.Union([Type.String(), Type.Null()]),
+    fields: Type.Array(FormFieldResponseSchema),
+    defaultData: Type.Object({}, { additionalProperties: true }),
+    createdAt: Type.String(),
+    updatedAt: Type.String(),
+});
+const PublicFormDefinitionResponseSchema = Type.Object({
+    id: Type.Number(),
+    domainId: Type.Number(),
+    name: Type.String(),
+    slug: Type.String(),
+    description: Type.Union([Type.String(), Type.Null()]),
+    contentTypeId: Type.Number(),
+    contentTypeName: Type.String(),
+    contentTypeSlug: Type.String(),
+    requirePayment: Type.Boolean(),
+    successMessage: Type.Union([Type.String(), Type.Null()]),
+    fields: Type.Array(FormFieldResponseSchema),
+    createdAt: Type.String(),
+    updatedAt: Type.String(),
+});
+const JobResponseSchema = Type.Object({
+    id: Type.Number(),
+    domainId: Type.Number(),
+    kind: Type.String(),
+    queue: Type.String(),
+    status: Type.String(),
+    payload: Type.Any(),
+    result: Type.Optional(Type.Any()),
+    runAt: Type.String(),
+    attempts: Type.Number(),
+    maxAttempts: Type.Number(),
+    lastError: Type.Union([Type.String(), Type.Null()]),
+    claimedAt: Type.Union([Type.String(), Type.Null()]),
+    startedAt: Type.Union([Type.String(), Type.Null()]),
+    completedAt: Type.Union([Type.String(), Type.Null()]),
+    createdAt: Type.String(),
+    updatedAt: Type.String(),
+});
+
+function extractNumericCell(result: unknown, keys: string[]) {
+    const firstRow = Array.isArray(result)
+        ? result[0]
+        : Array.isArray((result as { rows?: unknown[] } | null | undefined)?.rows)
+            ? (result as { rows: unknown[] }).rows[0]
+            : null;
+
+    if (!firstRow || typeof firstRow !== 'object') {
+        return 0;
+    }
+
+    for (const key of keys) {
+        const candidate = (firstRow as Record<string, unknown>)[key];
+        const numeric = Number(candidate);
+        if (Number.isFinite(numeric)) {
+            return numeric;
+        }
+    }
+
+    return 0;
+}
 
 function toErrorPayload(error: string, code: string, remediation: string): AIErrorPayload {
     return { error, code, remediation };
@@ -226,6 +518,72 @@ function toAssetStorageErrorPayload(error: AssetStorageError): AIErrorPayload {
         error: error.message,
         code: error.code,
         remediation: error.remediation
+    };
+}
+
+function resolveLocalizedReadOptions(query: LocalizedReadQuery): {
+    draft: boolean;
+    locale?: string;
+    fallbackLocale?: string;
+} | {
+    error: AIErrorPayload;
+} {
+    const draft = query.draft === false ? false : true;
+    const locale = typeof query.locale === 'string' && query.locale.trim().length > 0
+        ? query.locale.trim()
+        : undefined;
+    const fallbackLocale = typeof query.fallbackLocale === 'string' && query.fallbackLocale.trim().length > 0
+        ? query.fallbackLocale.trim()
+        : undefined;
+
+    if (!locale && fallbackLocale) {
+        return {
+            error: toErrorPayload(
+                'Locale is required when fallbackLocale is provided',
+                'CONTENT_LOCALE_REQUIRED',
+                'Provide locale when requesting fallbackLocale on localized content reads.'
+            )
+        };
+    }
+
+    return {
+        draft,
+        locale,
+        fallbackLocale
+    };
+}
+
+function parsePreviewToken(headers: FastifyRequest['headers'], queryToken?: unknown): string | null {
+    if (typeof queryToken === 'string' && queryToken.trim().length > 0) {
+        return queryToken.trim();
+    }
+
+    const directHeader = headers['x-preview-token'];
+    if (typeof directHeader === 'string' && directHeader.trim().length > 0) {
+        return directHeader.trim();
+    }
+
+    const authorization = headers.authorization;
+    if (typeof authorization !== 'string') {
+        return null;
+    }
+
+    const [scheme, token] = authorization.split(' ');
+    if (scheme?.toLowerCase() === 'bearer' && token?.trim().length) {
+        return token.trim();
+    }
+
+    return null;
+}
+
+function buildPreviewActor(target: {
+    kind: 'content_item' | 'global';
+    identifier: number | string;
+}): AuditActor {
+    return {
+        actorId: `preview_token:${target.kind}:${target.identifier}`,
+        actorType: 'preview_token',
+        actorSource: 'token'
     };
 }
 
@@ -576,6 +934,47 @@ function contentTypeSlugConflict(slug: string): AIErrorPayload {
     );
 }
 
+function invalidContentTypeKind(rawKind: unknown): AIErrorPayload {
+    return toErrorPayload(
+        'Invalid content type kind',
+        'INVALID_CONTENT_TYPE_KIND',
+        `Use kind of "collection" or "singleton" instead of '${String(rawKind)}'.`
+    );
+}
+
+function singletonContentItemConflict(contentType: { slug: string; name: string }, existingItemId: number): AIErrorPayload {
+    return toErrorPayload(
+        'Singleton content item already exists',
+        'SINGLETON_CONTENT_ITEM_EXISTS',
+        `Content type '${contentType.slug}' is a singleton and already uses content item ${existingItemId}. Update it through PUT /api/globals/${contentType.slug} or PUT /api/content-items/${existingItemId}.`
+    );
+}
+
+function singletonContentTypeRequiresSingleItem(contentType: { slug: string; name: string }, itemCount: number): AIErrorPayload {
+    return toErrorPayload(
+        'Singleton content type requires at most one item',
+        'SINGLETON_CONTENT_TYPE_REQUIRES_ONE_ITEM',
+        `Content type '${contentType.slug}' currently has ${itemCount} items. Archive, delete, or consolidate to a single item before changing kind to 'singleton'.`
+    );
+}
+
+async function findSingletonContentConflictPayload(
+    domainId: number,
+    contentType: { id: number; kind: string; slug: string; name: string },
+    excludeContentItemId?: number
+) {
+    if (!isSingletonContentType(contentType.kind)) {
+        return null;
+    }
+
+    const existing = await findSingletonContentConflict(domainId, contentType.id, excludeContentItemId);
+    if (!existing) {
+        return null;
+    }
+
+    return singletonContentItemConflict(contentType, existing.id);
+}
+
 function parseL402AuthorizationHeader(authHeader: string | undefined): ParsedL402Credentials | null {
     if (!authHeader || !authHeader.startsWith('L402 ')) {
         return null;
@@ -663,6 +1062,53 @@ function fromValidationFailure(failure: ValidationFailure): AIErrorPayload {
     };
 }
 
+function fromFormServiceError(error: FormServiceError): AIErrorPayload {
+    return {
+        error: error.message,
+        code: error.code,
+        remediation: error.remediation,
+        ...(error.context ? { context: error.context } : {})
+    };
+}
+
+function serializeFormDefinitionForApi(form: ResolvedFormDefinition) {
+    return {
+        ...form,
+        createdAt: form.createdAt.toISOString(),
+        updatedAt: form.updatedAt.toISOString(),
+    };
+}
+
+function serializePublicFormDefinitionForApi(form: ResolvedFormDefinition) {
+    return {
+        id: form.id,
+        domainId: form.domainId,
+        name: form.name,
+        slug: form.slug,
+        description: form.description,
+        contentTypeId: form.contentTypeId,
+        contentTypeName: form.contentTypeName,
+        contentTypeSlug: form.contentTypeSlug,
+        requirePayment: form.requirePayment,
+        successMessage: form.successMessage,
+        fields: form.fields,
+        createdAt: form.createdAt.toISOString(),
+        updatedAt: form.updatedAt.toISOString(),
+    };
+}
+
+function serializeJobForApi(job: ReturnType<typeof serializeJob>) {
+    return {
+        ...job,
+        runAt: job.runAt.toISOString(),
+        claimedAt: job.claimedAt?.toISOString() ?? null,
+        startedAt: job.startedAt?.toISOString() ?? null,
+        completedAt: job.completedAt?.toISOString() ?? null,
+        createdAt: job.createdAt.toISOString(),
+        updatedAt: job.updatedAt.toISOString(),
+    };
+}
+
 function buildMeta(
     recommendedNextAction: string,
     availableActions: string[],
@@ -704,11 +1150,83 @@ function notFoundContentType(id: number): AIErrorPayload {
     );
 }
 
+function noDomainProvisioned(): AIErrorPayload {
+    return toErrorPayload(
+        'No domains provisioned',
+        'NO_DOMAIN',
+        'Create the first domain before creating content types or content items.'
+    );
+}
+
+function activeDomainContextMissing(domainId: number): AIErrorPayload {
+    return toErrorPayload(
+        'Active domain not found',
+        'ACTIVE_DOMAIN_NOT_FOUND',
+        `The current actor is scoped to domain ${domainId}, but that domain does not exist. Use a valid domain-scoped credential or provision the missing domain.`
+    );
+}
+
+function domainCreationForbidden(): AIErrorPayload {
+    return toErrorPayload(
+        'Domain creation forbidden',
+        'DOMAIN_CREATE_FORBIDDEN',
+        'Use an admin or tenant:admin credential to create additional domains, or bootstrap the first domain on an empty install.'
+    );
+}
+
+function domainHostnameConflict(hostname: string): AIErrorPayload {
+    return toErrorPayload(
+        'Domain hostname already exists',
+        'DOMAIN_HOSTNAME_CONFLICT',
+        `Choose a different hostname than '${hostname}'.`
+    );
+}
+
+async function countProvisionedDomains() {
+    const result = await db.execute(sql`SELECT COUNT(*)::int AS total FROM domains`);
+    return extractNumericCell(result, ['total', 'count', '?column?']);
+}
+
+async function ensureActiveDomainAvailable(request: FastifyRequest): Promise<
+    { ok: true } |
+    { ok: false; statusCode: 409; payload: AIErrorPayload }
+> {
+    const domainId = getDomainId(request);
+    const activeDomainResult = await db.execute(sql`SELECT COUNT(*)::int AS total FROM domains WHERE id = ${domainId}`);
+    const activeDomainCount = extractNumericCell(activeDomainResult, ['total', 'count', '?column?']);
+    if (activeDomainCount > 0) {
+        return { ok: true };
+    }
+
+    const domainCount = await countProvisionedDomains();
+    if (domainCount === 0) {
+        return {
+            ok: false,
+            statusCode: 409,
+            payload: noDomainProvisioned()
+        };
+    }
+
+    return {
+        ok: false,
+        statusCode: 409,
+        payload: activeDomainContextMissing(domainId)
+    };
+}
+
 function notFoundContentItem(id: number): AIErrorPayload {
     return toErrorPayload(
         'Content item not found',
         'CONTENT_ITEM_NOT_FOUND',
         `The content item with ID ${id} does not exist. List available items with GET /api/content-items to find valid IDs.`
+    );
+}
+
+function notFoundGlobal(slug: string): AIErrorPayload {
+    return toErrorPayload(
+        'Global content type not found',
+        'GLOBAL_CONTENT_TYPE_NOT_FOUND',
+        `No singleton/global content type exists with slug '${slug}'. List globals with GET /api/globals to find valid slugs.`
     );
 }
 
@@ -1094,6 +1612,15 @@ function serializeAsset(asset: {
     };
 }
 
+function serializeReferenceUsageSummary(summary: ReferenceUsageSummary) {
+    return {
+        activeReferenceCount: summary.activeReferences.length,
+        historicalReferenceCount: summary.historicalReferences.length,
+        activeReferences: summary.activeReferences,
+        historicalReferences: summary.historicalReferences
+    };
+}
+
 function clampLimit(limit: number | undefined, fallback = 50, max = 500): number {
     if (limit === undefined) {
         return fallback;
@@ -1174,6 +1701,14 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         if (/^\/api\/public\/content-types\/\d+\/items$/.test(path) || /^\/api\/public\/content-items\/\d+$/.test(path)) {
+            return undefined;
+        }
+
+        if (/^\/api\/public\/forms\/[^/]+$/.test(path) || /^\/api\/public\/forms\/[^/]+\/submissions$/.test(path)) {
+            return undefined;
+        }
+
+        if (/^\/api\/preview\/content-items\/\d+$/.test(path) || /^\/api\/preview\/globals\/[^/]+$/.test(path)) {
             return undefined;
         }
 
@@ -1283,8 +1818,11 @@ export default async function apiRoutes(server: FastifyInstance) {
                             supervisorHeader: Type.String(),
                             apiKeysAreDomainScoped: Type.Boolean(),
                             mcpDomainEnv: Type.String()
-                        })
+                        }),
+                        effective: CapabilityEffectiveAuthSchema
                     }),
+                    bootstrap: CapabilityBootstrapSchema,
+                    vectorRag: CapabilityVectorRagSchema,
                     modules: Type.Array(Type.Object({
                         id: Type.String(),
                         tier: Type.String(),
@@ -1524,6 +2062,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                             basePath: Type.String(),
                             note: Type.String(),
                         }),
+                        bootstrap: DeploymentBootstrapCheckSchema,
+                        auth: DeploymentAuthCheckSchema,
+                        vectorRag: DeploymentVectorRagCheckSchema,
                         contentRuntime: Type.Object({
                             status: Type.String(),
                             fieldAwareQueries: Type.Object({
@@ -1575,6 +2116,15 @@ export default async function apiRoutes(server: FastifyInstance) {
                             note: Type.String(),
                         }),
                         agentRuns: Type.Object({
+                            status: Type.String(),
+                            enabled: Type.Boolean(),
+                            workerStarted: Type.Boolean(),
+                            sweepInProgress: Type.Boolean(),
+                            lastSweepCompletedAt: Type.Union([Type.String(), Type.Null()]),
+                            lastErrorMessage: Type.Union([Type.String(), Type.Null()]),
+                            note: Type.String(),
+                        }),
+                        backgroundJobs: Type.Object({
                             status: Type.String(),
                             enabled: Type.Boolean(),
                             workerStarted: Type.Boolean(),
@@ -1637,6 +2187,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                             basePath: Type.String(),
                             note: Type.String(),
                         }),
+                        bootstrap: DeploymentBootstrapCheckSchema,
+                        auth: DeploymentAuthCheckSchema,
+                        vectorRag: DeploymentVectorRagCheckSchema,
                         contentRuntime: Type.Object({
                             status: Type.String(),
                             fieldAwareQueries: Type.Object({
@@ -1681,6 +2234,15 @@ export default async function apiRoutes(server: FastifyInstance) {
                             note: Type.String(),
                         }),
                         agentRuns: Type.Object({
+                            status: Type.String(),
+                            enabled: Type.Boolean(),
+                            workerStarted: Type.Boolean(),
+                            sweepInProgress: Type.Boolean(),
+                            lastSweepCompletedAt: Type.Union([Type.String(), Type.Null()]),
+                            lastErrorMessage: Type.Union([Type.String(), Type.Null()]),
+                            note: Type.String(),
+                        }),
+                        backgroundJobs: Type.Object({
                             status: Type.String(),
                             enabled: Type.Boolean(),
                             workerStarted: Type.Boolean(),
@@ -2875,12 +3437,7 @@ export default async function apiRoutes(server: FastifyInstance) {
     server.get('/domains', {
         schema: {
             response: {
-                200: createAIResponse(Type.Array(Type.Object({
-                    id: Type.Number(),
-                    name: Type.String(),
-                    hostname: Type.String(),
-                    createdAt: Type.String()
-                })))
+                200: createAIResponse(Type.Array(DomainResponseSchema))
             }
         }
     }, async (request) => {
@@ -2909,29 +3466,82 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
+    server.post('/domains', {
+        schema: {
+            body: Type.Object({
+                name: Type.String(),
+                hostname: Type.String()
+            }),
+            response: {
+                201: createAIResponse(DomainResponseSchema),
+                403: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const principal = (request as { authPrincipal?: { scopes?: Set<string> } }).authPrincipal;
+        const isAdmin = principal?.scopes?.has('admin') || principal?.scopes?.has('tenant:admin');
+        const domainCount = await countProvisionedDomains();
+
+        if (domainCount > 0 && !isAdmin) {
+            return reply.status(403).send(domainCreationForbidden());
+        }
+
+        const body = request.body as { name: string; hostname: string };
+
+        try {
+            const [created] = await db.insert(domains).values({
+                name: body.name,
+                hostname: body.hostname
+            }).returning();
+
+            await logAudit(
+                created.id,
+                'create',
+                'domain',
+                created.id,
+                created,
+                toAuditActorFromRequest(request as RequestActorCarrier),
+                request.id
+            );
+
+            return reply.status(201).send({
+                data: {
+                    id: created.id,
+                    name: created.name,
+                    hostname: created.hostname,
+                    createdAt: created.createdAt.toISOString()
+                },
+                meta: buildMeta(
+                    'Create or inspect content types in the new domain',
+                    ['GET /api/domains', 'POST /api/content-types'],
+                    'medium',
+                    1
+                )
+            });
+        } catch (error) {
+            const err = error as { code?: string; constraint?: string };
+            if (err.code === '23505' || err.constraint === 'domains_hostname_unique') {
+                return reply.status(409).send(domainHostnameConflict(body.hostname));
+            }
+            throw error;
+        }
+    });
+
     server.post('/content-types', {
         schema: {
             querystring: DryRunQuery,
             body: Type.Object({
                 name: Type.String(),
                 slug: Type.String(),
+                kind: Type.Optional(Type.Union([Type.Literal('collection'), Type.Literal('singleton')])),
                 description: Type.Optional(Type.String()),
-                schema: Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })]),
+                ...ContentTypeSchemaSourceBodySchema,
                 basePrice: Type.Optional(Type.Number()),
             }),
             response: {
-                201: createAIResponse(Type.Object({
-                    id: Type.Number(),
-                    name: Type.String(),
-                    slug: Type.String(),
-                    basePrice: Type.Optional(Type.Number()),
-                })),
-                200: createAIResponse(Type.Object({
-                    id: Type.Number(),
-                    name: Type.String(),
-                    slug: Type.String(),
-                    basePrice: Type.Optional(Type.Number()),
-                })),
+                201: createAIResponse(ContentTypeResponseSchema),
+                200: createAIResponse(ContentTypeResponseSchema),
                 400: AIErrorResponse,
                 409: AIErrorResponse
             },
@@ -2939,12 +3549,27 @@ export default async function apiRoutes(server: FastifyInstance) {
     }, async (request, reply) => {
         const { mode } = request.query as DryRunQueryType;
         const rawBody = request.body as any;
-        const schemaStr = typeof rawBody.schema === 'string' ? rawBody.schema : JSON.stringify(rawBody.schema);
-        const data = { ...rawBody, schema: schemaStr, domainId: getDomainId(request) } as typeof contentTypes.$inferInsert;
-        const schemaFailure = validateContentTypeSchema(data.schema);
-
-        if (schemaFailure) {
-            return reply.status(400).send(fromValidationFailure(schemaFailure));
+        const kind = rawBody.kind === undefined ? 'collection' : normalizeContentTypeKind(rawBody.kind);
+        if (!kind) {
+            return reply.status(400).send(invalidContentTypeKind(rawBody.kind));
+        }
+        const schemaSource = resolveContentTypeSchemaSource({
+            schema: rawBody.schema,
+            schemaManifest: rawBody.schemaManifest
+        }, { requireSource: true });
+        if (!schemaSource.ok) {
+            return reply.status(400).send(fromValidationFailure(schemaSource.failure));
+        }
+        const data = {
+            ...rawBody,
+            kind,
+            schema: schemaSource.value!.schema,
+            schemaManifest: schemaSource.value!.schemaManifest,
+            domainId: getDomainId(request)
+        } as typeof contentTypes.$inferInsert;
+        const activeDomainCheck = await ensureActiveDomainAvailable(request);
+        if (!activeDomainCheck.ok) {
+            return reply.status(activeDomainCheck.statusCode).send(activeDomainCheck.payload);
         }
 
         if (isDryRun(mode)) {
@@ -3001,7 +3626,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                     id: Type.Number(),
                     name: Type.String(),
                     slug: Type.String(),
+                    kind: Type.Union([Type.Literal('collection'), Type.Literal('singleton')]),
                     description: Type.Optional(Type.String()),
+                    schemaManifest: Type.Optional(Type.Union([Type.String(), Type.Null()])),
                     schema: Type.String(),
                     basePrice: Type.Optional(Type.Number()),
                     createdAt: Type.String(),
@@ -3062,16 +3689,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 id: Type.Number()
             }),
             response: {
-                200: createAIResponse(Type.Object({
-                    id: Type.Number(),
-                    name: Type.String(),
-                    slug: Type.String(),
-                    description: Type.Optional(Type.String()),
-                    schema: Type.String(),
-                    basePrice: Type.Optional(Type.Number()),
-                    createdAt: Type.String(),
-                    updatedAt: Type.String()
-                })),
+                200: createAIResponse(ContentTypeReadResponseSchema),
                 404: AIErrorResponse
             }
         }
@@ -3086,10 +3704,462 @@ export default async function apiRoutes(server: FastifyInstance) {
         return {
             data: type,
             meta: buildMeta(
-                `Create content items for '${type.name}'`,
-                ['PUT /api/content-types/:id', 'DELETE /api/content-types/:id', 'POST /api/content-items'],
+                isSingletonContentType(type.kind)
+                    ? `Read or update singleton global '${type.slug}'`
+                    : `Create content items for '${type.name}'`,
+                isSingletonContentType(type.kind)
+                    ? ['GET /api/globals/:slug', 'PUT /api/globals/:slug', 'PUT /api/content-types/:id', 'DELETE /api/content-types/:id']
+                    : ['PUT /api/content-types/:id', 'DELETE /api/content-types/:id', 'POST /api/content-items'],
                 'medium',
                 1
+            )
+        };
+    });
+
+    server.get('/globals', {
+        schema: {
+            querystring: Type.Object({
+                draft: Type.Optional(Type.Boolean()),
+                locale: Type.Optional(Type.String()),
+                fallbackLocale: Type.Optional(Type.String())
+            }),
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    contentType: GlobalContentTypeResponseSchema,
+                    item: Type.Union([
+                        ContentItemReadResponseSchema,
+                        Type.Null()
+                    ])
+                }))),
+                400: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const localizedReadOptions = resolveLocalizedReadOptions(request.query as LocalizedReadQuery);
+        if ('error' in localizedReadOptions) {
+            return reply.status(400).send(localizedReadOptions.error);
+        }
+
+        const domainId = getDomainId(request);
+        const globalTypes = await listGlobalContentTypes(domainId);
+        const rows = await Promise.all(globalTypes.map(async (contentType) => ({
+            contentType,
+            item: await getSingletonContentItem(domainId, contentType.id)
+        })));
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            rows.flatMap((row) => row.item && row.item.status !== 'published' ? [row.item.id] : [])
+        );
+
+        const localizedRows = rows.map((row) => ({
+            contentType: row.contentType,
+            item: row.item
+                ? resolveContentItemReadView(
+                    row.item,
+                    row.contentType.schema,
+                    localizedReadOptions,
+                    latestPublishedVersions.get(row.item.id)
+                )
+                : null
+        }));
+
+        return {
+            data: localizedRows,
+            meta: buildMeta(
+                localizedRows.length > 0
+                    ? 'Select a global singleton to inspect or update'
+                    : 'Create a singleton content type before using global documents',
+                ['GET /api/globals/:slug', 'PUT /api/globals/:slug', 'POST /api/content-types'],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.get('/globals/:slug', {
+        schema: {
+            querystring: Type.Object({
+                draft: Type.Optional(Type.Boolean()),
+                locale: Type.Optional(Type.String()),
+                fallbackLocale: Type.Optional(Type.String())
+            }),
+            params: Type.Object({
+                slug: Type.String()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    contentType: GlobalContentTypeResponseSchema,
+                    item: Type.Union([
+                        ContentItemReadResponseSchema,
+                        Type.Null()
+                    ])
+                })),
+                400: AIErrorResponse,
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { slug } = request.params as { slug: string };
+        const localizedReadOptions = resolveLocalizedReadOptions(request.query as LocalizedReadQuery);
+        if ('error' in localizedReadOptions) {
+            return reply.status(400).send(localizedReadOptions.error);
+        }
+        const domainId = getDomainId(request);
+        const contentType = await getGlobalContentTypeBySlug(slug, domainId);
+
+        if (!contentType) {
+            return reply.status(404).send(notFoundGlobal(slug));
+        }
+
+        const item = await getSingletonContentItem(domainId, contentType.id);
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            item && item.status !== 'published' ? [item.id] : []
+        );
+
+        return {
+            data: {
+                contentType,
+                item: item
+                    ? resolveContentItemReadView(
+                        item,
+                        contentType.schema,
+                        localizedReadOptions,
+                        latestPublishedVersions.get(item.id)
+                    )
+                    : null
+            },
+            meta: buildMeta(
+                `Update singleton global '${slug}'`,
+                ['PUT /api/globals/:slug', 'GET /api/content-types/:id'],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.put('/globals/:slug', {
+        preHandler: l402Middleware(globalL402Options),
+        schema: {
+            querystring: DryRunQuery,
+            params: Type.Object({
+                slug: Type.String()
+            }),
+            body: Type.Object({
+                data: Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })]),
+                status: Type.Optional(Type.String()),
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    contentType: GlobalContentTypeResponseSchema,
+                    item: Type.Object({
+                        id: Type.Number(),
+                        contentTypeId: Type.Number(),
+                        data: Type.String(),
+                        status: Type.String(),
+                        version: Type.Number(),
+                        createdAt: Type.Optional(Type.String()),
+                        updatedAt: Type.Optional(Type.String())
+                    })
+                })),
+                201: createAIResponse(Type.Object({
+                    contentType: GlobalContentTypeResponseSchema,
+                    item: Type.Object({
+                        id: Type.Number(),
+                        contentTypeId: Type.Number(),
+                        data: Type.String(),
+                        status: Type.String(),
+                        version: Type.Number(),
+                        createdAt: Type.Optional(Type.String()),
+                        updatedAt: Type.Optional(Type.String())
+                    })
+                })),
+                400: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+                402: Type.Any()
+            }
+        }
+    }, async (request, reply) => {
+        const { slug } = request.params as { slug: string };
+        const { mode } = request.query as DryRunQueryType;
+        const rawBody = request.body as any;
+        const domainId = getDomainId(request);
+        const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
+        const requestedStatus = typeof rawBody.status === 'string' ? rawBody.status : undefined;
+        const contentType = await getGlobalContentTypeBySlug(slug, domainId);
+
+        if (!contentType) {
+            return reply.status(404).send(notFoundGlobal(slug));
+        }
+
+        const existing = await getSingletonContentItem(domainId, contentType.id);
+        const singletonConflict = await findSingletonContentConflictPayload(domainId, contentType, existing?.id);
+        if (singletonConflict) {
+            return reply.status(409).send(singletonConflict);
+        }
+
+        const contentValidation = await validateContentDataAgainstSchema(contentType.schema, dataStr, domainId);
+        if (contentValidation) {
+            return reply.status(400).send(fromValidationFailure(contentValidation));
+        }
+
+        const activeWorkflow = await WorkflowService.getActiveWorkflow(domainId, contentType.id);
+        if (!existing && activeWorkflow && requestedStatus && requestedStatus !== 'draft') {
+            return reply.status(403).send(toErrorPayload(
+                'Workflow transition forbidden',
+                'WORKFLOW_TRANSITION_FORBIDDEN',
+                `This global is governed by an active workflow. Create it as 'draft' and use POST /api/content-items/:id/submit to request a transition.`
+            ));
+        }
+
+        if (existing && activeWorkflow && requestedStatus && requestedStatus !== existing.status) {
+            return reply.status(403).send(toErrorPayload(
+                'Workflow transition forbidden',
+                'WORKFLOW_TRANSITION_FORBIDDEN',
+                `This global is governed by an active workflow. You cannot manually change the status to '${requestedStatus}'. Use POST /api/content-items/:id/submit to request a transition.`
+            ));
+        }
+
+        const targetStatus = existing
+            ? (requestedStatus ?? existing.status)
+            : (requestedStatus ?? 'draft');
+
+        if (isDryRun(mode)) {
+            const dryRunItem = existing
+                ? {
+                    ...existing,
+                    data: dataStr,
+                    status: targetStatus,
+                    version: existing.version + 1
+                }
+                : {
+                    id: 0,
+                    contentTypeId: contentType.id,
+                    data: dataStr,
+                    status: targetStatus,
+                    version: 1
+                };
+
+            return reply.status(existing ? 200 : 201).send({
+                data: {
+                    contentType,
+                    item: dryRunItem
+                },
+                meta: buildMeta(
+                    existing
+                        ? `Execute update for global '${slug}'`
+                        : `Execute creation of global '${slug}'`,
+                    ['PUT /api/globals/:slug'],
+                    'low',
+                    0,
+                    true
+                )
+            });
+        }
+
+        if (!existing) {
+            const [created] = await db.insert(contentItems).values({
+                domainId,
+                contentTypeId: contentType.id,
+                data: dataStr,
+                status: targetStatus
+            }).returning();
+
+            if (created.status === 'published') {
+                EmbeddingService.syncItemEmbeddings(domainId, created.id).catch(console.error);
+            } else {
+                EmbeddingService.deleteItemEmbeddings(domainId, created.id).catch(console.error);
+            }
+
+            await logAudit(
+                domainId,
+                'create',
+                'content_item',
+                created.id,
+                created,
+                toAuditActorFromRequest(request as RequestActorCarrier),
+                request.id
+            );
+
+            return reply.status(201).send({
+                data: {
+                    contentType,
+                    item: created
+                },
+                meta: buildMeta(
+                    `Inspect or continue editing global '${slug}'`,
+                    ['GET /api/globals/:slug', 'PUT /api/globals/:slug'],
+                    'low',
+                    1
+                )
+            });
+        }
+
+        const updated = await db.transaction(async (tx) => {
+            await tx.insert(contentItemVersions).values({
+                contentItemId: existing.id,
+                version: existing.version,
+                data: existing.data,
+                status: existing.status,
+                createdAt: existing.updatedAt
+            });
+
+            const [result] = await tx.update(contentItems)
+                .set({
+                    data: dataStr,
+                    status: targetStatus,
+                    version: existing.version + 1,
+                    updatedAt: new Date()
+                })
+                .where(and(
+                    eq(contentItems.id, existing.id),
+                    eq(contentItems.domainId, domainId)
+                ))
+                .returning();
+
+            return result;
+        });
+
+        if (updated.status === 'published') {
+            EmbeddingService.syncItemEmbeddings(domainId, updated.id).catch(console.error);
+        } else {
+            EmbeddingService.deleteItemEmbeddings(domainId, updated.id).catch(console.error);
+        }
+
+        await logAudit(
+            domainId,
+            'update',
+            'content_item',
+            updated.id,
+            {
+                data: dataStr,
+                status: targetStatus
+            },
+            toAuditActorFromRequest(request as RequestActorCarrier),
+            request.id
+        );
+
+        return reply.status(200).send({
+            data: {
+                contentType,
+                item: updated
+            },
+            meta: buildMeta(
+                `Inspect or continue editing global '${slug}'`,
+                ['GET /api/globals/:slug', 'PUT /api/globals/:slug'],
+                'low',
+                1
+            )
+        });
+    });
+
+    server.post('/globals/:slug/preview-token', {
+        schema: {
+            params: Type.Object({
+                slug: Type.String()
+            }),
+            body: Type.Union([
+                Type.Object({
+                    ttlSeconds: Type.Optional(Type.Number({ minimum: 60, maximum: 3600 })),
+                    draft: Type.Optional(Type.Boolean()),
+                    locale: Type.Optional(Type.String()),
+                    fallbackLocale: Type.Optional(Type.String())
+                }),
+                Type.Null()
+            ]),
+            response: {
+                200: createAIResponse(Type.Object({
+                    token: Type.String(),
+                    previewPath: Type.String(),
+                    slug: Type.String(),
+                    draft: Type.Boolean(),
+                    ttlSeconds: Type.Number(),
+                    expiresAt: Type.String(),
+                    locale: Type.Optional(Type.String()),
+                    fallbackLocale: Type.Optional(Type.String())
+                })),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { slug } = request.params as { slug: string };
+        const body = ((request.body ?? {}) as PreviewTokenIssueBody | null) ?? {};
+        const localizedReadOptions = resolveLocalizedReadOptions(body as LocalizedReadQuery);
+        if ('error' in localizedReadOptions) {
+            return reply.status(400).send(localizedReadOptions.error);
+        }
+
+        const domainId = getDomainId(request);
+        const contentType = await getGlobalContentTypeBySlug(slug, domainId);
+        if (!contentType) {
+            return reply.status(404).send(notFoundGlobal(slug));
+        }
+
+        const item = await getSingletonContentItem(domainId, contentType.id);
+        if (!item) {
+            return reply.status(404).send(toErrorPayload(
+                'Global content item not found',
+                'GLOBAL_CONTENT_ITEM_NOT_FOUND',
+                `Create or update global '${slug}' before issuing a preview token.`
+            ));
+        }
+
+        const matchingOffers = await LicensingService.getActiveOffersForItemRead(domainId, item.id, item.contentTypeId);
+        if (matchingOffers.length > 0) {
+            return reply.status(409).send(toErrorPayload(
+                'Preview unavailable for paywalled content',
+                'PREVIEW_PAYWALL_UNSUPPORTED',
+                'Disable offers or use an authenticated read path while preview access for paywalled content remains unsupported.'
+            ));
+        }
+
+        const issued = issuePreviewToken({
+            domainId,
+            kind: 'global',
+            slug,
+            draft: localizedReadOptions.draft,
+            locale: localizedReadOptions.locale,
+            fallbackLocale: localizedReadOptions.fallbackLocale,
+            ttlSeconds: body.ttlSeconds
+        });
+
+        await logAudit(
+            domainId,
+            'preview',
+            'content_item',
+            item.id,
+            {
+                source: 'issue_preview_token',
+                target: 'global',
+                slug,
+                draft: issued.draft,
+                ttlSeconds: issued.ttlSeconds,
+                locale: issued.locale ?? null,
+                fallbackLocale: issued.fallbackLocale ?? null,
+                expiresAt: issued.expiresAt.toISOString()
+            },
+            toAuditActorFromRequest(request as RequestActorCarrier),
+            request.id
+        );
+
+        return {
+            data: {
+                token: issued.token,
+                previewPath: `/api/preview/globals/${encodeURIComponent(slug)}?token=${encodeURIComponent(issued.token)}`,
+                slug,
+                draft: issued.draft,
+                ttlSeconds: issued.ttlSeconds,
+                expiresAt: issued.expiresAt.toISOString(),
+                ...(issued.locale ? { locale: issued.locale } : {}),
+                ...(issued.fallbackLocale ? { fallbackLocale: issued.fallbackLocale } : {})
+            },
+            meta: buildMeta(
+                `Open a scoped preview for global '${slug}'`,
+                [`GET /api/preview/globals/${slug}`],
+                'low',
+                0
             )
         };
     });
@@ -3136,6 +4206,11 @@ export default async function apiRoutes(server: FastifyInstance) {
 
         if (!contentType) {
             return reply.status(404).send(notFoundContentType(contentTypeId));
+        }
+
+        const singletonConflict = await findSingletonContentConflictPayload(getDomainId(request), contentType);
+        if (singletonConflict) {
+            return reply.status(409).send(singletonConflict);
         }
 
         const publicWriteConfig = getPublicWriteSchemaConfig(contentType.schema);
@@ -3208,21 +4283,13 @@ export default async function apiRoutes(server: FastifyInstance) {
             body: Type.Object({
                 name: Type.Optional(Type.String()),
                 slug: Type.Optional(Type.String()),
+                kind: Type.Optional(Type.Union([Type.Literal('collection'), Type.Literal('singleton')])),
                 description: Type.Optional(Type.String()),
-                schema: Type.Optional(Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })])),
+                ...ContentTypeSchemaSourceBodySchema,
                 basePrice: Type.Optional(Type.Number()),
             }),
             response: {
-                200: createAIResponse(Type.Object({
-                    id: Type.Number(),
-                    name: Type.Optional(Type.String()),
-                    slug: Type.Optional(Type.String()),
-                    description: Type.Optional(Type.String()),
-                    schema: Type.Optional(Type.String()),
-                    basePrice: Type.Optional(Type.Number()),
-                    createdAt: Type.Optional(Type.String()),
-                    updatedAt: Type.Optional(Type.String())
-                })),
+                200: createAIResponse(ContentTypeResponseSchema),
                 400: AIErrorResponse,
                 404: AIErrorResponse,
                 409: AIErrorResponse
@@ -3232,33 +4299,56 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { id } = request.params as IdParams;
         const { mode } = request.query as DryRunQueryType;
         const rawPayload = request.body as any;
-        if (rawPayload.schema && typeof rawPayload.schema !== 'string') {
-            rawPayload.schema = JSON.stringify(rawPayload.schema);
+        if (rawPayload.kind !== undefined) {
+            const normalizedKind = normalizeContentTypeKind(rawPayload.kind);
+            if (!normalizedKind) {
+                return reply.status(400).send(invalidContentTypeKind(rawPayload.kind));
+            }
+            rawPayload.kind = normalizedKind;
         }
-        const payload = rawPayload as ContentTypeUpdate;
-        const updateData = stripUndefined(payload);
+        const schemaSource = resolveContentTypeSchemaSource({
+            schema: rawPayload.schema,
+            schemaManifest: rawPayload.schemaManifest
+        });
+        if (!schemaSource.ok) {
+            return reply.status(400).send(fromValidationFailure(schemaSource.failure));
+        }
+
+        const payload = rawPayload as ContentTypeUpdate & {
+            schemaManifest?: unknown;
+        };
+        const updateData = stripUndefined({
+            ...payload,
+            ...(schemaSource.value
+                ? {
+                    schema: schemaSource.value.schema,
+                    schemaManifest: schemaSource.value.schemaManifest
+                }
+                : {})
+        });
 
         if (!hasDefinedValues(payload)) {
             return reply.status(400).send(toErrorPayload(
                 'Empty update payload',
                 'EMPTY_UPDATE_BODY',
-                'The request body must contain at least one field to update (name, slug, description, or schema). Send a body like { "name": "New Name" }.'
+                'The request body must contain at least one field to update (name, slug, kind, description, schema, schemaManifest, or basePrice). Send a body like { "name": "New Name" }.'
             ));
         }
 
-        if (typeof updateData.schema === 'string') {
-            const schemaFailure = validateContentTypeSchema(updateData.schema);
-            if (schemaFailure) {
-                return reply.status(400).send(fromValidationFailure(schemaFailure));
+        const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))));
+        if (!existing) {
+            return reply.status(404).send(notFoundContentType(id));
+        }
+
+        const targetKind = updateData.kind ?? existing.kind;
+        if (isSingletonContentType(targetKind) && !isSingletonContentType(existing.kind)) {
+            const itemCount = await countContentItemsForContentType(getDomainId(request), existing.id);
+            if (itemCount > 1) {
+                return reply.status(409).send(singletonContentTypeRequiresSingleItem(existing, itemCount));
             }
         }
 
         if (isDryRun(mode)) {
-            const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(request))));
-            if (!existing) {
-                return reply.status(404).send(notFoundContentType(id));
-            }
-
             return {
                 data: { ...existing, ...updateData },
                 meta: buildMeta(
@@ -3668,6 +4758,37 @@ export default async function apiRoutes(server: FastifyInstance) {
             meta: buildMeta(
                 'Fetch the asset bytes, inspect derivatives, or remove the asset',
                 ['GET /api/assets/:id/content', 'GET /api/assets/:id/derivatives', 'DELETE /api/assets/:id'],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.get('/assets/:id/used-by', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(ReferenceUsageSummarySchema),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const domainId = getDomainId(request);
+        const asset = await getAsset(id, domainId, { includeDeleted: true });
+
+        if (!asset) {
+            return reply.status(404).send(notFoundAsset(id));
+        }
+
+        const usage = await findAssetUsage(domainId, id);
+        return {
+            data: serializeReferenceUsageSummary(usage),
+            meta: buildMeta(
+                'Inspect which content currently or historically references this asset',
+                ['GET /api/assets/:id', 'GET /api/content-items/:id'],
                 'low',
                 1
             )
@@ -4536,6 +5657,1086 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
+    server.post('/content-items/:id/preview-token', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Union([
+                Type.Object({
+                    ttlSeconds: Type.Optional(Type.Number({ minimum: 60, maximum: 3600 })),
+                    draft: Type.Optional(Type.Boolean()),
+                    locale: Type.Optional(Type.String()),
+                    fallbackLocale: Type.Optional(Type.String())
+                }),
+                Type.Null()
+            ]),
+            response: {
+                200: createAIResponse(Type.Object({
+                    token: Type.String(),
+                    previewPath: Type.String(),
+                    contentItemId: Type.Number(),
+                    draft: Type.Boolean(),
+                    ttlSeconds: Type.Number(),
+                    expiresAt: Type.String(),
+                    locale: Type.Optional(Type.String()),
+                    fallbackLocale: Type.Optional(Type.String())
+                })),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const body = ((request.body ?? {}) as PreviewTokenIssueBody | null) ?? {};
+        const localizedReadOptions = resolveLocalizedReadOptions(body as LocalizedReadQuery);
+        if ('error' in localizedReadOptions) {
+            return reply.status(400).send(localizedReadOptions.error);
+        }
+
+        const domainId = getDomainId(request);
+        const [item] = await db.select().from(contentItems).where(and(
+            eq(contentItems.id, id),
+            eq(contentItems.domainId, domainId)
+        ));
+        if (!item) {
+            return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        const matchingOffers = await LicensingService.getActiveOffersForItemRead(domainId, item.id, item.contentTypeId);
+        if (matchingOffers.length > 0) {
+            return reply.status(409).send(toErrorPayload(
+                'Preview unavailable for paywalled content',
+                'PREVIEW_PAYWALL_UNSUPPORTED',
+                'Disable offers or use an authenticated read path while preview access for paywalled content remains unsupported.'
+            ));
+        }
+
+        const issued = issuePreviewToken({
+            domainId,
+            kind: 'content_item',
+            contentItemId: id,
+            draft: localizedReadOptions.draft,
+            locale: localizedReadOptions.locale,
+            fallbackLocale: localizedReadOptions.fallbackLocale,
+            ttlSeconds: body.ttlSeconds
+        });
+
+        await logAudit(
+            domainId,
+            'preview',
+            'content_item',
+            item.id,
+            {
+                source: 'issue_preview_token',
+                target: 'content_item',
+                draft: issued.draft,
+                ttlSeconds: issued.ttlSeconds,
+                locale: issued.locale ?? null,
+                fallbackLocale: issued.fallbackLocale ?? null,
+                expiresAt: issued.expiresAt.toISOString()
+            },
+            toAuditActorFromRequest(request as RequestActorCarrier),
+            request.id
+        );
+
+        return {
+            data: {
+                token: issued.token,
+                previewPath: `/api/preview/content-items/${id}?token=${encodeURIComponent(issued.token)}`,
+                contentItemId: id,
+                draft: issued.draft,
+                ttlSeconds: issued.ttlSeconds,
+                expiresAt: issued.expiresAt.toISOString(),
+                ...(issued.locale ? { locale: issued.locale } : {}),
+                ...(issued.fallbackLocale ? { fallbackLocale: issued.fallbackLocale } : {})
+            },
+            meta: buildMeta(
+                `Open a scoped preview for item ${id}`,
+                [`GET /api/preview/content-items/${id}`],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.get('/preview/content-items/:id', {
+        schema: {
+            querystring: Type.Object({
+                token: Type.Optional(Type.String())
+            }),
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(ContentItemReadResponseSchema),
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const token = parsePreviewToken(request.headers, (request.query as { token?: string }).token);
+        if (!token) {
+            return reply.status(401).send(toErrorPayload(
+                'Missing preview token',
+                'PREVIEW_TOKEN_MISSING',
+                'Provide a preview token via query parameter, x-preview-token, or Authorization: Bearer <token>.'
+            ));
+        }
+
+        const verification = verifyPreviewToken(token);
+        if (!verification.ok) {
+            return reply.status(401).send(toErrorPayload(
+                verification.code === 'PREVIEW_TOKEN_EXPIRED' ? 'Preview token expired' : 'Invalid preview token',
+                verification.code,
+                verification.remediation
+            ));
+        }
+
+        if (verification.kind !== 'content_item' || verification.contentItemId !== id) {
+            return reply.status(403).send(toErrorPayload(
+                'Preview token scope mismatch',
+                'PREVIEW_TOKEN_SCOPE_MISMATCH',
+                'Issue a preview token for this content item before attempting a preview read.'
+            ));
+        }
+
+        const [row] = await db.select({
+            item: contentItems,
+            schema: contentTypes.schema
+        })
+            .from(contentItems)
+            .innerJoin(contentTypes, eq(contentItems.contentTypeId, contentTypes.id))
+            .where(and(
+                eq(contentItems.id, id),
+                eq(contentItems.domainId, verification.domainId)
+            ));
+
+        if (!row) {
+            return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        const matchingOffers = await LicensingService.getActiveOffersForItemRead(verification.domainId, id, row.item.contentTypeId);
+        if (matchingOffers.length > 0) {
+            return reply.status(409).send(toErrorPayload(
+                'Preview unavailable for paywalled content',
+                'PREVIEW_PAYWALL_UNSUPPORTED',
+                'Disable offers or use an authenticated read path while preview access for paywalled content remains unsupported.'
+            ));
+        }
+
+        const item = await ensureContentItemLifecycleState(row.item, row.schema);
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            item.status === 'published' ? [] : [item.id]
+        );
+        const previewItem = resolveContentItemReadView(
+            item,
+            row.schema,
+            {
+                draft: verification.draft,
+                locale: verification.locale,
+                fallbackLocale: verification.fallbackLocale,
+                unpublishedFallback: verification.draft ? 'current' : 'null'
+            },
+            latestPublishedVersions.get(item.id)
+        );
+
+        if (!previewItem) {
+            return reply.status(404).send(toErrorPayload(
+                'Published preview unavailable',
+                'PREVIEW_TARGET_UNPUBLISHED',
+                'Issue a draft preview token or publish the content item before requesting a published preview.'
+            ));
+        }
+
+        await logAudit(
+            verification.domainId,
+            'preview',
+            'content_item',
+            item.id,
+            {
+                source: 'preview_token_read',
+                target: 'content_item',
+                draft: verification.draft,
+                locale: verification.locale ?? null,
+                fallbackLocale: verification.fallbackLocale ?? null,
+                expiresAt: verification.expiresAt.toISOString()
+            },
+            buildPreviewActor({ kind: 'content_item', identifier: item.id }),
+            request.id
+        );
+
+        return {
+            data: previewItem,
+            meta: buildMeta(
+                'Preview payload returned by scoped token',
+                [],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.get('/preview/globals/:slug', {
+        schema: {
+            querystring: Type.Object({
+                token: Type.Optional(Type.String())
+            }),
+            params: Type.Object({
+                slug: Type.String()
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    contentType: Type.Object({
+                        id: Type.Number(),
+                        name: Type.String(),
+                        slug: Type.String(),
+                        kind: Type.Literal('singleton'),
+                        description: Type.Optional(Type.String()),
+                        schema: Type.String(),
+                        basePrice: Type.Optional(Type.Number()),
+                        createdAt: Type.String(),
+                        updatedAt: Type.String(),
+                    }),
+                    item: ContentItemReadResponseSchema
+                })),
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { slug } = request.params as { slug: string };
+        const token = parsePreviewToken(request.headers, (request.query as { token?: string }).token);
+        if (!token) {
+            return reply.status(401).send(toErrorPayload(
+                'Missing preview token',
+                'PREVIEW_TOKEN_MISSING',
+                'Provide a preview token via query parameter, x-preview-token, or Authorization: Bearer <token>.'
+            ));
+        }
+
+        const verification = verifyPreviewToken(token);
+        if (!verification.ok) {
+            return reply.status(401).send(toErrorPayload(
+                verification.code === 'PREVIEW_TOKEN_EXPIRED' ? 'Preview token expired' : 'Invalid preview token',
+                verification.code,
+                verification.remediation
+            ));
+        }
+
+        if (verification.kind !== 'global' || verification.slug !== slug) {
+            return reply.status(403).send(toErrorPayload(
+                'Preview token scope mismatch',
+                'PREVIEW_TOKEN_SCOPE_MISMATCH',
+                'Issue a preview token for this global before attempting a preview read.'
+            ));
+        }
+
+        const contentType = await getGlobalContentTypeBySlug(slug, verification.domainId);
+        if (!contentType) {
+            return reply.status(404).send(notFoundGlobal(slug));
+        }
+
+        const item = await getSingletonContentItem(verification.domainId, contentType.id);
+        if (!item) {
+            return reply.status(404).send(toErrorPayload(
+                'Global content item not found',
+                'GLOBAL_CONTENT_ITEM_NOT_FOUND',
+                `Create or update global '${slug}' before attempting a preview read.`
+            ));
+        }
+
+        const matchingOffers = await LicensingService.getActiveOffersForItemRead(verification.domainId, item.id, item.contentTypeId);
+        if (matchingOffers.length > 0) {
+            return reply.status(409).send(toErrorPayload(
+                'Preview unavailable for paywalled content',
+                'PREVIEW_PAYWALL_UNSUPPORTED',
+                'Disable offers or use an authenticated read path while preview access for paywalled content remains unsupported.'
+            ));
+        }
+
+        const resolvedItem = await ensureContentItemLifecycleState(item, contentType.schema);
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            resolvedItem.status === 'published' ? [] : [resolvedItem.id]
+        );
+        const previewItem = resolveContentItemReadView(
+            resolvedItem,
+            contentType.schema,
+            {
+                draft: verification.draft,
+                locale: verification.locale,
+                fallbackLocale: verification.fallbackLocale,
+                unpublishedFallback: verification.draft ? 'current' : 'null'
+            },
+            latestPublishedVersions.get(resolvedItem.id)
+        );
+
+        if (!previewItem) {
+            return reply.status(404).send(toErrorPayload(
+                'Published preview unavailable',
+                'PREVIEW_TARGET_UNPUBLISHED',
+                'Issue a draft preview token or publish the global before requesting a published preview.'
+            ));
+        }
+
+        await logAudit(
+            verification.domainId,
+            'preview',
+            'content_item',
+            resolvedItem.id,
+            {
+                source: 'preview_token_read',
+                target: 'global',
+                slug,
+                draft: verification.draft,
+                locale: verification.locale ?? null,
+                fallbackLocale: verification.fallbackLocale ?? null,
+                expiresAt: verification.expiresAt.toISOString()
+            },
+            buildPreviewActor({ kind: 'global', identifier: slug }),
+            request.id
+        );
+
+        return {
+            data: {
+                contentType,
+                item: previewItem
+            },
+            meta: buildMeta(
+                'Preview payload returned by scoped token',
+                [],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.get('/forms', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Array(FormDefinitionResponseSchema)),
+            }
+        }
+    }, async (request) => {
+        const forms = await listFormDefinitions(getDomainId(request));
+        return {
+            data: forms.map((form) => serializeFormDefinitionForApi(form)),
+            meta: buildMeta(
+                'Inspect one form definition or submit a public form payload',
+                ['GET /api/forms/:id', 'POST /api/forms'],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.get('/forms/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            response: {
+                200: createAIResponse(FormDefinitionResponseSchema),
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const form = await getFormDefinitionById(getDomainId(request), id);
+        if (!form) {
+            return reply.status(404).send(toErrorPayload(
+                'Form definition not found',
+                'FORM_DEFINITION_NOT_FOUND',
+                `No form definition exists with ID ${id} in the current domain.`
+            ));
+        }
+
+        return {
+            data: serializeFormDefinitionForApi(form),
+            meta: buildMeta(
+                `Update or delete form '${form.slug}'`,
+                [`PUT /api/forms/${id}`, `DELETE /api/forms/${id}`],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.post('/forms', {
+        schema: {
+            body: Type.Object({
+                name: Type.String(),
+                slug: Type.String(),
+                description: Type.Optional(Type.String()),
+                contentTypeId: Type.Number(),
+                fields: Type.Array(Type.Object({
+                    name: Type.String(),
+                    label: Type.Optional(Type.String()),
+                    description: Type.Optional(Type.String()),
+                    type: Type.Optional(Type.String()),
+                    required: Type.Optional(Type.Boolean()),
+                    placeholder: Type.Optional(Type.String()),
+                    options: Type.Optional(Type.Array(Type.Object({
+                        value: Type.String(),
+                        label: Type.Optional(Type.String()),
+                    }))),
+                })),
+                defaultData: Type.Optional(Type.Object({}, { additionalProperties: true })),
+                active: Type.Optional(Type.Boolean()),
+                publicRead: Type.Optional(Type.Boolean()),
+                submissionStatus: Type.Optional(Type.String()),
+                workflowTransitionId: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+                requirePayment: Type.Optional(Type.Boolean()),
+                webhookUrl: Type.Optional(Type.String()),
+                webhookSecret: Type.Optional(Type.String()),
+                successMessage: Type.Optional(Type.String()),
+            }),
+            response: {
+                201: createAIResponse(FormDefinitionResponseSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const form = await createFormDefinition({
+                domainId: getDomainId(request),
+                ...(request.body as Record<string, unknown>),
+            } as Parameters<typeof createFormDefinition>[0]);
+
+            await logAudit(
+                getDomainId(request),
+                'create',
+                'form_definition',
+                form.id,
+                {
+                    slug: form.slug,
+                    contentTypeId: form.contentTypeId,
+                },
+                toAuditActorFromRequest(request as RequestActorCarrier),
+                request.id
+            );
+
+            return reply.status(201).send({
+                data: serializeFormDefinitionForApi(form),
+                meta: buildMeta(
+                    `Use GET /api/public/forms/${form.slug}?domainId=${form.domainId} to inspect the public form contract`,
+                    [`GET /api/public/forms/${form.slug}`, `POST /api/public/forms/${form.slug}/submissions`],
+                    'medium',
+                    1
+                )
+            });
+        } catch (error) {
+            if (error instanceof FormServiceError) {
+                const statusCode = error.statusCode === 404
+                    ? 404
+                    : error.statusCode === 409
+                        ? 409
+                        : 400;
+                return reply.status(statusCode).send(fromFormServiceError(error));
+            }
+
+            if (isUniqueViolation(error, new Set(['form_definitions_domain_slug_unique']))) {
+                const slug = String((request.body as { slug?: string }).slug ?? '');
+                return reply.status(409).send(toErrorPayload(
+                    'Form slug already exists',
+                    'FORM_DEFINITION_SLUG_CONFLICT',
+                    `Choose a different slug than '${slug}'.`
+                ));
+            }
+
+            throw error;
+        }
+    });
+
+    server.put('/forms/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            body: Type.Object({
+                name: Type.Optional(Type.String()),
+                slug: Type.Optional(Type.String()),
+                description: Type.Optional(Type.String()),
+                contentTypeId: Type.Optional(Type.Number()),
+                fields: Type.Optional(Type.Array(Type.Object({
+                    name: Type.String(),
+                    label: Type.Optional(Type.String()),
+                    description: Type.Optional(Type.String()),
+                    type: Type.Optional(Type.String()),
+                    required: Type.Optional(Type.Boolean()),
+                    placeholder: Type.Optional(Type.String()),
+                    options: Type.Optional(Type.Array(Type.Object({
+                        value: Type.String(),
+                        label: Type.Optional(Type.String()),
+                    }))),
+                }))),
+                defaultData: Type.Optional(Type.Object({}, { additionalProperties: true })),
+                active: Type.Optional(Type.Boolean()),
+                publicRead: Type.Optional(Type.Boolean()),
+                submissionStatus: Type.Optional(Type.String()),
+                workflowTransitionId: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+                requirePayment: Type.Optional(Type.Boolean()),
+                webhookUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+                webhookSecret: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+                successMessage: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            }),
+            response: {
+                200: createAIResponse(FormDefinitionResponseSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        try {
+            const form = await updateFormDefinition(id, {
+                domainId: getDomainId(request),
+                ...(request.body as Record<string, unknown>),
+            });
+
+            await logAudit(
+                getDomainId(request),
+                'update',
+                'form_definition',
+                form.id,
+                {
+                    slug: form.slug,
+                    contentTypeId: form.contentTypeId,
+                },
+                toAuditActorFromRequest(request as RequestActorCarrier),
+                request.id
+            );
+
+            return {
+                data: serializeFormDefinitionForApi(form),
+                meta: buildMeta(
+                    `Public submissions for '${form.slug}' now use the updated form definition`,
+                    [`GET /api/public/forms/${form.slug}`, `POST /api/public/forms/${form.slug}/submissions`],
+                    'medium',
+                    1
+                )
+            };
+        } catch (error) {
+            if (error instanceof FormServiceError) {
+                const statusCode = error.statusCode === 404
+                    ? 404
+                    : error.statusCode === 409
+                        ? 409
+                        : 400;
+                return reply.status(statusCode).send(fromFormServiceError(error));
+            }
+
+            if (isUniqueViolation(error, new Set(['form_definitions_domain_slug_unique']))) {
+                const slug = String((request.body as { slug?: string }).slug ?? '');
+                return reply.status(409).send(toErrorPayload(
+                    'Form slug already exists',
+                    'FORM_DEFINITION_SLUG_CONFLICT',
+                    `Choose a different slug than '${slug}'.`
+                ));
+            }
+
+            throw error;
+        }
+    });
+
+    server.delete('/forms/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            response: {
+                200: createAIResponse(FormDefinitionResponseSchema),
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const deleted = await deleteFormDefinition(getDomainId(request), id);
+        if (!deleted) {
+            return reply.status(404).send(toErrorPayload(
+                'Form definition not found',
+                'FORM_DEFINITION_NOT_FOUND',
+                `No form definition exists with ID ${id} in the current domain.`
+            ));
+        }
+
+        await logAudit(
+            getDomainId(request),
+            'delete',
+            'form_definition',
+            deleted.id,
+            {
+                slug: deleted.slug,
+                contentTypeId: deleted.contentTypeId,
+            },
+            toAuditActorFromRequest(request as RequestActorCarrier),
+            request.id
+        );
+
+        return {
+            data: serializeFormDefinitionForApi(deleted),
+            meta: buildMeta(
+                `Form '${deleted.slug}' no longer accepts public submissions`,
+                ['POST /api/forms'],
+                'medium',
+                1
+            )
+        };
+    });
+
+    server.get('/public/forms/:slug', {
+        schema: {
+            querystring: Type.Object({
+                domainId: Type.Number(),
+            }),
+            params: Type.Object({
+                slug: Type.String(),
+            }),
+            response: {
+                200: createAIResponse(PublicFormDefinitionResponseSchema),
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { slug } = request.params as { slug: string };
+        const { domainId } = request.query as { domainId: number };
+        const form = await getFormDefinitionBySlug(domainId, slug);
+        if (!form || !form.active || !form.publicRead) {
+            return reply.status(404).send(toErrorPayload(
+                'Public form not found',
+                'PUBLIC_FORM_NOT_FOUND',
+                `No active public form exists with slug '${slug}' for the requested domain.`
+            ));
+        }
+
+        return {
+            data: serializePublicFormDefinitionForApi(form),
+            meta: buildMeta(
+                `Submit a payload to POST /api/public/forms/${slug}/submissions`,
+                [`POST /api/public/forms/${slug}/submissions`],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.post('/public/forms/:slug/submissions', {
+        schema: {
+            querystring: Type.Object({
+                domainId: Type.Number(),
+            }),
+            params: Type.Object({
+                slug: Type.String(),
+            }),
+            body: Type.Object({
+                data: Type.Object({}, { additionalProperties: true }),
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    form: PublicFormDefinitionResponseSchema,
+                    submission: Type.Object({
+                        contentItemId: Type.Number(),
+                        status: Type.String(),
+                        reviewTaskId: Type.Union([Type.Number(), Type.Null()]),
+                        successMessage: Type.Union([Type.String(), Type.Null()]),
+                    }),
+                })),
+                400: AIErrorResponse,
+                402: Type.Any(),
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { slug } = request.params as { slug: string };
+        const { domainId } = request.query as { domainId: number };
+        const form = await getFormDefinitionBySlug(domainId, slug);
+        if (!form || !form.active) {
+            return reply.status(404).send(toErrorPayload(
+                'Public form not found',
+                'PUBLIC_FORM_NOT_FOUND',
+                `No active public form exists with slug '${slug}' for the requested domain.`
+            ));
+        }
+
+        let l402Finish: (() => Promise<void>) | undefined;
+        if (form.requirePayment) {
+            const enforcement = await enforceL402Payment(
+                globalL402Options,
+                {
+                    resourceType: 'form-submission',
+                    operation: 'create',
+                    contentTypeId: form.contentTypeId,
+                    domainId,
+                },
+                request.headers.authorization,
+                {
+                    path: `/api/public/forms/${slug}/submissions`,
+                    domainId,
+                    requestInfo: {
+                        method: 'POST',
+                        headers: request.headers as Record<string, string | string[] | undefined>,
+                        ip: request.ip,
+                    }
+                }
+            );
+
+            if (!enforcement.ok) {
+                for (const [header, value] of Object.entries(enforcement.challengeHeaders ?? {})) {
+                    reply.header(header, value);
+                }
+
+                return reply.status(402).send(enforcement.errorPayload ?? toErrorPayload(
+                    'Payment required',
+                    'PAYMENT_REQUIRED',
+                    'Complete the L402 payment challenge and retry the form submission.'
+                ));
+            }
+
+            l402Finish = enforcement.onFinish;
+        }
+
+        try {
+            const submission = await submitFormDefinition(domainId, slug, {
+                data: (request.body as { data: Record<string, unknown> }).data,
+                request: {
+                    ip: request.ip,
+                    userAgent: readSingleHeaderValue(request.headers['user-agent']) ?? undefined,
+                    requestId: request.id,
+                    headers: request.headers as Record<string, string | string[] | undefined>,
+                }
+            });
+
+            await l402Finish?.();
+
+            return reply.status(201).send({
+                data: {
+                    form: serializePublicFormDefinitionForApi(submission.form),
+                    submission: {
+                        contentItemId: submission.item.id,
+                        status: submission.item.status,
+                        reviewTaskId: submission.reviewTaskId,
+                        successMessage: submission.form.successMessage,
+                    }
+                },
+                meta: buildMeta(
+                    `Submission stored as content item ${submission.item.id}`,
+                    submission.reviewTaskId
+                        ? ['GET /api/workflow/tasks']
+                        : ['GET /api/public/forms/:slug'],
+                    submission.reviewTaskId ? 'medium' : 'low',
+                    form.requirePayment ? 1 : 0
+                )
+            });
+        } catch (error) {
+            if (error instanceof FormServiceError) {
+                const statusCode = error.statusCode === 404
+                    ? 404
+                    : error.statusCode === 409
+                        ? 409
+                        : 400;
+                return reply.status(statusCode).send(fromFormServiceError(error));
+            }
+
+            throw error;
+        }
+    });
+
+    server.get('/jobs', {
+        schema: {
+            querystring: Type.Object({
+                status: Type.Optional(Type.String()),
+                kind: Type.Optional(Type.String()),
+                limit: Type.Optional(Type.Number()),
+                offset: Type.Optional(Type.Number()),
+            }),
+            response: {
+                200: createAIResponse(Type.Array(JobResponseSchema)),
+            }
+        }
+    }, async (request) => {
+        const query = request.query as {
+            status?: string;
+            kind?: string;
+            limit?: number;
+            offset?: number;
+        };
+        const options: ListJobsOptions = {
+            status: query.status as ListJobsOptions['status'],
+            kind: query.kind as ListJobsOptions['kind'],
+            limit: query.limit,
+            offset: query.offset,
+        };
+        const rows = await listJobs(getDomainId(request), options);
+
+        return {
+            data: rows.map((row) => serializeJobForApi(serializeJob(row))),
+            meta: buildMeta(
+                'Inspect one job or schedule additional background work',
+                ['GET /api/jobs/:id', 'POST /api/jobs'],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.get('/jobs/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            response: {
+                200: createAIResponse(JobResponseSchema),
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const job = await getJob(getDomainId(request), id);
+        if (!job) {
+            return reply.status(404).send(toErrorPayload(
+                'Job not found',
+                'JOB_NOT_FOUND',
+                `No background job exists with ID ${id} in the current domain.`
+            ));
+        }
+
+        return {
+            data: serializeJobForApi(serializeJob(job)),
+            meta: buildMeta(
+                `Cancel queued job ${id} if it is no longer needed`,
+                [`DELETE /api/jobs/${id}`],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.get('/jobs/worker-status', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Object({
+                    started: Type.Boolean(),
+                    sweepInProgress: Type.Boolean(),
+                    intervalMs: Type.Number(),
+                    maxJobsPerSweep: Type.Number(),
+                    lastSweepStartedAt: Type.Union([Type.String(), Type.Null()]),
+                    lastSweepCompletedAt: Type.Union([Type.String(), Type.Null()]),
+                    lastSweepProcessedJobs: Type.Number(),
+                    totalSweeps: Type.Number(),
+                    totalProcessedJobs: Type.Number(),
+                    lastError: Type.Union([Type.Object({
+                        message: Type.String(),
+                        at: Type.String(),
+                    }), Type.Null()]),
+                })),
+            }
+        }
+    }, async () => ({
+        data: jobsWorker.getStatus(),
+        meta: buildMeta(
+            'Inspect background jobs worker health',
+            ['GET /api/jobs'],
+            'low',
+            0
+        )
+    }));
+
+    server.post('/jobs', {
+        schema: {
+            body: Type.Object({
+                kind: Type.Union([
+                    Type.Literal('content_status_transition'),
+                    Type.Literal('outbound_webhook'),
+                ]),
+                payload: Type.Any(),
+                queue: Type.Optional(Type.String()),
+                runAt: Type.Optional(Type.String()),
+                maxAttempts: Type.Optional(Type.Number()),
+            }),
+            response: {
+                201: createAIResponse(JobResponseSchema),
+                400: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as {
+            kind: 'content_status_transition' | 'outbound_webhook';
+            payload: Record<string, unknown>;
+            queue?: string;
+            runAt?: string;
+            maxAttempts?: number;
+        };
+        const runAt = body.runAt ? new Date(body.runAt) : new Date();
+        if (Number.isNaN(runAt.getTime())) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid job runAt timestamp',
+                'JOB_RUN_AT_INVALID',
+                'Provide runAt as a valid ISO-8601 timestamp.',
+            ));
+        }
+
+        const job = await createJob({
+            domainId: getDomainId(request),
+            kind: body.kind,
+            payload: body.payload as never,
+            queue: body.queue,
+            runAt,
+            maxAttempts: body.maxAttempts,
+        });
+
+        await logAudit(
+            getDomainId(request),
+            'create',
+            'job',
+            job.id,
+            {
+                kind: job.kind,
+                queue: job.queue,
+                runAt: job.runAt.toISOString(),
+            },
+            toAuditActorFromRequest(request as RequestActorCarrier),
+            request.id
+        );
+
+        return reply.status(201).send({
+            data: serializeJobForApi(serializeJob(job)),
+            meta: buildMeta(
+                `Background job ${job.id} queued`,
+                [`GET /api/jobs/${job.id}`],
+                'medium',
+                1
+            )
+        });
+    });
+
+    server.delete('/jobs/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            response: {
+                200: createAIResponse(JobResponseSchema),
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const cancelled = await cancelJob(getDomainId(request), id);
+        if (!cancelled) {
+            const existing = await getJob(getDomainId(request), id);
+            if (!existing) {
+                return reply.status(404).send(toErrorPayload(
+                    'Job not found',
+                    'JOB_NOT_FOUND',
+                    `No background job exists with ID ${id} in the current domain.`
+                ));
+            }
+
+            return reply.status(409).send(toErrorPayload(
+                'Job can no longer be cancelled',
+                'JOB_CANCEL_FORBIDDEN',
+                'Only queued jobs can be cancelled.'
+            ));
+        }
+
+        return {
+            data: serializeJobForApi(serializeJob(cancelled)),
+            meta: buildMeta(
+                `Queued job ${id} cancelled`,
+                ['GET /api/jobs'],
+                'low',
+                0
+            )
+        };
+    });
+
+    server.post('/content-items/:id/schedule-status', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            body: Type.Object({
+                targetStatus: Type.String(),
+                runAt: Type.String(),
+                maxAttempts: Type.Optional(Type.Number()),
+            }),
+            response: {
+                201: createAIResponse(JobResponseSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const body = request.body as {
+            targetStatus: string;
+            runAt: string;
+            maxAttempts?: number;
+        };
+        const runAt = new Date(body.runAt);
+        if (Number.isNaN(runAt.getTime())) {
+            return reply.status(400).send(toErrorPayload(
+                'Invalid schedule timestamp',
+                'JOB_RUN_AT_INVALID',
+                'Provide runAt as a valid ISO-8601 timestamp.',
+            ));
+        }
+
+        const [existing] = await db.select({ id: contentItems.id })
+            .from(contentItems)
+            .where(and(
+                eq(contentItems.id, id),
+                eq(contentItems.domainId, getDomainId(request)),
+            ));
+        if (!existing) {
+            return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        const job = await scheduleContentStatusTransition({
+            domainId: getDomainId(request),
+            contentItemId: id,
+            targetStatus: body.targetStatus,
+            runAt,
+            maxAttempts: body.maxAttempts,
+        });
+
+        await logAudit(
+            getDomainId(request),
+            'create',
+            'job',
+            job.id,
+            {
+                source: 'schedule_content_status',
+                contentItemId: id,
+                targetStatus: body.targetStatus,
+                runAt: runAt.toISOString(),
+            },
+            toAuditActorFromRequest(request as RequestActorCarrier),
+            request.id
+        );
+
+        return reply.status(201).send({
+            data: serializeJobForApi(serializeJob(job)),
+            meta: buildMeta(
+                `Content item ${id} scheduled for background status change`,
+                [`GET /api/jobs/${job.id}`, `GET /api/content-items/${id}`],
+                'medium',
+                1
+            )
+        });
+    });
+
     server.post('/content-items', {
         preHandler: globalL402Middleware,
         schema: {
@@ -4559,6 +6760,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 400: AIErrorResponse,
                 404: AIErrorResponse,
                 403: AIErrorResponse,
+                409: AIErrorResponse,
                 402: Type.Any() // Added 402 for L402 Payment Required response
             }
         },
@@ -4567,11 +6769,20 @@ export default async function apiRoutes(server: FastifyInstance) {
         const { mode } = request.query as DryRunQueryType;
         const rawBody = request.body as any;
         const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
+        const activeDomainCheck = await ensureActiveDomainAvailable(request);
+        if (!activeDomainCheck.ok) {
+            return reply.status(activeDomainCheck.statusCode).send(activeDomainCheck.payload);
+        }
         const data = { ...rawBody, data: dataStr, domainId: getDomainId(request) } as typeof contentItems.$inferInsert;
         const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, data.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
 
         if (!contentType) {
             return reply.status(404).send(notFoundContentType(data.contentTypeId));
+        }
+
+        const singletonConflict = await findSingletonContentConflictPayload(getDomainId(request), contentType);
+        if (singletonConflict) {
+            return reply.status(409).send(singletonConflict);
         }
 
         const contentValidation = await validateContentDataAgainstSchema(contentType.schema, data.data, getDomainId(request));
@@ -4653,6 +6864,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 400: AIErrorResponse,
                 404: AIErrorResponse,
                 403: AIErrorResponse,
+                409: AIErrorResponse,
                 402: Type.Any()
             }
         },
@@ -4661,12 +6873,21 @@ export default async function apiRoutes(server: FastifyInstance) {
         const params = request.params as { contentTypeId: number };
         const rawBody = request.body as any;
         const dataStr = typeof rawBody.data === 'string' ? rawBody.data : JSON.stringify(rawBody.data);
+        const activeDomainCheck = await ensureActiveDomainAvailable(request);
+        if (!activeDomainCheck.ok) {
+            return reply.status(activeDomainCheck.statusCode).send(activeDomainCheck.payload);
+        }
         const data = { ...rawBody, data: dataStr, contentTypeId: params.contentTypeId, domainId: getDomainId(request) } as typeof contentItems.$inferInsert;
 
         const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, data.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
 
         if (!contentType) {
             return reply.status(404).send(notFoundContentType(data.contentTypeId));
+        }
+
+        const singletonConflict = await findSingletonContentConflictPayload(getDomainId(request), contentType);
+        if (singletonConflict) {
+            return reply.status(409).send(singletonConflict);
         }
 
         const contentValidation = await validateContentDataAgainstSchema(contentType.schema, data.data, getDomainId(request));
@@ -4773,6 +6994,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 contentTypeId: Type.Optional(Type.Number()),
                 status: Type.Optional(Type.String()),
                 q: Type.Optional(Type.String()),
+                draft: Type.Optional(Type.Boolean()),
+                locale: Type.Optional(Type.String()),
+                fallbackLocale: Type.Optional(Type.String()),
                 createdAfter: Type.Optional(Type.String()),
                 createdBefore: Type.Optional(Type.String()),
                 fieldName: Type.Optional(Type.String()),
@@ -4799,15 +7023,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 cursor: Type.Optional(Type.String())
             }),
             response: {
-                200: createAIResponse(Type.Array(Type.Object({
-                    id: Type.Number(),
-                    contentTypeId: Type.Number(),
-                    data: Type.String(),
-                    status: Type.String(),
-                    version: Type.Number(),
-                    createdAt: Type.String(),
-                    updatedAt: Type.String()
-                })))
+                200: createAIResponse(Type.Array(ContentItemReadResponseSchema))
                 ,
                 400: AIErrorResponse
             }
@@ -4817,6 +7033,8 @@ export default async function apiRoutes(server: FastifyInstance) {
             contentTypeId,
             status,
             q,
+            locale,
+            fallbackLocale,
             createdAfter,
             createdBefore,
             fieldName,
@@ -4830,6 +7048,11 @@ export default async function apiRoutes(server: FastifyInstance) {
             offset: rawOffset,
             cursor
         } = request.query as ContentItemsQuery;
+
+        const localizedReadOptions = resolveLocalizedReadOptions({ locale, fallbackLocale });
+        if ('error' in localizedReadOptions) {
+            return reply.status(400).send(localizedReadOptions.error);
+        }
 
         const limit = clampLimit(rawLimit);
 
@@ -4857,6 +7080,9 @@ export default async function apiRoutes(server: FastifyInstance) {
                 contentTypeId,
                 status,
                 q,
+                draft: localizedReadOptions.draft,
+                locale: localizedReadOptions.locale,
+                fallbackLocale: localizedReadOptions.fallbackLocale,
                 createdAfter: afterDate,
                 createdBefore: beforeDate,
                 fieldName,
@@ -5024,19 +7250,16 @@ export default async function apiRoutes(server: FastifyInstance) {
     server.get('/content-items/:id', {
         preHandler: globalL402Middleware,
         schema: {
+            querystring: Type.Object({
+                draft: Type.Optional(Type.Boolean()),
+                locale: Type.Optional(Type.String()),
+                fallbackLocale: Type.Optional(Type.String())
+            }),
             params: Type.Object({
                 id: Type.Number()
             }),
             response: {
-                200: createAIResponse(Type.Object({
-                    id: Type.Number(),
-                    contentTypeId: Type.Number(),
-                    data: Type.String(),
-                    status: Type.String(),
-                    version: Type.Number(),
-                    createdAt: Type.String(),
-                    updatedAt: Type.String()
-                })),
+                200: createAIResponse(ContentItemReadResponseSchema),
                 400: AIErrorResponse,
                 402: AIErrorResponse,
                 403: AIErrorResponse,
@@ -5047,6 +7270,10 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const { id } = request.params as IdParams;
+        const localizedReadOptions = resolveLocalizedReadOptions(request.query as LocalizedReadQuery);
+        if ('error' in localizedReadOptions) {
+            return reply.status(400).send(localizedReadOptions.error);
+        }
         const domainId = getDomainId(request);
         const [row] = await db.select({
             item: contentItems,
@@ -5178,12 +7405,67 @@ export default async function apiRoutes(server: FastifyInstance) {
             }
         }
 
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            item.status === 'published' ? [] : [item.id]
+        );
+        const readView = resolveContentItemReadView(
+            item,
+            row.schema,
+            {
+                draft: localizedReadOptions.draft,
+                locale: localizedReadOptions.locale,
+                fallbackLocale: localizedReadOptions.fallbackLocale
+            },
+            latestPublishedVersions.get(item.id)
+        );
+
+        if (!readView) {
+            return reply.status(404).send(toErrorPayload(
+                'Published content unavailable',
+                'CONTENT_ITEM_UNPUBLISHED',
+                'Request the working copy with draft=true or publish the content item before requesting the published view.'
+            ));
+        }
+
         return {
-            data: item,
+            data: readView,
             meta: buildMeta(
                 'Update or publish this item',
                 ['PUT /api/content-items/:id', 'DELETE /api/content-items/:id'],
                 'medium',
+                1
+            )
+        };
+    });
+
+    server.get('/content-items/:id/used-by', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(ReferenceUsageSummarySchema),
+                404: AIErrorResponse
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const domainId = getDomainId(request);
+        const [item] = await db.select({ id: contentItems.id })
+            .from(contentItems)
+            .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
+
+        if (!item) {
+            return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        const usage = await findContentItemUsage(domainId, id);
+        return {
+            data: serializeReferenceUsageSummary(usage),
+            meta: buildMeta(
+                'Inspect which content currently or historically references this item',
+                ['GET /api/content-items/:id', 'GET /api/content-items/:id/versions'],
+                'low',
                 1
             )
         };
@@ -5746,7 +8028,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                 })),
                 400: AIErrorResponse,
                 404: AIErrorResponse,
-                403: AIErrorResponse
+                403: AIErrorResponse,
+                409: AIErrorResponse
             }
         }
     }, async (request, reply) => {
@@ -5778,6 +8061,11 @@ export default async function apiRoutes(server: FastifyInstance) {
         const [targetContentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, targetContentTypeId), eq(contentTypes.domainId, getDomainId(request))));
         if (!targetContentType) {
             return reply.status(404).send(notFoundContentType(targetContentTypeId));
+        }
+
+        const singletonConflict = await findSingletonContentConflictPayload(getDomainId(request), targetContentType, existing.id);
+        if (singletonConflict) {
+            return reply.status(409).send(singletonConflict);
         }
 
         const targetData = typeof updateData.data === 'string'
@@ -6147,6 +8435,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
         const actorId = toAuditActorFromRequest(request as RequestActorCarrier);
         const isAtomic = atomic === true;
+        const dryRunSingletonAssignments = new Map<number, number>();
 
         if (items.length === 0) {
             return reply.status(400).send(toErrorPayload(
@@ -6159,24 +8448,42 @@ export default async function apiRoutes(server: FastifyInstance) {
         const buildError = (index: number, code: string, error: string) => ({ index, ok: false, code, error });
 
         if (isDryRun(mode)) {
-            const results = await Promise.all(items.map(async (item, index) => {
+            const results: Array<{ index: number; ok: boolean; id?: number; version?: number; code?: string; error?: string }> = [];
+            for (const [index, item] of items.entries()) {
                 const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
                 if (!contentType) {
-                    return buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`);
+                    results.push(buildError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`));
+                    continue;
                 }
 
                 const contentValidation = await validateContentDataAgainstSchema(contentType.schema, item.data, getDomainId(request));
                 if (contentValidation) {
-                    return buildError(index, contentValidation.code, contentValidation.error);
+                    results.push(buildError(index, contentValidation.code, contentValidation.error));
+                    continue;
                 }
 
-                return {
+                if (isSingletonContentType(contentType.kind)) {
+                    const existingConflict = await findSingletonContentConflict(getDomainId(request), item.contentTypeId);
+                    if (existingConflict) {
+                        results.push(buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${existingConflict.id}`));
+                        continue;
+                    }
+
+                    const reservedBy = dryRunSingletonAssignments.get(item.contentTypeId);
+                    if (reservedBy !== undefined) {
+                        results.push(buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`));
+                        continue;
+                    }
+                    dryRunSingletonAssignments.set(item.contentTypeId, index);
+                }
+
+                results.push({
                     index,
                     ok: true,
                     id: 0,
                     version: 1
-                };
-            }));
+                });
+            }
 
             return {
                 data: {
@@ -6196,6 +8503,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         if (isAtomic) {
             try {
                 const created = await db.transaction(async (tx) => {
+                    const singletonAssignments = new Map<number, number>();
                     const results: Array<{ index: number; ok: boolean; id?: number; version?: number }> = [];
                     for (const [index, item] of items.entries()) {
                         const [contentType] = await tx.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
@@ -6206,6 +8514,24 @@ export default async function apiRoutes(server: FastifyInstance) {
                         const contentValidation = await validateContentDataAgainstSchema(contentType.schema, item.data, getDomainId(request));
                         if (contentValidation) {
                             throw new Error(JSON.stringify(buildError(index, contentValidation.code, contentValidation.error)));
+                        }
+
+                        if (isSingletonContentType(contentType.kind)) {
+                            const [existingConflict] = await tx.select({ id: contentItems.id })
+                                .from(contentItems)
+                                .where(and(
+                                    eq(contentItems.domainId, getDomainId(request)),
+                                    eq(contentItems.contentTypeId, item.contentTypeId)
+                                ));
+                            if (existingConflict) {
+                                throw new Error(JSON.stringify(buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${existingConflict.id}`)));
+                            }
+
+                            const reservedBy = singletonAssignments.get(item.contentTypeId);
+                            if (reservedBy !== undefined) {
+                                throw new Error(JSON.stringify(buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`)));
+                            }
+                            singletonAssignments.set(item.contentTypeId, index);
                         }
 
                         const [newItem] = await tx.insert(contentItems).values({
@@ -6263,6 +8589,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         const results: Array<{ index: number; ok: boolean; id?: number; version?: number; code?: string; error?: string }> = [];
+        const partialSingletonAssignments = new Map<number, number>();
         for (const [index, item] of items.entries()) {
             try {
                 const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(request))));
@@ -6275,6 +8602,21 @@ export default async function apiRoutes(server: FastifyInstance) {
                 if (contentValidation) {
                     results.push(buildError(index, contentValidation.code, contentValidation.error));
                     continue;
+                }
+
+                if (isSingletonContentType(contentType.kind)) {
+                    const existingConflict = await findSingletonContentConflict(getDomainId(request), item.contentTypeId);
+                    if (existingConflict) {
+                        results.push(buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${existingConflict.id}`));
+                        continue;
+                    }
+
+                    const reservedBy = partialSingletonAssignments.get(item.contentTypeId);
+                    if (reservedBy !== undefined) {
+                        results.push(buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`));
+                        continue;
+                    }
+                    partialSingletonAssignments.set(item.contentTypeId, index);
                 }
 
                 const [newItem] = await db.insert(contentItems).values({
@@ -6349,6 +8691,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
         const actorId = toAuditActorFromRequest(request as RequestActorCarrier);
         const isAtomic = atomic === true;
+        const plannedSingletonAssignments = new Map<number, number>();
 
         if (items.length === 0) {
             return reply.status(400).send(toErrorPayload(
@@ -6381,6 +8724,25 @@ export default async function apiRoutes(server: FastifyInstance) {
             const validation = await validateContentDataAgainstSchema(targetContentType.schema, targetData, getDomainId(request));
             if (validation) {
                 return { ok: false, error: buildError(index, validation.code, validation.error) } as const;
+            }
+
+            if (isSingletonContentType(targetContentType.kind)) {
+                const conflict = await findSingletonContentConflict(getDomainId(request), targetContentTypeId, existing.id);
+                if (conflict) {
+                    return {
+                        ok: false,
+                        error: buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${targetContentType.slug}' already uses content item ${conflict.id}`)
+                    } as const;
+                }
+
+                const reservedBy = plannedSingletonAssignments.get(targetContentTypeId);
+                if (reservedBy !== undefined && reservedBy !== existing.id) {
+                    return {
+                        ok: false,
+                        error: buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${targetContentType.slug}' is already targeted by content item ${reservedBy}.`)
+                    } as const;
+                }
+                plannedSingletonAssignments.set(targetContentTypeId, existing.id);
             }
 
             return { ok: true, existing, updateData } as const;
@@ -6421,6 +8783,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         if (isAtomic) {
             try {
                 const results = await db.transaction(async (tx) => {
+                    const singletonAssignments = new Map<number, number>();
                     const output: Array<{ index: number; ok: boolean; id: number; version: number }> = [];
                     for (const [index, item] of items.entries()) {
                         const updateData = stripUndefined({ contentTypeId: item.contentTypeId, data: item.data, status: item.status });
@@ -6443,6 +8806,25 @@ export default async function apiRoutes(server: FastifyInstance) {
                         const validation = await validateContentDataAgainstSchema(targetContentType.schema, targetData, getDomainId(request));
                         if (validation) {
                             throw new Error(JSON.stringify(buildError(index, validation.code, validation.error)));
+                        }
+
+                        if (isSingletonContentType(targetContentType.kind)) {
+                            const [conflict] = await tx.select({ id: contentItems.id })
+                                .from(contentItems)
+                                .where(and(
+                                    eq(contentItems.domainId, getDomainId(request)),
+                                    eq(contentItems.contentTypeId, targetContentTypeId),
+                                    ne(contentItems.id, existing.id)
+                                ));
+                            if (conflict) {
+                                throw new Error(JSON.stringify(buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${targetContentType.slug}' already uses content item ${conflict.id}`)));
+                            }
+
+                            const reservedBy = singletonAssignments.get(targetContentTypeId);
+                            if (reservedBy !== undefined && reservedBy !== existing.id) {
+                                throw new Error(JSON.stringify(buildError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${targetContentType.slug}' is already targeted by content item ${reservedBy}.`)));
+                            }
+                            singletonAssignments.set(targetContentTypeId, existing.id);
                         }
 
                         await tx.insert(contentItemVersions).values({

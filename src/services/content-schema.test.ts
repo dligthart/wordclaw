@@ -17,10 +17,14 @@ vi.mock('../db/index.js', () => ({
 }));
 
 import {
+    compileSchemaManifest,
+    getContentLocalizationSchemaConfig,
     getContentLifecycleSchemaConfig,
     getPublicWriteSchemaConfig,
     getPublicWriteSubjectValue,
+    localizeContentData,
     listQueryableContentFields,
+    resolveContentTypeSchemaSource,
     validateContentDataAgainstSchema,
     validateContentTypeSchema
 } from './content-schema.js';
@@ -209,6 +213,31 @@ describe('validateContentTypeSchema', () => {
         });
     });
 
+    it('accepts a valid localization extension and localized field markers', () => {
+        const schemaText = JSON.stringify({
+            type: 'object',
+            properties: {
+                title: {
+                    type: 'string',
+                    'x-wordclaw-localized': true
+                },
+                summary: { type: 'string' }
+            },
+            required: ['title'],
+            'x-wordclaw-localization': {
+                supportedLocales: ['en', 'nl'],
+                defaultLocale: 'en'
+            }
+        });
+
+        expect(validateContentTypeSchema(schemaText)).toBeNull();
+        expect(getContentLocalizationSchemaConfig(schemaText)).toEqual({
+            enabled: true,
+            supportedLocales: ['en', 'nl'],
+            defaultLocale: 'en'
+        });
+    });
+
     it('rejects malformed public-write schema extensions', () => {
         const failure = validateContentTypeSchema(JSON.stringify({
             type: 'object',
@@ -243,6 +272,148 @@ describe('validateContentTypeSchema', () => {
 
         expect(failure).toMatchObject({
             code: 'INVALID_CONTENT_SCHEMA_LIFECYCLE_EXTENSION'
+        });
+    });
+
+    it('rejects localized fields without a top-level localization config', () => {
+        const failure = validateContentTypeSchema(JSON.stringify({
+            type: 'object',
+            properties: {
+                title: {
+                    type: 'string',
+                    'x-wordclaw-localized': true
+                }
+            }
+        }));
+
+        expect(failure).toMatchObject({
+            code: 'INVALID_CONTENT_SCHEMA_LOCALIZATION_EXTENSION'
+        });
+    });
+
+    it('compiles schema manifests into canonical JSON schema with groups and block sets', () => {
+        const compiled = compileSchemaManifest(JSON.stringify({
+            title: 'Landing Page',
+            localization: {
+                supportedLocales: ['en', 'nl'],
+                defaultLocale: 'en'
+            },
+            fields: [
+                {
+                    name: 'title',
+                    type: 'text',
+                    required: true,
+                    localized: true
+                },
+                {
+                    name: 'hero',
+                    type: 'group',
+                    fields: [
+                        {
+                            name: 'eyebrow',
+                            type: 'text'
+                        },
+                        {
+                            name: 'cta',
+                            type: 'content-ref',
+                            allowedContentTypeSlugs: ['cta']
+                        }
+                    ]
+                },
+                {
+                    name: 'sections',
+                    type: 'block-set',
+                    blocks: [
+                        {
+                            type: 'callout',
+                            fields: [
+                                {
+                                    name: 'body',
+                                    type: 'textarea',
+                                    required: true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }));
+
+        expect(compiled.ok).toBe(true);
+        if (!compiled.ok) {
+            return;
+        }
+
+        expect(validateContentTypeSchema(compiled.schemaText)).toBeNull();
+        expect(compiled.schema).toMatchObject({
+            type: 'object',
+            properties: {
+                title: {
+                    'x-wordclaw-localized': true
+                },
+                hero: {
+                    type: 'object',
+                    properties: {
+                        cta: {
+                            'x-wordclaw-field-kind': 'content-ref'
+                        }
+                    }
+                },
+                sections: {
+                    type: 'array',
+                    items: {
+                        oneOf: [
+                            expect.objectContaining({
+                                properties: expect.objectContaining({
+                                    blockType: expect.objectContaining({
+                                        const: 'callout'
+                                    })
+                                })
+                            })
+                        ]
+                    }
+                }
+            }
+        });
+    });
+
+    it('rejects schema source payloads that provide both schema and schemaManifest', () => {
+        const resolved = resolveContentTypeSchemaSource({
+            schema: { type: 'object' },
+            schemaManifest: { fields: [] }
+        });
+
+        expect(resolved).toMatchObject({
+            ok: false,
+            failure: {
+                code: 'CONTENT_TYPE_SCHEMA_SOURCE_CONFLICT'
+            }
+        });
+    });
+
+    it('resolves manifest schema sources into compiled schema text', () => {
+        const resolved = resolveContentTypeSchemaSource({
+            schemaManifest: {
+                fields: [
+                    {
+                        name: 'title',
+                        type: 'text',
+                        required: true
+                    }
+                ]
+            }
+        }, { requireSource: true });
+
+        expect(resolved.ok).toBe(true);
+        if (!resolved.ok || !resolved.value) {
+            return;
+        }
+
+        expect(resolved.value.source).toBe('manifest');
+        expect(resolved.value.schemaManifest).toContain('"fields"');
+        expect(JSON.parse(resolved.value.schema)).toMatchObject({
+            type: 'object',
+            required: ['title']
         });
     });
 });
@@ -304,6 +475,46 @@ describe('validateContentDataAgainstSchema', () => {
             sessionId: 'session-123',
             body: 'savepoint'
         }))).toBe('session-123');
+    });
+
+    it('validates localized fields as locale maps and requires the default locale for required fields', async () => {
+        const schemaText = JSON.stringify({
+            type: 'object',
+            properties: {
+                title: {
+                    type: 'string',
+                    'x-wordclaw-localized': true
+                }
+            },
+            required: ['title'],
+            'x-wordclaw-localization': {
+                supportedLocales: ['en', 'nl'],
+                defaultLocale: 'en'
+            }
+        });
+
+        await expect(validateContentDataAgainstSchema(
+            schemaText,
+            JSON.stringify({
+                title: {
+                    en: 'Hello',
+                    nl: 'Hallo'
+                }
+            }),
+            1
+        )).resolves.toBeNull();
+
+        await expect(validateContentDataAgainstSchema(
+            schemaText,
+            JSON.stringify({
+                title: {
+                    nl: 'Hallo'
+                }
+            }),
+            1
+        )).resolves.toMatchObject({
+            code: 'CONTENT_SCHEMA_VALIDATION_FAILED'
+        });
     });
 
     it('rejects missing or cross-domain asset references', async () => {
@@ -514,5 +725,61 @@ describe('validateContentDataAgainstSchema', () => {
         });
         expect(failure?.context?.details).toContain('/relatedStories/0');
         expect(failure?.context?.details).toContain('slug:story');
+    });
+});
+
+describe('localizeContentData', () => {
+    it('resolves localized fields using the requested locale and configured fallback', () => {
+        const result = localizeContentData(JSON.stringify({
+            type: 'object',
+            properties: {
+                title: {
+                    type: 'string',
+                    'x-wordclaw-localized': true
+                },
+                hero: {
+                    type: 'object',
+                    properties: {
+                        eyebrow: {
+                            type: 'string',
+                            'x-wordclaw-localized': true
+                        }
+                    }
+                }
+            },
+            required: ['title'],
+            'x-wordclaw-localization': {
+                supportedLocales: ['en', 'nl'],
+                defaultLocale: 'en'
+            }
+        }), JSON.stringify({
+            title: {
+                en: 'Hello world',
+                nl: 'Hallo wereld'
+            },
+            hero: {
+                eyebrow: {
+                    en: 'Launch'
+                }
+            }
+        }), {
+            locale: 'nl'
+        });
+
+        expect(JSON.parse(result.data)).toEqual({
+            title: 'Hallo wereld',
+            hero: {
+                eyebrow: 'Launch'
+            }
+        });
+        expect(result.localeResolution).toEqual({
+            requestedLocale: 'nl',
+            fallbackLocale: 'en',
+            defaultLocale: 'en',
+            localizedFieldCount: 2,
+            resolvedFieldCount: 2,
+            fallbackFieldCount: 1,
+            unresolvedFields: []
+        });
     });
 });

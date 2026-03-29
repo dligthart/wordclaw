@@ -24,6 +24,12 @@ export type Capability = {
 // are intentionally excluded from the default parity contract.
 export const capabilityMatrix: Capability[] = [
     {
+        id: 'create_domain',
+        description: 'Create a domain for workspace bootstrap or multi-domain administration',
+        rest: { method: 'POST', path: '/domains' },
+        mcp: { tool: 'create_domain' }
+    },
+    {
         id: 'create_content_type',
         description: 'Create content type schema',
         rest: { method: 'POST', path: '/content-types' },
@@ -59,6 +65,68 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'delete_content_type' }
     },
     {
+        id: 'list_globals',
+        description: 'List singleton/global content types and their current item',
+        rest: { method: 'GET', path: '/globals' },
+        graphql: { operation: 'Query', field: 'globals' },
+        mcp: { tool: 'list_globals' }
+    },
+    {
+        id: 'get_global',
+        description: 'Get a singleton/global content type by slug',
+        rest: { method: 'GET', path: '/globals/:slug' },
+        graphql: { operation: 'Query', field: 'global' },
+        mcp: { tool: 'get_global' }
+    },
+    {
+        id: 'update_global',
+        description: 'Create or update the singleton item for a global content type',
+        rest: { method: 'PUT', path: '/globals/:slug' },
+        graphql: { operation: 'Mutation', field: 'updateGlobal' },
+        mcp: { tool: 'update_global' }
+    },
+    {
+        id: 'list_forms',
+        description: 'List reusable form definitions',
+        rest: { method: 'GET', path: '/forms' },
+        graphql: { operation: 'Query', field: 'forms' },
+        mcp: { tool: 'list_forms' }
+    },
+    {
+        id: 'get_form',
+        description: 'Get a reusable form definition',
+        rest: { method: 'GET', path: '/forms/:id' },
+        graphql: { operation: 'Query', field: 'form' },
+        mcp: { tool: 'get_form' }
+    },
+    {
+        id: 'create_form',
+        description: 'Create a reusable form definition',
+        rest: { method: 'POST', path: '/forms' },
+        graphql: { operation: 'Mutation', field: 'createForm' },
+        mcp: { tool: 'create_form' }
+    },
+    {
+        id: 'update_form',
+        description: 'Update a reusable form definition',
+        rest: { method: 'PUT', path: '/forms/:id' },
+        graphql: { operation: 'Mutation', field: 'updateForm' },
+        mcp: { tool: 'update_form' }
+    },
+    {
+        id: 'delete_form',
+        description: 'Delete a reusable form definition',
+        rest: { method: 'DELETE', path: '/forms/:id' },
+        graphql: { operation: 'Mutation', field: 'deleteForm' },
+        mcp: { tool: 'delete_form' }
+    },
+    {
+        id: 'submit_form',
+        description: 'Submit a public form payload into its target content type',
+        rest: { method: 'POST', path: '/public/forms/:slug/submissions' },
+        mcp: { tool: 'submit_form' }
+    },
+    {
         id: 'create_asset',
         description: 'Upload an asset',
         rest: { method: 'POST', path: '/assets' },
@@ -87,6 +155,13 @@ export const capabilityMatrix: Capability[] = [
         description: 'Get asset by ID',
         rest: { method: 'GET', path: '/assets/:id' },
         mcp: { tool: 'get_asset' }
+    },
+    {
+        id: 'get_asset_usage',
+        description: 'Inspect reverse references for an asset',
+        rest: { method: 'GET', path: '/assets/:id/used-by' },
+        graphql: { operation: 'Query', field: 'assetUsedBy' },
+        mcp: { tool: 'get_asset_usage' }
     },
     {
         id: 'list_asset_derivatives',
@@ -154,6 +229,13 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'get_content_item' }
     },
     {
+        id: 'get_content_item_usage',
+        description: 'Inspect reverse references for a content item',
+        rest: { method: 'GET', path: '/content-items/:id/used-by' },
+        graphql: { operation: 'Query', field: 'contentItemUsedBy' },
+        mcp: { tool: 'get_content_item_usage' }
+    },
+    {
         id: 'update_content_item',
         description: 'Update content item',
         rest: { method: 'PUT', path: '/content-items/:id' },
@@ -194,6 +276,41 @@ export const capabilityMatrix: Capability[] = [
         rest: { method: 'POST', path: '/content-items/:id/rollback' },
         graphql: { operation: 'Mutation', field: 'rollbackContentItem' },
         mcp: { tool: 'rollback_content_item' }
+    },
+    {
+        id: 'list_jobs',
+        description: 'List background jobs',
+        rest: { method: 'GET', path: '/jobs' },
+        graphql: { operation: 'Query', field: 'jobs' },
+        mcp: { tool: 'list_jobs' }
+    },
+    {
+        id: 'get_job',
+        description: 'Get background job by ID',
+        rest: { method: 'GET', path: '/jobs/:id' },
+        graphql: { operation: 'Query', field: 'job' },
+        mcp: { tool: 'get_job' }
+    },
+    {
+        id: 'create_job',
+        description: 'Create a generic background job',
+        rest: { method: 'POST', path: '/jobs' },
+        graphql: { operation: 'Mutation', field: 'createJob' },
+        mcp: { tool: 'create_job' }
+    },
+    {
+        id: 'cancel_job',
+        description: 'Cancel a queued background job',
+        rest: { method: 'DELETE', path: '/jobs/:id' },
+        graphql: { operation: 'Mutation', field: 'cancelJob' },
+        mcp: { tool: 'cancel_job' }
+    },
+    {
+        id: 'schedule_content_status_change',
+        description: 'Schedule a future content item status change',
+        rest: { method: 'POST', path: '/content-items/:id/schedule-status' },
+        graphql: { operation: 'Mutation', field: 'scheduleContentStatusChange' },
+        mcp: { tool: 'schedule_content_status_change' }
     },
     {
         id: 'list_audit_logs',

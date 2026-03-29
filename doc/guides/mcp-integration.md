@@ -11,9 +11,9 @@ WordClaw now exposes MCP in two ways:
 - **Local stdio** for embedded or developer-run MCP sessions
 - **Streamable HTTP** at `/mcp` for attachable remote clients
 
-For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption. The MCP section now also includes a reactive contract block describing whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which session header is used, which filter fields are supported, and which topics are currently supported. The manifest also now exposes the content-runtime query contract, including singleton globals, localized fields, working-copy versus published reads, reverse-reference usage graphs for content and assets, field-aware content listing, grouped projection support for leaderboard and analytics-style views, and TTL lifecycle semantics for session-like content. It also reports bootstrap and effective auth posture: whether content writes require a provisioned domain, whether writes are still credentialed even when public discovery is open, and whether vector RAG is currently enabled. MCP callers can pass `draft=false` to `get_content_items`, `get_content_item`, `list_globals`, or `get_global` when they need the latest published snapshot instead of the current working copy, and can pass `locale` plus `fallbackLocale` for localized reads. MCP callers can still pass `includeArchived` to `get_content_items` or `project_content_items` when they need lifecycle-archived rows instead of the default active-only read model. The agent-guidance task recipes now also expose static `reactiveFollowUp` examples so an agent can discover likely subscription recipes and filters before it asks for a live `guide_task` refinement. For the live readiness layer, read `system://deployment-status`. That snapshot mirrors the reactive MCP status with the active transport, notification method, supported filter fields, and supported topic count. It now also reports bootstrap readiness, effective auth posture, vector RAG readiness, and the readiness of the content-runtime query layer, including grouped projections, localization, globals, reverse references, and working-copy preview support. For the authenticated workspace layer, read `system://workspace-context`. That workspace snapshot now also groups the strongest authoring, workflow, review, and paid-content targets for the active actor. If you already know the task class and want the best schema plus the next concrete work target immediately, use `system://workspace-target/<intent>` or the `resolve_workspace_target` tool. That resolution now prioritizes the strongest actionable candidate across the active workspace rather than only picking the busiest schema first. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
+For machine-readable discovery of the current deployment contract, read the `system://capabilities` resource or use `mcp inspect` from the CLI. That manifest reports the enabled module set, protocol expectations, dry-run coverage, the currently available MCP transports, task-oriented routing hints, and the actor/auth profiles an agent can use for workflows such as workspace targeting, authoring, review, integration setup, provenance verification, and paid-content consumption. The MCP section now also includes a reactive contract block describing whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which session header is used, which filter fields are supported, and which topics are currently supported. The manifest also now exposes the content-runtime query contract, including singleton globals, localized fields, working-copy versus published reads, reverse-reference usage graphs for content and assets, reusable form definitions, background jobs, field-aware content listing, grouped projection support for leaderboard and analytics-style views, and TTL lifecycle semantics for session-like content. It also reports bootstrap and effective auth posture: whether content writes require a provisioned domain, whether writes are still credentialed even when public discovery is open, and whether vector RAG is currently enabled. MCP callers can pass `draft=false` to `get_content_items`, `get_content_item`, `list_globals`, or `get_global` when they need the latest published snapshot instead of the current working copy, and can pass `locale` plus `fallbackLocale` for localized reads. MCP callers can still pass `includeArchived` to `get_content_items` or `project_content_items` when they need lifecycle-archived rows instead of the default active-only read model. The agent-guidance task recipes now also expose static `reactiveFollowUp` examples so an agent can discover likely subscription recipes and filters before it asks for a live `guide_task` refinement. For the live readiness layer, read `system://deployment-status`. That snapshot mirrors the reactive MCP status with the active transport, notification method, supported filter fields, and supported topic count. It now also reports bootstrap readiness, effective auth posture, vector RAG readiness, and the readiness of the content-runtime query layer, including grouped projections, localization, globals, reverse references, working-copy preview support, reusable forms, and background jobs. For the authenticated workspace layer, read `system://workspace-context`. That workspace snapshot now also groups the strongest authoring, workflow, review, and paid-content targets for the active actor. If you already know the task class and want the best schema plus the next concrete work target immediately, use `system://workspace-target/<intent>` or the `resolve_workspace_target` tool. That resolution now prioritizes the strongest actionable candidate across the active workspace rather than only picking the busiest schema first. If you want only the task-routing layer, use `system://agent-guidance` instead. If you need to confirm which actor the current MCP session is using, read `system://current-actor` or run `mcp whoami` from the CLI.
 
-Bootstrap note: MCP discovery will tell you when the install has `domainCount: 0`, but domain creation is still a REST path today. If bootstrap is blocked, create the first domain with `POST /api/domains`, then continue the normal MCP flow.
+Bootstrap note: MCP discovery now tells you when the install has `domainCount: 0`, which MCP tool can create the first domain (`create_domain`), and which guide task to call next (`bootstrap-workspace`). If bootstrap is blocked, either call `create_domain` from MCP or use the REST fallback `POST /api/domains`, then continue with `guide_task("bootstrap-workspace")` or `guide_task("discover-workspace")`.
 
 Preview-token issuance remains a REST and CLI path today. MCP covers locale-aware working-copy and published reads, but it does not mint public preview tokens directly.
 
@@ -101,6 +101,16 @@ node dist/cli/index.js mcp call guide_task '{"taskId":"discover-deployment"}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
+
+node dist/cli/index.js mcp call guide_task '{"taskId":"bootstrap-workspace"}' \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key remote-admin
+
+node dist/cli/index.js mcp call create_domain '{"name":"Local Development","hostname":"local.development"}' \
+  --mcp-transport http \
+  --mcp-url http://localhost:4000/mcp \
+  --api-key remote-admin
 
 node dist/cli/index.js mcp call guide_task '{"taskId":"discover-workspace","intent":"authoring","workspaceLimit":5}' \
   --mcp-transport http \
@@ -282,6 +292,17 @@ Tools are the primary interface for agents. Each tool maps to a CRUD operation a
 | `get_global`     | Get one singleton/global by slug                           |
 | `update_global`  | Update the singleton/global document for a slug            |
 
+### Form Tools
+
+| Tool            | Description                                                  |
+|-----------------|--------------------------------------------------------------|
+| `list_forms`    | List reusable form definitions                               |
+| `get_form`      | Get one form definition by id                                |
+| `create_form`   | Create a bounded public intake form                          |
+| `update_form`   | Update a form definition                                     |
+| `delete_form`   | Delete a form definition                                     |
+| `submit_form`   | Submit a public-form payload into its target content type    |
+
 ### Content Item Tools
 
 | Tool                          | Description                            |
@@ -322,6 +343,16 @@ Read tools now return derived publication metadata too:
 | `delete_asset`     | Soft-delete an asset so it can no longer be newly referenced         |
 | `restore_asset`    | Restore a soft-deleted asset back to active status                   |
 | `purge_asset`      | Permanently remove a soft-deleted asset after reference checks       |
+
+### Background Job Tools
+
+| Tool                             | Description                                        |
+|----------------------------------|----------------------------------------------------|
+| `list_jobs`                      | List background jobs with optional kind/status filters |
+| `get_job`                        | Get one background job by id                       |
+| `create_job`                     | Queue a generic background job                     |
+| `cancel_job`                     | Cancel a queued background job                     |
+| `schedule_content_status_change` | Schedule a future status transition for a content item |
 
 ### API Key Tools
 

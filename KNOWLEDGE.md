@@ -31,7 +31,7 @@ WordClaw is an AI-first Headless CMS designed for agentic interaction, combining
 ### The Supervisor UI
 *   Served under `/ui`, functioning as a decoupled SvelteKit dashboard providing human oversight.
 *   **Safety Primitives:** We avoid native `<button>` `alert()` commands and structural errors. Unified Svelte Contexts (`ui/src/lib/ui-feedback.svelte.ts`) supply non-intrusive `<Toast />` popups for API responses and require `<ConfirmDialog />` gates for any destructive action (e.g., API key revocation).
-*   **JSON Serialization:** Payload items frequently serialize deeply nested stringified JSON strings. We use custom `formatJson` recursive unwrapping functions inside the Svelte UI before piping the strings to human users.
+*   **JSON Serialization:** Content records frequently serialize deeply nested stringified JSON strings. We use custom `formatJson` recursive unwrapping functions inside the Svelte UI before piping the strings to human users.
 *   **Responsive Flow:** The data layout implements widespread scalable `<DataTable />` views that flexibly scale down for mobile-drawer inspection.
 
 ### Active Evolution & Roadmap

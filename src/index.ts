@@ -3,6 +3,7 @@ import { db, pool } from './db/index.js';
 import { isExperimentalAgentRunsEnabled, isExperimentalRevenueEnabled } from './config/runtime-features.js';
 import { accessEventsWorker } from './workers/access-events.js';
 import { agentRunWorker } from './workers/agent-run.worker.js';
+import { jobsWorker } from './workers/jobs.worker.js';
 import { paymentReconciliationWorker } from './workers/payment-reconciliation.js';
 import { buildServer } from './server.js';
 
@@ -24,6 +25,7 @@ const start = async () => {
 
         accessEventsWorker.start(); // Start the background worker
         paymentReconciliationWorker.start();
+        jobsWorker.start();
         if (isExperimentalAgentRunsEnabled()) {
             agentRunWorker.start();
         }
@@ -49,6 +51,7 @@ const start = async () => {
 
                 accessEventsWorker.stop();
                 paymentReconciliationWorker.stop();
+                jobsWorker.stop();
                 if (isExperimentalAgentRunsEnabled()) {
                     agentRunWorker.stop();
                 }

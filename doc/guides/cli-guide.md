@@ -3,7 +3,7 @@
 The WordClaw CLI is a JSON-first command-line interface for agents and operators. It wraps both of the product's primary agent surfaces:
 
 - `MCP` for local tool discovery or remote MCP attachment
-- `REST` for content operations, globals, locale-aware published reads, preview flows, public write lanes, asset storage, workflows, and L402 purchase/entitlement flows
+- `REST` for content operations, globals, locale-aware published reads, preview flows, schema artifacts, reusable forms, background jobs, public write lanes, asset storage, workflows, and L402 purchase/entitlement flows
 
 Use the CLI when you want a scriptable interface without writing a custom MCP client or hand-rolling HTTP requests.
 
@@ -184,7 +184,9 @@ node dist/cli/index.js mcp call list_content_types --json '{"limit":5}'
 node dist/cli/index.js mcp prompt workflow-guidance
 node dist/cli/index.js mcp prompt task-guidance --json '{"taskId":"author-content"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-deployment"}'
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-workspace"}'
+node dist/cli/index.js mcp call create_domain --json '{"name":"Local Development","hostname":"local.development"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"manage-integrations"}'
 node dist/cli/index.js mcp call guide_task --json '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}'
 node dist/cli/index.js mcp resource content://types
@@ -218,7 +220,8 @@ Important transport note:
 - when running in `stdio` mode, the CLI starts its own local MCP child process
 - when running in `http` mode, the CLI attaches directly to `/mcp`
 - `mcp inspect` now also includes the deployment manifest, deployment status, current actor snapshot, and workspace context when the MCP server exposes `system://capabilities`, `system://deployment-status`, `system://current-actor`, and `system://workspace-context`
-- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, workspace targeting, authoring, review, integrations, provenance checks, and paid-content flows
+- `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, workspace bootstrap, workspace targeting, authoring, review, integrations, provenance checks, and paid-content flows
+- `mcp call create_domain ...` bootstraps the first domain in-band and also supports admin-managed additional domains
 - `mcp openai-tools` exports the current MCP tool inventory as OpenAI-compatible `type: "function"` tools so external agents can reuse the live contract without hand-mapping each tool
 
 Usability details:
@@ -256,6 +259,12 @@ node dist/cli/index.js rest request POST /domains \
 node dist/cli/index.js rest request POST /auth/keys \
   --body-json '{"name":"Example","scopes":["content:read","content:write"]}'
 ```
+
+Bootstrap tip:
+
+- Start with `capabilities status` or `mcp resource system://deployment-status`.
+- If `domainCount` is `0`, call `mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`.
+- Use `mcp call create_domain ...` when you are already attached to MCP, or `rest request POST /domains ...` as the fallback.
 
 Supported flags:
 
@@ -420,6 +429,18 @@ Supported features:
 - create paid content types with `--base-price`
 - dry-run mode for create, update, and delete
 
+### Schema Artifacts
+
+```bash
+node dist/cli/index.js schema generate --out ./generated/wordclaw
+```
+
+Supported features:
+
+- generate TypeScript runtime helpers, TypeScript types, Zod validators, and a small client wrapper from live schemas plus capability metadata
+- include singleton/global kinds, localized fields, preview-aware read metadata, and reverse-reference helper types in the generated output
+- write a stable artifact set to the requested output directory without hand-maintaining client-side contracts
+
 ### Globals
 
 ```bash
@@ -438,6 +459,45 @@ Supported features:
 - resolve localized global reads with `--locale` and `--fallback-locale`
 - update singleton/global documents without manually finding the underlying content item ID
 - issue short-lived preview tokens for one global at a time
+
+### Forms
+
+```bash
+node dist/cli/index.js forms list
+node dist/cli/index.js forms get --id 21
+node dist/cli/index.js forms public --slug contact --domain-id 1
+node dist/cli/index.js forms create --name Contact --slug contact --content-type-id 15 --fields-file fields.json
+node dist/cli/index.js forms update --id 21 --success-message "Thanks for reaching out."
+node dist/cli/index.js forms submit --slug contact --domain-id 1 --data-file submission.json
+node dist/cli/index.js forms delete --id 21
+```
+
+Supported features:
+
+- list and inspect reusable form definitions
+- inspect the sanitized public-form contract through `forms public`
+- create, update, and delete bounded form definitions
+- submit sample payloads through the same public submission contract external clients use
+- compose content-type validation, optional workflow submission, optional L402 challenge, and job-backed follow-up webhook delivery
+
+### Jobs
+
+```bash
+node dist/cli/index.js jobs list --status queued
+node dist/cli/index.js jobs get --id 44
+node dist/cli/index.js jobs worker-status
+node dist/cli/index.js jobs create --kind outbound_webhook --payload-file payload.json --run-at 2026-03-29T18:00:00Z
+node dist/cli/index.js jobs cancel --id 44
+node dist/cli/index.js jobs schedule-status --id 345 --status published --run-at 2026-03-29T18:30:00Z
+```
+
+Supported features:
+
+- inspect queued, running, completed, failed, and cancelled jobs
+- read worker health and last-error state through `jobs worker-status`
+- create generic webhook or content-status-transition jobs directly
+- cancel queued jobs before they are claimed
+- schedule future content status changes through a first-class job wrapper
 
 ### Content Items
 

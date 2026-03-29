@@ -73,7 +73,7 @@ fastify.setErrorHandler(function (error, request, reply) {
 *   **Prompt Engineering:** Providing extensive definitions in system prompts to warn agents about the quirks. Discarded as it is less reliable than fixing the API boundaries.
 
 ## 7. Security & Privacy Implications
-Accepting nested JSON structures instead of strings slightly increases the risk of deep-object denial-of-service (Payload depth exhaustion). We must ensure Fastify's default `bodyLimit` and recursion depth settings are suitably configured. Custom error handlers must also ensure they do not leak sensitive stack traces.
+Accepting nested JSON structures instead of strings slightly increases the risk of deep-object denial-of-service from excessively nested request bodies. We must ensure Fastify's default `bodyLimit` and recursion depth settings are suitably configured. Custom error handlers must also ensure they do not leak sensitive stack traces.
 *   **Strict JSON Safeguards:** Deep JSON structures will be enforced by rigid TypeBox limits (`maxProperties: 100`) and a custom recursion depth validator (`maxDepth: 5`) to guarantee flat, parsable execution times avoiding compute DOS.
 
 ## 8. Rollout Plan / Milestones
@@ -81,4 +81,3 @@ Accepting nested JSON structures instead of strings slightly increases the risk 
 *   **Phase 2:** Refactor TypeBox schemas to `Type.Object()` for native JSON (Proposal 4.2). Include backwards-compatibility middleware temporarily parsing incoming strings.
 *   **Phase 3:** Introduce nested REST routes and mark flat route Deprecated (Proposal 4.3).
 *   **Phase 4:** Refactor L402 Options interface using `PricingContext` (Proposal 4.4).
-

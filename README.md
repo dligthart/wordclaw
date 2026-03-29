@@ -20,13 +20,15 @@ For a look ahead at what is in active development versus what is experimental, c
 -   **Structured Content**: JSON schema-based content types with runtime validation, singleton/global modeling, field-level localization, working-copy versus published reads, version history, and rollback.
 -   **Content Runtime Queries**: Schema-aware field filters, grouped projections for leaderboard and analytics-style reads, public write lanes for bounded player/session input, and TTL lifecycle archival for ephemeral content.
 -   **Authoring-State Reads and Preview**: Read the current working copy by default, force the latest published snapshot with `draft=false`, and issue short-lived preview tokens for one content item or global at a time.
+-   **Schema Manifests and Generated Artifacts**: Define models through editor-oriented schema manifests, compile them to canonical JSON Schema, and generate TypeScript/Zod/client artifacts from the live runtime contract.
 -   **Reverse-Reference Visibility**: Inspect which content items currently or historically reference a content item or asset before deleting, purging, or restructuring it.
+-   **Forms and Background Jobs**: Build reusable public intake forms on top of content types, workflows, L402, and webhook follow-ups, then schedule non-blocking work and future content-status transitions through a first-class jobs lane.
 -   **Schema-Aware Media Assets**: First-class asset records with schema-level references, derivative variants, multipart and direct-provider uploads, local or S3-compatible storage backends, public/signed/entitled delivery modes, and safe restore/purge lifecycle controls.
 -   **Agent-Friendly API**: REST responses include `recommendedNextAction`, `availableActions`, and `actionPriority` to guide automated clients.
 -   **REST + Reactive MCP Surfaces**: Primary agent access paths with strong content and governance semantics, including remote MCP subscriptions for pushed runtime events.
 -   **Governance by Default**: Dry-run support, approval workflows, audit logs, idempotency, and multi-tenant isolation.
 -   **Native Payments**: Built-in L402 offer, purchase, entitlement, and Lightning-gated read flows for machine-native paid access.
--   **Supervisor Control Plane**: Human oversight for content, globals, schemas, assets, approvals, audit, payments, API key management, and preview-aware review loops.
+-   **Supervisor Control Plane**: Human oversight for content, globals, schemas, forms, jobs, assets, approvals, audit, payments, API key management, and preview-aware review loops.
 
 ### Optional Modules
 
@@ -89,7 +91,7 @@ For a look ahead at what is in active development versus what is experimental, c
     LNBITS_BASE_URL=
     LNBITS_ADMIN_KEY=
     ```
-    `OPENAI_API_KEY` is optional but highly recommended. Supplying it automatically enables native Vector RAG (embeddings and semantic search). `AUTH_REQUIRED=false` only relaxes public discovery; write routes still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is enabled in a non-production environment. Fresh installs also need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status` to confirm bootstrap readiness and use `POST /api/domains` when `domainCount` is `0`. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth.
+    `OPENAI_API_KEY` is optional but highly recommended. Supplying it automatically enables native Vector RAG (embeddings and semantic search). `AUTH_REQUIRED=false` only relaxes public discovery; write routes still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is enabled in a non-production environment. Fresh installs also need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status` to confirm bootstrap readiness, then use `POST /api/domains` or MCP `create_domain` when `domainCount` is `0`. For agent sessions, `guide_task("bootstrap-workspace")` is now the canonical bootstrap handoff. `ALLOW_INSECURE_LOCAL_ADMIN` stays `false` by default and should only ever be enabled for local manual development when you intentionally want to bypass API-key auth.
 
     Asset storage defaults to `local`. To use a remote object store, set `ASSET_STORAGE_PROVIDER=s3` plus the bucket, region, and credentials shown above. `ASSET_S3_ENDPOINT` and `ASSET_S3_FORCE_PATH_STYLE=true` support S3-compatible providers such as Cloudflare R2, MinIO, or self-hosted gateways. If `s3` is configured without the required settings, WordClaw falls back to the local provider and reports the fallback through `GET /api/capabilities` and `GET /api/deployment-status`. `ASSET_DIRECT_UPLOAD_TTL_SECONDS` controls how long a provider-issued upload URL and completion token remain valid.
 
@@ -179,12 +181,17 @@ npx tsx src/cli/index.ts audit guide --entity-type content_item --entity-id 123
 npx tsx src/cli/index.ts content-types list --limit 10
 npx tsx src/cli/index.ts globals list
 npx tsx src/cli/index.ts globals get --slug site-settings --published
+npx tsx src/cli/index.ts schema generate --out ./generated/wordclaw
 npx tsx src/cli/index.ts ct ls --limit 10 --raw
 npx tsx src/cli/index.ts content create --content-type-id 1 --data-file item.json
 npx tsx src/cli/index.ts content get --id 123 --published --locale nl
 npx tsx src/cli/index.ts content used-by --id 123
 npx tsx src/cli/index.ts content preview-token --id 123
 npx tsx src/cli/index.ts globals preview-token --slug site-settings
+npx tsx src/cli/index.ts forms list
+npx tsx src/cli/index.ts forms public --slug contact --domain-id 1
+npx tsx src/cli/index.ts jobs list --status queued
+npx tsx src/cli/index.ts jobs schedule-status --id 123 --status published --run-at 2026-03-29T18:00:00Z
 npx tsx src/cli/index.ts content project --content-type-id 1 --group-by category --metric count
 npx tsx src/cli/index.ts content list --content-type-id 1 --include-archived
 npx tsx src/cli/index.ts assets list --access-mode public --limit 10
@@ -211,6 +218,9 @@ The CLI is JSON-first so agents can script it reliably, and `--raw` is available
 - locale-aware reads plus `--published` access to the latest published snapshot for content items and globals
 - preview-token issuance for scoped content item and global preview flows
 - reverse-reference inspection for content items and assets
+- schema artifact generation via `schema generate --out <dir>`
+- reusable form definition management plus public-form inspection and submission
+- background job inspection, generic job enqueueing, and scheduled content-status transitions
 - schema-aware field queries, grouped content projections, and TTL lifecycle handling for session-like content
 - public write tokens plus bounded public content writes for session-like actors
 - REST asset upload, derivative variant creation/listing, direct-provider upload issuance/completion, metadata inspection, signed-access issuance, offer lookup, restore/purge lifecycle operations, and storage-provider discovery

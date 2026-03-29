@@ -183,6 +183,34 @@
       "when": 1773766800000,
       "tag": "0025_asset_derivatives",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1774731600000,
+      "tag": "0026_singleton_globals",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1774773000000,
+      "tag": "0027_schema_manifests",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1774818000000,
+      "tag": "0028_form_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1774818600000,
+      "tag": "0029_background_jobs",
+      "breakpoints": true
     }
   ]
 }

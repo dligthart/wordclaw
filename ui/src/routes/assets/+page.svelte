@@ -79,6 +79,24 @@
         note: string;
     };
 
+    type ReferenceUsage = {
+        contentItemId: number;
+        contentTypeId: number;
+        contentTypeName: string;
+        contentTypeSlug: string;
+        path: string;
+        version: number;
+        status?: string;
+        contentItemVersionId?: number;
+    };
+
+    type ReferenceUsageSummary = {
+        activeReferenceCount: number;
+        historicalReferenceCount: number;
+        activeReferences: ReferenceUsage[];
+        historicalReferences: ReferenceUsage[];
+    };
+
     type AssetListMeta = {
         total: number;
         limit: number;
@@ -109,6 +127,7 @@
     let selectedDerivatives = $state<Asset[]>([]);
     let offers = $state<AssetOffer[]>([]);
     let accessGrant = $state<AssetAccessGrant | null>(null);
+    let assetUsage = $state<ReferenceUsageSummary | null>(null);
     let meta = $state<AssetListMeta>({ ...DEFAULT_META });
 
     let loading = $state(true);
@@ -116,6 +135,7 @@
     let loadingInspector = $state(false);
     let loadingDerivatives = $state(false);
     let loadingOffers = $state(false);
+    let loadingUsage = $state(false);
     let error = $state<any>(null);
 
     let search = $state("");
@@ -370,6 +390,19 @@
         }
     }
 
+    async function loadAssetUsage(id: number) {
+        loadingUsage = true;
+        try {
+            const response = await fetchApi(`/assets/${id}/used-by`);
+            assetUsage = response.data ?? null;
+        } catch (err) {
+            assetUsage = null;
+            showErrorToast("Failed to load asset usage", err);
+        } finally {
+            loadingUsage = false;
+        }
+    }
+
     async function loadAssetDetails(id: number, silent = false) {
         if (!silent) {
             loadingInspector = true;
@@ -379,7 +412,9 @@
             const response = await fetchApi(`/assets/${id}`);
             selectedAsset = response.data;
             accessGrant = null;
+            assetUsage = null;
             const followUps: Promise<void>[] = [
+                loadAssetUsage(id),
                 loadAssetDerivatives(
                     selectedAsset?.sourceAssetId ?? id,
                     selectedAsset?.status ?? "active",
@@ -392,6 +427,7 @@
             }
             await Promise.all(followUps);
         } catch (err) {
+            assetUsage = null;
             showErrorToast("Failed to load asset", err);
         } finally {
             loadingInspector = false;
@@ -457,6 +493,7 @@
                 accessGrant = null;
                 offers = [];
                 selectedDerivatives = [];
+                assetUsage = null;
             }
         } catch (err) {
             error = err;
@@ -465,6 +502,7 @@
             offers = [];
             selectedDerivatives = [];
             accessGrant = null;
+            assetUsage = null;
         } finally {
             loading = false;
             refreshing = false;
@@ -1370,6 +1408,92 @@
                             {:else}
                                 <p class="text-sm text-slate-500 dark:text-slate-400">
                                     No derivative variants are currently stored for this asset.
+                                </p>
+                            {/if}
+                        </div>
+                    </Surface>
+
+                    <Surface>
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                    Used by
+                                </p>
+                                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                                    Review current and historical content references before replacing or purging this asset.
+                                </p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline">
+                                    {assetUsage?.activeReferenceCount ?? 0} active
+                                </Badge>
+                                <Badge variant="outline">
+                                    {assetUsage?.historicalReferenceCount ?? 0} historical
+                                </Badge>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 space-y-4">
+                            {#if loadingUsage}
+                                <div class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                                    <LoadingSpinner size="sm" />
+                                    <p class="text-sm text-slate-500 dark:text-slate-400">
+                                        Loading usage references…
+                                    </p>
+                                </div>
+                            {:else if assetUsage}
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                            Active references
+                                        </p>
+                                        {#if assetUsage.activeReferences.length > 0}
+                                            <div class="mt-3 space-y-3">
+                                                {#each assetUsage.activeReferences.slice(0, 5) as reference}
+                                                    <div class="rounded-xl border border-slate-200 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-950/40">
+                                                        <p class="text-sm font-medium text-slate-900 dark:text-white">
+                                                            {reference.contentTypeName} #{reference.contentItemId}
+                                                        </p>
+                                                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                            {reference.contentTypeSlug} · {reference.path} · v{reference.version}{reference.status ? ` · ${reference.status}` : ""}
+                                                        </p>
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                        {:else}
+                                            <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                                                No active content items currently reference this asset.
+                                            </p>
+                                        {/if}
+                                    </div>
+
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+                                        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                            Historical references
+                                        </p>
+                                        {#if assetUsage.historicalReferences.length > 0}
+                                            <div class="mt-3 space-y-3">
+                                                {#each assetUsage.historicalReferences.slice(0, 5) as reference}
+                                                    <div class="rounded-xl border border-slate-200 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-950/40">
+                                                        <p class="text-sm font-medium text-slate-900 dark:text-white">
+                                                            {reference.contentTypeName} #{reference.contentItemId}
+                                                        </p>
+                                                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                            {reference.contentTypeSlug} · {reference.path} · v{reference.version}
+                                                        </p>
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                        {:else}
+                                            <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                                                No historical version snapshots reference this asset.
+                                            </p>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {:else}
+                                <p class="text-sm text-slate-500 dark:text-slate-400">
+                                    Usage data is not available for this asset.
                                 </p>
                             {/if}
                         </div>

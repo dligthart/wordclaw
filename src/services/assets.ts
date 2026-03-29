@@ -1,13 +1,16 @@
-import { and, desc, eq, ilike, inArray, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, lt, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { assets, contentItems, contentItemVersions, contentTypes } from '../db/schema.js';
+import { assets, contentItems, contentTypes } from '../db/schema.js';
 import { getAssetDirectUploadTtlSeconds } from '../config/assets.js';
 import { logAudit } from './audit.js';
 import { getAssetStorageProvider, type AssetObjectStat, type IssuedDirectAssetUpload } from './asset-storage.js';
 import type { AuditActor } from './actor-identity.js';
 import { issueDirectAssetUploadToken, verifyDirectAssetUploadToken } from './asset-direct-upload.js';
-import { extractAssetReferencesFromContent } from './content-schema.js';
+import { findAssetUsage } from './reference-usage.js';
+
+export { findAssetUsage } from './reference-usage.js';
+export type { ReferenceUsage as AssetReferenceUsage, ReferenceUsageSummary as AssetUsageSummary } from './reference-usage.js';
 
 export type AssetAccessMode = 'public' | 'signed' | 'entitled';
 export type AssetStatus = 'active' | 'deleted';
@@ -99,22 +102,6 @@ export class AssetListError extends Error {
         this.context = context;
     }
 }
-
-export type AssetReferenceUsage = {
-    contentItemId: number;
-    contentTypeId: number;
-    contentTypeName: string;
-    contentTypeSlug: string;
-    path: string;
-    version: number;
-    status?: string;
-    contentItemVersionId?: number;
-};
-
-export type AssetUsageSummary = {
-    activeReferences: AssetReferenceUsage[];
-    historicalReferences: AssetReferenceUsage[];
-};
 
 type PersistAssetRecordInput = {
     domainId: number;
@@ -810,100 +797,6 @@ export async function restoreAsset(id: number, domainId: number, actor?: AuditAc
     );
 
     return restored;
-}
-
-export async function findAssetUsage(domainId: number, assetId: number): Promise<AssetUsageSummary> {
-    const candidateTypes = await db.select({
-        id: contentTypes.id,
-        name: contentTypes.name,
-        slug: contentTypes.slug,
-        schema: contentTypes.schema
-    })
-        .from(contentTypes)
-        .where(and(
-            eq(contentTypes.domainId, domainId),
-            sql<boolean>`${contentTypes.schema} like '%x-wordclaw-field-kind%'`
-        ));
-
-    if (candidateTypes.length === 0) {
-        return {
-            activeReferences: [],
-            historicalReferences: []
-        };
-    }
-
-    const schemaByTypeId = new Map(candidateTypes.map((contentType) => [contentType.id, contentType]));
-    const contentTypeIds = candidateTypes.map((contentType) => contentType.id);
-
-    const currentRows = await db.select({
-        contentItemId: contentItems.id,
-        contentTypeId: contentItems.contentTypeId,
-        status: contentItems.status,
-        version: contentItems.version,
-        data: contentItems.data
-    })
-        .from(contentItems)
-        .where(and(
-            eq(contentItems.domainId, domainId),
-            inArray(contentItems.contentTypeId, contentTypeIds)
-        ));
-
-    const historicalRows = await db.select({
-        contentItemVersionId: contentItemVersions.id,
-        contentItemId: contentItemVersions.contentItemId,
-        version: contentItemVersions.version,
-        data: contentItemVersions.data,
-        contentTypeId: contentItems.contentTypeId
-    })
-        .from(contentItemVersions)
-        .innerJoin(contentItems, eq(contentItemVersions.contentItemId, contentItems.id))
-        .where(and(
-            eq(contentItems.domainId, domainId),
-            inArray(contentItems.contentTypeId, contentTypeIds)
-        ));
-
-    const activeReferences = currentRows.flatMap((row) => {
-        const contentType = schemaByTypeId.get(row.contentTypeId);
-        if (!contentType) {
-            return [];
-        }
-
-        return extractAssetReferencesFromContent(contentType.schema, row.data)
-            .filter((reference) => reference.assetId === assetId)
-            .map((reference) => ({
-                contentItemId: row.contentItemId,
-                contentTypeId: row.contentTypeId,
-                contentTypeName: contentType.name,
-                contentTypeSlug: contentType.slug,
-                path: reference.path,
-                version: row.version,
-                status: row.status
-            }));
-    });
-
-    const historicalReferences = historicalRows.flatMap((row) => {
-        const contentType = schemaByTypeId.get(row.contentTypeId);
-        if (!contentType) {
-            return [];
-        }
-
-        return extractAssetReferencesFromContent(contentType.schema, row.data)
-            .filter((reference) => reference.assetId === assetId)
-            .map((reference) => ({
-                contentItemId: row.contentItemId,
-                contentItemVersionId: row.contentItemVersionId,
-                contentTypeId: row.contentTypeId,
-                contentTypeName: contentType.name,
-                contentTypeSlug: contentType.slug,
-                path: reference.path,
-                version: row.version
-            }));
-    });
-
-    return {
-        activeReferences,
-        historicalReferences
-    };
 }
 
 export async function purgeAsset(id: number, domainId: number, actor?: AuditActor) {

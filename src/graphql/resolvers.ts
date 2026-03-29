@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, lte, or } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, lte, ne, or } from 'drizzle-orm';
 import { getDomainId } from '../api/auth.js';
 import { GraphQLError } from 'graphql';
 import GraphQLJSON from 'graphql-type-json';
@@ -7,7 +7,13 @@ import { isExperimentalAgentRunsEnabled } from '../config/runtime-features.js';
 import { db } from '../db/index.js';
 import { auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
-import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema, redactPremiumFields } from '../services/content-schema.js';
+import {
+    ValidationFailure,
+    redactPremiumFields,
+    resolveContentTypeSchemaSource,
+    validateContentDataAgainstSchema
+} from '../services/content-schema.js';
+import { getAsset } from '../services/assets.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { enforceL402Payment } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
@@ -16,17 +22,50 @@ import { EmbeddingService } from '../services/embedding.js';
 import {
     ContentItemListError,
     ContentItemProjectionError,
+    getLatestPublishedVersionsForItems,
     listContentItems,
-    projectContentItems
+    projectContentItems,
+    resolveContentItemReadView
 } from '../services/content-item.service.js';
 import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 import { toAuditActor, type AuditActor } from '../services/actor-identity.js';
+import {
+    countContentItemsForContentType,
+    findSingletonContentConflict,
+    getGlobalContentTypeBySlug,
+    getSingletonContentItem,
+    isSingletonContentType,
+    listGlobalContentTypes,
+    normalizeContentTypeKind
+} from '../services/content-type.service.js';
+import {
+    FormServiceError,
+    createFormDefinition,
+    deleteFormDefinition,
+    getFormDefinitionById,
+    listFormDefinitions,
+    updateFormDefinition,
+    type ResolvedFormDefinition
+} from '../services/forms.js';
+import { findAssetUsage, findContentItemUsage, type ReferenceUsageSummary } from '../services/reference-usage.js';
+import {
+    cancelJob,
+    createJob,
+    getJob,
+    listJobs,
+    scheduleContentStatusTransition,
+    serializeJob
+} from '../services/jobs.js';
+import { jobsWorker } from '../workers/jobs.worker.js';
 
 const TARGET_VERSION_NOT_FOUND = 'TARGET_VERSION_NOT_FOUND';
 const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
     'content_types_slug_unique',
     'content_types_domain_slug_unique'
+]);
+const FORM_SLUG_CONSTRAINTS = new Set([
+    'form_definitions_domain_slug_unique'
 ]);
 
 const experimentalAgentRunQueryResolvers = isExperimentalAgentRunsEnabled() ? {
@@ -271,6 +310,9 @@ type IdArg = { id: IdValue };
 type OptionalContentTypeArg = {
     contentTypeId?: IdValue;
     status?: string;
+    draft?: boolean;
+    locale?: string;
+    fallbackLocale?: string;
     createdAfter?: string;
     createdBefore?: string;
     fieldName?: string;
@@ -281,6 +323,11 @@ type OptionalContentTypeArg = {
     limit?: number;
     offset?: number;
     cursor?: string;
+};
+type LocalizedReadArgs = {
+    draft?: boolean;
+    locale?: string;
+    fallbackLocale?: string;
 };
 type ContentProjectionArgs = {
     contentTypeId: IdValue;
@@ -312,17 +359,90 @@ type AuditLogArgs = {
 type CreateContentTypeArgs = {
     name: string;
     slug: string;
+    kind?: 'collection' | 'singleton';
     description?: string;
-    schema: string | Record<string, any>;
+    schema?: string | Record<string, any>;
+    schemaManifest?: string | Record<string, any>;
     dryRun?: boolean;
 };
 type UpdateContentTypeArgs = {
     id: IdValue;
     name?: string;
     slug?: string;
+    kind?: 'collection' | 'singleton';
     description?: string;
     schema?: string | Record<string, any>;
+    schemaManifest?: string | Record<string, any>;
     dryRun?: boolean;
+};
+type GlobalArgs = {
+    slug: string;
+    draft?: boolean;
+    locale?: string;
+    fallbackLocale?: string;
+};
+type UpdateGlobalArgs = {
+    slug: string;
+    data: string | Record<string, any>;
+    status?: string;
+    dryRun?: boolean;
+};
+type CreateFormArgs = {
+    name: string;
+    slug: string;
+    description?: string;
+    contentTypeId: IdValue;
+    fields: unknown;
+    defaultData?: Record<string, unknown>;
+    active?: boolean;
+    publicRead?: boolean;
+    submissionStatus?: string;
+    workflowTransitionId?: IdValue | null;
+    requirePayment?: boolean;
+    webhookUrl?: string;
+    webhookSecret?: string;
+    successMessage?: string;
+};
+type UpdateFormArgs = {
+    id: IdValue;
+    name?: string;
+    slug?: string;
+    description?: string | null;
+    contentTypeId?: IdValue;
+    fields?: unknown;
+    defaultData?: Record<string, unknown>;
+    active?: boolean;
+    publicRead?: boolean;
+    submissionStatus?: string;
+    workflowTransitionId?: IdValue | null;
+    requirePayment?: boolean;
+    webhookUrl?: string | null;
+    webhookSecret?: string | null;
+    successMessage?: string | null;
+};
+type JobsArgs = {
+    status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+    kind?: 'content_status_transition' | 'outbound_webhook';
+    limit?: number;
+    offset?: number;
+};
+type CreateJobArgs = {
+    kind: 'content_status_transition' | 'outbound_webhook';
+    payload: Record<string, unknown>;
+    queue?: string;
+    runAt?: string;
+    maxAttempts?: number;
+};
+type ScheduleContentStatusChangeArgs = {
+    contentItemId: IdValue;
+    targetStatus: string;
+    runAt: string;
+    maxAttempts?: number;
+};
+type LocalizedContentItemArgs = IdArg & {
+    draft?: boolean;
+    locale?: string;
+    fallbackLocale?: string;
 };
 type DeleteContentTypeArgs = {
     id: IdValue;
@@ -466,6 +586,38 @@ function toErrorFromValidation(failure: ValidationFailure): GraphQLError {
     });
 }
 
+function resolveLocalizedReadOptions(
+    draft?: boolean,
+    locale?: string,
+    fallbackLocale?: string
+): {
+    draft: boolean;
+    locale?: string;
+    fallbackLocale?: string;
+} {
+    const normalizedDraft = draft === false ? false : true;
+    const normalizedLocale = typeof locale === 'string' && locale.trim().length > 0
+        ? locale.trim()
+        : undefined;
+    const normalizedFallbackLocale = typeof fallbackLocale === 'string' && fallbackLocale.trim().length > 0
+        ? fallbackLocale.trim()
+        : undefined;
+
+    if (!normalizedLocale && normalizedFallbackLocale) {
+        throw toError(
+            'Locale is required when fallbackLocale is provided',
+            'CONTENT_LOCALE_REQUIRED',
+            'Provide locale when requesting fallbackLocale on localized content reads.'
+        );
+    }
+
+    return {
+        draft: normalizedDraft,
+        locale: normalizedLocale,
+        fallbackLocale: normalizedFallbackLocale
+    };
+}
+
 function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
     const visited = new Set<unknown>();
     let candidate: unknown = error;
@@ -492,6 +644,55 @@ function contentTypeSlugConflictError(slug: string): GraphQLError {
         'CONTENT_TYPE_SLUG_CONFLICT',
         `Choose a different slug than '${slug}' or update the existing content type in this domain.`
     );
+}
+
+function invalidContentTypeKindError(rawKind: unknown): GraphQLError {
+    return toError(
+        'Invalid content type kind',
+        'INVALID_CONTENT_TYPE_KIND',
+        `Use kind of "collection" or "singleton" instead of '${String(rawKind)}'.`
+    );
+}
+
+function singletonContentItemConflictError(contentType: { slug: string }, existingItemId: number): GraphQLError {
+    return toError(
+        'Singleton content item already exists',
+        'SINGLETON_CONTENT_ITEM_EXISTS',
+        `Content type '${contentType.slug}' is a singleton and already uses content item ${existingItemId}. Update it through updateGlobal or updateContentItem.`
+    );
+}
+
+function singletonContentTypeRequiresSingleItemError(contentType: { slug: string }, itemCount: number): GraphQLError {
+    return toError(
+        'Singleton content type requires at most one item',
+        'SINGLETON_CONTENT_TYPE_REQUIRES_ONE_ITEM',
+        `Content type '${contentType.slug}' currently has ${itemCount} items. Archive, delete, or consolidate to a single item before changing kind to 'singleton'.`
+    );
+}
+
+function notFoundGlobalError(slug: string): GraphQLError {
+    return toError(
+        'Global content type not found',
+        'GLOBAL_CONTENT_TYPE_NOT_FOUND',
+        `No singleton/global content type exists with slug '${slug}'. Query globals to find valid slugs.`
+    );
+}
+
+async function findSingletonConflictError(
+    domainId: number,
+    contentType: { id: number; kind: string; slug: string },
+    excludeContentItemId?: number
+) {
+    if (!isSingletonContentType(contentType.kind)) {
+        return null;
+    }
+
+    const conflict = await findSingletonContentConflict(domainId, contentType.id, excludeContentItemId);
+    if (!conflict) {
+        return null;
+    }
+
+    return singletonContentItemConflictError(contentType, conflict.id);
 }
 
 function parseId(id: IdValue, fieldName = 'id'): number {
@@ -715,6 +916,114 @@ function notFoundContentItemError(id: number): GraphQLError {
     );
 }
 
+function notFoundAssetError(id: number): GraphQLError {
+    return toError(
+        'Asset not found',
+        'ASSET_NOT_FOUND',
+        `The asset with ID ${id} does not exist. Query the REST assets endpoints to find a valid ID.`
+    );
+}
+
+function notFoundFormError(id: number): GraphQLError {
+    return toError(
+        'Form definition not found',
+        'FORM_DEFINITION_NOT_FOUND',
+        `No form definition exists with ID ${id} in the current domain.`
+    );
+}
+
+function notFoundJobError(id: number): GraphQLError {
+    return toError(
+        'Job not found',
+        'JOB_NOT_FOUND',
+        `No background job exists with ID ${id} in the current domain.`
+    );
+}
+
+function formSlugConflictError(slug: string): GraphQLError {
+    return toError(
+        'Form slug already exists',
+        'FORM_DEFINITION_SLUG_CONFLICT',
+        `Choose a different slug than '${slug}'.`
+    );
+}
+
+function jobCancelForbiddenError(id: number): GraphQLError {
+    return toError(
+        'Job can no longer be cancelled',
+        'JOB_CANCEL_FORBIDDEN',
+        `Background job ${id} is no longer queued. Only queued jobs can be cancelled.`
+    );
+}
+
+function serializeReferenceUsageSummary(summary: ReferenceUsageSummary) {
+    return {
+        activeReferenceCount: summary.activeReferences.length,
+        historicalReferenceCount: summary.historicalReferences.length,
+        activeReferences: summary.activeReferences,
+        historicalReferences: summary.historicalReferences
+    };
+}
+
+function serializeFormDefinition(form: ResolvedFormDefinition) {
+    return {
+        id: form.id,
+        domainId: form.domainId,
+        name: form.name,
+        slug: form.slug,
+        description: form.description,
+        contentTypeId: form.contentTypeId,
+        contentTypeName: form.contentTypeName,
+        contentTypeSlug: form.contentTypeSlug,
+        active: form.active,
+        publicRead: form.publicRead,
+        submissionStatus: form.submissionStatus,
+        workflowTransitionId: form.workflowTransitionId,
+        requirePayment: form.requirePayment,
+        successMessage: form.successMessage,
+        fields: form.fields.map((field) => ({
+            name: field.name,
+            label: field.label ?? null,
+            description: field.description ?? null,
+            type: field.type,
+            required: field.required,
+            placeholder: field.placeholder ?? null,
+            options: (field.options ?? []).map((option) => ({
+                label: option.label ?? null,
+                value: option.value
+            }))
+        })),
+        defaultData: form.defaultData,
+        createdAt: form.createdAt.toISOString(),
+        updatedAt: form.updatedAt.toISOString()
+    };
+}
+
+function serializeGraphqlJob(row: ReturnType<typeof serializeJob>) {
+    return {
+        ...row,
+        runAt: row.runAt.toISOString(),
+        claimedAt: toIsoString(row.claimedAt),
+        startedAt: toIsoString(row.startedAt),
+        completedAt: toIsoString(row.completedAt),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString()
+    };
+}
+
+function serializeJobsWorkerStatus() {
+    return jobsWorker.getStatus();
+}
+
+function toErrorFromFormService(error: FormServiceError): GraphQLError {
+    return toError(
+        error.message,
+        error.code,
+        error.remediation,
+        error.context
+    );
+}
+
 function emptyUpdateBodyError(fields: string): GraphQLError {
     return toError(
         'Empty update payload',
@@ -740,7 +1049,7 @@ async function validateContentItemUpdateInput(item: {
     contentTypeId?: number;
     data?: string | Record<string, any>;
     status?: string;
-}, index: number, domainId: number): Promise<{
+}, index: number, domainId: number, plannedSingletonAssignments?: Map<number, number>): Promise<{
     ok: true;
     existing: typeof contentItems.$inferSelect;
     updateData: ContentItemUpdateInput;
@@ -803,6 +1112,27 @@ async function validateContentItemUpdateInput(item: {
         };
     }
 
+    if (isSingletonContentType(targetContentType.kind)) {
+        const conflict = await findSingletonContentConflict(domainId, targetContentTypeId, existing.id);
+        if (conflict) {
+            return {
+                ok: false,
+                error: buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${targetContentType.slug}' already uses content item ${conflict.id}`)
+            };
+        }
+
+        if (plannedSingletonAssignments) {
+            const reservedBy = plannedSingletonAssignments.get(targetContentTypeId);
+            if (reservedBy !== undefined && reservedBy !== existing.id) {
+                return {
+                    ok: false,
+                    error: buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${targetContentType.slug}' is already targeted by content item ${reservedBy}.`)
+                };
+            }
+            plannedSingletonAssignments.set(targetContentTypeId, existing.id);
+        }
+    }
+
     return {
         ok: true,
         existing,
@@ -835,7 +1165,7 @@ function withPolicy(
 
         let l402Result;
         // Apply L402 Payment Check for create/update/delete on content items
-        if (resource.type === 'content_item' || resource.type === 'batch' || (operation === 'content.write' && !['content_type', 'webhook', 'agent_run', 'agent_run_definition'].includes(resource.type))) {
+        if (resource.type === 'content_item' || resource.type === 'batch' || (operation === 'content.write' && !['content_type', 'webhook', 'agent_run', 'agent_run_definition', 'form_definition', 'job'].includes(resource.type))) {
             const pricingContext = {
                 resourceType: 'content-item',
                 operation: operation.includes('write') ? (args.id ? 'update' : 'create') : 'read',
@@ -921,9 +1251,73 @@ export const resolvers = {
             return type || null;
         }),
 
+        globals: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, { draft, locale, fallbackLocale }: LocalizedReadArgs, context: unknown) => {
+            const domainId = getDomainId(context);
+            const localizedReadOptions = resolveLocalizedReadOptions(draft, locale, fallbackLocale);
+            const globalTypes = await listGlobalContentTypes(domainId);
+            const rows = await Promise.all(globalTypes.map(async (contentType) => ({
+                contentType,
+                item: await getSingletonContentItem(domainId, contentType.id)
+            })));
+            const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+                rows.flatMap((row) => row.item && row.item.status !== 'published' ? [row.item.id] : [])
+            );
+
+            return rows.map(({ contentType, item }) => ({
+                contentType,
+                item: item
+                    ? resolveContentItemReadView(
+                        item,
+                        contentType.schema,
+                        localizedReadOptions,
+                        latestPublishedVersions.get(item.id)
+                    )
+                    : null
+            }));
+        }),
+
+        global: withPolicy('content.read', (args) => ({ type: 'content_type', id: args.slug }), async (_parent: unknown, { slug, draft, locale, fallbackLocale }: GlobalArgs, context: unknown) => {
+            const domainId = getDomainId(context);
+            const localizedReadOptions = resolveLocalizedReadOptions(draft, locale, fallbackLocale);
+            const contentType = await getGlobalContentTypeBySlug(slug, domainId);
+            if (!contentType) {
+                return null;
+            }
+
+            const item = await getSingletonContentItem(domainId, contentType.id);
+            const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+                item && item.status !== 'published' ? [item.id] : []
+            );
+            return {
+                contentType,
+                item: item
+                    ? resolveContentItemReadView(
+                        item,
+                        contentType.schema,
+                        localizedReadOptions,
+                        latestPublishedVersions.get(item.id)
+                    )
+                    : null
+            };
+        }),
+
+        forms: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, _args: unknown, context: unknown) => {
+            const forms = await listFormDefinitions(getDomainId(context));
+            return forms.map((form) => serializeFormDefinition(form));
+        }),
+
+        form: withPolicy('content.read', (args) => ({ type: 'system', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
+            const numericId = parseId(id);
+            const form = await getFormDefinitionById(getDomainId(context), numericId);
+            return form ? serializeFormDefinition(form) : null;
+        }),
+
         contentItems: withPolicy('content.read', (args) => ({ type: 'system' }), async (_parent: unknown, {
             contentTypeId,
             status,
+            draft,
+            locale,
+            fallbackLocale,
             createdAfter,
             createdBefore,
             fieldName,
@@ -936,10 +1330,14 @@ export const resolvers = {
             cursor
         }: OptionalContentTypeArg, context: unknown) => {
             const numericTypeId = parseOptionalId(contentTypeId, 'contentTypeId');
+            const localizedReadOptions = resolveLocalizedReadOptions(draft, locale, fallbackLocale);
             try {
                 const result = await listContentItems(getDomainId(context), {
                     contentTypeId: numericTypeId,
                     status,
+                    draft: localizedReadOptions.draft,
+                    locale: localizedReadOptions.locale,
+                    fallbackLocale: localizedReadOptions.fallbackLocale,
                     createdAfter: parseDateArg(createdAfter, 'createdAfter'),
                     createdBefore: parseDateArg(createdBefore, 'createdBefore'),
                     fieldName,
@@ -1004,8 +1402,9 @@ export const resolvers = {
             }
         }),
 
-        contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
+        contentItem: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id, draft, locale, fallbackLocale }: LocalizedContentItemArgs, context: unknown) => {
             const numericId = parseId(id);
+            const localizedReadOptions = resolveLocalizedReadOptions(draft, locale, fallbackLocale);
             const [row] = await db.select({
                 item: contentItems,
                 basePrice: contentTypes.basePrice,
@@ -1023,7 +1422,16 @@ export const resolvers = {
                     'This content item is paywalled. You must use the REST API /api/content-items/:id to fulfill the L402 payment challenge.'
                 );
             }
-            return ensureContentItemLifecycleState(row.item, row.schema);
+            const item = await ensureContentItemLifecycleState(row.item, row.schema);
+            const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+                item.status === 'published' ? [] : [item.id]
+            );
+            return resolveContentItemReadView(
+                item,
+                row.schema,
+                localizedReadOptions,
+                latestPublishedVersions.get(item.id)
+            );
         }),
 
         contentItemVersions: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
@@ -1040,6 +1448,34 @@ export const resolvers = {
                 .innerJoin(contentItems, eq(contentItemVersions.contentItemId, contentItems.id))
                 .where(and(eq(contentItemVersions.contentItemId, numericId), eq(contentItems.domainId, getDomainId(context))))
                 .orderBy(desc(contentItemVersions.version));
+        }),
+
+        contentItemUsedBy: withPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
+            const numericId = parseId(id);
+            const domainId = getDomainId(context);
+            const [item] = await db.select({ id: contentItems.id })
+                .from(contentItems)
+                .where(and(eq(contentItems.id, numericId), eq(contentItems.domainId, domainId)));
+
+            if (!item) {
+                throw notFoundContentItemError(numericId);
+            }
+
+            const usage = await findContentItemUsage(domainId, numericId);
+            return serializeReferenceUsageSummary(usage);
+        }),
+
+        assetUsedBy: withPolicy('content.read', (args) => ({ type: 'asset', id: args.id }), async (_parent: unknown, { id }: IdArg, context: unknown) => {
+            const numericId = parseId(id);
+            const domainId = getDomainId(context);
+            const asset = await getAsset(numericId, domainId, { includeDeleted: true });
+
+            if (!asset) {
+                throw notFoundAssetError(numericId);
+            }
+
+            const usage = await findAssetUsage(domainId, numericId);
+            return serializeReferenceUsageSummary(usage);
         }),
 
         auditLogs: withPolicy('audit.read', () => ({ type: 'system' }), async (_parent: unknown, { entityType, entityId, action, limit: rawLimit, cursor }: AuditLogArgs, context: unknown) => {
@@ -1145,6 +1581,24 @@ export const resolvers = {
             };
         }),
 
+        jobs: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, args: JobsArgs, context?: unknown) => {
+            const rows = await listJobs(getDomainId(context), {
+                status: args.status,
+                kind: args.kind,
+                limit: clampLimit(args.limit),
+                offset: clampOffset(args.offset)
+            });
+            return rows.map((row) => serializeGraphqlJob(serializeJob(row)));
+        }),
+
+        job: withPolicy('content.read', (args) => ({ type: 'system', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
+            const numericId = parseId(id);
+            const job = await getJob(getDomainId(context), numericId);
+            return job ? serializeGraphqlJob(serializeJob(job)) : null;
+        }),
+
+        jobsWorkerStatus: withPolicy('content.read', () => ({ type: 'system' }), async () => serializeJobsWorkerStatus()),
+
         semanticSearch: withPolicy('content.read', () => ({ type: 'system' }), async (_parent: unknown, args: { query: string, limit?: number }, context: unknown) => {
             return await EmbeddingService.searchSemanticKnowledge(getDomainId(context), args.query, args.limit);
         }),
@@ -1155,10 +1609,16 @@ export const resolvers = {
     Mutation: {
         createContentType: withPolicy('content.write', () => ({ type: 'system' }), async (_parent: unknown, args: CreateContentTypeArgs, context?: unknown) => {
             const now = new Date();
-            const schemaStr = typeof args.schema === 'string' ? args.schema : JSON.stringify(args.schema);
-            const schemaFailure = validateContentTypeSchema(schemaStr);
-            if (schemaFailure) {
-                throw toErrorFromValidation(schemaFailure);
+            const kind = normalizeContentTypeKind(args.kind ?? 'collection');
+            if (!kind) {
+                throw invalidContentTypeKindError(args.kind);
+            }
+            const schemaSource = resolveContentTypeSchemaSource({
+                schema: args.schema,
+                schemaManifest: args.schemaManifest
+            }, { requireSource: true });
+            if (!schemaSource.ok) {
+                throw toErrorFromValidation(schemaSource.failure);
             }
 
             if (args.dryRun) {
@@ -1166,8 +1626,10 @@ export const resolvers = {
                     id: 0,
                     name: args.name,
                     slug: args.slug,
+                    kind,
                     description: args.description,
-                    schema: schemaStr,
+                    schemaManifest: schemaSource.value!.schemaManifest,
+                    schema: schemaSource.value!.schema,
                     createdAt: now,
                     updatedAt: now
                 };
@@ -1179,8 +1641,10 @@ export const resolvers = {
                     domainId: getDomainId(context),
                     name: args.name,
                     slug: args.slug,
+                    kind,
                     description: args.description,
-                    schema: schemaStr
+                    schemaManifest: schemaSource.value!.schemaManifest,
+                    schema: schemaSource.value!.schema
                 }).returning();
             } catch (error) {
                 if (isUniqueViolation(error, CONTENT_TYPE_SLUG_CONSTRAINTS)) {
@@ -1195,31 +1659,48 @@ export const resolvers = {
 
         updateContentType: withPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async (_parent: unknown, args: UpdateContentTypeArgs, context?: unknown) => {
             const id = parseId(args.id);
-            const schemaStr = args.schema ? (typeof args.schema === 'string' ? args.schema : JSON.stringify(args.schema)) : undefined;
+            const normalizedKind = args.kind !== undefined ? (normalizeContentTypeKind(args.kind) ?? undefined) : undefined;
+            if (args.kind !== undefined && !normalizedKind) {
+                throw invalidContentTypeKindError(args.kind);
+            }
+            const schemaSource = resolveContentTypeSchemaSource({
+                schema: args.schema,
+                schemaManifest: args.schemaManifest
+            });
+            if (!schemaSource.ok) {
+                throw toErrorFromValidation(schemaSource.failure);
+            }
             const updateData = stripUndefined({
                 name: args.name,
                 slug: args.slug,
+                kind: normalizedKind,
                 description: args.description,
-                schema: schemaStr
+                ...(schemaSource.value
+                    ? {
+                        schema: schemaSource.value.schema,
+                        schemaManifest: schemaSource.value.schemaManifest
+                    }
+                    : {})
             });
 
             if (!hasDefinedValues(updateData)) {
-                throw emptyUpdateBodyError('name, slug, description, schema');
+                throw emptyUpdateBodyError('name, slug, kind, description, schema, schemaManifest');
             }
 
-            if (typeof updateData.schema === 'string') {
-                const schemaFailure = validateContentTypeSchema(updateData.schema);
-                if (schemaFailure) {
-                    throw toErrorFromValidation(schemaFailure);
+            const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(context))));
+            if (!existing) {
+                throw notFoundContentTypeError(id);
+            }
+
+            const targetKind = updateData.kind ?? existing.kind;
+            if (isSingletonContentType(targetKind) && !isSingletonContentType(existing.kind)) {
+                const itemCount = await countContentItemsForContentType(getDomainId(context), existing.id);
+                if (itemCount > 1) {
+                    throw singletonContentTypeRequiresSingleItemError(existing, itemCount);
                 }
             }
 
             if (args.dryRun) {
-                const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, getDomainId(context))));
-                if (!existing) {
-                    throw notFoundContentTypeError(id);
-                }
-
                 return { ...existing, ...updateData };
             }
 
@@ -1285,6 +1766,11 @@ export const resolvers = {
                 throw notFoundContentTypeError(contentTypeId);
             }
 
+            const singletonConflict = await findSingletonConflictError(getDomainId(context), contentType);
+            if (singletonConflict) {
+                throw singletonConflict;
+            }
+
             const contentFailure = await validateContentDataAgainstSchema(contentType.schema, dataStr, getDomainId(context));
             if (contentFailure) {
                 throw toErrorFromValidation(contentFailure);
@@ -1346,6 +1832,7 @@ export const resolvers = {
 
             if (args.dryRun) {
                 const results: BatchResultRow[] = [];
+                const plannedSingletonAssignments = new Map<number, number>();
                 for (const [index, item] of normalizedItems.entries()) {
                     const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(context))));
                     if (!contentType) {
@@ -1357,6 +1844,21 @@ export const resolvers = {
                     if (validation) {
                         results.push(buildBatchError(index, validation.code, validation.error));
                         continue;
+                    }
+
+                    if (isSingletonContentType(contentType.kind)) {
+                        const conflict = await findSingletonContentConflict(getDomainId(context), item.contentTypeId);
+                        if (conflict) {
+                            results.push(buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${conflict.id}`));
+                            continue;
+                        }
+
+                        const reservedBy = plannedSingletonAssignments.get(item.contentTypeId);
+                        if (reservedBy !== undefined) {
+                            results.push(buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`));
+                            continue;
+                        }
+                        plannedSingletonAssignments.set(item.contentTypeId, index);
                     }
 
                     results.push({
@@ -1377,6 +1879,7 @@ export const resolvers = {
                 try {
                     const results = await db.transaction(async (tx) => {
                         const createdRows: BatchResultRow[] = [];
+                        const singletonAssignments = new Map<number, number>();
                         for (const [index, item] of normalizedItems.entries()) {
                             const [contentType] = await tx.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, getDomainId(context))));
                             if (!contentType) {
@@ -1391,6 +1894,24 @@ export const resolvers = {
                             const activeWorkflow = await WorkflowService.getActiveWorkflow(getDomainId(context), item.contentTypeId as number);
                             if (activeWorkflow && item.status && item.status !== 'draft') {
                                 throw new Error(JSON.stringify(buildBatchError(index, 'WORKFLOW_TRANSITION_FORBIDDEN', `Content type governed by workflow. Assign 'draft' during batch creations.`)));
+                            }
+
+                            if (isSingletonContentType(contentType.kind)) {
+                                const [conflict] = await tx.select({ id: contentItems.id })
+                                    .from(contentItems)
+                                    .where(and(
+                                        eq(contentItems.domainId, getDomainId(context)),
+                                        eq(contentItems.contentTypeId, item.contentTypeId)
+                                    ));
+                                if (conflict) {
+                                    throw new Error(JSON.stringify(buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${conflict.id}`)));
+                                }
+
+                                const reservedBy = singletonAssignments.get(item.contentTypeId);
+                                if (reservedBy !== undefined) {
+                                    throw new Error(JSON.stringify(buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`)));
+                                }
+                                singletonAssignments.set(item.contentTypeId, index);
                             }
 
                             const [created] = await tx.insert(contentItems).values({
@@ -1441,6 +1962,7 @@ export const resolvers = {
             }
 
             const results: BatchResultRow[] = [];
+            const singletonAssignments = new Map<number, number>();
             for (const [index, item] of normalizedItems.entries()) {
                 try {
                     const [contentType] = await db.select().from(contentTypes).where(and(
@@ -1462,6 +1984,21 @@ export const resolvers = {
                     if (activeWorkflow && item.status && item.status !== 'draft') {
                         results.push(buildBatchError(index, 'WORKFLOW_TRANSITION_FORBIDDEN', `Content type governed by workflow. Assign 'draft' during batch creations.`));
                         continue;
+                    }
+
+                    if (isSingletonContentType(contentType.kind)) {
+                        const conflict = await findSingletonContentConflict(getDomainId(context), item.contentTypeId);
+                        if (conflict) {
+                            results.push(buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${conflict.id}`));
+                            continue;
+                        }
+
+                        const reservedBy = singletonAssignments.get(item.contentTypeId);
+                        if (reservedBy !== undefined) {
+                            results.push(buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`));
+                            continue;
+                        }
+                        singletonAssignments.set(item.contentTypeId, index);
                     }
 
                     const [created] = await db.insert(contentItems).values({
@@ -1518,6 +2055,11 @@ export const resolvers = {
             ));
             if (!contentType) {
                 throw notFoundContentTypeError(targetContentTypeId);
+            }
+
+            const singletonConflict = await findSingletonConflictError(getDomainId(context), contentType, existing.id);
+            if (singletonConflict) {
+                throw singletonConflict;
             }
 
             const targetData = typeof updateData.data === 'string' ? updateData.data : existing.data;
@@ -1597,9 +2139,10 @@ export const resolvers = {
             }));
 
             if (args.dryRun) {
+                const plannedSingletonAssignments = new Map<number, number>();
                 const results: BatchResultRow[] = [];
                 for (const [index, item] of normalizedItems.entries()) {
-                    const validated = await validateContentItemUpdateInput(item, index, getDomainId(context));
+                    const validated = await validateContentItemUpdateInput(item, index, getDomainId(context), plannedSingletonAssignments);
                     if (!validated.ok) {
                         results.push(validated.error);
                         continue;
@@ -1623,6 +2166,7 @@ export const resolvers = {
                 try {
                     const results = await db.transaction(async (tx) => {
                         const output: BatchResultRow[] = [];
+                        const singletonAssignments = new Map<number, number>();
                         for (const [index, item] of normalizedItems.entries()) {
                             const updateData = stripUndefined({
                                 contentTypeId: item.contentTypeId,
@@ -1652,6 +2196,25 @@ export const resolvers = {
                             const validation = await validateContentDataAgainstSchema(targetContentType.schema, targetData, getDomainId(context));
                             if (validation) {
                                 throw new Error(JSON.stringify(buildBatchError(index, validation.code, validation.error)));
+                            }
+
+                            if (isSingletonContentType(targetContentType.kind)) {
+                                const [conflict] = await tx.select({ id: contentItems.id })
+                                    .from(contentItems)
+                                    .where(and(
+                                        eq(contentItems.domainId, getDomainId(context)),
+                                        eq(contentItems.contentTypeId, targetContentTypeId),
+                                        ne(contentItems.id, existing.id)
+                                    ));
+                                if (conflict) {
+                                    throw new Error(JSON.stringify(buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${targetContentType.slug}' already uses content item ${conflict.id}`)));
+                                }
+
+                                const reservedBy = singletonAssignments.get(targetContentTypeId);
+                                if (reservedBy !== undefined && reservedBy !== existing.id) {
+                                    throw new Error(JSON.stringify(buildBatchError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${targetContentType.slug}' is already targeted by content item ${reservedBy}.`)));
+                                }
+                                singletonAssignments.set(targetContentTypeId, existing.id);
                             }
 
                             await tx.insert(contentItemVersions).values({
@@ -1715,8 +2278,9 @@ export const resolvers = {
             }
 
             const results: BatchResultRow[] = [];
+            const plannedSingletonAssignments = new Map<number, number>();
             for (const [index, item] of normalizedItems.entries()) {
-                const validated = await validateContentItemUpdateInput(item, index, getDomainId(context));
+                const validated = await validateContentItemUpdateInput(item, index, getDomainId(context), plannedSingletonAssignments);
                 if (!validated.ok) {
                     results.push(validated.error);
                     continue;
@@ -1759,6 +2323,257 @@ export const resolvers = {
             return {
                 atomic: false,
                 results
+            };
+        }),
+
+        updateGlobal: withPolicy('content.write', (args) => ({ type: 'content_type', id: args.slug }), async (_parent: unknown, args: UpdateGlobalArgs, context?: unknown) => {
+            const domainId = getDomainId(context);
+            const contentType = await getGlobalContentTypeBySlug(args.slug, domainId);
+            if (!contentType) {
+                throw notFoundGlobalError(args.slug);
+            }
+
+            const existing = await getSingletonContentItem(domainId, contentType.id);
+            const singletonConflict = await findSingletonConflictError(domainId, contentType, existing?.id);
+            if (singletonConflict) {
+                throw singletonConflict;
+            }
+
+            const dataStr = typeof args.data === 'string' ? args.data : JSON.stringify(args.data);
+            const validation = await validateContentDataAgainstSchema(contentType.schema, dataStr, domainId);
+            if (validation) {
+                throw toErrorFromValidation(validation);
+            }
+
+            const requestedStatus = args.status;
+            const activeWorkflow = await WorkflowService.getActiveWorkflow(domainId, contentType.id);
+            if (!existing && activeWorkflow && requestedStatus && requestedStatus !== 'draft') {
+                throw toError(
+                    'Workflow transition forbidden',
+                    'WORKFLOW_TRANSITION_FORBIDDEN',
+                    `This global is governed by an active workflow. Create it as 'draft' and use submitReviewTask to request a transition.`
+                );
+            }
+
+            if (existing && activeWorkflow && requestedStatus && requestedStatus !== existing.status) {
+                throw toError(
+                    'Workflow transition forbidden',
+                    'WORKFLOW_TRANSITION_FORBIDDEN',
+                    `This global is governed by an active workflow. You cannot manually change the status to '${requestedStatus}'. Use submitReviewTask to request a transition.`
+                );
+            }
+
+            const targetStatus = existing
+                ? (requestedStatus ?? existing.status)
+                : (requestedStatus ?? 'draft');
+
+            if (args.dryRun) {
+                return {
+                    contentType,
+                    item: existing
+                        ? {
+                            ...existing,
+                            data: dataStr,
+                            status: targetStatus,
+                            version: existing.version + 1
+                        }
+                        : {
+                            id: 0,
+                            contentTypeId: contentType.id,
+                            data: dataStr,
+                            status: targetStatus,
+                            version: 1,
+                            createdAt: new Date(),
+                            updatedAt: new Date()
+                        }
+                };
+            }
+
+            if (!existing) {
+                const [created] = await db.insert(contentItems).values({
+                    domainId,
+                    contentTypeId: contentType.id,
+                    data: dataStr,
+                    status: targetStatus
+                }).returning();
+
+                if (created.status === 'published') {
+                    EmbeddingService.syncItemEmbeddings(domainId, created.id).catch(console.error);
+                } else {
+                    EmbeddingService.deleteItemEmbeddings(domainId, created.id).catch(console.error);
+                }
+
+                await logAudit(domainId, 'create', 'content_item', created.id, created, toActorId(context), toRequestId(context));
+
+                return {
+                    contentType,
+                    item: created
+                };
+            }
+
+            const updated = await db.transaction(async (tx) => {
+                await tx.insert(contentItemVersions).values({
+                    contentItemId: existing.id,
+                    version: existing.version,
+                    data: existing.data,
+                    status: existing.status,
+                    createdAt: existing.updatedAt
+                });
+
+                const [result] = await tx.update(contentItems)
+                    .set({
+                        data: dataStr,
+                        status: targetStatus,
+                        version: existing.version + 1,
+                        updatedAt: new Date()
+                    })
+                    .where(and(
+                        eq(contentItems.id, existing.id),
+                        eq(contentItems.domainId, domainId)
+                    ))
+                    .returning();
+
+                return result;
+            });
+
+            if (updated.status === 'published') {
+                EmbeddingService.syncItemEmbeddings(domainId, updated.id).catch(console.error);
+            } else {
+                EmbeddingService.deleteItemEmbeddings(domainId, updated.id).catch(console.error);
+            }
+
+            await logAudit(domainId, 'update', 'content_item', updated.id, {
+                data: dataStr,
+                status: targetStatus
+            }, toActorId(context), toRequestId(context));
+
+            return {
+                contentType,
+                item: updated
+            };
+        }),
+
+        createForm: withPolicy('content.write', () => ({ type: 'form_definition' }), async (_parent: unknown, args: CreateFormArgs, context?: unknown) => {
+            try {
+                const created = await createFormDefinition({
+                    domainId: getDomainId(context),
+                    name: args.name,
+                    slug: args.slug,
+                    description: args.description,
+                    contentTypeId: parseId(args.contentTypeId, 'contentTypeId'),
+                    fields: args.fields,
+                    defaultData: args.defaultData,
+                    active: args.active,
+                    publicRead: args.publicRead,
+                    submissionStatus: args.submissionStatus,
+                    workflowTransitionId: args.workflowTransitionId === undefined || args.workflowTransitionId === null
+                        ? args.workflowTransitionId ?? null
+                        : parseId(args.workflowTransitionId, 'workflowTransitionId'),
+                    requirePayment: args.requirePayment,
+                    webhookUrl: args.webhookUrl,
+                    webhookSecret: args.webhookSecret,
+                    successMessage: args.successMessage
+                });
+
+                await logAudit(
+                    getDomainId(context),
+                    'create',
+                    'form_definition',
+                    created.id,
+                    {
+                        slug: created.slug,
+                        contentTypeId: created.contentTypeId
+                    },
+                    toActorId(context),
+                    toRequestId(context)
+                );
+
+                return serializeFormDefinition(created);
+            } catch (error) {
+                if (error instanceof FormServiceError) {
+                    throw toErrorFromFormService(error);
+                }
+                if (isUniqueViolation(error, FORM_SLUG_CONSTRAINTS)) {
+                    throw formSlugConflictError(args.slug);
+                }
+                throw error;
+            }
+        }),
+
+        updateForm: withPolicy('content.write', (args) => ({ type: 'form_definition', id: args.id }), async (_parent: unknown, args: UpdateFormArgs, context?: unknown) => {
+            const id = parseId(args.id);
+
+            try {
+                const updated = await updateFormDefinition(id, {
+                    domainId: getDomainId(context),
+                    name: args.name,
+                    slug: args.slug,
+                    description: args.description,
+                    contentTypeId: args.contentTypeId !== undefined
+                        ? parseId(args.contentTypeId, 'contentTypeId')
+                        : undefined,
+                    fields: args.fields,
+                    defaultData: args.defaultData,
+                    active: args.active,
+                    publicRead: args.publicRead,
+                    submissionStatus: args.submissionStatus,
+                    workflowTransitionId: args.workflowTransitionId === undefined || args.workflowTransitionId === null
+                        ? args.workflowTransitionId ?? null
+                        : parseId(args.workflowTransitionId, 'workflowTransitionId'),
+                    requirePayment: args.requirePayment,
+                    webhookUrl: args.webhookUrl,
+                    webhookSecret: args.webhookSecret,
+                    successMessage: args.successMessage
+                });
+
+                await logAudit(
+                    getDomainId(context),
+                    'update',
+                    'form_definition',
+                    updated.id,
+                    {
+                        slug: updated.slug,
+                        contentTypeId: updated.contentTypeId
+                    },
+                    toActorId(context),
+                    toRequestId(context)
+                );
+
+                return serializeFormDefinition(updated);
+            } catch (error) {
+                if (error instanceof FormServiceError) {
+                    throw toErrorFromFormService(error);
+                }
+                if (isUniqueViolation(error, FORM_SLUG_CONSTRAINTS)) {
+                    throw formSlugConflictError(args.slug ?? '');
+                }
+                throw error;
+            }
+        }),
+
+        deleteForm: withPolicy('content.write', (args) => ({ type: 'form_definition', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
+            const numericId = parseId(id);
+            const deleted = await deleteFormDefinition(getDomainId(context), numericId);
+            if (!deleted) {
+                throw notFoundFormError(numericId);
+            }
+
+            await logAudit(
+                getDomainId(context),
+                'delete',
+                'form_definition',
+                deleted.id,
+                {
+                    slug: deleted.slug,
+                    contentTypeId: deleted.contentTypeId
+                },
+                toActorId(context),
+                toRequestId(context)
+            );
+
+            return {
+                id: deleted.id,
+                message: `Form definition ${deleted.slug} deleted successfully`
             };
         }),
 
@@ -2032,6 +2847,106 @@ export const resolvers = {
                 id: existing.id,
                 message: `Webhook ${id} deleted successfully`
             };
+        }),
+
+        createJob: withPolicy('content.write', () => ({ type: 'job' }), async (_parent: unknown, args: CreateJobArgs, context?: unknown) => {
+            const runAt = typeof args.runAt === 'string' && args.runAt.trim().length > 0
+                ? parseDateArg(args.runAt, 'runAt')
+                : new Date();
+            if (!runAt) {
+                throw toError(
+                    'Invalid runAt',
+                    'JOB_RUN_AT_INVALID',
+                    'Provide runAt as a valid ISO-8601 timestamp.'
+                );
+            }
+
+            const created = await createJob({
+                domainId: getDomainId(context),
+                kind: args.kind,
+                payload: args.payload as never,
+                queue: args.queue,
+                runAt,
+                maxAttempts: args.maxAttempts
+            });
+
+            await logAudit(
+                getDomainId(context),
+                'create',
+                'job',
+                created.id,
+                {
+                    kind: created.kind,
+                    queue: created.queue,
+                    runAt: created.runAt.toISOString()
+                },
+                toActorId(context),
+                toRequestId(context)
+            );
+
+            return serializeGraphqlJob(serializeJob(created));
+        }),
+
+        cancelJob: withPolicy('content.write', (args) => ({ type: 'job', id: args.id }), async (_parent: unknown, { id }: IdArg, context?: unknown) => {
+            const numericId = parseId(id);
+            const cancelled = await cancelJob(getDomainId(context), numericId);
+            if (!cancelled) {
+                const existing = await getJob(getDomainId(context), numericId);
+                if (!existing) {
+                    throw notFoundJobError(numericId);
+                }
+                throw jobCancelForbiddenError(numericId);
+            }
+
+            return serializeGraphqlJob(serializeJob(cancelled));
+        }),
+
+        scheduleContentStatusChange: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.contentItemId }), async (_parent: unknown, args: ScheduleContentStatusChangeArgs, context?: unknown) => {
+            const contentItemId = parseId(args.contentItemId, 'contentItemId');
+            const runAt = parseDateArg(args.runAt, 'runAt');
+            if (!runAt) {
+                throw toError(
+                    'Invalid runAt',
+                    'JOB_RUN_AT_INVALID',
+                    'Provide runAt as a valid ISO-8601 timestamp.'
+                );
+            }
+
+            const [existing] = await db.select({ id: contentItems.id })
+                .from(contentItems)
+                .where(and(
+                    eq(contentItems.id, contentItemId),
+                    eq(contentItems.domainId, getDomainId(context))
+                ));
+
+            if (!existing) {
+                throw notFoundContentItemError(contentItemId);
+            }
+
+            const scheduled = await scheduleContentStatusTransition({
+                domainId: getDomainId(context),
+                contentItemId,
+                targetStatus: args.targetStatus,
+                runAt,
+                maxAttempts: args.maxAttempts
+            });
+
+            await logAudit(
+                getDomainId(context),
+                'create',
+                'job',
+                scheduled.id,
+                {
+                    source: 'schedule_content_status',
+                    contentItemId,
+                    targetStatus: args.targetStatus,
+                    runAt: runAt.toISOString()
+                },
+                toActorId(context),
+                toRequestId(context)
+            );
+
+            return serializeGraphqlJob(serializeJob(scheduled));
         }),
 
         rollbackContentItem: withPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async (_parent: unknown, args: RollbackContentItemArgs, context?: unknown) => {

@@ -156,9 +156,10 @@ describe('buildCapabilityManifest', () => {
             contentWritesRequireDomain: true,
             supportsInBandDomainCreation: true,
             restCreateDomainPath: '/api/domains',
-            mcpCreateDomainTool: null,
+            mcpCreateDomainTool: 'create_domain',
+            recommendedGuideTask: 'bootstrap-workspace',
             noDomainErrorCode: 'NO_DOMAIN',
-            note: 'Read deployment status before the first write to confirm that the active deployment already has a provisioned domain.',
+            note: 'Read deployment status before the first write, then use guide_task("bootstrap-workspace") to create the first domain when the install is still empty.',
         });
         expect(manifest.vectorRag).toEqual({
             enabled: false,
@@ -174,6 +175,16 @@ describe('buildCapabilityManifest', () => {
         expect(manifest.modules).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 id: 'asset-storage',
+                tier: 'core',
+                enabled: true,
+            }),
+            expect.objectContaining({
+                id: 'form-runtime',
+                tier: 'core',
+                enabled: true,
+            }),
+            expect.objectContaining({
+                id: 'background-jobs',
                 tier: 'core',
                 enabled: true,
             }),
@@ -222,6 +233,27 @@ describe('buildCapabilityManifest', () => {
                 graphqlFields: ['contentItemUsedBy', 'assetUsedBy'],
                 mcpTools: ['get_content_item_usage', 'get_asset_usage'],
             }),
+            generatedArtifacts: expect.objectContaining({
+                supported: true,
+                cliCommand: 'node dist/cli/index.js schema generate --out <path>',
+                outputFiles: ['runtime.ts', 'types.ts', 'validators.ts', 'client.ts', 'index.ts'],
+            }),
+            forms: expect.objectContaining({
+                supported: true,
+                adminRestPaths: ['/api/forms', '/api/forms/:id'],
+                publicRestPaths: ['/api/public/forms/:slug', '/api/public/forms/:slug/submissions'],
+                graphqlFields: ['forms', 'form', 'createForm', 'updateForm', 'deleteForm'],
+                workflowIntegration: true,
+                paymentIntegration: true,
+                backgroundFollowUps: true,
+            }),
+        }));
+        expect(manifest.backgroundJobs).toEqual(expect.objectContaining({
+            enabled: true,
+            restPaths: ['/api/jobs', '/api/jobs/:id', '/api/jobs/worker-status', '/api/content-items/:id/schedule-status'],
+            graphqlFields: ['jobs', 'job', 'jobsWorkerStatus', 'createJob', 'cancelJob', 'scheduleContentStatusChange'],
+            supportedKinds: ['content_status_transition', 'outbound_webhook'],
+            workerStatusPath: '/api/jobs/worker-status',
         }));
         expect(manifest.assetStorage).toEqual(expect.objectContaining({
             enabled: true,
@@ -277,6 +309,11 @@ describe('buildCapabilityManifest', () => {
         }));
         expect(manifest.agentGuidance.routingHints).toEqual(
             expect.arrayContaining([
+                expect.objectContaining({
+                    intent: 'bootstrap-workspace',
+                    preferredSurface: 'mcp',
+                    preferredActorProfile: 'mcp-local',
+                }),
                 expect.objectContaining({
                     intent: 'discover-deployment',
                     preferredSurface: 'rest',
@@ -334,6 +371,21 @@ describe('buildCapabilityManifest', () => {
         );
         expect(manifest.agentGuidance.taskRecipes).toEqual(
             expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'bootstrap-workspace',
+                    recommendedAuth: 'api-key-or-local-mcp',
+                    preferredActorProfile: 'mcp-local',
+                    supportedActorProfiles: expect.arrayContaining(['mcp-local', 'api-key', 'env-key']),
+                    recommendedApiKeyScopes: ['admin'],
+                    steps: expect.arrayContaining([
+                        expect.objectContaining({
+                            operation: 'create_domain',
+                        }),
+                        expect.objectContaining({
+                            operation: 'POST /api/domains',
+                        }),
+                    ]),
+                }),
                 expect.objectContaining({
                     id: 'discover-deployment',
                     recommendedAuth: 'none',
@@ -397,6 +449,9 @@ describe('buildCapabilityManifest', () => {
                 }),
             ]),
         );
+        expect(
+            manifest.capabilities.some((capability) => capability.id === 'create_domain'),
+        ).toBe(true);
         expect(
             manifest.capabilities.some((capability) => capability.id === 'create_content_item'),
         ).toBe(true);

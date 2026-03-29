@@ -43,7 +43,9 @@ import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { LicensingService } from '../services/licensing.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import * as assetService from '../services/assets.js';
+import * as referenceUsageService from '../services/reference-usage.js';
 import { issuePublicWriteToken } from '../services/public-write.js';
+import { issuePreviewToken } from '../services/content-preview.js';
 
 type ApiErrorBody = {
     error: string;
@@ -255,6 +257,28 @@ describe('API Route Contracts', () => {
                             endpoint: string;
                             supervisorHeader: string;
                         };
+                        effective: {
+                            authRequired: boolean;
+                            writeRequiresCredential: boolean;
+                            insecureLocalAdminEnabled: boolean;
+                            recommendedActorProfile: string;
+                            recommendedScopes: string[];
+                            note: string;
+                        };
+                    };
+                    bootstrap: {
+                        contentWritesRequireDomain: boolean;
+                        supportsInBandDomainCreation: boolean;
+                        restCreateDomainPath: string;
+                        mcpCreateDomainTool: string | null;
+                        recommendedGuideTask: string | null;
+                        noDomainErrorCode: string;
+                    };
+                    vectorRag: {
+                        enabled: boolean;
+                        model: string | null;
+                        restPath: string;
+                        mcpTool: string;
                     };
                     modules: Array<{
                         id: string;
@@ -412,6 +436,28 @@ describe('API Route Contracts', () => {
             );
             expect(body.data.auth.mcp.endpoint).toBe('/mcp');
             expect(body.data.auth.mcp.supervisorHeader).toBe('x-wordclaw-domain');
+            expect(body.data.auth.effective).toEqual({
+                authRequired: true,
+                writeRequiresCredential: true,
+                insecureLocalAdminEnabled: true,
+                recommendedActorProfile: 'api-key',
+                recommendedScopes: ['content:write'],
+                note: 'Authenticated writes require an API key or supervisor session with the appropriate scope set.',
+            });
+            expect(body.data.bootstrap).toEqual(expect.objectContaining({
+                contentWritesRequireDomain: true,
+                supportsInBandDomainCreation: true,
+                restCreateDomainPath: '/api/domains',
+                mcpCreateDomainTool: 'create_domain',
+                recommendedGuideTask: 'bootstrap-workspace',
+                noDomainErrorCode: 'NO_DOMAIN',
+            }));
+            expect(body.data.vectorRag).toEqual(expect.objectContaining({
+                enabled: false,
+                model: null,
+                restPath: '/api/search/semantic',
+                mcpTool: 'search_semantic_knowledge',
+            }));
             expect(body.data.modules).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({ id: 'content-runtime', enabled: true }),
@@ -605,6 +651,32 @@ describe('API Route Contracts', () => {
                     checks: {
                         database: { status: string };
                         restApi: { status: string; basePath: string };
+                        bootstrap: {
+                            status: string;
+                            domainCount: number;
+                            contentWritesRequireDomain: boolean;
+                            supportsInBandDomainCreation: boolean;
+                            restCreateDomainPath: string | null;
+                            mcpCreateDomainTool: string | null;
+                            recommendedGuideTask: string | null;
+                            nextAction: string;
+                        };
+                        auth: {
+                            status: string;
+                            authRequired: boolean;
+                            writeRequiresCredential: boolean;
+                            insecureLocalAdminEnabled: boolean;
+                            recommendedActorProfile: string;
+                            recommendedScopes: string[];
+                        };
+                        vectorRag: {
+                            status: string;
+                            enabled: boolean;
+                            model: string | null;
+                            restPath: string;
+                            mcpTool: string;
+                            reason: string;
+                        };
                         contentRuntime: {
                             status: string;
                             fieldAwareQueries: {
@@ -690,6 +762,32 @@ describe('API Route Contracts', () => {
                 status: 'ready',
                 basePath: '/api',
             }));
+            expect(body.data.checks.bootstrap).toEqual(expect.objectContaining({
+                status: 'ready',
+                domainCount: 1,
+                contentWritesRequireDomain: true,
+                supportsInBandDomainCreation: true,
+                restCreateDomainPath: '/api/domains',
+                mcpCreateDomainTool: 'create_domain',
+                recommendedGuideTask: 'bootstrap-workspace',
+                nextAction: 'Bootstrap prerequisites are satisfied for content writes.',
+            }));
+            expect(body.data.checks.auth).toEqual(expect.objectContaining({
+                status: 'ready',
+                authRequired: true,
+                writeRequiresCredential: true,
+                insecureLocalAdminEnabled: true,
+                recommendedActorProfile: 'api-key',
+                recommendedScopes: ['content:write'],
+            }));
+            expect(body.data.checks.vectorRag).toEqual(expect.objectContaining({
+                status: 'disabled',
+                enabled: false,
+                model: null,
+                restPath: '/api/search/semantic',
+                mcpTool: 'search_semantic_knowledge',
+                reason: 'OPENAI_API_KEY not set',
+            }));
             expect(body.data.checks.contentRuntime).toEqual(expect.objectContaining({
                 status: 'ready',
                 fieldAwareQueries: expect.objectContaining({
@@ -774,6 +872,47 @@ describe('API Route Contracts', () => {
                 enabled: false,
             }));
             expect(body.data.warnings).toEqual([]);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns degraded deployment status when no domains are provisioned', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        mocks.dbMock.execute
+            .mockResolvedValueOnce([{ '?column?': 1 }])
+            .mockResolvedValueOnce([{ total: 0 }]);
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/deployment-status',
+            });
+
+            expect(response.statusCode).toBe(503);
+            const body = response.json() as {
+                data: {
+                    overallStatus: string;
+                    checks: {
+                        bootstrap: {
+                            status: string;
+                            domainCount: number;
+                            nextAction: string;
+                        };
+                    };
+                    warnings: string[];
+                };
+            };
+
+            expect(body.data.overallStatus).toBe('degraded');
+            expect(body.data.checks.bootstrap).toEqual(expect.objectContaining({
+                status: 'degraded',
+                domainCount: 0,
+                nextAction: 'Create the first domain before attempting content-type or content-item writes.',
+            }));
+            expect(body.data.warnings).toContain('No domains are provisioned yet, so content-type and content-item writes are blocked until bootstrap completes.');
         } finally {
             await app.close();
         }
@@ -1563,6 +1702,53 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns content-item reverse-reference usage over REST', async () => {
+        const app = await buildServer();
+        mocks.dbMock.select.mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([{ id: 42 }])
+            })
+        });
+        const usageSpy = vi.spyOn(referenceUsageService, 'findContentItemUsage').mockResolvedValue({
+            activeReferences: [{
+                contentItemId: 88,
+                contentTypeId: 7,
+                contentTypeName: 'Article',
+                contentTypeSlug: 'article',
+                path: '/related/0',
+                version: 5,
+                status: 'published'
+            }],
+            historicalReferences: []
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items/42/used-by'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    activeReferenceCount: number;
+                    historicalReferenceCount: number;
+                    activeReferences: Array<{ contentItemId: number; path: string }>;
+                };
+            };
+            expect(body.data.activeReferenceCount).toBe(1);
+            expect(body.data.historicalReferenceCount).toBe(0);
+            expect(body.data.activeReferences[0]).toMatchObject({
+                contentItemId: 88,
+                path: '/related/0'
+            });
+            expect(usageSpy).toHaveBeenCalledWith(1, 42);
+        } finally {
+            usageSpy.mockRestore();
+            await app.close();
+        }
+    });
+
     it('returns INVALID_CONTENT_SCHEMA_JSON for content-type create with invalid schema JSON', async () => {
         const app = await buildServer();
 
@@ -1581,6 +1767,82 @@ describe('API Route Contracts', () => {
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('INVALID_CONTENT_SCHEMA_JSON');
             expect(mocks.dbMock.insert).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('accepts schema manifests for content-type create and returns the compiled schema', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.insert.mockImplementation(() => ({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 17,
+                    name: 'Landing Page',
+                    slug: 'landing-page',
+                    kind: 'collection',
+                    description: 'Manifest-backed type',
+                    schemaManifest: JSON.stringify({
+                        fields: [
+                            {
+                                name: 'title',
+                                type: 'text',
+                                required: true
+                            }
+                        ]
+                    }),
+                    schema: JSON.stringify({
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                            title: {
+                                type: 'string'
+                            }
+                        },
+                        required: ['title'],
+                        'x-wordclaw-schema-manifest': {
+                            version: 1
+                        }
+                    }),
+                    basePrice: null,
+                    createdAt: '2026-03-29T10:00:00.000Z',
+                    updatedAt: '2026-03-29T10:00:00.000Z'
+                }])
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-types',
+                payload: {
+                    name: 'Landing Page',
+                    slug: 'landing-page',
+                    schemaManifest: {
+                        fields: [
+                            {
+                                name: 'title',
+                                type: 'text',
+                                required: true
+                            }
+                        ]
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            const body = response.json() as {
+                data: {
+                    schemaManifest?: string | null;
+                    schema: string;
+                };
+            };
+            expect(body.data.schemaManifest).toContain('"fields"');
+            expect(JSON.parse(body.data.schema)).toMatchObject({
+                type: 'object',
+                required: ['title']
+            });
         } finally {
             await app.close();
         }
@@ -1611,6 +1873,32 @@ describe('API Route Contracts', () => {
             expect(response.statusCode).toBe(400);
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('INVALID_CONTENT_SCHEMA_ASSET_EXTENSION');
+            expect(mocks.dbMock.insert).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns NO_DOMAIN for content-type create when no domains are provisioned', async () => {
+        mocks.dbMock.execute
+            .mockResolvedValueOnce([{ total: 0 }])
+            .mockResolvedValueOnce([{ total: 0 }]);
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-types',
+                payload: {
+                    name: 'Article',
+                    slug: 'article',
+                    schema: '{"type":"object"}'
+                }
+            });
+
+            expect(response.statusCode).toBe(409);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('NO_DOMAIN');
             expect(mocks.dbMock.insert).not.toHaveBeenCalled();
         } finally {
             await app.close();
@@ -1649,12 +1937,85 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('creates the first domain during bootstrap', async () => {
+        mocks.dbMock.execute.mockResolvedValueOnce([{ total: 0 }]);
+        mocks.dbMock.insert.mockImplementation(() => ({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 1,
+                    name: 'Local Development',
+                    hostname: 'local.development',
+                    createdAt: new Date('2026-03-29T09:00:00.000Z')
+                }]),
+            }),
+        }));
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/domains',
+                payload: {
+                    name: 'Local Development',
+                    hostname: 'local.development'
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            const body = response.json() as {
+                data: {
+                    id: number;
+                    name: string;
+                    hostname: string;
+                    createdAt: string;
+                };
+            };
+
+            expect(body.data).toEqual({
+                id: 1,
+                name: 'Local Development',
+                hostname: 'local.development',
+                createdAt: '2026-03-29T09:00:00.000Z'
+            });
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'create',
+                'domain',
+                1,
+                expect.objectContaining({
+                    id: 1,
+                    hostname: 'local.development'
+                }),
+                expect.anything(),
+                expect.any(String)
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns CONTENT_TYPE_SLUG_CONFLICT for content-type update duplicate slug in domain', async () => {
         const app = await buildServer();
         const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
             code: '23505',
             constraint: 'content_types_domain_slug_unique'
         });
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 1,
+                    name: 'Article',
+                    slug: 'article',
+                    kind: 'collection',
+                    description: null,
+                    schema: '{"type":"object"}',
+                    basePrice: 0,
+                    createdAt: '2026-03-01T10:00:00.000Z',
+                    updatedAt: '2026-03-06T08:00:00.000Z'
+                }]),
+            }),
+        }));
 
         mocks.dbMock.update.mockImplementation(() => ({
             set: vi.fn().mockReturnValue({
@@ -1676,6 +2037,48 @@ describe('API Route Contracts', () => {
             expect(response.statusCode).toBe(409);
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('CONTENT_TYPE_SLUG_CONFLICT');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns SINGLETON_CONTENT_TYPE_REQUIRES_ONE_ITEM when converting a populated collection to singleton', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        name: 'Site Settings',
+                        slug: 'site-settings',
+                        kind: 'collection',
+                        description: null,
+                        schema: '{"type":"object"}',
+                        basePrice: 0,
+                        createdAt: '2026-03-01T10:00:00.000Z',
+                        updatedAt: '2026-03-06T08:00:00.000Z'
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ total: 2 }]),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/content-types/1',
+                payload: {
+                    kind: 'singleton'
+                }
+            });
+
+            expect(response.statusCode).toBe(409);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('SINGLETON_CONTENT_TYPE_REQUIRES_ONE_ITEM');
         } finally {
             await app.close();
         }
@@ -1971,6 +2374,7 @@ describe('API Route Contracts', () => {
                                     id: 11,
                                     name: 'Article',
                                     slug: 'article',
+                                    kind: 'collection',
                                     description: 'Long-form editorial content',
                                     schema: '{"type":"object"}',
                                     basePrice: 0,
@@ -1981,6 +2385,7 @@ describe('API Route Contracts', () => {
                                     id: 12,
                                     name: 'Changelog',
                                     slug: 'changelog',
+                                    kind: 'collection',
                                     description: null,
                                     schema: '{"type":"object"}',
                                     basePrice: 100,
@@ -2804,6 +3209,325 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('creates form definitions over REST', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 12,
+                        domainId: 1,
+                        name: 'Lead',
+                        slug: 'lead',
+                        basePrice: 0,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                email: { type: 'string' },
+                                message: { type: 'string' }
+                            },
+                            required: ['email']
+                        })
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 12,
+                        domainId: 1,
+                        name: 'Lead',
+                        slug: 'lead',
+                        basePrice: 0,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                email: { type: 'string' },
+                                message: { type: 'string' }
+                            },
+                            required: ['email']
+                        })
+                    }]),
+                }),
+            }));
+
+        mocks.dbMock.insert.mockReturnValue({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 5,
+                    domainId: 1,
+                    name: 'Contact Form',
+                    slug: 'contact',
+                    description: 'Inbound contact form',
+                    contentTypeId: 12,
+                    fields: [
+                        { name: 'email', type: 'text', required: true, label: 'Email' },
+                        { name: 'message', type: 'text', required: false, label: 'Message' }
+                    ],
+                    defaultData: {},
+                    active: true,
+                    publicRead: true,
+                    submissionStatus: 'draft',
+                    workflowTransitionId: null,
+                    requirePayment: false,
+                    webhookUrl: null,
+                    webhookSecret: null,
+                    successMessage: 'Thanks',
+                    createdAt: new Date('2026-03-29T10:00:00.000Z'),
+                    updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                }])
+            })
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/forms',
+                payload: {
+                    name: 'Contact Form',
+                    slug: 'contact',
+                    description: 'Inbound contact form',
+                    contentTypeId: 12,
+                    fields: [
+                        { name: 'email', label: 'Email' },
+                        { name: 'message', label: 'Message' }
+                    ],
+                    successMessage: 'Thanks'
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toMatchObject({
+                data: {
+                    id: 5,
+                    slug: 'contact',
+                    contentTypeId: 12,
+                    contentTypeSlug: 'lead',
+                    successMessage: 'Thanks',
+                    fields: expect.arrayContaining([
+                        expect.objectContaining({ name: 'email', required: true }),
+                        expect.objectContaining({ name: 'message', required: false })
+                    ])
+                }
+            });
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'create',
+                'form_definition',
+                5,
+                expect.objectContaining({
+                    slug: 'contact',
+                    contentTypeId: 12,
+                }),
+                expect.anything(),
+                expect.any(String)
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('accepts unauthenticated public form submissions when domainId is provided', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+        const app = await buildServer();
+
+        const formRow = {
+            id: 5,
+            domainId: 1,
+            name: 'Contact Form',
+            slug: 'contact',
+            description: 'Inbound contact form',
+            contentTypeId: 12,
+            fields: [
+                { name: 'email', type: 'text', required: true, label: 'Email' },
+                { name: 'message', type: 'text', required: false, label: 'Message' }
+            ],
+            defaultData: {},
+            active: true,
+            publicRead: true,
+            submissionStatus: 'draft',
+            workflowTransitionId: null,
+            requirePayment: false,
+            webhookUrl: null,
+            webhookSecret: null,
+            successMessage: 'Thanks',
+            createdAt: new Date('2026-03-29T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-29T10:00:00.000Z')
+        };
+        const contentTypeRow = {
+            id: 12,
+            domainId: 1,
+            name: 'Lead',
+            slug: 'lead',
+            basePrice: 0,
+            schema: JSON.stringify({
+                type: 'object',
+                properties: {
+                    email: { type: 'string' },
+                    message: { type: 'string' }
+                },
+                required: ['email']
+            })
+        };
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([formRow]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([contentTypeRow]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([formRow]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([contentTypeRow]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([contentTypeRow]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ webhookUrl: null, webhookSecret: null }]),
+                }),
+            }));
+
+        mocks.dbMock.insert.mockReturnValue({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 88,
+                    domainId: 1,
+                    contentTypeId: 12,
+                    data: JSON.stringify({
+                        email: 'reader@example.com',
+                        message: 'Hello'
+                    }),
+                    status: 'draft',
+                    version: 1,
+                    createdAt: new Date('2026-03-29T10:01:00.000Z'),
+                    updatedAt: new Date('2026-03-29T10:01:00.000Z')
+                }])
+            })
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/public/forms/contact/submissions?domainId=1',
+                payload: {
+                    data: {
+                        email: 'reader@example.com',
+                        message: 'Hello'
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toMatchObject({
+                data: {
+                    form: {
+                        slug: 'contact',
+                        requirePayment: false,
+                    },
+                    submission: {
+                        contentItemId: 88,
+                        status: 'draft',
+                        reviewTaskId: null,
+                        successMessage: 'Thanks',
+                    }
+                }
+            });
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('schedules content status changes through the background jobs route', async () => {
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{ id: 44 }]),
+            }),
+        }));
+        mocks.dbMock.insert.mockReturnValue({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 9,
+                    domainId: 1,
+                    kind: 'content_status_transition',
+                    queue: 'content',
+                    status: 'queued',
+                    payload: {
+                        contentItemId: 44,
+                        targetStatus: 'published'
+                    },
+                    result: null,
+                    runAt: new Date('2026-04-01T09:00:00.000Z'),
+                    attempts: 0,
+                    maxAttempts: 3,
+                    lastError: null,
+                    claimedAt: null,
+                    startedAt: null,
+                    completedAt: null,
+                    createdAt: new Date('2026-03-29T10:05:00.000Z'),
+                    updatedAt: new Date('2026-03-29T10:05:00.000Z')
+                }])
+            })
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-items/44/schedule-status',
+                payload: {
+                    targetStatus: 'published',
+                    runAt: '2026-04-01T09:00:00.000Z'
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toMatchObject({
+                data: {
+                    id: 9,
+                    kind: 'content_status_transition',
+                    status: 'queued',
+                    payload: {
+                        contentItemId: 44,
+                        targetStatus: 'published'
+                    }
+                }
+            });
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'create',
+                'job',
+                9,
+                expect.objectContaining({
+                    source: 'schedule_content_status',
+                    contentItemId: 44,
+                    targetStatus: 'published',
+                }),
+                expect.anything(),
+                expect.any(String)
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns INVALID_CREATED_AFTER for malformed content-item filter date', async () => {
         const app = await buildServer();
 
@@ -2816,6 +3540,24 @@ describe('API Route Contracts', () => {
             expect(response.statusCode).toBe(400);
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('INVALID_CREATED_AFTER');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns CONTENT_LOCALE_REQUIRED when fallbackLocale is provided without locale', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?fallbackLocale=en'
+            });
+
+            expect(response.statusCode).toBe(400);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('CONTENT_LOCALE_REQUIRED');
+            expect(mocks.dbMock.select).not.toHaveBeenCalled();
         } finally {
             await app.close();
         }
@@ -2946,6 +3688,92 @@ describe('API Route Contracts', () => {
             expect(orderByMock).toHaveBeenCalledTimes(1);
             expect(limitMock).toHaveBeenCalledWith(25);
             expect(offsetMock).toHaveBeenCalledWith(5);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns localized content items when locale-aware reads are requested', async () => {
+        const app = await buildServer();
+        const countWhereMock = vi.fn().mockResolvedValue([{ total: 1 }]);
+        const offsetMock = vi.fn().mockResolvedValue([
+            {
+                item: {
+                    id: 15,
+                    contentTypeId: 7,
+                    data: JSON.stringify({
+                        title: {
+                            en: 'Hello world',
+                            nl: 'Hallo wereld'
+                        }
+                    }),
+                    status: 'published',
+                    version: 2,
+                    createdAt: new Date('2026-03-10T10:00:00.000Z'),
+                    updatedAt: new Date('2026-03-11T10:00:00.000Z')
+                },
+                schema: JSON.stringify({
+                    type: 'object',
+                    properties: {
+                        title: {
+                            type: 'string',
+                            'x-wordclaw-localized': true
+                        }
+                    },
+                    required: ['title'],
+                    'x-wordclaw-localization': {
+                        supportedLocales: ['en', 'nl'],
+                        defaultLocale: 'en'
+                    }
+                }),
+                basePrice: 0
+            }
+        ]);
+        const limitMock = vi.fn(() => ({ offset: offsetMock }));
+        const orderByMock = vi.fn(() => ({ limit: limitMock }));
+        const whereMock = vi.fn(() => ({ orderBy: orderByMock }));
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: countWhereMock
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: () => ({
+                        where: whereMock
+                    }),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items?locale=nl'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: Array<{
+                    data: string;
+                    localeResolution?: {
+                        requestedLocale: string;
+                        fallbackLocale: string;
+                        resolvedFieldCount: number;
+                    };
+                }>;
+            };
+
+            expect(body.data).toHaveLength(1);
+            expect(JSON.parse(body.data[0].data)).toEqual({
+                title: 'Hallo wereld'
+            });
+            expect(body.data[0].localeResolution).toMatchObject({
+                requestedLocale: 'nl',
+                fallbackLocale: 'en',
+                resolvedFieldCount: 1
+            });
         } finally {
             await app.close();
         }
@@ -3938,6 +4766,75 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns asset reverse-reference usage over REST', async () => {
+        const app = await buildServer();
+        const getAssetSpy = vi.spyOn(assetService, 'getAsset').mockResolvedValue({
+            id: 61,
+            domainId: 1,
+            sourceAssetId: null,
+            variantKey: null,
+            transformSpec: null,
+            filename: 'diagram.svg',
+            originalFilename: 'diagram.svg',
+            mimeType: 'image/svg+xml',
+            sizeBytes: 512,
+            byteHash: 'hash-61',
+            storageProvider: 'local',
+            storageKey: '1/diagram.svg',
+            accessMode: 'signed',
+            entitlementScopeType: null,
+            entitlementScopeRef: null,
+            status: 'deleted',
+            metadata: {},
+            uploaderActorId: 'api_key:9',
+            uploaderActorType: 'api_key',
+            uploaderActorSource: 'db',
+            createdAt: new Date('2026-03-13T12:00:00.000Z'),
+            updatedAt: new Date('2026-03-13T13:00:00.000Z'),
+            deletedAt: new Date('2026-03-13T13:00:00.000Z')
+        });
+        const usageSpy = vi.spyOn(referenceUsageService, 'findAssetUsage').mockResolvedValue({
+            activeReferences: [],
+            historicalReferences: [{
+                contentItemId: 71,
+                contentItemVersionId: 11,
+                contentTypeId: 6,
+                contentTypeName: 'Landing Page',
+                contentTypeSlug: 'landing-page',
+                path: '/hero',
+                version: 3
+            }]
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/assets/61/used-by'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    activeReferenceCount: number;
+                    historicalReferenceCount: number;
+                    historicalReferences: Array<{ contentItemId: number; path: string }>;
+                };
+            };
+            expect(body.data.activeReferenceCount).toBe(0);
+            expect(body.data.historicalReferenceCount).toBe(1);
+            expect(body.data.historicalReferences[0]).toMatchObject({
+                contentItemId: 71,
+                path: '/hero'
+            });
+            expect(getAssetSpy).toHaveBeenCalledWith(61, 1, { includeDeleted: true });
+            expect(usageSpy).toHaveBeenCalledWith(1, 61);
+        } finally {
+            getAssetSpy.mockRestore();
+            usageSpy.mockRestore();
+            await app.close();
+        }
+    });
+
     it('restores a soft-deleted asset through the REST restore route', async () => {
         const app = await buildServer();
         const restoreSpy = vi.spyOn(assetService, 'restoreAsset').mockResolvedValue({
@@ -4213,6 +5110,316 @@ describe('API Route Contracts', () => {
             expect(body.data?.results?.[0]?.ok).toBe(true);
             expect(body.meta?.dryRun).toBe(true);
             expect(mocks.dbMock.transaction).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('issues scoped preview tokens for content items', async () => {
+        const app = await buildServer();
+        const licensingSpy = vi.spyOn(LicensingService, 'getActiveOffersForItemRead').mockResolvedValue([]);
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 42,
+                    domainId: 1,
+                    contentTypeId: 7,
+                    data: '{"title":"Draft copy"}',
+                    status: 'draft',
+                    version: 4,
+                    createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                    updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                }]),
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-items/42/preview-token',
+                payload: {
+                    draft: false,
+                    locale: 'nl',
+                    fallbackLocale: 'en',
+                    ttlSeconds: 120
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    token: string;
+                    previewPath: string;
+                    contentItemId: number;
+                    draft: boolean;
+                    ttlSeconds: number;
+                    locale?: string;
+                    fallbackLocale?: string;
+                };
+            };
+
+            expect(body.data).toMatchObject({
+                contentItemId: 42,
+                draft: false,
+                ttlSeconds: 120,
+                locale: 'nl',
+                fallbackLocale: 'en'
+            });
+            expect(body.data.previewPath).toContain('/api/preview/content-items/42?token=');
+            expect(new URL(`http://localhost${body.data.previewPath}`).searchParams.get('token')).toBe(body.data.token);
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'preview',
+                'content_item',
+                42,
+                expect.objectContaining({
+                    source: 'issue_preview_token',
+                    target: 'content_item',
+                    draft: false,
+                    ttlSeconds: 120
+                }),
+                expect.anything(),
+                expect.any(String)
+            );
+        } finally {
+            licensingSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('issues scoped preview tokens for globals', async () => {
+        const app = await buildServer();
+        const licensingSpy = vi.spyOn(LicensingService, 'getActiveOffersForItemRead').mockResolvedValue([]);
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 11,
+                        domainId: 1,
+                        name: 'Site Settings',
+                        slug: 'site-settings',
+                        kind: 'singleton',
+                        description: null,
+                        schema: '{"type":"object"}',
+                        basePrice: 0,
+                        createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                        updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn(() => ({
+                        orderBy: vi.fn().mockResolvedValue([{
+                            id: 81,
+                            domainId: 1,
+                            contentTypeId: 11,
+                            data: '{"title":"Site Settings"}',
+                            status: 'published',
+                            version: 2,
+                            createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                            updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                        }]),
+                    })),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/globals/site-settings/preview-token'
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    token: string;
+                    previewPath: string;
+                    slug: string;
+                    draft: boolean;
+                };
+            };
+
+            expect(body.data).toMatchObject({
+                slug: 'site-settings',
+                draft: true
+            });
+            expect(body.data.previewPath).toContain('/api/preview/globals/site-settings?token=');
+            expect(new URL(`http://localhost${body.data.previewPath}`).searchParams.get('token')).toBe(body.data.token);
+        } finally {
+            licensingSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns the published snapshot for content item preview reads when draft=false', async () => {
+        const app = await buildServer();
+        const licensingSpy = vi.spyOn(LicensingService, 'getActiveOffersForItemRead').mockResolvedValue([]);
+        const token = issuePreviewToken({
+            domainId: 1,
+            kind: 'content_item',
+            contentItemId: 42,
+            draft: false
+        }).token;
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: () => ({
+                        where: vi.fn().mockResolvedValue([{
+                            item: {
+                                id: 42,
+                                domainId: 1,
+                                contentTypeId: 7,
+                                data: '{"title":"Draft copy"}',
+                                status: 'draft',
+                                version: 4,
+                                createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                                updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                            },
+                            schema: '{"type":"object","properties":{"title":{"type":"string"}}}',
+                        }]),
+                    }),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn(() => ({
+                        orderBy: vi.fn().mockResolvedValue([{
+                            id: 9,
+                            contentItemId: 42,
+                            version: 2,
+                            data: '{"title":"Published copy"}',
+                            status: 'published',
+                            createdAt: new Date('2026-03-27T08:00:00.000Z')
+                        }]),
+                    })),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: `/api/preview/content-items/42?token=${encodeURIComponent(token)}`
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    data: string;
+                    status: string;
+                    version: number;
+                    publicationState: string;
+                    workingCopyVersion: number;
+                    publishedVersion: number | null;
+                };
+            };
+
+            expect(body.data).toMatchObject({
+                status: 'published',
+                version: 2,
+                publicationState: 'changed',
+                workingCopyVersion: 4,
+                publishedVersion: 2
+            });
+            expect(JSON.parse(body.data.data)).toEqual({
+                title: 'Published copy'
+            });
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                1,
+                'preview',
+                'content_item',
+                42,
+                expect.objectContaining({
+                    source: 'preview_token_read',
+                    target: 'content_item',
+                    draft: false
+                }),
+                expect.objectContaining({
+                    actorId: 'preview_token:content_item:42',
+                    actorType: 'preview_token',
+                    actorSource: 'token'
+                }),
+                expect.any(String)
+            );
+        } finally {
+            licensingSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns PREVIEW_TARGET_UNPUBLISHED for published-only preview reads without a published snapshot', async () => {
+        const app = await buildServer();
+        const licensingSpy = vi.spyOn(LicensingService, 'getActiveOffersForItemRead').mockResolvedValue([]);
+        const token = issuePreviewToken({
+            domainId: 1,
+            kind: 'content_item',
+            contentItemId: 42,
+            draft: false
+        }).token;
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: () => ({
+                        where: vi.fn().mockResolvedValue([{
+                            item: {
+                                id: 42,
+                                domainId: 1,
+                                contentTypeId: 7,
+                                data: '{"title":"Draft copy"}',
+                                status: 'draft',
+                                version: 1,
+                                createdAt: new Date('2026-03-28T10:00:00.000Z'),
+                                updatedAt: new Date('2026-03-29T10:00:00.000Z')
+                            },
+                            schema: '{"type":"object","properties":{"title":{"type":"string"}}}',
+                        }]),
+                    }),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn(() => ({
+                        orderBy: vi.fn().mockResolvedValue([]),
+                    })),
+                }),
+            }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: `/api/preview/content-items/42?token=${encodeURIComponent(token)}`
+            });
+
+            expect(response.statusCode).toBe(404);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('PREVIEW_TARGET_UNPUBLISHED');
+        } finally {
+            licensingSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('returns PREVIEW_TOKEN_SCOPE_MISMATCH when a preview token targets a different item', async () => {
+        const app = await buildServer();
+        const token = issuePreviewToken({
+            domainId: 1,
+            kind: 'content_item',
+            contentItemId: 99
+        }).token;
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: `/api/preview/content-items/42?token=${encodeURIComponent(token)}`
+            });
+
+            expect(response.statusCode).toBe(403);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('PREVIEW_TOKEN_SCOPE_MISMATCH');
         } finally {
             await app.close();
         }

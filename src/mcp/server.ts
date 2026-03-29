@@ -1,14 +1,19 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { and, desc, eq, gte, lt, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { getAssetSignedTtlSeconds } from '../config/assets.js';
 import { isExperimentalAgentRunsEnabled, isExperimentalRevenueEnabled } from '../config/runtime-features.js';
 import { db } from '../db/index.js';
-import { agentProfiles, auditLogs, contentItemVersions, contentItems, contentTypes, payments, workflows, workflowTransitions } from '../db/schema.js';
+import { agentProfiles, auditLogs, contentItemVersions, contentItems, contentTypes, domains, payments, workflows, workflowTransitions } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
-import { ValidationFailure, validateContentDataAgainstSchema, validateContentTypeSchema, redactPremiumFields } from '../services/content-schema.js';
+import {
+    ValidationFailure,
+    redactPremiumFields,
+    resolveContentTypeSchemaSource,
+    validateContentDataAgainstSchema
+} from '../services/content-schema.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey } from '../services/api-key.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { WorkflowService } from '../services/workflow.js';
@@ -40,16 +45,47 @@ import { buildWorkflowGuide } from '../cli/lib/workflow-guide.js';
 import { buildIntegrationGuide } from '../cli/lib/integration-guide.js';
 import { buildL402Guide } from '../cli/lib/l402-guide.js';
 import { buildAuditGuide } from '../cli/lib/audit-guide.js';
+import { buildBootstrapWorkspaceGuide } from '../cli/lib/bootstrap-workspace-guide.js';
 import { buildWorkspaceGuide } from '../cli/lib/workspace-guide.js';
 import { issueSignedAssetAccess } from '../services/asset-access.js';
 import {
     ContentItemListError,
     ContentItemProjectionError,
+    getLatestPublishedVersionsForItems,
     listContentItems,
-    projectContentItems
+    projectContentItems,
+    resolveContentItemReadView
 } from '../services/content-item.service.js';
 import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
+import {
+    countContentItemsForContentType,
+    findSingletonContentConflict,
+    getGlobalContentTypeBySlug,
+    getSingletonContentItem,
+    isSingletonContentType,
+    listGlobalContentTypes,
+    normalizeContentTypeKind
+} from '../services/content-type.service.js';
+import { findAssetUsage, findContentItemUsage, type ReferenceUsageSummary } from '../services/reference-usage.js';
+import {
+    FormServiceError,
+    createFormDefinition,
+    deleteFormDefinition,
+    getFormDefinitionById,
+    getFormDefinitionBySlug,
+    listFormDefinitions,
+    submitFormDefinition,
+    updateFormDefinition,
+} from '../services/forms.js';
+import {
+    cancelJob,
+    createJob,
+    getJob,
+    listJobs,
+    scheduleContentStatusTransition,
+    serializeJob,
+} from '../services/jobs.js';
 import {
     canSubscribeToReactiveTopic,
     getReactiveSubscriptionRecipe,
@@ -80,6 +116,7 @@ function readResourceTemplateValue(value: string | string[] | undefined) {
 }
 
 const GUIDE_TASK_IDS = [
+    'bootstrap-workspace',
     'discover-deployment',
     'discover-workspace',
     'author-content',
@@ -241,6 +278,10 @@ export function createServer(options: CreateMcpServerOptions = {}) {
         'content_types_slug_unique',
         'content_types_domain_slug_unique'
     ]);
+    const DOMAIN_HOSTNAME_CONSTRAINTS = new Set([
+        'domains_hostname_unique',
+        'domains_hostname_key',
+    ]);
 
     type ToolResult = {
         content: Array<{ type: 'text'; text: string }>;
@@ -268,6 +309,10 @@ export function createServer(options: CreateMcpServerOptions = {}) {
         return `${error.code}: ${error.message}. ${error.remediation}${error.context ? ` Context: ${JSON.stringify(error.context)}` : ''}`;
     }
 
+    function formatFormError(error: FormServiceError): string {
+        return `${error.code}: ${error.message}. ${error.remediation}${error.context ? ` Context: ${JSON.stringify(error.context)}` : ''}`;
+    }
+
     function withMCPPolicy<T>(
         operation: string,
         extractResource: (args: T) => any,
@@ -289,6 +334,35 @@ export function createServer(options: CreateMcpServerOptions = {}) {
     function validationFailureToText(failure: ValidationFailure): string {
         const context = failure.context ? ` Context: ${JSON.stringify(failure.context)}` : '';
         return `${failure.code}: ${failure.error}. ${failure.remediation}${context}`;
+    }
+
+    function invalidContentTypeKindText(rawKind: unknown) {
+        return `INVALID_CONTENT_TYPE_KIND: Use kind of "collection" or "singleton" instead of '${String(rawKind)}'.`;
+    }
+
+    function singletonContentItemConflictText(contentType: { slug: string }, existingItemId: number) {
+        return `SINGLETON_CONTENT_ITEM_EXISTS: Content type '${contentType.slug}' is a singleton and already uses content item ${existingItemId}. Use update_global or update_content_item instead.`;
+    }
+
+    function singletonContentTypeRequiresSingleItemText(contentType: { slug: string }, itemCount: number) {
+        return `SINGLETON_CONTENT_TYPE_REQUIRES_ONE_ITEM: Content type '${contentType.slug}' currently has ${itemCount} items. Archive, delete, or consolidate to a single item before changing kind to 'singleton'.`;
+    }
+
+    async function findSingletonConflictText(
+        domainId: number,
+        contentType: { id: number; kind: string; slug: string },
+        excludeContentItemId?: number
+    ) {
+        if (!isSingletonContentType(contentType.kind)) {
+            return null;
+        }
+
+        const conflict = await findSingletonContentConflict(domainId, contentType.id, excludeContentItemId);
+        if (!conflict) {
+            return null;
+        }
+
+        return singletonContentItemConflictText(contentType, conflict.id);
     }
 
     function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
@@ -319,6 +393,38 @@ export function createServer(options: CreateMcpServerOptions = {}) {
 
     function hasDefinedValues<T extends Record<string, unknown>>(value: T): boolean {
         return Object.keys(stripUndefined(value)).length > 0;
+    }
+
+    function resolveLocalizedReadOptions(
+        draft?: boolean,
+        locale?: string,
+        fallbackLocale?: string
+    ): {
+        draft: boolean;
+        locale?: string;
+        fallbackLocale?: string;
+    } | {
+        error: string;
+    } {
+        const normalizedDraft = draft === false ? false : true;
+        const normalizedLocale = typeof locale === 'string' && locale.trim().length > 0
+            ? locale.trim()
+            : undefined;
+        const normalizedFallbackLocale = typeof fallbackLocale === 'string' && fallbackLocale.trim().length > 0
+            ? fallbackLocale.trim()
+            : undefined;
+
+        if (!normalizedLocale && normalizedFallbackLocale) {
+            return {
+                error: 'CONTENT_LOCALE_REQUIRED: Provide locale when requesting fallbackLocale on localized content reads.'
+            };
+        }
+
+        return {
+            draft: normalizedDraft,
+            locale: normalizedLocale,
+            fallbackLocale: normalizedFallbackLocale
+        };
     }
 
     function clampLimit(limit: number | undefined, fallback = 50, max = 500): number {
@@ -392,6 +498,32 @@ export function createServer(options: CreateMcpServerOptions = {}) {
         }
 
         return value.toISOString();
+    }
+
+    function extractNumericCell(result: unknown, keys: string[]) {
+        const firstRow = Array.isArray(result)
+            ? result[0]
+            : Array.isArray((result as { rows?: unknown[] } | null | undefined)?.rows)
+                ? (result as { rows: unknown[] }).rows[0]
+                : null;
+
+        if (!firstRow || typeof firstRow !== 'object') {
+            return 0;
+        }
+
+        for (const key of keys) {
+            const candidate = (firstRow as Record<string, unknown>)[key];
+            const numeric = Number(candidate);
+            if (Number.isFinite(numeric)) {
+                return numeric;
+            }
+        }
+
+        return 0;
+    }
+
+    function isAdminPrincipal(principal: ActorPrincipal) {
+        return principal.scopes.has('admin') || principal.scopes.has('tenant:admin');
     }
 
     function hasActorScope(actor: ReturnType<typeof buildCurrentActorSnapshot>, scope: string): boolean {
@@ -524,6 +656,15 @@ export function createServer(options: CreateMcpServerOptions = {}) {
                 offersPath: asset.accessMode === 'entitled' ? `/api/assets/${asset.id}/offers` : null,
                 signedTokenTtlSeconds: asset.accessMode === 'signed' ? getAssetSignedTtlSeconds() : null
             }
+        };
+    }
+
+    function serializeReferenceUsageSummary(summary: ReferenceUsageSummary) {
+        return {
+            activeReferenceCount: summary.activeReferences.length,
+            historicalReferenceCount: summary.historicalReferences.length,
+            activeReferences: summary.activeReferences,
+            historicalReferences: summary.historicalReferences
         };
     }
 
@@ -679,33 +820,85 @@ export function createServer(options: CreateMcpServerOptions = {}) {
     }
 
 server.tool(
+    'create_domain',
+    'Create a domain for first-contact bootstrap or multi-domain administration',
+    {
+        name: z.string().min(1).describe('Display name for the new domain'),
+        hostname: z.string().min(1).describe('Unique hostname for the domain, e.g. docs.example.com'),
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ name, hostname }, extra) => {
+        const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
+
+        try {
+            const domainCountResult = await db.execute(sql`SELECT COUNT(*)::int AS total FROM domains`);
+            const domainCount = extractNumericCell(domainCountResult, ['total', 'count', '?column?']);
+
+            if (domainCount > 0 && !isAdminPrincipal(principal)) {
+                return err('DOMAIN_CREATE_FORBIDDEN: Use an actor with admin or tenant:admin scope to create additional domains.');
+            }
+
+            const [created] = await db.insert(domains).values({
+                name,
+                hostname,
+            }).returning();
+
+            await logAudit(created.id, 'create', 'domain', created.id, created);
+
+            return okJson({
+                id: created.id,
+                name: created.name,
+                hostname: created.hostname,
+                createdAt: created.createdAt.toISOString(),
+                bootstrap: domainCount === 0,
+            });
+        } catch (error) {
+            if (isUniqueViolation(error, DOMAIN_HOSTNAME_CONSTRAINTS) || (error as { code?: string }).code === '23505') {
+                return err(`DOMAIN_HOSTNAME_CONFLICT: Choose a different hostname than '${hostname}'.`);
+            }
+
+            return err(`Error creating domain: ${(error as Error).message}`);
+        }
+    }),
+);
+
+server.tool(
     'create_content_type',
     'Create a new content type schema',
     {
         name: z.string().describe('Name of the content type'),
         slug: z.string().describe('Unique slug for the content type'),
+        kind: z.enum(['collection', 'singleton']).optional().describe('Collection or singleton/global content type'),
         description: z.string().optional().describe('Description of the content type'),
-        schema: z.union([z.string(), z.record(z.string(), z.any())]).describe('JSON schema definition as a string or object'),
+        schema: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe('Canonical JSON schema definition as a string or object'),
+        schemaManifest: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe('Optional editor-oriented manifest that compiles into the canonical schema'),
         dryRun: z.boolean().optional().describe('If true, simulates the action without making changes')
     },
-    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ name, slug, description, schema, dryRun }, extra, domainId) => {
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ name, slug, kind, description, schema, schemaManifest, dryRun }, extra, domainId) => {
         try {
-            const schemaStr = typeof schema === 'string' ? schema : JSON.stringify(schema);
-            const schemaFailure = validateContentTypeSchema(schemaStr);
-            if (schemaFailure) {
-                return err(validationFailureToText(schemaFailure));
+            const normalizedKind = normalizeContentTypeKind(kind ?? 'collection');
+            if (!normalizedKind) {
+                return err(invalidContentTypeKindText(kind));
+            }
+            const schemaSource = resolveContentTypeSchemaSource({
+                schema,
+                schemaManifest
+            }, { requireSource: true });
+            if (!schemaSource.ok) {
+                return err(validationFailureToText(schemaSource.failure));
             }
 
             if (dryRun) {
-                return ok(`[Dry Run] Would create content type '${name}' with slug '${slug}'`);
+                return ok(`[Dry Run] Would create ${normalizedKind} content type '${name}' with slug '${slug}'`);
             }
 
             const [newItem] = await db.insert(contentTypes).values({
                 domainId,
                 name,
                 slug,
+                kind: normalizedKind,
                 description,
-                schema: schemaStr
+                schemaManifest: schemaSource.value!.schemaManifest,
+                schema: schemaSource.value!.schema
             }).returning();
 
             await logAudit(domainId, 'create', 'content_type', newItem.id, newItem);
@@ -780,22 +973,51 @@ server.tool(
         id: z.number().describe('ID of the content type to update'),
         name: z.string().optional(),
         slug: z.string().optional(),
+        kind: z.enum(['collection', 'singleton']).optional(),
         description: z.string().optional(),
         schema: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
+        schemaManifest: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
         dryRun: z.boolean().optional()
     },
-    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async ({ id, name, slug, description, schema, dryRun }, extra, domainId) => {
+    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.id }), async ({ id, name, slug, kind, description, schema, schemaManifest, dryRun }, extra, domainId) => {
         try {
-            const schemaStr = schema ? (typeof schema === 'string' ? schema : JSON.stringify(schema)) : undefined;
-            const updateData = stripUndefined({ name, slug, description, schema: schemaStr });
-            if (!hasDefinedValues({ name, slug, description, schema })) {
-                return err('At least one update field is required (name, slug, description, schema).');
+            const normalizedKind = kind !== undefined ? (normalizeContentTypeKind(kind) ?? undefined) : undefined;
+            if (kind !== undefined && !normalizedKind) {
+                return err(invalidContentTypeKindText(kind));
+            }
+            const schemaSource = resolveContentTypeSchemaSource({
+                schema,
+                schemaManifest
+            });
+            if (!schemaSource.ok) {
+                return err(validationFailureToText(schemaSource.failure));
+            }
+            const updateData = stripUndefined({
+                name,
+                slug,
+                kind: normalizedKind,
+                description,
+                ...(schemaSource.value
+                    ? {
+                        schema: schemaSource.value.schema,
+                        schemaManifest: schemaSource.value.schemaManifest
+                    }
+                    : {})
+            });
+            if (!hasDefinedValues({ name, slug, kind, description, schema, schemaManifest })) {
+                return err('At least one update field is required (name, slug, kind, description, schema, schemaManifest).');
             }
 
-            if (typeof updateData.schema === 'string') {
-                const schemaFailure = validateContentTypeSchema(updateData.schema);
-                if (schemaFailure) {
-                    return err(validationFailureToText(schemaFailure));
+            const [existing] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, id), eq(contentTypes.domainId, domainId)));
+            if (!existing) {
+                return err(`Content type ${id} not found`);
+            }
+
+            const targetKind = updateData.kind ?? existing.kind;
+            if (isSingletonContentType(targetKind) && !isSingletonContentType(existing.kind)) {
+                const itemCount = await countContentItemsForContentType(domainId, existing.id);
+                if (itemCount > 1) {
+                    return err(singletonContentTypeRequiresSingleItemText(existing, itemCount));
                 }
             }
 
@@ -823,6 +1045,482 @@ server.tool(
         }
     }
     ));
+
+server.tool(
+    'list_globals',
+    'List singleton/global content types and their current item',
+    {
+        draft: z.boolean().optional().describe('Return the working copy when true, otherwise prefer the latest published snapshot'),
+        locale: z.string().optional().describe('Optional locale for locale-aware reads'),
+        fallbackLocale: z.string().optional().describe('Optional fallback locale when localized fields do not contain locale')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ draft, locale, fallbackLocale }, _extra, domainId) => {
+        const localizedReadOptions = resolveLocalizedReadOptions(draft, locale, fallbackLocale);
+        if ('error' in localizedReadOptions) {
+            return err(localizedReadOptions.error);
+        }
+
+        const globalTypes = await listGlobalContentTypes(domainId);
+        const rows = await Promise.all(globalTypes.map(async (contentType) => {
+            const item = await getSingletonContentItem(domainId, contentType.id);
+            return {
+                contentType,
+                item
+            };
+        }));
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            rows.flatMap((row) => row.item && row.item.status !== 'published' ? [row.item.id] : [])
+        );
+        const items = rows.map(({ contentType, item }) => {
+            return {
+                contentType,
+                item: item
+                    ? resolveContentItemReadView(
+                        item,
+                        contentType.schema,
+                        localizedReadOptions,
+                        latestPublishedVersions.get(item.id)
+                    )
+                    : null
+            };
+        });
+
+        return okJson({ items, total: items.length });
+    })
+);
+
+server.tool(
+    'get_global',
+    'Get a singleton/global content type by slug',
+    {
+        slug: z.string().describe('Slug of the singleton/global content type'),
+        draft: z.boolean().optional().describe('Return the working copy when true, otherwise prefer the latest published snapshot'),
+        locale: z.string().optional().describe('Optional locale for locale-aware reads'),
+        fallbackLocale: z.string().optional().describe('Optional fallback locale when localized fields do not contain locale')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'content_type', id: args.slug }), async ({ slug, draft, locale, fallbackLocale }, _extra, domainId) => {
+        const localizedReadOptions = resolveLocalizedReadOptions(draft, locale, fallbackLocale);
+        if ('error' in localizedReadOptions) {
+            return err(localizedReadOptions.error);
+        }
+
+        const contentType = await getGlobalContentTypeBySlug(slug, domainId);
+        if (!contentType) {
+            return err(`GLOBAL_CONTENT_TYPE_NOT_FOUND: No singleton/global content type exists with slug '${slug}'.`);
+        }
+
+        const item = await getSingletonContentItem(domainId, contentType.id);
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            item && item.status !== 'published' ? [item.id] : []
+        );
+        return okJson({
+            contentType,
+            item: item
+                ? resolveContentItemReadView(
+                    item,
+                    contentType.schema,
+                    localizedReadOptions,
+                    latestPublishedVersions.get(item.id)
+                )
+                : null
+        });
+    })
+);
+
+server.tool(
+    'update_global',
+    'Create or update the singleton item for a global content type',
+    {
+        slug: z.string().describe('Slug of the singleton/global content type'),
+        data: z.union([z.string(), z.record(z.string(), z.any())]).describe('JSON string or object conforming to the global schema'),
+        status: z.enum(['draft', 'published', 'archived']).optional().describe('Optional lifecycle status'),
+        dryRun: z.boolean().optional().describe('If true, simulates the action without making changes')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'content_type', id: args.slug }), async ({ slug, data, status, dryRun }, _extra, domainId) => {
+        const contentType = await getGlobalContentTypeBySlug(slug, domainId);
+        if (!contentType) {
+            return err(`GLOBAL_CONTENT_TYPE_NOT_FOUND: No singleton/global content type exists with slug '${slug}'.`);
+        }
+
+        const existing = await getSingletonContentItem(domainId, contentType.id);
+        const singletonConflict = await findSingletonConflictText(domainId, contentType, existing?.id);
+        if (singletonConflict) {
+            return err(singletonConflict);
+        }
+
+        const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
+        const validation = await validateContentDataAgainstSchema(contentType.schema, dataStr, domainId);
+        if (validation) {
+            return err(validationFailureToText(validation));
+        }
+
+        const activeWorkflow = await WorkflowService.getActiveWorkflow(domainId, contentType.id);
+        if (!existing && activeWorkflow && status && status !== 'draft') {
+            return err(`WORKFLOW_TRANSITION_FORBIDDEN: This global is governed by an active workflow. Create it as 'draft' and use workflow submission to request a transition.`);
+        }
+
+        if (existing && activeWorkflow && status && status !== existing.status) {
+            return err(`WORKFLOW_TRANSITION_FORBIDDEN: This global is governed by an active workflow. You cannot manually change the status to '${status}'. Use workflow submission to request a transition.`);
+        }
+
+        const targetStatus = existing
+            ? (status ?? existing.status)
+            : (status ?? 'draft');
+
+        if (dryRun) {
+            return okJson({
+                contentType,
+                item: existing
+                    ? {
+                        ...existing,
+                        data: dataStr,
+                        status: targetStatus,
+                        version: existing.version + 1
+                    }
+                    : {
+                        id: 0,
+                        contentTypeId: contentType.id,
+                        data: dataStr,
+                        status: targetStatus,
+                        version: 1
+                    }
+            });
+        }
+
+        if (!existing) {
+            const [created] = await db.insert(contentItems).values({
+                domainId,
+                contentTypeId: contentType.id,
+                data: dataStr,
+                status: targetStatus
+            }).returning();
+
+            await logAudit(domainId, 'create', 'content_item', created.id, created);
+            return okJson({
+                contentType,
+                item: created
+            });
+        }
+
+        const updated = await db.transaction(async (tx) => {
+            await tx.insert(contentItemVersions).values({
+                contentItemId: existing.id,
+                version: existing.version,
+                data: existing.data,
+                status: existing.status,
+                createdAt: existing.updatedAt
+            });
+
+            const [result] = await tx.update(contentItems)
+                .set({
+                    data: dataStr,
+                    status: targetStatus,
+                    version: existing.version + 1,
+                    updatedAt: new Date()
+                })
+                .where(and(
+                    eq(contentItems.id, existing.id),
+                    eq(contentItems.domainId, domainId)
+                ))
+                .returning();
+
+            return result;
+        });
+
+        await logAudit(domainId, 'update', 'content_item', updated.id, {
+            data: dataStr,
+            status: targetStatus
+        });
+
+        return okJson({
+            contentType,
+            item: updated
+        });
+    })
+);
+
+server.tool(
+    'list_forms',
+    'List form definitions in the current domain',
+    {},
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async (_args, _extra, domainId) => {
+        const forms = await listFormDefinitions(domainId);
+        return okJson({ items: forms, total: forms.length });
+    })
+);
+
+server.tool(
+    'get_form',
+    'Get a form definition by numeric id or public slug',
+    {
+        id: z.number().optional().describe('Numeric form definition id'),
+        slug: z.string().optional().describe('Public form slug'),
+        domainId: z.number().optional().describe('Optional domain id for public slug reads when bypassing the active MCP domain')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ id, slug, domainId }, _extra, activeDomainId) => {
+        if (id === undefined && !slug) {
+            return err('FORM_IDENTIFIER_REQUIRED: Provide id or slug.');
+        }
+
+        const resolvedDomainId = domainId ?? activeDomainId;
+        const form = id !== undefined
+            ? await getFormDefinitionById(activeDomainId, id)
+            : await getFormDefinitionBySlug(resolvedDomainId, slug as string);
+
+        if (!form) {
+            return err('FORM_DEFINITION_NOT_FOUND: No matching form definition exists in the current domain.');
+        }
+
+        return okJson(form);
+    })
+);
+
+server.tool(
+    'create_form',
+    'Create a reusable form definition',
+    {
+        name: z.string().describe('Human-readable form name'),
+        slug: z.string().describe('Unique public slug'),
+        description: z.string().optional().describe('Optional description'),
+        contentTypeId: z.number().describe('Target content type id'),
+        fields: z.array(z.record(z.string(), z.any())).describe('Array of form field descriptors'),
+        defaultData: z.record(z.string(), z.any()).optional().describe('Optional default payload merged into every submission'),
+        active: z.boolean().optional().describe('Whether the form accepts submissions immediately'),
+        publicRead: z.boolean().optional().describe('Whether the public form definition is readable without authentication'),
+        submissionStatus: z.string().optional().describe('Initial content item status for form submissions'),
+        workflowTransitionId: z.number().nullable().optional().describe('Optional workflow transition to auto-submit after creation'),
+        requirePayment: z.boolean().optional().describe('Whether submissions require L402 payment using the target content type base price'),
+        webhookUrl: z.string().optional().describe('Optional follow-up webhook URL'),
+        webhookSecret: z.string().optional().describe('Optional webhook signing secret'),
+        successMessage: z.string().optional().describe('Optional public-facing success message')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async (args, _extra, domainId) => {
+        try {
+            const created = await createFormDefinition({
+                domainId,
+                ...args,
+            });
+            await logAudit(domainId, 'create', 'form_definition', created.id, {
+                slug: created.slug,
+                contentTypeId: created.contentTypeId,
+            });
+            return okJson(created);
+        } catch (error) {
+            if (error instanceof FormServiceError) {
+                return err(formatFormError(error));
+            }
+            return err(`Error creating form: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'update_form',
+    'Update a reusable form definition',
+    {
+        id: z.number().describe('Form definition id'),
+        name: z.string().optional().describe('Optional updated form name'),
+        slug: z.string().optional().describe('Optional updated slug'),
+        description: z.string().optional().describe('Optional description'),
+        contentTypeId: z.number().optional().describe('Optional target content type id'),
+        fields: z.array(z.record(z.string(), z.any())).optional().describe('Optional replacement field array'),
+        defaultData: z.record(z.string(), z.any()).optional().describe('Optional default payload merged into every submission'),
+        active: z.boolean().optional().describe('Whether the form accepts submissions immediately'),
+        publicRead: z.boolean().optional().describe('Whether the public form definition is readable without authentication'),
+        submissionStatus: z.string().optional().describe('Initial content item status for form submissions'),
+        workflowTransitionId: z.number().nullable().optional().describe('Optional workflow transition to auto-submit after creation'),
+        requirePayment: z.boolean().optional().describe('Whether submissions require L402 payment using the target content type base price'),
+        webhookUrl: z.string().nullable().optional().describe('Optional follow-up webhook URL'),
+        webhookSecret: z.string().nullable().optional().describe('Optional webhook signing secret'),
+        successMessage: z.string().nullable().optional().describe('Optional public-facing success message')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'system', id: args.id }), async ({ id, ...args }, _extra, domainId) => {
+        try {
+            const updated = await updateFormDefinition(id, {
+                domainId,
+                ...args,
+            });
+            await logAudit(domainId, 'update', 'form_definition', updated.id, {
+                slug: updated.slug,
+                contentTypeId: updated.contentTypeId,
+            });
+            return okJson(updated);
+        } catch (error) {
+            if (error instanceof FormServiceError) {
+                return err(formatFormError(error));
+            }
+            return err(`Error updating form: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'delete_form',
+    'Delete a reusable form definition',
+    {
+        id: z.number().describe('Form definition id')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'system', id: args.id }), async ({ id }, _extra, domainId) => {
+        const deleted = await deleteFormDefinition(domainId, id);
+        if (!deleted) {
+            return err(`FORM_DEFINITION_NOT_FOUND: No form definition exists with id ${id} in the current domain.`);
+        }
+
+        await logAudit(domainId, 'delete', 'form_definition', deleted.id, {
+            slug: deleted.slug,
+            contentTypeId: deleted.contentTypeId,
+        });
+        return okJson(deleted);
+    })
+);
+
+server.tool(
+    'submit_form',
+    'Submit a form payload into its target content type',
+    {
+        slug: z.string().describe('Public form slug'),
+        data: z.record(z.string(), z.any()).describe('Submission payload'),
+        domainId: z.number().optional().describe('Optional domain id override for public-style submissions')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ slug, data, domainId }, extra, activeDomainId) => {
+        try {
+            const resolvedDomainId = domainId ?? activeDomainId;
+            const principal = resolveMcpPrincipal(extra);
+            const submitted = await submitFormDefinition(resolvedDomainId, slug, {
+                data,
+                request: {
+                    requestId: undefined,
+                    userAgent: 'mcp',
+                    ip: undefined,
+                    headers: undefined,
+                }
+            });
+            await logAudit(resolvedDomainId, 'create', 'content_item', submitted.item.id, {
+                source: 'submit_form',
+                formId: submitted.form.id,
+                formSlug: submitted.form.slug,
+                reviewTaskId: submitted.reviewTaskId,
+                actorId: principal.actorId,
+            });
+            return okJson({
+                form: submitted.form,
+                item: submitted.item,
+                reviewTaskId: submitted.reviewTaskId,
+            });
+        } catch (error) {
+            if (error instanceof FormServiceError) {
+                return err(formatFormError(error));
+            }
+            return err(`Error submitting form: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'list_jobs',
+    'List background jobs in the current domain',
+    {
+        status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']).optional().describe('Optional job status filter'),
+        kind: z.enum(['content_status_transition', 'outbound_webhook']).optional().describe('Optional job kind filter'),
+        limit: z.number().optional().describe('Maximum rows to return'),
+        offset: z.number().optional().describe('Offset into the job list')
+    },
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ status, kind, limit, offset }, _extra, domainId) => {
+        const rows = await listJobs(domainId, { status, kind, limit, offset });
+        return okJson({ items: rows.map((row) => serializeJob(row)), total: rows.length });
+    })
+);
+
+server.tool(
+    'get_job',
+    'Get one background job by id',
+    {
+        id: z.number().describe('Job id')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'system', id: args.id }), async ({ id }, _extra, domainId) => {
+        const job = await getJob(domainId, id);
+        if (!job) {
+            return err(`JOB_NOT_FOUND: No background job exists with id ${id} in the current domain.`);
+        }
+
+        return okJson(serializeJob(job));
+    })
+);
+
+server.tool(
+    'create_job',
+    'Create a generic background job',
+    {
+        kind: z.enum(['content_status_transition', 'outbound_webhook']).describe('Job kind'),
+        payload: z.record(z.string(), z.any()).describe('Job payload'),
+        queue: z.string().optional().describe('Optional queue name'),
+        runAt: z.string().optional().describe('Optional ISO-8601 scheduled time'),
+        maxAttempts: z.number().optional().describe('Optional retry limit')
+    },
+    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ kind, payload, queue, runAt, maxAttempts }, _extra, domainId) => {
+        try {
+            const created = await createJob({
+                domainId,
+                kind,
+                payload: payload as never,
+                queue,
+                runAt: runAt ? new Date(runAt) : undefined,
+                maxAttempts,
+            });
+            await logAudit(domainId, 'create', 'job', created.id, {
+                kind: created.kind,
+                queue: created.queue,
+                runAt: created.runAt.toISOString(),
+            });
+            return okJson(serializeJob(created));
+        } catch (error) {
+            return err(`Error creating job: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'cancel_job',
+    'Cancel a queued background job',
+    {
+        id: z.number().describe('Job id')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'system', id: args.id }), async ({ id }, _extra, domainId) => {
+        const cancelled = await cancelJob(domainId, id);
+        if (!cancelled) {
+            return err(`JOB_CANCEL_FORBIDDEN: Only queued jobs can be cancelled, or job ${id} does not exist.`);
+        }
+
+        return okJson(serializeJob(cancelled));
+    })
+);
+
+server.tool(
+    'schedule_content_status_change',
+    'Schedule a future content item status transition through the jobs lane',
+    {
+        id: z.number().describe('Content item id'),
+        status: z.string().describe('Target status such as published or archived'),
+        runAt: z.string().describe('ISO-8601 time when the status change should execute'),
+        maxAttempts: z.number().optional().describe('Optional retry limit')
+    },
+    withMCPPolicy('content.write', (args) => ({ type: 'content_item', id: args.id }), async ({ id, status, runAt, maxAttempts }, _extra, domainId) => {
+        const scheduled = await scheduleContentStatusTransition({
+            domainId,
+            contentItemId: id,
+            targetStatus: status,
+            runAt: new Date(runAt),
+            maxAttempts,
+        });
+        await logAudit(domainId, 'create', 'job', scheduled.id, {
+            source: 'schedule_content_status',
+            contentItemId: id,
+            targetStatus: status,
+            runAt,
+        });
+        return okJson(serializeJob(scheduled));
+    })
+);
 
 server.tool(
     'delete_content_type',
@@ -1087,6 +1785,27 @@ server.tool(
         }
 
         return okJson(serializeAssetForMcp(asset));
+    })
+);
+
+server.tool(
+    'get_asset_usage',
+    'Inspect which content currently or historically references an asset',
+    {
+        id: z.number().describe('Asset ID')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'asset', id: args.id }), async ({ id }, _extra, domainId) => {
+        const asset = await getAsset(id, domainId, { includeDeleted: true });
+        if (!asset) {
+            return err(`ASSET_NOT_FOUND: Asset ${id} not found in the current domain.`);
+        }
+
+        const usage = await findAssetUsage(domainId, id);
+        return okJson({
+            asset: serializeAssetForMcp(asset),
+            usage: serializeReferenceUsageSummary(usage),
+            recommendedNextAction: 'Inspect the referencing content items before deleting or purging this asset.'
+        });
     })
 );
 
@@ -1583,6 +2302,11 @@ server.tool(
                 return err(`Content type ${contentTypeId} not found`);
             }
 
+            const singletonConflict = await findSingletonConflictText(domainId, contentType);
+            if (singletonConflict) {
+                return err(singletonConflict);
+            }
+
             const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
             const contentFailure = await validateContentDataAgainstSchema(contentType.schema, dataStr, domainId);
             if (contentFailure) {
@@ -1628,27 +2352,46 @@ server.tool(
 
         const buildItemError = (index: number, code: string, errorText: string) => ({ index, ok: false, code, error: errorText });
         const isAtomic = atomic === true;
+        const plannedSingletonAssignments = new Map<number, number>();
 
         if (dryRun) {
-            const results = await Promise.all(items.map(async (item, index) => {
+            const results: Array<Record<string, unknown>> = [];
+            for (const [index, item] of items.entries()) {
                 const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, domainId)));
                 if (!contentType) {
-                    return buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`);
+                    results.push(buildItemError(index, 'CONTENT_TYPE_NOT_FOUND', `Content type ${item.contentTypeId} not found`));
+                    continue;
                 }
 
                 const itemDataStr = typeof item.data === 'string' ? item.data : JSON.stringify(item.data);
                 const validation = await validateContentDataAgainstSchema(contentType.schema, itemDataStr, domainId);
                 if (validation) {
-                    return buildItemError(index, validation.code, validation.error);
+                    results.push(buildItemError(index, validation.code, validation.error));
+                    continue;
                 }
 
-                return {
+                if (isSingletonContentType(contentType.kind)) {
+                    const conflict = await findSingletonContentConflict(domainId, item.contentTypeId);
+                    if (conflict) {
+                        results.push(buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${conflict.id}`));
+                        continue;
+                    }
+
+                    const reservedBy = plannedSingletonAssignments.get(item.contentTypeId);
+                    if (reservedBy !== undefined) {
+                        results.push(buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`));
+                        continue;
+                    }
+                    plannedSingletonAssignments.set(item.contentTypeId, index);
+                }
+
+                results.push({
                     index,
                     ok: true,
                     id: 0,
                     version: 1
-                };
-            }));
+                });
+            }
 
             return okJson({ atomic: isAtomic, results });
         }
@@ -1657,6 +2400,7 @@ server.tool(
             try {
                 const results = await db.transaction(async (tx) => {
                     const output: Array<Record<string, unknown>> = [];
+                    const singletonAssignments = new Map<number, number>();
 
                     for (const [index, item] of items.entries()) {
                         const [contentType] = await tx.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, domainId)));
@@ -1668,6 +2412,24 @@ server.tool(
                         const validation = await validateContentDataAgainstSchema(contentType.schema, itemDataStr, domainId);
                         if (validation) {
                             throw new Error(JSON.stringify(buildItemError(index, validation.code, validation.error)));
+                        }
+
+                        if (isSingletonContentType(contentType.kind)) {
+                            const [conflict] = await tx.select({ id: contentItems.id })
+                                .from(contentItems)
+                                .where(and(
+                                    eq(contentItems.domainId, domainId),
+                                    eq(contentItems.contentTypeId, item.contentTypeId)
+                                ));
+                            if (conflict) {
+                                throw new Error(JSON.stringify(buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${conflict.id}`)));
+                            }
+
+                            const reservedBy = singletonAssignments.get(item.contentTypeId);
+                            if (reservedBy !== undefined) {
+                                throw new Error(JSON.stringify(buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`)));
+                            }
+                            singletonAssignments.set(item.contentTypeId, index);
                         }
 
                         const [created] = await tx.insert(contentItems).values({
@@ -1710,6 +2472,7 @@ server.tool(
         }
 
         const results: Array<Record<string, unknown>> = [];
+        const singletonAssignments = new Map<number, number>();
         for (const [index, item] of items.entries()) {
             try {
                 const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, item.contentTypeId), eq(contentTypes.domainId, domainId)));
@@ -1723,6 +2486,21 @@ server.tool(
                 if (validation) {
                     results.push(buildItemError(index, validation.code, validation.error));
                     continue;
+                }
+
+                if (isSingletonContentType(contentType.kind)) {
+                    const conflict = await findSingletonContentConflict(domainId, item.contentTypeId);
+                    if (conflict) {
+                        results.push(buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${conflict.id}`));
+                        continue;
+                    }
+
+                    const reservedBy = singletonAssignments.get(item.contentTypeId);
+                    if (reservedBy !== undefined) {
+                        results.push(buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by batch item ${reservedBy}.`));
+                        continue;
+                    }
+                    singletonAssignments.set(item.contentTypeId, index);
                 }
 
                 const [created] = await db.insert(contentItems).values({
@@ -1775,6 +2553,9 @@ server.tool(
     {
         contentTypeId: z.number().optional().describe('Filter by content type ID'),
         status: z.string().optional().describe('Filter by status'),
+        draft: z.boolean().optional().describe('Return the working copy when true, otherwise prefer the latest published snapshot'),
+        locale: z.string().optional().describe('Optional locale for locale-aware reads'),
+        fallbackLocale: z.string().optional().describe('Optional fallback locale when localized fields do not contain locale'),
         createdAfter: z.string().optional().describe('ISO-8601 created-at lower bound'),
         createdBefore: z.string().optional().describe('ISO-8601 created-at upper bound'),
         fieldName: z.string().optional().describe('Top-level scalar field from the selected content type schema'),
@@ -1786,11 +2567,19 @@ server.tool(
         offset: z.number().optional().describe('Row offset (default 0)'),
         cursor: z.string().optional().describe('Cursor returned by a previous get_content_items page')
     },
-    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, createdAfter, createdBefore, fieldName, fieldOp, fieldValue, sortField, includeArchived, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
+    withMCPPolicy('content.read', () => ({ type: 'system' }), async ({ contentTypeId, status, draft, locale, fallbackLocale, createdAfter, createdBefore, fieldName, fieldOp, fieldValue, sortField, includeArchived, limit: rawLimit, offset: rawOffset, cursor }, extra, domainId) => {
+        const localizedReadOptions = resolveLocalizedReadOptions(draft, locale, fallbackLocale);
+        if ('error' in localizedReadOptions) {
+            return err(localizedReadOptions.error);
+        }
+
         try {
             const result = await listContentItems(domainId, {
                 contentTypeId,
                 status,
+                draft: localizedReadOptions.draft,
+                locale: localizedReadOptions.locale,
+                fallbackLocale: localizedReadOptions.fallbackLocale,
                 createdAfter: parseDateArg(createdAfter, 'createdAfter'),
                 createdBefore: parseDateArg(createdBefore, 'createdBefore'),
                 fieldName,
@@ -1898,9 +2687,17 @@ server.tool(
     'get_content_item',
     'Get a single content item by ID',
     {
-        id: z.number().describe('ID of the content item')
+        id: z.number().describe('ID of the content item'),
+        draft: z.boolean().optional().describe('Return the working copy when true, otherwise prefer the latest published snapshot'),
+        locale: z.string().optional().describe('Optional locale for locale-aware reads'),
+        fallbackLocale: z.string().optional().describe('Optional fallback locale when localized fields do not contain locale')
     },
-    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, extra, domainId) => {
+    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id, draft, locale, fallbackLocale }, extra, domainId) => {
+        const localizedReadOptions = resolveLocalizedReadOptions(draft, locale, fallbackLocale);
+        if ('error' in localizedReadOptions) {
+            return err(localizedReadOptions.error);
+        }
+
         const [row] = await db.select({
             item: contentItems,
             basePrice: contentTypes.basePrice,
@@ -1918,9 +2715,42 @@ server.tool(
             return err('PAYMENT_REQUIRED: This content item is paywalled. You must use the REST API /api/content-items/:id to fulfill the L402 payment challenge.');
         }
 
-        return okJson(await ensureContentItemLifecycleState(row.item, row.schema));
+        const item = await ensureContentItemLifecycleState(row.item, row.schema);
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            item.status === 'published' ? [] : [item.id]
+        );
+        return okJson(resolveContentItemReadView(
+            item,
+            row.schema,
+            localizedReadOptions,
+            latestPublishedVersions.get(item.id)
+        ));
     }
     ));
+
+server.tool(
+    'get_content_item_usage',
+    'Inspect which content currently or historically references a content item',
+    {
+        id: z.number().describe('ID of the content item')
+    },
+    withMCPPolicy('content.read', (args) => ({ type: 'content_item', id: args.id }), async ({ id }, _extra, domainId) => {
+        const [item] = await db.select({ id: contentItems.id })
+            .from(contentItems)
+            .where(and(eq(contentItems.id, id), eq(contentItems.domainId, domainId)));
+
+        if (!item) {
+            return err(`CONTENT_ITEM_NOT_FOUND: Content item ${id} not found in the current domain.`);
+        }
+
+        const usage = await findContentItemUsage(domainId, id);
+        return okJson({
+            item,
+            usage: serializeReferenceUsageSummary(usage),
+            recommendedNextAction: 'Inspect the referencing content items before deleting or heavily revising this record.'
+        });
+    })
+);
 
 server.tool(
     'update_content_item',
@@ -1947,6 +2777,11 @@ server.tool(
             const [contentType] = await db.select().from(contentTypes).where(and(eq(contentTypes.id, existing.contentTypeId), eq(contentTypes.domainId, domainId)));
             if (!contentType) {
                 return err(`Content type ${existing.contentTypeId} not found`);
+            }
+
+            const singletonConflict = await findSingletonConflictText(domainId, contentType, existing.id);
+            if (singletonConflict) {
+                return err(singletonConflict);
             }
 
             const targetData = typeof updateData.data === 'string' ? updateData.data : existing.data;
@@ -2018,6 +2853,7 @@ server.tool(
 
         const buildItemError = (index: number, code: string, errorText: string) => ({ index, ok: false, code, error: errorText });
         const isAtomic = atomic === true;
+        const plannedSingletonAssignments = new Map<number, number>();
 
         const validateInput = async (
             item: { id: number; contentTypeId?: number; data?: string; status?: string },
@@ -2062,6 +2898,25 @@ server.tool(
                 } as const;
             }
 
+            if (isSingletonContentType(contentType.kind)) {
+                const conflict = await findSingletonContentConflict(domainId, targetContentTypeId, existing.id);
+                if (conflict) {
+                    return {
+                        ok: false,
+                        error: buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${conflict.id}`)
+                    } as const;
+                }
+
+                const reservedBy = plannedSingletonAssignments.get(targetContentTypeId);
+                if (reservedBy !== undefined && reservedBy !== existing.id) {
+                    return {
+                        ok: false,
+                        error: buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by content item ${reservedBy}.`)
+                    } as const;
+                }
+                plannedSingletonAssignments.set(targetContentTypeId, existing.id);
+            }
+
             return {
                 ok: true,
                 existing,
@@ -2096,6 +2951,7 @@ server.tool(
             try {
                 const results = await db.transaction(async (tx) => {
                     const output: Array<Record<string, unknown>> = [];
+                    const singletonAssignments = new Map<number, number>();
 
                     for (const [index, item] of items.entries()) {
                         const updateData = stripUndefined({
@@ -2123,6 +2979,25 @@ server.tool(
                         const validation = await validateContentDataAgainstSchema(contentType.schema, targetData, domainId);
                         if (validation) {
                             throw new Error(JSON.stringify(buildItemError(index, validation.code, validation.error)));
+                        }
+
+                        if (isSingletonContentType(contentType.kind)) {
+                            const [conflict] = await tx.select({ id: contentItems.id })
+                                .from(contentItems)
+                                .where(and(
+                                    eq(contentItems.domainId, domainId),
+                                    eq(contentItems.contentTypeId, targetContentTypeId),
+                                    ne(contentItems.id, existing.id)
+                                ));
+                            if (conflict) {
+                                throw new Error(JSON.stringify(buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' already uses content item ${conflict.id}`)));
+                            }
+
+                            const reservedBy = singletonAssignments.get(targetContentTypeId);
+                            if (reservedBy !== undefined && reservedBy !== existing.id) {
+                                throw new Error(JSON.stringify(buildItemError(index, 'SINGLETON_CONTENT_ITEM_EXISTS', `Singleton content type '${contentType.slug}' is already targeted by content item ${reservedBy}.`)));
+                            }
+                            singletonAssignments.set(targetContentTypeId, existing.id);
                         }
 
                         await tx.insert(contentItemVersions).values({
@@ -3101,6 +3976,20 @@ server.tool(
             dryRunRecommended: recipe.dryRunRecommended,
             currentActor,
         };
+
+        if (taskId === 'bootstrap-workspace') {
+            const deploymentStatus = await getDeploymentStatusSnapshot();
+            const guide = buildBootstrapWorkspaceGuide({
+                currentActor,
+                deploymentStatus,
+            });
+
+            return okJson({
+                ...basePayload,
+                deploymentStatus,
+                guide,
+            });
+        }
 
         if (taskId === 'discover-deployment') {
             const deploymentStatus = await getDeploymentStatusSnapshot();

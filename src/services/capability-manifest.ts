@@ -26,10 +26,33 @@ import {
 
 export type CapabilityManifest = ReturnType<typeof buildCapabilityManifest>;
 
+const TRUE_VALUE = 'true';
+
+function isAuthRequired() {
+    return (process.env.AUTH_REQUIRED || TRUE_VALUE).toLowerCase() === TRUE_VALUE;
+}
+
+function isInsecureLocalAdminEnabled() {
+    return process.env.NODE_ENV !== 'production'
+        && (process.env.ALLOW_INSECURE_LOCAL_ADMIN || 'false').toLowerCase() === TRUE_VALUE;
+}
+
 export function buildCapabilityManifest() {
     const experimentalRevenue = isExperimentalRevenueEnabled();
     const experimentalDelegation = isExperimentalDelegationEnabled();
     const experimentalAgentRuns = isExperimentalAgentRunsEnabled();
+    const authRequired = isAuthRequired();
+    const insecureLocalAdminEnabled = isInsecureLocalAdminEnabled();
+    const writeRequiresCredential = authRequired || !insecureLocalAdminEnabled;
+    const recommendedActorProfile = authRequired
+        ? 'api-key'
+        : insecureLocalAdminEnabled
+            ? 'anonymous-local-dev'
+            : 'api-key';
+    const vectorRagEnabled = Boolean(process.env.OPENAI_API_KEY);
+    const vectorRagModel = vectorRagEnabled
+        ? (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small')
+        : null;
     const actorProfiles = [
         {
             id: 'public-discovery',
@@ -56,7 +79,7 @@ export function buildCapabilityManifest() {
             authMode: 'api-key',
             availableSurfaces: ['rest', 'mcp-http'],
             actorIdExamples: ['api_key:12'],
-            recommendedFor: ['discover-workspace', 'author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content', 'verify-provenance'],
+            recommendedFor: ['bootstrap-workspace', 'discover-workspace', 'author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content', 'verify-provenance'],
             domainContext: {
                 required: true,
                 strategy: 'implicit-from-key',
@@ -74,7 +97,7 @@ export function buildCapabilityManifest() {
             authMode: 'api-key',
             availableSurfaces: ['rest', 'mcp-http'],
             actorIdExamples: ['env_key:remote-admin'],
-            recommendedFor: ['discover-workspace', 'author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content', 'verify-provenance'],
+            recommendedFor: ['bootstrap-workspace', 'discover-workspace', 'author-content', 'review-workflow', 'manage-integrations', 'consume-paid-content', 'verify-provenance'],
             domainContext: {
                 required: true,
                 strategy: 'server-configured-default',
@@ -92,7 +115,7 @@ export function buildCapabilityManifest() {
             authMode: 'supervisor-session',
             availableSurfaces: ['rest', 'mcp-http'],
             actorIdExamples: ['supervisor:1'],
-            recommendedFor: ['discover-workspace', 'review-workflow', 'manage-integrations', 'verify-provenance'],
+            recommendedFor: ['bootstrap-workspace', 'discover-workspace', 'review-workflow', 'manage-integrations', 'verify-provenance'],
             domainContext: {
                 required: true,
                 strategy: 'header',
@@ -111,7 +134,7 @@ export function buildCapabilityManifest() {
             authMode: 'local-stdio',
             availableSurfaces: ['mcp-stdio'],
             actorIdExamples: ['mcp-local'],
-            recommendedFor: ['discover-deployment', 'discover-workspace', 'author-content', 'review-workflow', 'manage-integrations', 'verify-provenance'],
+            recommendedFor: ['discover-deployment', 'bootstrap-workspace', 'discover-workspace', 'author-content', 'review-workflow', 'manage-integrations', 'verify-provenance'],
             domainContext: {
                 required: true,
                 strategy: 'environment',
@@ -154,6 +177,13 @@ export function buildCapabilityManifest() {
                 preferredActorProfile: 'public-discovery',
                 fallbackSurface: 'mcp',
                 rationale: 'The REST manifest is public and easiest to read before you authenticate or connect over MCP.',
+            },
+            {
+                intent: 'bootstrap-workspace',
+                preferredSurface: 'mcp',
+                preferredActorProfile: 'mcp-local',
+                fallbackSurface: 'rest',
+                rationale: 'Bootstrap needs live readiness checks plus in-band domain creation, and local MCP remains usable even before the first domain exists.',
             },
             {
                 intent: 'discover-workspace',
@@ -200,6 +230,45 @@ export function buildCapabilityManifest() {
         ],
         actorProfiles,
         taskRecipes: [
+            {
+                id: 'bootstrap-workspace',
+                goal: 'Provision the first domain or verify bootstrap readiness before attempting schema and content writes.',
+                preferredSurface: 'mcp',
+                fallbackSurface: 'rest',
+                recommendedAuth: 'api-key-or-local-mcp',
+                preferredActorProfile: 'mcp-local',
+                supportedActorProfiles: ['mcp-local', 'api-key', 'env-key', 'supervisor-session'],
+                recommendedApiKeyScopes: ['admin'],
+                requiredModules: ['content-runtime'],
+                dryRunRecommended: false,
+                steps: [
+                    {
+                        title: 'Read the live deployment status',
+                        surface: 'rest',
+                        operation: 'GET /api/deployment-status',
+                        purpose: 'Confirm whether the runtime already has a provisioned domain and whether bootstrap is still required.',
+                    },
+                    {
+                        title: 'Create the first domain in-band',
+                        surface: 'mcp',
+                        operation: 'create_domain',
+                        purpose: 'Bootstrap the workspace from inside the agent session without dropping down to a raw REST call.',
+                    },
+                    {
+                        title: 'Fallback to the REST bootstrap path when MCP is unavailable',
+                        surface: 'rest',
+                        operation: 'POST /api/domains',
+                        purpose: 'Provision the first domain or an additional admin-managed domain over the HTTP API.',
+                        optional: true,
+                    },
+                    {
+                        title: 'Hand off to workspace discovery',
+                        surface: 'mcp',
+                        operation: 'guide_task bootstrap-workspace or guide_task discover-workspace',
+                        purpose: 'Verify that bootstrap completed and then inspect the active workspace before creating schemas or content.',
+                    },
+                ],
+            },
             {
                 id: 'discover-deployment',
                 goal: 'Determine which modules, transports, auth modes, and dry-run paths are enabled before acting.',
@@ -607,6 +676,37 @@ export function buildCapabilityManifest() {
                 apiKeysAreDomainScoped: true,
                 mcpDomainEnv: 'WORDCLAW_DOMAIN_ID',
             },
+            effective: {
+                authRequired,
+                writeRequiresCredential,
+                insecureLocalAdminEnabled,
+                recommendedActorProfile,
+                recommendedScopes: ['content:write'],
+                note: authRequired
+                    ? 'Authenticated writes require an API key or supervisor session with the appropriate scope set.'
+                    : insecureLocalAdminEnabled
+                        ? 'Local unauthenticated writes are allowed only because ALLOW_INSECURE_LOCAL_ADMIN=true in a non-production environment.'
+                        : 'Read-only discovery can be unauthenticated, but writes still require a credential because insecure local admin is not enabled.',
+            },
+        },
+        bootstrap: {
+            contentWritesRequireDomain: true,
+            supportsInBandDomainCreation: true,
+            restCreateDomainPath: '/api/domains',
+            mcpCreateDomainTool: 'create_domain',
+            recommendedGuideTask: 'bootstrap-workspace',
+            noDomainErrorCode: 'NO_DOMAIN',
+            note: 'Read deployment status before the first write, then use guide_task("bootstrap-workspace") to create the first domain when the install is still empty.',
+        },
+        vectorRag: {
+            enabled: vectorRagEnabled,
+            model: vectorRagModel,
+            requiredEnvironmentVariables: ['OPENAI_API_KEY'],
+            restPath: '/api/search/semantic',
+            mcpTool: 'search_semantic_knowledge',
+            note: vectorRagEnabled
+                ? `Semantic search is enabled with embedding model ${vectorRagModel}.`
+                : 'Semantic search is disabled until OPENAI_API_KEY is configured.',
         },
         modules: [
             {
@@ -628,10 +728,22 @@ export function buildCapabilityManifest() {
                 description: 'Supervisor review tasks, comments, and workflow transitions.',
             },
             {
+                id: 'form-runtime',
+                tier: 'core',
+                enabled: true,
+                description: 'Reusable public form definitions built on content types, validation, workflows, and optional L402/payment enforcement.',
+            },
+            {
                 id: 'api-keys-webhooks',
                 tier: 'core',
                 enabled: true,
                 description: 'Agent-facing credential management and webhook registration.',
+            },
+            {
+                id: 'background-jobs',
+                tier: 'core',
+                enabled: true,
+                description: 'Generic scheduled and deferred background jobs for webhook fan-out, scheduled status changes, and future side effects.',
             },
             {
                 id: 'payments-l402',
@@ -666,6 +778,89 @@ export function buildCapabilityManifest() {
         ],
         contentRuntime: {
             enabled: true,
+            globals: {
+                supported: true,
+                model: 'singleton-content-type',
+                restListPath: '/api/globals',
+                restItemPath: '/api/globals/:slug',
+                graphqlListField: 'globals',
+                graphqlItemField: 'global',
+                graphqlMutation: 'updateGlobal',
+                mcpListTool: 'list_globals',
+                mcpGetTool: 'get_global',
+                mcpUpdateTool: 'update_global',
+                cliListCommand: 'node dist/cli/index.js globals list',
+                cliGetCommand: 'node dist/cli/index.js globals get --slug <slug>',
+                cliUpdateCommand: 'node dist/cli/index.js globals update --slug <slug> --data-file <path>',
+                note: 'Globals are first-class singleton content types. The schema stays in content-types; the document state is read and written through the dedicated globals surface.',
+            },
+            workingCopyPreview: {
+                supported: true,
+                publicationStates: ['draft', 'published', 'changed'],
+                readQueryFlag: 'draft',
+                previewTokenPaths: ['/api/content-items/:id/preview-token', '/api/globals/:slug/preview-token'],
+                previewReadPaths: ['/api/preview/content-items/:id', '/api/preview/globals/:slug'],
+                graphqlFields: ['contentItems', 'contentItem', 'globals', 'global'],
+                mcpTools: ['get_content_items', 'get_content_item', 'list_globals', 'get_global'],
+                cliCommands: [
+                    'node dist/cli/index.js content get --id <id> --published',
+                    'node dist/cli/index.js content preview-token --id <id>',
+                    'node dist/cli/index.js globals get --slug <slug> --published',
+                    'node dist/cli/index.js globals preview-token --slug <slug>',
+                ],
+                note: 'Content reads expose the current working copy by default and can prefer the latest published snapshot with draft=false/--published. Preview tokens are short-lived, domain-scoped, and limited to one content item or global.',
+            },
+            localization: {
+                supported: true,
+                schemaExtension: 'x-wordclaw-localization',
+                localizedFieldFlag: 'x-wordclaw-localized',
+                readQueryFlags: ['draft', 'locale', 'fallbackLocale'],
+                restPaths: ['/api/content-items', '/api/content-items/:id', '/api/globals', '/api/globals/:slug'],
+                graphqlFields: ['contentItems', 'contentItem', 'globals', 'global'],
+                mcpTools: ['get_content_items', 'get_content_item', 'list_globals', 'get_global'],
+                cliCommands: [
+                    'node dist/cli/index.js content list --locale <locale>',
+                    'node dist/cli/index.js content get --id <id> --locale <locale>',
+                    'node dist/cli/index.js globals list --locale <locale>',
+                    'node dist/cli/index.js globals get --slug <slug> --locale <locale>',
+                ],
+                note: 'Localized fields are stored as canonical locale maps and can be resolved at read time with locale and fallbackLocale across all core read surfaces.',
+            },
+            reverseReferences: {
+                supported: true,
+                restPaths: ['/api/content-items/:id/used-by', '/api/assets/:id/used-by'],
+                graphqlFields: ['contentItemUsedBy', 'assetUsedBy'],
+                mcpTools: ['get_content_item_usage', 'get_asset_usage'],
+                cliCommands: [
+                    'node dist/cli/index.js content used-by --id <id>',
+                    'node dist/cli/index.js assets used-by --id <id>',
+                ],
+                note: 'Reverse-reference usage graphs are derived on demand from current items plus stored historical versions, which makes impact analysis available without maintaining a separate projection table.',
+            },
+            generatedArtifacts: {
+                supported: true,
+                sourceSurfaces: ['content-types schema', 'capability manifest'],
+                cliCommand: 'node dist/cli/index.js schema generate --out <path>',
+                outputFiles: ['runtime.ts', 'types.ts', 'validators.ts', 'client.ts', 'index.ts'],
+                note: 'The CLI can generate typed TypeScript/Zod/runtime client artifacts directly from the live content-model and capability surfaces.',
+            },
+            forms: {
+                supported: true,
+                adminRestPaths: ['/api/forms', '/api/forms/:id'],
+                publicRestPaths: ['/api/public/forms/:slug', '/api/public/forms/:slug/submissions'],
+                graphqlFields: ['forms', 'form', 'createForm', 'updateForm', 'deleteForm'],
+                mcpTools: ['list_forms', 'get_form', 'create_form', 'update_form', 'delete_form', 'submit_form'],
+                cliCommands: [
+                    'node dist/cli/index.js forms list',
+                    'node dist/cli/index.js forms get --id <id>',
+                    'node dist/cli/index.js forms create --name <value> --slug <value> --content-type-id <id> --fields-file <path>',
+                    'node dist/cli/index.js forms submit --slug <slug> --domain-id <id> --data-file <path>',
+                ],
+                workflowIntegration: true,
+                paymentIntegration: true,
+                backgroundFollowUps: true,
+                note: 'Forms are first-class bounded intake definitions that validate into content items, can auto-submit into review, can challenge with L402 when enabled, and can trigger job-backed follow-up webhooks.',
+            },
             fieldAwareQueries: {
                 supported: true,
                 requiresContentTypeId: true,
@@ -718,6 +913,22 @@ export function buildCapabilityManifest() {
                 includeArchivedFlag: 'includeArchived',
                 note: 'Lifecycle-managed content auto-archives on read/list/projection touch once its schema TTL elapses, while operators can opt back into archived rows explicitly.',
             },
+        },
+        backgroundJobs: {
+            enabled: true,
+            restPaths: ['/api/jobs', '/api/jobs/:id', '/api/jobs/worker-status', '/api/content-items/:id/schedule-status'],
+            graphqlFields: ['jobs', 'job', 'jobsWorkerStatus', 'createJob', 'cancelJob', 'scheduleContentStatusChange'],
+            mcpTools: ['list_jobs', 'get_job', 'create_job', 'cancel_job', 'schedule_content_status_change'],
+            cliCommands: [
+                'node dist/cli/index.js jobs list',
+                'node dist/cli/index.js jobs get --id <id>',
+                'node dist/cli/index.js jobs create --kind <kind> --payload-file <path>',
+                'node dist/cli/index.js jobs cancel --id <id>',
+                'node dist/cli/index.js jobs schedule-status --id <id> --status <value> --run-at <iso>',
+            ],
+            workerStatusPath: '/api/jobs/worker-status',
+            supportedKinds: ['content_status_transition', 'outbound_webhook'],
+            note: 'Background jobs provide a small generic queue for scheduled status transitions, webhook fan-out and retries, form follow-up actions, and future plugin-managed tasks.',
         },
         paidContent: {
             l402Enabled: true,

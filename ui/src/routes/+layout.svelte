@@ -83,6 +83,12 @@
             match: (p: string) => p.includes("/schema"),
         },
         {
+            name: "Forms",
+            href: "/ui/forms",
+            icon: ClipboardDocumentList,
+            match: (p: string) => p.includes("/forms"),
+        },
+        {
             name: "API Keys",
             href: "/ui/keys",
             icon: Key,
@@ -93,6 +99,12 @@
             href: "/ui/approvals",
             icon: CheckCircle,
             match: (p: string) => p.includes("/approvals"),
+        },
+        {
+            name: "Jobs",
+            href: "/ui/jobs",
+            icon: CircleStack,
+            match: (p: string) => p.includes("/jobs"),
         },
         {
             name: "Payments",
