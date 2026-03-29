@@ -432,7 +432,6 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
 
     const uiStatus = await resolveUiStatus();
     if (uiStatus.status === 'degraded') {
-        overallStatus = 'degraded';
         warnings.push('Supervisor UI assets are not currently being served from /ui/. Build the UI or use npm run dev:all for local development.');
     }
 

@@ -932,7 +932,13 @@ describe('API Route Contracts', () => {
                 status: 'disabled',
                 enabled: false,
             }));
-            expect(body.data.warnings).toEqual([]);
+            if (body.data.checks.ui.servedFromApi) {
+                expect(body.data.warnings).toEqual([]);
+            } else {
+                expect(body.data.warnings).toEqual([
+                    'Supervisor UI assets are not currently being served from /ui/. Build the UI or use npm run dev:all for local development.',
+                ]);
+            }
         } finally {
             await app.close();
         }

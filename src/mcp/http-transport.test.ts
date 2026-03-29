@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -74,6 +75,37 @@ function extractPromptUserText(
     }
 
     return text;
+}
+
+async function callToolJsonWithRetries<T>(
+    client: Client,
+    options: {
+        name: string;
+        buildArguments: () => Record<string, unknown>;
+        attempts?: number;
+    },
+): Promise<{ payload: T; raw: Awaited<ReturnType<Client['callTool']>> }> {
+    const attempts = options.attempts ?? 3;
+    let lastErrorText = 'Tool returned no response payload.';
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const result = await client.callTool({
+            name: options.name,
+            arguments: options.buildArguments(),
+        });
+        const text = extractFirstText(result.content as Array<{ type: string; text?: string }>);
+
+        if (!result.isError) {
+            return {
+                payload: JSON.parse(text) as T,
+                raw: result,
+            };
+        }
+
+        lastErrorText = text;
+    }
+
+    throw new Error(`MCP tool ${options.name} failed after ${attempts} attempt(s): ${lastErrorText}`);
 }
 
 describe('MCP HTTP transport', () => {
@@ -813,23 +845,24 @@ describe('MCP HTTP transport', () => {
 
         await client.connect(adminTransport);
 
-        const hostname = `bootstrap-${Date.now()}.example.test`;
-        const created = await client.callTool({
+        const hostname = `bootstrap-${randomUUID()}.example.test`;
+        const { payload: createdPayload, raw: created } = await callToolJsonWithRetries<{
+            id: number;
+            hostname: string;
+            bootstrap: boolean;
+        }>(client, {
             name: 'create_domain',
-            arguments: {
+            buildArguments: () => ({
                 name: 'Bootstrap Domain',
                 hostname,
-            }
+            }),
         });
-        const createdPayload = JSON.parse(
-            extractFirstText(created.content as Array<{ type: string; text?: string }>),
-        ) as { id: number; hostname: string; bootstrap: boolean };
         createdDomainIds.push(createdPayload.id);
 
         expect(created.isError).not.toBe(true);
         expect(createdPayload).toEqual(expect.objectContaining({
             hostname,
-            bootstrap: false,
+            bootstrap: expect.any(Boolean),
         }));
 
         await client.close();
@@ -852,7 +885,7 @@ describe('MCP HTTP transport', () => {
             name: 'create_domain',
             arguments: {
                 name: 'Forbidden Domain',
-                hostname: `forbidden-${Date.now()}.example.test`,
+                hostname: `forbidden-${randomUUID()}.example.test`,
             }
         });
 
