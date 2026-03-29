@@ -62,7 +62,7 @@ Scope: Complete repository review (API, DB schema/migrations, GraphQL, MCP, veri
 
 - Evidence:
   - API default port is `3000` in `src/index.ts:67`.
-  - README and verification scripts assume `4000` in `README.md:38`, `README.md:67`, `verify-api.ts:5`, `verify-graphql.ts:2`, `verify-audit.ts:2`.
+  - README and verification scripts assume `4000` in `README.md:38`, `README.md:67`, `scripts/verification/verify-api.ts:1`, `scripts/verification/verify-graphql.ts:1`, `scripts/verification/verify-audit.ts:1`.
   - README asks for `cp .env.example .env` in `README.md:34`, but `.env.example` is missing.
 - Impact:
   - New contributors and automation scripts fail or appear flaky without manual environment correction.
@@ -97,6 +97,6 @@ Scope: Complete repository review (API, DB schema/migrations, GraphQL, MCP, veri
 
 - Run `npm run build`.
 - Run migration on a clean DB and verify startup.
-- Run core scripts: `verify-api.ts`, `verify-dry-run.ts`, `verify-versioning.ts`, `verify-audit.ts`, `verify-mcp.ts`, `verify-mcp-advanced.ts`.
+- Run core scripts: `npm run verify:api`, `npm run verify:dry-run`, `npm run verify:versioning`, `npm run verify:audit`, `npm run verify:mcp`, `npm run verify:mcp:advanced`.
 - Run `npm test` for automated smoke tests.
 - Confirm docs commands work exactly as written from a fresh clone.

@@ -40,9 +40,11 @@ export default withMermaid(defineConfig({
                 items: [
                     { text: 'API Reference', link: '/reference/api-reference' },
                     { text: 'Architecture Diagram', link: '/reference/architecture' },
+                    { text: 'Capability Parity', link: '/reference/capability-parity' },
                     { text: 'Data Model', link: '/reference/data-model' },
                     { text: 'Drizzle Migrations', link: '/reference/drizzle-migrations' },
                     { text: 'MCP Servers', link: '/reference/mcp-servers' },
+                    { text: 'Roadmap', link: '/reference/roadmap' },
                     { text: 'Runtime Configuration', link: '/reference/runtime-configuration' }
                 ]
             },

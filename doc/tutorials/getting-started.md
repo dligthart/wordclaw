@@ -315,20 +315,20 @@ curl -H "Authorization: Bearer writer" http://localhost:4000/api/content-types
 
 ## Running Tests & Verification
 
-We include utility scripts to verify the API functionality and safety features natively within the environment.
+We include live verification helpers under `scripts/verification/` and expose them as `npm run verify:*` commands.
 
 ### Run Full API Verification
 Tests all CRUD operations against the live database using standard `fetch`.
 
 ```bash
-npx tsx verify-api.ts
+npm run verify:api
 ```
 
 ### Run Dry-run Verification
 Tests that `?mode=dry_run` returns successful simulations without modifying the database whatsoever.
 
 ```bash
-npx tsx verify-dry-run.ts
+npm run verify:dry-run
 ```
 
 ### Unit & Contract Tests

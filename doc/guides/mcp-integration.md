@@ -234,7 +234,7 @@ Use `recipeId` when you want a higher-level workflow subscription without enumer
 The CLI is intentionally short-lived, so `wordclaw mcp call subscribe_events ...` is useful for contract inspection but not for staying attached long enough to receive pushed notifications. Use a persistent MCP client or the verification script below when you want to observe live events.
 
 ```bash
-npx tsx verify-mcp-streams.ts
+npm run verify:mcp:streams
 
 npx tsx demos/mcp-demo-agent.ts watch content_item.published \
   --transport http \

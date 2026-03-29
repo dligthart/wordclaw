@@ -1,7 +1,4 @@
 
-import { db } from './src/db/index.js';
-import { sql } from 'drizzle-orm';
-
 const API_URL = 'http://localhost:4000/api';
 
 async function verify() {

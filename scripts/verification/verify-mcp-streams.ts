@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-import { WORDCLAW_EVENT_NOTIFICATION_METHOD } from './src/mcp/reactive-events.js';
+import { WORDCLAW_EVENT_NOTIFICATION_METHOD } from '../../src/mcp/reactive-events.js';
 
 type WordClawEnvelope<T> = {
     data: T;

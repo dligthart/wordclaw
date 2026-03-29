@@ -13,7 +13,7 @@ WordClaw is a safe content runtime for AI agents and human supervisors.
 
 It combines structured content contracts, review-aware workflows, dry-run safety, auditability, paid-content flows, and agent-native REST/MCP access so autonomous systems can work with content without losing governance.
 
-For active product direction, see the [roadmap](ROADMAP.md) and [RFC index](doc/rfc/index.md).
+For active product direction, see the [roadmap](doc/reference/roadmap.md) and [RFC index](doc/rfc/index.md).
 
 ## What It Includes
 
@@ -72,6 +72,8 @@ npx tsx src/cli/index.ts content guide --content-type-id 1
 
 Use `content guide` without `--content-type-id` when you need to bootstrap a new schema first. It now returns starter guidance for agent memory, task-log, and checkpoint-style content models.
 
+Live verification helpers now live under `scripts/verification/` and are exposed as `npm run verify:*` commands.
+
 ## Documentation
 
 ### Start Here
@@ -90,6 +92,7 @@ Use `content guide` without `--content-type-id` when you need to bootstrap a new
 ### Product and Architecture
 
 - [Features](doc/concepts/features.md)
+- [Roadmap](doc/reference/roadmap.md)
 - [Architecture](doc/reference/architecture.md)
 - [Data Model](doc/reference/data-model.md)
 - [Native Vector RAG Guide](doc/guides/native-vector-rag.md)

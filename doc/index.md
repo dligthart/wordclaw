@@ -26,6 +26,7 @@ features:
 
 - [Run WordClaw locally](/tutorials/getting-started) to start the API, database, supervisor UI, and MCP surface.
 - [Review runtime configuration](/reference/runtime-configuration) before changing auth, embeddings, asset storage, previews, or payments.
+- [Check the roadmap](/reference/roadmap) for current product direction and release focus.
 - [Connect an external agent with MCP](/guides/mcp-integration) to inspect tools, resources, prompts, actor identity, and workspace context.
 - [See runnable demos](/guides/demos) for example frontends, agent clients, and paid-content flows.
 - [Start with the LangGraph MCP starter](/guides/langgraph-mcp-starter) to attach a LangGraph agent without writing a custom SDK.

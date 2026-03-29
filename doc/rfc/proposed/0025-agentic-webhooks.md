@@ -76,7 +76,7 @@ Agentic Webhooks introduce a risk of data leakage if an agent subscribes to even
 ## 6. Rollout Plan
 1. Validate Fastify SSE support within our current MCP HTTP server stack.
 2. Expose the `subscribe_events` tool logic, wired to the `McpStreamManager`.
-3. Add a verification script (`verify-mcp-streams.ts`) simulating a reactive agent catching an event.
+3. Add a verification script (`scripts/verification/verify-mcp-streams.ts`) simulating a reactive agent catching an event.
 
 ## 7. Acceptance Criteria
 - Agents can call an MCP tool to subscribe to a topic.

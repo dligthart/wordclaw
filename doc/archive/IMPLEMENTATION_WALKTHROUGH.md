@@ -31,31 +31,31 @@
 - Implemented `?mode=dry_run` for all write operations (`POST`, `PUT`, `DELETE`).
 - API validates input, simulates execution, and returns detailed metadata (`meta.dryRun = true`).
 - Ensured database remains pristine during dry-run operations.
-- Added comprehensive verification script `verify-dry-run.ts`.
+- Added comprehensive verification script `scripts/verification/verify-dry-run.ts`.
 
 ### ✅ Rate Limiting
 - Integrated `@fastify/rate-limit` to protect API from abuse.
 - Configured global limit of 100 requests per minute.
 - Implemented AI-friendly 429 error responses with remediation instructions.
-- Added verification script `verify-rate-limit.ts`.
+- Added verification script `scripts/verification/verify-rate-limit.ts`.
 
 ## Phase 3: MCP Server Integration
 - Implemented MCP server using `@modelcontextprotocol/sdk`.
 - Exposed content management tools (`create_content_type`, `create_content_item`, etc.) over stdio.
 - Added `mcp:start` script to run the server.
-- Verified with `verify-mcp.ts`.
+- Verified with `scripts/verification/verify-mcp.ts`.
 
 ## Phase 4: GraphQL & Advanced Features
 - Integrated `mercurius` for GraphQL support.
 - Defined schema and resolvers for content types and items.
-- Verified with `verify-graphql.ts`.
+- Verified with `scripts/verification/verify-graphql.ts`.
 - Implemented Version History & Rollback:
     - Added `version` column to `contentItems`.
     - Created `contentItemVersions` table for history tracking.
     - Updated `PUT` handler to archive previous versions transactionally.
     - Added `GET /content-items/:id/versions` to list history.
     - Added `POST /content-items/:id/rollback` to revert to previous versions.
-    - Verified with `verify-versioning.ts`.
+    - Verified with `scripts/verification/verify-versioning.ts`.
 
 ## Refactor & Reliability Hardening
 
@@ -81,7 +81,7 @@
 - Improved invalid ID handling to return null/empty responses predictably instead of ambiguous runtime behavior.
 
 ### ✅ Verification Script Reliability
-- Refactored `verify-mcp-advanced.ts` to:
+- Refactored `scripts/verification/verify-mcp-advanced.ts` to:
     - use stricter request/response typing
     - avoid false-success exit behavior by preserving error exit codes
     - harden response payload parsing and tool output validation
@@ -111,7 +111,7 @@
     - REST routes
     - GraphQL operations
     - MCP tools
-- Added `CAPABILITY_PARITY.md` so contributors and agents can track cross-protocol feature parity explicitly.
+- Added `doc/reference/capability-parity.md` so contributors and agents can track cross-protocol feature parity explicitly.
 - Added `src/contracts/capability-parity.test.ts` to fail fast when a capability exists on one protocol surface but is missing on another.
 
 ### ✅ Parity Gap Closure
@@ -242,7 +242,7 @@
   - batch dry-run behavior,
   - deterministic invalid filter error code.
 - Updated capability matrix and parity tests for new batch operations and filter/cursor argument parity.
-- Updated verification scripts (`verify-graphql.ts`, `verify-mcp-advanced.ts`) to include batch capabilities.
+- Updated verification scripts (`scripts/verification/verify-graphql.ts`, `scripts/verification/verify-mcp-advanced.ts`) to include batch capabilities.
 
 ## Verification
 
@@ -258,11 +258,11 @@ The Fastify server starts successfully and listens on port 4000.
 - **Health Check**: `GET /health` returns status ok.
 
 ### Verification Scripts
-- **Dry-Run**: `npx tsx verify-dry-run.ts` - Validates dry-run functionality.
-- **Rate Limit**: `npx tsx verify-rate-limit.ts` - Validates rate limiting and 429 responses.
-- **MCP Server**: `npx tsx verify-mcp.ts` - Validates MCP server startup and tool listing.
-- **GraphQL**: `npx tsx verify-graphql.ts` - Validates GraphQL endpoint query.
-- **Versioning**: `npx tsx verify-versioning.ts` - Validates version history and rollback.
-- **Audit Logs**: `npx tsx verify-audit.ts` - Validates audit logging.
-- **MCP Advanced**: `npx tsx verify-mcp-advanced.ts` - Validates full MCP feature set.
+- **Dry-Run**: `npm run verify:dry-run` - Validates dry-run functionality.
+- **Rate Limit**: `npm run verify:rate-limit` - Validates rate limiting and 429 responses.
+- **MCP Server**: `npm run verify:mcp` - Validates MCP server startup and tool listing.
+- **GraphQL**: `npm run verify:graphql` - Validates GraphQL endpoint query.
+- **Versioning**: `npm run verify:versioning` - Validates version history and rollback.
+- **Audit Logs**: `npm run verify:audit` - Validates audit logging.
+- **MCP Advanced**: `npm run verify:mcp:advanced` - Validates full MCP feature set.
 - **Parity Contracts**: `npm test` - Includes protocol parity tests to detect REST/GraphQL/MCP drift.
