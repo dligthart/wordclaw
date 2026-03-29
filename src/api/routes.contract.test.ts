@@ -3826,6 +3826,10 @@ describe('API Route Contracts', () => {
             const body = response.json() as {
                 data: Array<{
                     data: string;
+                    embeddingStatus: string;
+                    embeddingChunks: number;
+                    embeddingUpdatedAt: string | null;
+                    embeddingErrorCode: string | null;
                     localeResolution?: {
                         requestedLocale: string;
                         fallbackLocale: string;
@@ -3853,6 +3857,12 @@ describe('API Route Contracts', () => {
                 state: 'disabled',
                 searchable: false,
             }));
+            expect(body.data[0]).toMatchObject({
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingUpdatedAt: null,
+                embeddingErrorCode: null,
+            });
         } finally {
             await app.close();
         }
@@ -5399,6 +5409,10 @@ describe('API Route Contracts', () => {
             expect(body.data).toMatchObject({
                 status: 'published',
                 version: 2,
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingUpdatedAt: null,
+                embeddingErrorCode: null,
                 publicationState: 'changed',
                 workingCopyVersion: 4,
                 publishedVersion: 2

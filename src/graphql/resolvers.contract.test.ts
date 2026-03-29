@@ -54,6 +54,11 @@ describe('GraphQL Resolver Contracts', () => {
         EmbeddingService.resetRuntimeStateForTests();
         delete process.env.OPENAI_API_KEY;
         resetMocks();
+        mocks.dbMock.update.mockImplementation(() => ({
+            set: vi.fn(() => ({
+                where: vi.fn().mockResolvedValue(undefined),
+            })),
+        }));
     });
 
     it('createContentType dry-run does not write to the database', async () => {
@@ -769,6 +774,10 @@ describe('GraphQL Resolver Contracts', () => {
             id: 42,
             status: 'published',
             version: 2,
+            embeddingStatus: 'disabled',
+            embeddingChunks: 0,
+            embeddingUpdatedAt: null,
+            embeddingErrorCode: null,
             publicationState: 'changed',
             workingCopyVersion: 4,
             publishedVersion: 2,

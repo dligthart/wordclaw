@@ -36,6 +36,8 @@ The API returns a sorted list of the most semantically relevant content chunks (
 
 If `OPENAI_API_KEY` is missing, `GET /api/search/semantic` returns `503 SEMANTIC_SEARCH_DISABLED`. Agents should check discovery surfaces first instead of learning that only after a failed query.
 
+Published content reads also expose per-item sync metadata: `embeddingStatus`, `embeddingChunks`, `embeddingUpdatedAt`, `embeddingErrorCode`, and the derived `embeddingReadiness` block. Use those fields when you need to verify that the latest published snapshot has actually finished indexing.
+
 ### 2. By Frontend Applications
 
 You can use the exact same `/api/search/semantic` endpoint to power an incredibly smart headless search bar on your public-facing frontend (like React, Vue, or SvelteKit).

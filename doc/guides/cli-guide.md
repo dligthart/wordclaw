@@ -243,6 +243,7 @@ Important transport note:
 - `mcp inspect` now also includes the deployment manifest, deployment status, current actor snapshot, and workspace context when the MCP server exposes `system://capabilities`, `system://deployment-status`, `system://current-actor`, and `system://workspace-context`
 - `capabilities status` now reports both `checks.embeddings` for semantic-index freshness and `checks.ui` for whether the supervisor is being served from `/ui/` or still needs `npm run dev:all`
 - `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, workspace bootstrap, workspace targeting, authoring, review, integrations, provenance checks, and paid-content flows
+- `domains create ...` gives the CLI a first-class first-domain bootstrap path without dropping to raw REST
 - `mcp call create_domain ...` bootstraps the first domain in-band and also supports admin-managed additional domains
 - `mcp openai-tools` exports the current MCP tool inventory as OpenAI-compatible `type: "function"` tools so external agents can reuse the live contract without hand-mapping each tool
 
@@ -270,23 +271,31 @@ wordclaw assets create --content-file ./hero.png --mime-type image/png --access-
 wordclaw assets access --id 44 --ttl-seconds 120
 ```
 
-### Generic REST
+### Domains
 
-Use the generic request command when a dedicated subcommand does not exist yet:
+Use the dedicated domain commands for first-install bootstrap and domain inventory instead of dropping to a generic REST request:
 
 ```bash
-node dist/cli/index.js rest request GET /content-types
-node dist/cli/index.js rest request POST /domains \
-  --body-json '{"name":"Local Development","hostname":"local.development"}'
-node dist/cli/index.js rest request POST /auth/keys \
-  --body-json '{"name":"Example","scopes":["content:read","content:write"]}'
+node dist/cli/index.js domains list
+node dist/cli/index.js domains create --name "Local Development" --hostname local.development
 ```
 
 Bootstrap tip:
 
 - Start with `capabilities status` or `mcp resource system://deployment-status`.
 - If `domainCount` is `0`, call `mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`.
-- Use `mcp call create_domain ...` when you are already attached to MCP, or `rest request POST /domains ...` as the fallback.
+- Prefer `domains create ...` from the CLI when you are bootstrapping locally.
+- Use `mcp call create_domain ...` when you are already attached to MCP, or `rest request POST /domains ...` as the lowest-level fallback.
+
+### Generic REST
+
+Use the generic request command when a dedicated subcommand does not exist yet:
+
+```bash
+node dist/cli/index.js rest request GET /content-types
+node dist/cli/index.js rest request POST /auth/keys \
+  --body-json '{"name":"Example","scopes":["content:read","content:write"]}'
+```
 
 Supported flags:
 

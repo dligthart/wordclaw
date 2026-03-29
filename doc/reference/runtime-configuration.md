@@ -37,7 +37,7 @@ Notes:
 
 Notes:
 
-- When `OPENAI_API_KEY` is not configured, WordClaw keeps the semantic layer disabled and reports that state in `GET /api/capabilities`, `GET /api/deployment-status`, and content/global `embeddingReadiness`.
+- When `OPENAI_API_KEY` is not configured, WordClaw keeps the semantic layer disabled and reports that state in `GET /api/capabilities`, `GET /api/deployment-status`, and content/global embedding fields such as `embeddingStatus`, `embeddingErrorCode`, and `embeddingReadiness`.
 - Deployment health exposes live embedding runtime state under `checks.embeddings`.
 
 ## Preview and Authoring

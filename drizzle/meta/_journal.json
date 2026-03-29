@@ -211,6 +211,13 @@
       "when": 1774818600000,
       "tag": "0029_background_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1774825200000,
+      "tag": "0030_content_item_embedding_state",
+      "breakpoints": true
     }
   ]
 }

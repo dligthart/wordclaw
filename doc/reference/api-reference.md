@@ -14,13 +14,14 @@ The fastest task-oriented preflight sequence is:
 
 1. `GET /api/capabilities`
 2. `GET /api/deployment-status`
-   - if `domainCount` is `0`, bootstrap the first domain with `POST /api/domains` or MCP `create_domain`
+   - if `domainCount` is `0`, bootstrap the first domain with `wordclaw domains create --name <value> --hostname <value>`, `POST /api/domains`, or MCP `create_domain`
 3. `GET /api/identity`
 4. `GET /api/workspace-context`
    - supports `intent`, `search`, and `limit` when the agent already knows whether it wants authoring, review, workflow, or paid-content targets
 5. `GET /api/workspace-target`
    - resolves the best schema target plus the next concrete work target for `authoring`, `review`, `workflow`, or `paid`
 6. Use the matching CLI helper:
+   - `domains create --name <value> --hostname <value>`
    - `mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`
    - `workspace guide`
    - `workspace resolve --intent <intent>`
@@ -37,7 +38,7 @@ The current REST content contract includes a few authoring-state primitives that
 - `GET /api/content-items`, `GET /api/content-items/:id`, `GET /api/globals`, and `GET /api/globals/:slug` accept `draft`, `locale`, and `fallbackLocale`.
 - Reads default to `draft=true`, which means the latest working copy is returned.
 - `draft=false` prefers the latest published snapshot while still returning publication metadata for the current working copy.
-- Content item and global reads now include `publicationState`, `workingCopyVersion`, `publishedVersion`, optional `localeResolution`, and `embeddingReadiness` for the latest published semantic-search snapshot.
+- Content item and global reads now include `publicationState`, `workingCopyVersion`, `publishedVersion`, optional `localeResolution`, persisted embedding sync metadata (`embeddingStatus`, `embeddingChunks`, `embeddingUpdatedAt`, `embeddingErrorCode`), and `embeddingReadiness` for the latest published semantic-search snapshot.
 - `GET /api/deployment-status` now includes `checks.embeddings`, which reports whether semantic indexing is enabled, whether anything is currently queued or in flight, and whether the most recent sync failed.
 - `GET /api/deployment-status` also includes `checks.ui`, which tells you whether the supervisor is currently being served from `/ui/` and which local dev command to run when it is not.
 - Short-lived preview tokens are issued through `POST /api/content-items/:id/preview-token` and `POST /api/globals/:slug/preview-token`, then redeemed through `/api/preview/...` paths.
@@ -81,7 +82,7 @@ curl -H "x-api-key: writer" "http://localhost:4000/api/workspace-context?intent=
 
 ### 2. Bootstrapping the First Domain
 
-If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`. The MCP equivalent is `create_domain`, and the recommended bootstrap planner is `guide_task("bootstrap-workspace")`.
+If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`. The CLI helper is `wordclaw domains create --name <value> --hostname <value>`, the MCP equivalent is `create_domain`, and the recommended bootstrap planner is `guide_task("bootstrap-workspace")`.
 
 **Request:**
 ```bash

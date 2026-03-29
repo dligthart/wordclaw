@@ -3,15 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => {
     const dbMock = {
         select: vi.fn(),
+        update: vi.fn(),
         transaction: vi.fn(),
     };
 
     const deleteWhereMock = vi.fn().mockResolvedValue(undefined);
     const insertValuesMock = vi.fn().mockResolvedValue(undefined);
+    const updateWhereMock = vi.fn().mockResolvedValue(undefined);
 
     const txMock = {
         delete: vi.fn(() => ({ where: deleteWhereMock })),
         insert: vi.fn(() => ({ values: insertValuesMock })),
+        update: vi.fn(() => ({ set: vi.fn(() => ({ where: updateWhereMock })) })),
     };
 
     const embeddingsCreateMock = vi.fn();
@@ -28,6 +31,7 @@ const mocks = vi.hoisted(() => {
         txMock,
         deleteWhereMock,
         insertValuesMock,
+        updateWhereMock,
         embeddingsCreateMock,
         openAIMock,
     };
@@ -55,11 +59,14 @@ describe('Embedding Service Contracts', () => {
     beforeEach(() => {
         EmbeddingService.resetRuntimeStateForTests();
         mocks.dbMock.select.mockReset();
+        mocks.dbMock.update.mockReset();
         mocks.dbMock.transaction.mockReset();
         mocks.txMock.delete.mockClear();
         mocks.txMock.insert.mockClear();
+        mocks.txMock.update.mockClear();
         mocks.deleteWhereMock.mockClear();
         mocks.insertValuesMock.mockClear();
+        mocks.updateWhereMock.mockClear();
         mocks.embeddingsCreateMock.mockReset();
         process.env.OPENAI_API_KEY = 'test-openai-key';
     });
@@ -148,6 +155,10 @@ describe('Embedding Service Contracts', () => {
                 contentTypeId: 1,
                 data: JSON.stringify({ title: 'Hello world' }),
                 status: 'published',
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingUpdatedAt: null,
+                embeddingErrorCode: null,
                 version: 3,
                 createdAt: new Date('2026-03-29T10:00:00.000Z'),
                 updatedAt: new Date('2026-03-29T10:05:00.000Z'),
@@ -194,6 +205,10 @@ describe('Embedding Service Contracts', () => {
                 contentTypeId: 1,
                 data: JSON.stringify({ title: 'Published copy' }),
                 status: 'published',
+                embeddingStatus: 'synced',
+                embeddingChunks: 1,
+                embeddingUpdatedAt: new Date('2026-03-29T10:00:00.000Z'),
+                embeddingErrorCode: null,
                 version: 2,
                 createdAt: new Date('2026-03-28T10:00:00.000Z'),
                 updatedAt: new Date('2026-03-29T10:00:00.000Z'),
@@ -221,9 +236,19 @@ describe('Embedding Service Contracts', () => {
                 domainId: 1,
                 contentTypeId: 1,
                 data: { title: 'Hello', body: 'World' },
+                status: 'published',
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingUpdatedAt: null,
+                embeddingErrorCode: null,
             },
         ]);
 
+        mocks.dbMock.update.mockImplementation(() => ({
+            set: vi.fn(() => ({
+                where: vi.fn().mockResolvedValue(undefined),
+            })),
+        }));
         mocks.embeddingsCreateMock.mockResolvedValue({
             data: [{ embedding: [0.12, 0.34] }],
         });
@@ -240,6 +265,7 @@ describe('Embedding Service Contracts', () => {
         expect(mocks.embeddingsCreateMock).toHaveBeenCalledTimes(1);
         expect(mocks.txMock.delete).toHaveBeenCalledTimes(1);
         expect(mocks.txMock.insert).toHaveBeenCalledTimes(1);
+        expect(mocks.txMock.update).toHaveBeenCalledTimes(1);
     });
 
     it('syncItemEmbeddings replaces existing embeddings on repeated syncs', async () => {
@@ -249,9 +275,19 @@ describe('Embedding Service Contracts', () => {
                 domainId: 1,
                 contentTypeId: 1,
                 data: { title: 'Title', body: 'Body' },
+                status: 'published',
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingUpdatedAt: null,
+                embeddingErrorCode: null,
             },
         ]);
 
+        mocks.dbMock.update.mockImplementation(() => ({
+            set: vi.fn(() => ({
+                where: vi.fn().mockResolvedValue(undefined),
+            })),
+        }));
         mocks.embeddingsCreateMock.mockResolvedValue({
             data: [{ embedding: [0.91, 0.82] }],
         });
@@ -265,5 +301,35 @@ describe('Embedding Service Contracts', () => {
 
         expect(mocks.txMock.delete).toHaveBeenCalledTimes(2);
         expect(mocks.txMock.insert).toHaveBeenCalledTimes(2);
+        expect(mocks.txMock.update).toHaveBeenCalledTimes(2);
+    });
+
+    it('marks embedding sync metadata disabled when semantic search is not configured', async () => {
+        delete process.env.OPENAI_API_KEY;
+        const updateWhereMock = vi.fn().mockResolvedValue(undefined);
+        const updateSetMock = vi.fn(() => ({ where: updateWhereMock }));
+        mocks.dbMock.update.mockImplementation(() => ({
+            set: updateSetMock,
+        }));
+
+        await EmbeddingService.syncItemEmbeddings(1, 41);
+
+        expect(updateSetMock).toHaveBeenCalledWith(expect.objectContaining({
+            embeddingStatus: 'disabled',
+            embeddingChunks: 0,
+            embeddingErrorCode: 'SEMANTIC_SEARCH_DISABLED',
+            embeddingUpdatedAt: expect.any(Date),
+        }));
+    });
+
+    it('deleteItemEmbeddings clears persisted metadata alongside vector rows', async () => {
+        mocks.dbMock.transaction.mockImplementation(async (callback: any) => {
+            await callback(mocks.txMock);
+        });
+
+        await EmbeddingService.deleteItemEmbeddings(1, 51);
+
+        expect(mocks.txMock.delete).toHaveBeenCalledTimes(1);
+        expect(mocks.txMock.update).toHaveBeenCalledTimes(1);
     });
 });

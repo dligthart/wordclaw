@@ -14,6 +14,7 @@ describe('buildUsage', () => {
         expect(usage).toContain('mcp openai-tools');
         expect(usage).toContain('workspace resolve --intent authoring|review|workflow|paid');
         expect(usage).toContain('schema generate --out <path> [--package-name <value>] [--content-type-slugs <csv>]');
+        expect(usage).toContain('domains create --name <value> --hostname <value>');
         expect(usage).toContain('forms create --name <value> --slug <value> --content-type-id <n>');
         expect(usage).toContain('jobs worker-status');
         expect(usage).toContain('content-types create --name <value> --slug <value> [--kind collection|singleton] [--description <value>] [--schema-json <json>|--schema-file <path>|--schema-manifest-json <json>|--schema-manifest-file <path>]');
@@ -69,6 +70,16 @@ describe('buildUsage', () => {
         expect(usage).toContain('wordclaw schema <subcommand> [options]');
         expect(usage).toContain('schema generate --out <path> [--package-name <value>] [--content-type-slugs <csv>]');
         expect(usage).toContain('wordclaw schema generate --out ./generated/wordclaw');
+    });
+
+    it('builds scoped domains help', () => {
+        const usage = buildUsage({ command: 'domains' });
+
+        expect(usage).toContain('WordClaw CLI: domains');
+        expect(usage).toContain('wordclaw domains <subcommand> [options]');
+        expect(usage).toContain('domains list');
+        expect(usage).toContain('domains create --name <value> --hostname <value>');
+        expect(usage).toContain('wordclaw domains create --name "Local Development" --hostname local.development');
     });
 
     it('builds scoped forms help', () => {

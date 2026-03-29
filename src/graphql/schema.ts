@@ -117,6 +117,13 @@ export const schema = `
     stale
   }
 
+  enum ContentEmbeddingStatus {
+    pending
+    synced
+    failed
+    disabled
+  }
+
   enum FormFieldType {
     text
     textarea
@@ -207,6 +214,14 @@ export const schema = `
     createdAt: String
     """Last update timestamp (ISO-8601)."""
     updatedAt: String
+    """Persisted embedding sync status for the latest indexing attempt."""
+    embeddingStatus: ContentEmbeddingStatus!
+    """Number of chunks written by the last successful embedding sync."""
+    embeddingChunks: Int!
+    """Timestamp when the embedding sync metadata last changed."""
+    embeddingUpdatedAt: String
+    """Sanitized error code from the latest failed embedding sync, when present."""
+    embeddingErrorCode: String
     """Locale resolution summary when locale-aware reads are requested."""
     localeResolution: ContentLocaleResolution
     """Derived publication state for the current working copy."""

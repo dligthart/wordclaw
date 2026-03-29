@@ -87,6 +87,7 @@ const TOP_LEVEL_COMMANDS = [
     'rest',
     'schema',
     'integrations',
+    'domains',
     'forms',
     'jobs',
     'content-types',
@@ -104,6 +105,7 @@ const AUDIT_SUBCOMMANDS = ['list', 'guide'] as const;
 const REST_SUBCOMMANDS = ['request'] as const;
 const SCHEMA_SUBCOMMANDS = ['generate'] as const;
 const INTEGRATIONS_SUBCOMMANDS = ['guide'] as const;
+const DOMAINS_SUBCOMMANDS = ['list', 'create'] as const;
 const FORMS_SUBCOMMANDS = ['list', 'get', 'public', 'create', 'update', 'delete', 'submit'] as const;
 const JOBS_SUBCOMMANDS = ['list', 'get', 'worker-status', 'create', 'cancel', 'schedule-status'] as const;
 const CONTENT_TYPES_SUBCOMMANDS = ['list', 'get', 'create', 'update', 'delete'] as const;
@@ -914,6 +916,41 @@ async function handleIntegrations(client: RestCliClient, args: ParsedArgs) {
         },
         guide,
     );
+}
+
+async function handleDomains(client: RestCliClient, args: ParsedArgs) {
+    const action = resolveSupportedSubcommand(
+        args,
+        1,
+        'domains subcommand',
+        DOMAINS_SUBCOMMANDS,
+    );
+
+    if (action === 'list') {
+        const response = await client.request({
+            method: 'GET',
+            path: '/domains',
+        });
+        printResponse(args, response);
+        return;
+    }
+
+    const name = getStringFlag(args, 'name');
+    const hostname = getStringFlag(args, 'hostname');
+    if (!name || !hostname) {
+        throw new Error('domains create requires --name and --hostname.');
+    }
+
+    const response = await client.request({
+        method: 'POST',
+        path: '/domains',
+        body: {
+            name,
+            hostname,
+        },
+        acceptStatuses: [201],
+    });
+    printResponse(args, response);
 }
 
 async function handleCapabilities(client: RestCliClient, args: ParsedArgs) {
@@ -2459,6 +2496,10 @@ async function main(args: ParsedArgs, runtimeOptions: CliRuntimeOptions) {
     }
     if (command === 'integrations') {
         await handleIntegrations(client, args);
+        return;
+    }
+    if (command === 'domains') {
+        await handleDomains(client, args);
         return;
     }
     if (command === 'forms') {

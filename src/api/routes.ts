@@ -285,6 +285,12 @@ const ContentEmbeddingReadinessStateSchema = Type.Union([
     Type.Literal('missing'),
     Type.Literal('stale')
 ]);
+const ContentEmbeddingStatusSchema = Type.Union([
+    Type.Literal('pending'),
+    Type.Literal('synced'),
+    Type.Literal('failed'),
+    Type.Literal('disabled')
+]);
 const ContentEmbeddingReadinessSchema = Type.Object({
     enabled: Type.Boolean(),
     state: ContentEmbeddingReadinessStateSchema,
@@ -305,6 +311,10 @@ const ContentItemReadResponseSchema = Type.Object({
     version: Type.Number(),
     createdAt: Type.String(),
     updatedAt: Type.String(),
+    embeddingStatus: ContentEmbeddingStatusSchema,
+    embeddingChunks: Type.Number(),
+    embeddingUpdatedAt: Type.Union([Type.String(), Type.Null()]),
+    embeddingErrorCode: Type.Union([Type.String(), Type.Null()]),
     localeResolution: Type.Optional(ContentLocaleResolutionSchema),
     publicationState: ContentPublicationStateSchema,
     workingCopyVersion: Type.Number(),

@@ -24,6 +24,8 @@ const USAGE_LINES = [
     'rest request <method> <path> [--query-json <object>] [--body-json <object>|--body-file <path>]',
     'schema generate --out <path> [--package-name <value>] [--content-type-slugs <csv>]',
     'integrations guide',
+    'domains list',
+    'domains create --name <value> --hostname <value>',
     'forms list',
     'forms get --id <n>',
     'forms public --slug <value> --domain-id <n>',
@@ -86,6 +88,7 @@ const EXAMPLES: Record<string, string[]> = {
         'wordclaw provision --agent claude-code --transport http --scope project --write',
         'wordclaw capabilities show',
         'wordclaw workspace guide --intent review --limit 5',
+        'wordclaw domains create --name "Local Development" --hostname local.development',
         'wordclaw content guide',
         'wordclaw schema generate --out ./generated/wordclaw',
         'wordclaw forms list',
@@ -116,6 +119,10 @@ const EXAMPLES: Record<string, string[]> = {
     'schema': [
         'wordclaw schema generate --out ./generated/wordclaw',
         'wordclaw schema generate --out ./generated/wordclaw --content-type-slugs article,site-settings',
+    ],
+    'domains': [
+        'wordclaw domains list',
+        'wordclaw domains create --name "Local Development" --hostname local.development',
     ],
     'forms': [
         'wordclaw forms create --name Contact --slug contact --content-type-id 12 --fields-file contact-form.fields.json',

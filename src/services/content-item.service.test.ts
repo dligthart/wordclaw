@@ -176,6 +176,10 @@ describe('listContentItems', () => {
                         }
                     }),
                     status: 'published',
+                    embeddingStatus: 'disabled',
+                    embeddingChunks: 0,
+                    embeddingUpdatedAt: null,
+                    embeddingErrorCode: null,
                     version: 3,
                     createdAt: new Date('2026-03-28T10:00:00.000Z'),
                     updatedAt: new Date('2026-03-29T10:00:00.000Z')
@@ -256,6 +260,10 @@ describe('resolveContentItemReadView', () => {
                 contentTypeId: 7,
                 data: JSON.stringify({ title: 'Draft copy' }),
                 status: 'draft',
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingUpdatedAt: null,
+                embeddingErrorCode: null,
                 version: 4,
                 createdAt: new Date('2026-03-28T10:00:00.000Z'),
                 updatedAt: new Date('2026-03-29T10:00:00.000Z')
@@ -284,6 +292,10 @@ describe('resolveContentItemReadView', () => {
         expect(readView).toMatchObject({
             status: 'published',
             version: 2,
+            embeddingStatus: 'disabled',
+            embeddingChunks: 0,
+            embeddingUpdatedAt: null,
+            embeddingErrorCode: null,
             publicationState: 'changed',
             workingCopyVersion: 4,
             publishedVersion: 2
@@ -301,6 +313,10 @@ describe('resolveContentItemReadView', () => {
                 contentTypeId: 7,
                 data: JSON.stringify({ title: 'Draft only' }),
                 status: 'draft',
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingUpdatedAt: null,
+                embeddingErrorCode: null,
                 version: 1,
                 createdAt: new Date('2026-03-28T10:00:00.000Z'),
                 updatedAt: new Date('2026-03-29T10:00:00.000Z')

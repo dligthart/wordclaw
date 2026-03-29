@@ -728,7 +728,7 @@ export function buildCapabilityManifest() {
                 rest: 'POST /api/domains',
                 mcp: 'create_domain',
                 graphql: null,
-                cli: 'node dist/cli/index.js rest request POST /domains --body-json <json>',
+                cli: 'node dist/cli/index.js domains create --name <value> --hostname <value>',
             },
             {
                 intent: 'discover-workspace',
@@ -861,7 +861,7 @@ export function buildCapabilityManifest() {
                 contentRestPaths: ['/api/content-items', '/api/content-items/:id', '/api/globals', '/api/globals/:slug'],
                 graphqlFields: ['contentItems', 'contentItem', 'globals', 'global'],
                 mcpTools: ['get_content_items', 'get_content_item', 'list_globals', 'get_global'],
-                note: 'Deployment status reports runtime embedding health and queue state, while content reads expose embeddingReadiness for the latest published snapshot of each item or global.',
+                note: 'Deployment status reports runtime embedding health and queue state, while content reads expose both embeddingReadiness and persisted sync metadata (embeddingStatus, embeddingChunks, embeddingUpdatedAt, embeddingErrorCode) for each item or global.',
             },
             localization: {
                 supported: true,

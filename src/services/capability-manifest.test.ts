@@ -180,6 +180,7 @@ describe('buildCapabilityManifest', () => {
                 intent: 'create-domain',
                 rest: 'POST /api/domains',
                 mcp: 'create_domain',
+                cli: 'node dist/cli/index.js domains create --name <value> --hostname <value>',
             }),
             expect.objectContaining({
                 intent: 'create-content-type',

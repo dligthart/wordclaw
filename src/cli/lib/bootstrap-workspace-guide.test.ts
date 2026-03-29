@@ -205,7 +205,11 @@ describe('buildBootstrapWorkspaceGuide', () => {
             expect.objectContaining({
                 id: 'create-domain',
                 status: 'ready',
-                command: "node dist/cli/index.js mcp call create_domain --json '{\"name\":\"Local Dev\",\"hostname\":\"local-dev.example.test\"}'",
+                command: 'node dist/cli/index.js domains create --name "Local Dev" --hostname local-dev.example.test',
+                notes: expect.arrayContaining([
+                    'Preferred local CLI path: domains create.',
+                    'MCP alternative: create_domain.',
+                ]),
             }),
             expect.objectContaining({
                 id: 'handoff-discover-workspace',

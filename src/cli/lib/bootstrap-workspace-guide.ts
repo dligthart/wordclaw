@@ -44,12 +44,12 @@ function buildCreateDomainCommand(
     bootstrapCheck: DeploymentStatusSnapshot['checks']['bootstrap'] | null,
     baseCommand: string,
 ) {
-    if (bootstrapCheck?.mcpCreateDomainTool) {
-        return `${baseCommand} mcp call ${bootstrapCheck.mcpCreateDomainTool} --json '{"name":"Local Dev","hostname":"local-dev.example.test"}'`;
+    if (bootstrapCheck?.restCreateDomainPath) {
+        return `${baseCommand} domains create --name "Local Dev" --hostname local-dev.example.test`;
     }
 
-    if (bootstrapCheck?.restCreateDomainPath) {
-        return `${baseCommand} rest request POST /domains --body-json '{"name":"Local Dev","hostname":"local-dev.example.test"}'`;
+    if (bootstrapCheck?.mcpCreateDomainTool) {
+        return `${baseCommand} mcp call ${bootstrapCheck.mcpCreateDomainTool} --json '{"name":"Local Dev","hostname":"local-dev.example.test"}'`;
     }
 
     return null;
@@ -100,8 +100,9 @@ export function buildBootstrapWorkspaceGuide(options: {
             ]
             : [
                 bootstrapCheck.note,
+                'Preferred local CLI path: domains create.',
                 ...(bootstrapCheck.mcpCreateDomainTool
-                    ? [`Preferred MCP tool: ${bootstrapCheck.mcpCreateDomainTool}.`]
+                    ? [`MCP alternative: ${bootstrapCheck.mcpCreateDomainTool}.`]
                     : []),
                 ...(bootstrapCheck.restCreateDomainPath
                     ? [`REST fallback: POST ${bootstrapCheck.restCreateDomainPath}.`]

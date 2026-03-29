@@ -272,6 +272,10 @@ export function resolveContentItemReadView(
     const localized = localizeContentItem(readSource, schema, options);
     return {
         ...localized,
+        embeddingStatus: localized.embeddingStatus ?? item.embeddingStatus ?? 'disabled',
+        embeddingChunks: localized.embeddingChunks ?? item.embeddingChunks ?? 0,
+        embeddingUpdatedAt: localized.embeddingUpdatedAt ?? item.embeddingUpdatedAt ?? null,
+        embeddingErrorCode: localized.embeddingErrorCode ?? item.embeddingErrorCode ?? null,
         ...publicationState
     };
 }

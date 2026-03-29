@@ -35,6 +35,12 @@ export type EmbeddingRuntimeStatus = {
     lastSyncErroredAt: string | null;
 };
 
+export type ContentEmbeddingStatus =
+    | 'pending'
+    | 'synced'
+    | 'failed'
+    | 'disabled';
+
 export type ContentEmbeddingReadinessState =
     | 'disabled'
     | 'unpublished'
@@ -57,6 +63,13 @@ export type ContentEmbeddingReadiness = {
     note: string;
 };
 
+type ContentItemEmbeddingStatePatch = {
+    embeddingStatus?: ContentEmbeddingStatus;
+    embeddingChunks?: number;
+    embeddingUpdatedAt?: Date | null;
+    embeddingErrorCode?: string | null;
+};
+
 export class EmbeddingService {
     private static syncQueue: Promise<void> = Promise.resolve();
     private static inFlightSyncs = new Map<string, Promise<void>>();
@@ -73,6 +86,43 @@ export class EmbeddingService {
     private static readonly retryAttempts = Number(process.env.OPENAI_EMBEDDING_RETRIES || 3);
     private static readonly retryBaseMs = Number(process.env.OPENAI_EMBEDDING_RETRY_BASE_MS || 500);
     private static readonly embeddingModel = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
+
+    private static sanitizeEmbeddingErrorCode(error: unknown): string {
+        if (error instanceof EmbeddingServiceError) {
+            return error.code;
+        }
+
+        if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+            const normalized = error.code
+                .trim()
+                .replace(/[^A-Za-z0-9]+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .toUpperCase();
+            if (normalized.length > 0) {
+                return normalized;
+            }
+        }
+
+        return 'EMBEDDING_SYNC_FAILED';
+    }
+
+    private static async updateContentItemEmbeddingState(
+        domainId: number,
+        contentItemId: number,
+        patch: ContentItemEmbeddingStatePatch,
+    ) {
+        const nextState: ContentItemEmbeddingStatePatch = {
+            ...patch,
+            embeddingUpdatedAt: patch.embeddingUpdatedAt === undefined ? new Date() : patch.embeddingUpdatedAt,
+        };
+
+        await db.update(contentItems)
+            .set(nextState)
+            .where(and(
+                eq(contentItems.domainId, domainId),
+                eq(contentItems.id, contentItemId),
+            ));
+    }
 
     private static assertSemanticSearchEnabled() {
         if (!process.env.OPENAI_API_KEY) {
@@ -188,8 +238,12 @@ export class EmbeddingService {
 
         for (const entry of items) {
             const { item, publishedVersion } = entry;
-            const inFlight = this.isItemSyncInFlight(domainId, item.id);
+            const inFlight = this.isItemSyncInFlight(domainId, item.id) || item.embeddingStatus === 'pending';
             const indexedChunkCount = chunkCounts.get(item.id) ?? 0;
+            const hasFailedSync = item.embeddingStatus === 'failed';
+            const failedSyncNote = hasFailedSync
+                ? ' The latest semantic sync attempt failed; inspect embeddingErrorCode for the sanitized failure reason.'
+                : '';
 
             if (!runtime.enabled) {
                 readiness.set(item.id, {
@@ -283,7 +337,7 @@ export class EmbeddingService {
                     expectedChunkCount,
                     inFlight,
                     queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
-                    note: 'No semantic index exists yet for the latest published snapshot.',
+                    note: `No semantic index exists yet for the latest published snapshot.${failedSyncNote}`,
                 });
                 continue;
             }
@@ -299,7 +353,7 @@ export class EmbeddingService {
                     expectedChunkCount,
                     inFlight,
                     queueDepth: runtime.queueDepth + runtime.inFlightSyncCount,
-                    note: 'The semantic index does not match the latest published chunk count and should be refreshed.',
+                    note: `The semantic index does not match the latest published chunk count and should be refreshed.${failedSyncNote}`,
                 });
                 continue;
             }
@@ -450,6 +504,11 @@ export class EmbeddingService {
     static async syncItemEmbeddings(domainId: number, contentItemId: number) {
         if (!process.env.OPENAI_API_KEY) {
             console.warn('OPENAI_API_KEY missing, skipping semantic embedding sync');
+            await this.updateContentItemEmbeddingState(domainId, contentItemId, {
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingErrorCode: 'SEMANTIC_SEARCH_DISABLED',
+            });
             return;
         }
 
@@ -459,8 +518,27 @@ export class EmbeddingService {
             return existingSync;
         }
 
+        let resolveTracked!: () => void;
+        let rejectTracked!: (reason?: unknown) => void;
+        const trackedRun = new Promise<void>((resolve, reject) => {
+            resolveTracked = resolve;
+            rejectTracked = reject;
+        });
+        this.inFlightSyncs.set(syncKey, trackedRun);
+
+        try {
+            await this.updateContentItemEmbeddingState(domainId, contentItemId, {
+                embeddingStatus: 'pending',
+                embeddingErrorCode: null,
+            });
+        } catch (error) {
+            this.inFlightSyncs.delete(syncKey);
+            throw error;
+        }
+
         this.queuedSyncCount += 1;
-        const run = this.syncQueue
+        const previousQueue = this.syncQueue;
+        const run = previousQueue
             .catch(() => undefined)
             .then(async () => {
                 this.queuedSyncCount = Math.max(0, this.queuedSyncCount - 1);
@@ -477,9 +555,52 @@ export class EmbeddingService {
                         return;
                     }
 
+                    if (item.status !== 'published') {
+                        await db.transaction(async (tx) => {
+                            await tx.delete(contentItemEmbeddings)
+                                .where(and(
+                                    eq(contentItemEmbeddings.domainId, domainId),
+                                    eq(contentItemEmbeddings.contentItemId, contentItemId)
+                                ));
+                            await tx.update(contentItems)
+                                .set({
+                                    embeddingStatus: 'disabled',
+                                    embeddingChunks: 0,
+                                    embeddingUpdatedAt: new Date(),
+                                    embeddingErrorCode: null,
+                                })
+                                .where(and(
+                                    eq(contentItems.domainId, domainId),
+                                    eq(contentItems.id, contentItemId)
+                                ));
+                        });
+                        this.lastSyncErrorMessage = null;
+                        this.lastSyncCompletedAt = new Date().toISOString();
+                        return;
+                    }
+
                     const chunks = this.chunkContent(item.data);
                     if (chunks.length === 0) {
+                        await db.transaction(async (tx) => {
+                            await tx.delete(contentItemEmbeddings)
+                                .where(and(
+                                    eq(contentItemEmbeddings.domainId, domainId),
+                                    eq(contentItemEmbeddings.contentItemId, contentItemId)
+                                ));
+                            await tx.update(contentItems)
+                                .set({
+                                    embeddingStatus: 'synced',
+                                    embeddingChunks: 0,
+                                    embeddingUpdatedAt: new Date(),
+                                    embeddingErrorCode: null,
+                                })
+                                .where(and(
+                                    eq(contentItems.domainId, domainId),
+                                    eq(contentItems.id, contentItemId)
+                                ));
+                        });
                         this.lastSyncErrorMessage = null;
+                        this.lastSyncErroredAt = null;
                         this.lastSyncCompletedAt = new Date().toISOString();
                         return;
                     }
@@ -509,12 +630,27 @@ export class EmbeddingService {
                         }));
 
                         await tx.insert(contentItemEmbeddings).values(insertPayload);
+                        await tx.update(contentItems)
+                            .set({
+                                embeddingStatus: 'synced',
+                                embeddingChunks: chunks.length,
+                                embeddingUpdatedAt: new Date(),
+                                embeddingErrorCode: null,
+                            })
+                            .where(and(
+                                eq(contentItems.domainId, domainId),
+                                eq(contentItems.id, contentItemId)
+                            ));
                     });
 
                     this.lastSyncErrorMessage = null;
                     this.lastSyncErroredAt = null;
                     this.lastSyncCompletedAt = new Date().toISOString();
                 } catch (error) {
+                    await this.updateContentItemEmbeddingState(domainId, contentItemId, {
+                        embeddingStatus: 'failed',
+                        embeddingErrorCode: this.sanitizeEmbeddingErrorCode(error),
+                    });
                     this.lastSyncErrorMessage = (error as Error).message;
                     this.lastSyncErroredAt = new Date().toISOString();
                     throw error;
@@ -524,7 +660,10 @@ export class EmbeddingService {
             });
 
         this.syncQueue = run.then(() => undefined, () => undefined);
-        const trackedRun = run.finally(() => {
+        run.then(
+            () => resolveTracked(),
+            (error) => rejectTracked(error),
+        ).finally(() => {
             this.inFlightSyncs.delete(syncKey);
         });
         this.inFlightSyncs.set(syncKey, trackedRun);
@@ -577,10 +716,23 @@ export class EmbeddingService {
      * Remove embeddings for an item (e.g. when unpublished)
      */
     static async deleteItemEmbeddings(domainId: number, contentItemId: number) {
-        await db.delete(contentItemEmbeddings)
-            .where(and(
-                eq(contentItemEmbeddings.domainId, domainId),
-                eq(contentItemEmbeddings.contentItemId, contentItemId)
-            ));
+        await db.transaction(async (tx) => {
+            await tx.delete(contentItemEmbeddings)
+                .where(and(
+                    eq(contentItemEmbeddings.domainId, domainId),
+                    eq(contentItemEmbeddings.contentItemId, contentItemId)
+                ));
+            await tx.update(contentItems)
+                .set({
+                    embeddingStatus: 'disabled',
+                    embeddingChunks: 0,
+                    embeddingUpdatedAt: new Date(),
+                    embeddingErrorCode: null,
+                })
+                .where(and(
+                    eq(contentItems.domainId, domainId),
+                    eq(contentItems.id, contentItemId)
+                ));
+        });
     }
 }
