@@ -50,10 +50,18 @@ jobs:
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/wordclaw
       
-    - name: Run Backend Tests
-      run: npm test
+    - name: Run Backend Tests with Coverage
+      run: npm run test:coverage
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/wordclaw
+
+    - name: Upload Backend Coverage Artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-coverage
+        path: coverage
+        if-no-files-found: ignore
 
     - name: Run Backend Build
       run: npm run build
@@ -69,9 +77,21 @@ jobs:
       run: npm run check
       working-directory: ./ui
 
-    - name: Run Frontend Tests
-      run: npx vitest run
+    - name: Run Frontend Tests with Coverage
+      run: npm run test:coverage
       working-directory: ./ui
+
+    - name: Upload Frontend Coverage Artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ui-coverage
+        path: ui/coverage
+        if-no-files-found: ignore
+
+    - name: Publish Coverage Summary
+      if: always()
+      run: node scripts/ci/write-coverage-summary.mjs
 
     - name: Run Frontend Build
       run: npm run build

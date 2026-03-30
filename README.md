@@ -8,6 +8,7 @@
 </p>
 
 [![Node.js CI](https://github.com/dligthart/wordclaw/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dligthart/wordclaw/actions/workflows/test.yml)
+[![Coverage CI](https://img.shields.io/github/actions/workflow/status/dligthart/wordclaw/test.yml?branch=main&label=coverage%20ci)](https://github.com/dligthart/wordclaw/actions/workflows/test.yml)
 
 WordClaw is a safe content runtime for AI agents and human supervisors.
 
