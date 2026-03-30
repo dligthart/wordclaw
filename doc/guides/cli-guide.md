@@ -286,7 +286,7 @@ Bootstrap tip:
 - Use `mcp call guide_task --json '{"taskId":"discover-deployment"}'` when you want the same readiness snapshot packaged as concrete next steps for bootstrap, actor posture, and semantic-search blockers.
 - If `domainCount` is `0`, call `mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`.
 - Prefer `domains create ...` from the CLI when you are bootstrapping locally.
-- Use `mcp call create_domain ...` when you are already attached to MCP, or `rest request POST /domains ...` as the lowest-level fallback.
+- Use `mcp call create_domain --json ...` when you are already attached to MCP, or `rest request POST /domains --body-json ...` as the lowest-level fallback.
 
 ### Generic REST
 
@@ -420,7 +420,8 @@ The manifest reports:
 - a workspace-context discovery path for domains and content-model targeting after authentication
 - a dedicated provenance-verification recipe with audit-scope expectations
 
-Use `capabilities status` before the first write on a fresh install. If the deployment reports `domainCount: 0`, bootstrap the first domain over REST before creating content types or content items.
+Use `capabilities status` before the first write on a fresh install. If the deployment reports `domainCount: 0`, bootstrap the first domain before creating content types or content items.
+Use `domains create --name <value> --hostname <value>` for the local/operator path, `mcp call create_domain --json ...` when you are already attached to MCP, or `rest request POST /domains --body-json ...` as the lowest-level fallback.
 
 When you need to confirm the active credential before a mutation, use:
 

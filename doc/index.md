@@ -48,9 +48,20 @@ That gives you:
 - Swagger docs on `http://localhost:4000/documentation`
 - MCP endpoint on `http://localhost:4000/mcp`
 
+If `GET /api/deployment-status` reports `domainCount: 0`, bootstrap the first domain before authoring:
+
+```bash
+npx tsx src/cli/index.ts domains create \
+  --name "Local Development" \
+  --hostname local.development
+```
+
 ### Explore from the CLI
 
 ```bash
+npx tsx src/cli/index.ts capabilities status
+npx tsx src/cli/index.ts mcp call guide_task --json '{"taskId":"discover-deployment"}'
+npx tsx src/cli/index.ts domains list
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts workspace guide
 npx tsx src/cli/index.ts content guide

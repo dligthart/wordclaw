@@ -25,7 +25,7 @@ npx drizzle-kit generate
 npx drizzle-kit push
 
 # Baseline/stamp a pre-existing local database with an empty journal
-npm run db:stamp -- --through 0019_unified_actor_identity
+npm run db:stamp -- --through 0030_content_item_embedding_state
 ```
 
 ## Two Supported Workflows
@@ -112,7 +112,7 @@ That usually means the local database predates the committed migration flow.
 To baseline that kind of database:
 
 ```bash
-npm run db:stamp -- --through 0019_unified_actor_identity
+npm run db:stamp -- --through 0030_content_item_embedding_state
 npm run db:migrate
 ```
 
@@ -121,7 +121,7 @@ Notes:
 - `db:stamp` is only for pre-existing local databases with real app tables and an empty journal.
 - It refuses to run on an empty schema.
 - It also refuses to run if the journal already contains rows.
-- Choose the `--through` tag that matches the schema already present in that database.
+- Choose the `--through` tag that matches the schema already present in that database. The current repo tip is `0030_content_item_embedding_state`; if your legacy database predates that, use the latest tag that matches the schema it already has.
 
 ## Migration Tracking Table
 

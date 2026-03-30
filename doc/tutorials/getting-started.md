@@ -89,7 +89,19 @@ Before you start, it helps to know which parts of WordClaw are stable versus sti
 
    ```bash
    curl http://localhost:4000/health
+   curl http://localhost:4000/api/deployment-status
+   npx tsx src/cli/index.ts capabilities status
    ```
+
+   If `deployment-status` reports `domainCount: 0`, bootstrap the first domain before creating content types or content items:
+
+   ```bash
+   npx tsx src/cli/index.ts domains create \
+     --name "Local Development" \
+     --hostname local.development
+   ```
+
+   Equivalent bootstrap paths are MCP `create_domain` and REST `POST /api/domains`. When you want the same readiness data packaged as concrete next steps, call `guide_task("discover-deployment")`.
 
 ## Container Setup
 
@@ -231,6 +243,11 @@ curl http://localhost:4000/api/capabilities
 # 2. Confirm the deployment is healthy enough to use
 curl http://localhost:4000/api/deployment-status
 node dist/cli/index.js capabilities status
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-deployment"}'
+
+# 2a. If domainCount is 0, bootstrap before content writes
+node dist/cli/index.js domains create --name "Local Development" --hostname local.development
+# or: node dist/cli/index.js mcp call create_domain --json '{"name":"Local Development","hostname":"local.development"}'
 
 # 3. Confirm the current actor before mutating state
 node dist/cli/index.js capabilities whoami
@@ -345,6 +362,7 @@ RUN_INTEGRATION=1 npm test
 `npm test` auto-applies committed repo migrations when the configured test database is
 empty or simply behind the repo journal. If the database already has app tables but no
 usable Drizzle journal, the preflight still stops and asks you to baseline it first.
+The current repo journal tip in that baseline flow is `0030_content_item_embedding_state`.
 
 ### Capability Parity Contract
 Core capability coverage is documented in [mcp-integration.md](../guides/mcp-integration.md) and validated in the default `npm test` run. REST and MCP are the required core surfaces; GraphQL is checked when a capability explicitly declares compatibility coverage. Incubator APIs such as agent runs are tested separately and are not part of the default parity matrix.

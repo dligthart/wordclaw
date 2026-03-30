@@ -6,7 +6,7 @@ Connect [OpenClaw](https://docs.openclaw.ai) to WordClaw so autonomous agents ca
 
 - **OpenClaw** installed (`npm install -g openclaw@latest`)
 - **WordClaw** running locally or remotely with the database migrated
-- On a fresh install, read `system://deployment-status` or `GET /api/deployment-status` first. If no domains are provisioned yet, bootstrap the first one with `POST /api/domains` before asking the agent to author content.
+- On a fresh install, read `system://deployment-status` or `GET /api/deployment-status` first. If no domains are provisioned yet, call `guide_task("discover-deployment")`, then bootstrap the first one with `wordclaw domains create`, MCP `create_domain`, or REST `POST /api/domains` before asking the agent to author content.
 
 ## Quick Start
 
@@ -78,7 +78,7 @@ targets.
 If OpenClaw is not ready for MCP registration yet, bootstrap over REST first:
 
 1. Read `GET /api/capabilities` and `GET /api/deployment-status`.
-2. If `domainCount` is `0`, create the first domain with `POST /api/domains`.
+2. If `domainCount` is `0`, create the first domain with `wordclaw domains create --name <value> --hostname <value>`, MCP `create_domain`, or REST `POST /api/domains`.
 3. If you need the supervisor locally, check `checks.ui`; run `npm run dev:all` when the UI is not yet being served from `/ui/`.
 4. Register the MCP server once the runtime is provisioned and continue with `guide_task("bootstrap-workspace")` or `guide_task("discover-workspace")`.
 
@@ -162,7 +162,7 @@ If you want WordClaw to push events to OpenClaw proactively (instead of the agen
 export WORDCLAW_BASE_URL=http://localhost:4000
 export WORDCLAW_API_KEY=writer
 
-wordclaw mcp call create_webhook '{
+wordclaw mcp call create_webhook --json '{
   "url": "http://127.0.0.1:18789/webhook/wordclaw",
   "events": ["content_item.published", "workflow.review.approved"],
   "secret": "your-shared-secret"

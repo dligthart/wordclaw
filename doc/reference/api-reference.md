@@ -6,7 +6,7 @@ import SwaggerUI from '../.vitepress/components/SwaggerUI.vue'
 
 This document covers WordClaw's primary HTTP surface: the REST API. MCP is the primary agent-native companion surface; see [mcp-integration.md](../guides/mcp-integration). GraphQL remains available at `/graphql` as a compatibility layer. Experimental revenue, payout, delegation, and agent-run endpoints are intentionally hidden from the default API reference unless an operator explicitly enables those incubator modules in runtime configuration.
 
-The prose examples below are the current reference point for the newest runtime layers such as globals, locale-aware reads, working-copy versus published reads, preview tokens, reverse-reference usage graphs, reusable forms, background jobs, public write lanes, direct asset upload, and the latest asset lifecycle flows. The embedded OpenAPI viewer still emphasizes the longest-stable core contract while those newer slices continue to be expanded there.
+The prose examples below highlight the operator and agent flows that matter most for current runtime features such as globals, locale-aware reads, working-copy versus published reads, preview tokens, reverse-reference usage graphs, reusable forms, background jobs, direct asset upload, first-domain bootstrap, and embedding-sync metadata. The embedded OpenAPI viewer is generated from the live Fastify schema and now includes the current provisioning routes plus the newer embedding metadata fields.
 
 For deployment-level discovery before authentication, use `GET /api/capabilities` plus `GET /api/deployment-status`. The manifest reports the current protocol contract, enabled modules, auth/domain expectations, reusable actor profiles, dry-run coverage, task-oriented agent recipes, and a REST/MCP/GraphQL/CLI tool-equivalence map in one machine-readable document. It now also includes bootstrap and effective auth posture so clients can tell whether content writes still need a credential, whether insecure local admin is active, and whether a first domain still needs to be provisioned. It also includes the MCP reactive contract: whether session-backed subscriptions are enabled, which tool to call, which notification method to handle, which filter fields are available, which topics are supported, and which subscription recipes expand into curated topic sets. The same manifest also advertises the asset-storage contract: configured versus effective provider, supported providers (`local`, `s3`), fallback state when remote storage is misconfigured, REST and MCP upload modes, supported delivery modes, signed-access issuance, and lifecycle controls. It now also publishes the content-runtime query contract: field-aware listing constraints, queryable scalar field kinds, grouped projection support for lightweight leaderboard and analytics-style read models, TTL lifecycle semantics for session-like content via `x-wordclaw-lifecycle` plus the `includeArchived` override on list/projection reads, and where to inspect semantic-index readiness for the latest published snapshot of each content item. The task recipes in that same manifest now include static `reactiveFollowUp` examples so agents can discover likely `subscribe_events` payloads before asking for live task-specific guidance. The status snapshot adds live readiness for the database, bootstrap state, REST/MCP availability, vector RAG readiness, embedding queue health, supervisor UI availability, content-runtime query surfaces, asset storage, the current reactive MCP transport details, and any enabled background worker surfaces. For authenticated preflight checks, use `GET /api/identity` plus `GET /api/workspace-context` to confirm the current actor, active domain, and available content-model targets before mutating runtime state. The workspace snapshot now includes grouped target recommendations for authoring, workflow, review, and paid-content flows, and `GET /api/workspace-target` resolves the strongest schema-plus-work-target candidate for one of those task classes.
 
@@ -15,22 +15,22 @@ The fastest task-oriented preflight sequence is:
 1. `GET /api/capabilities`
 2. `GET /api/deployment-status`
    - if `domainCount` is `0`, bootstrap the first domain with `wordclaw domains create --name <value> --hostname <value>`, `POST /api/domains`, or MCP `create_domain`
-   - MCP `guide_task("discover-deployment")` packages the same readiness snapshot into concrete next steps for bootstrap, write-actor auth posture, and vector-RAG readiness
+   - CLI/MCP `wordclaw mcp call guide_task --json '{"taskId":"discover-deployment"}'` packages the same readiness snapshot into concrete next steps for bootstrap, write-actor auth posture, and vector-RAG readiness
 3. `GET /api/identity`
 4. `GET /api/workspace-context`
    - supports `intent`, `search`, and `limit` when the agent already knows whether it wants authoring, review, workflow, or paid-content targets
 5. `GET /api/workspace-target`
    - resolves the best schema target plus the next concrete work target for `authoring`, `review`, `workflow`, or `paid`
 6. Use the matching CLI helper:
-   - `domains create --name <value> --hostname <value>`
-   - `mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`
-   - `workspace guide`
-   - `workspace resolve --intent <intent>`
-   - `content guide` or `content guide --content-type-id <id>`
-   - `workflow guide`
-   - `integrations guide`
-   - `audit guide --entity-type <type> --entity-id <id>`
-   - `l402 guide --item <id>`
+   - `wordclaw domains create --name <value> --hostname <value>`
+   - `wordclaw mcp call guide_task --json '{"taskId":"bootstrap-workspace"}'`
+   - `wordclaw workspace guide`
+   - `wordclaw workspace resolve --intent <intent>`
+   - `wordclaw content guide` or `wordclaw content guide --content-type-id <id>`
+   - `wordclaw workflow guide`
+   - `wordclaw integrations guide`
+   - `wordclaw audit guide --entity-type <type> --entity-id <id>`
+   - `wordclaw l402 guide --item <id>`
 
 ## Content-State Contract
 
@@ -83,7 +83,7 @@ curl -H "x-api-key: writer" "http://localhost:4000/api/workspace-context?intent=
 
 ### 2. Bootstrapping the First Domain
 
-If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`. The CLI helper is `wordclaw domains create --name <value> --hostname <value>`, the MCP equivalent is `create_domain`, and the recommended bootstrap planner is `guide_task("bootstrap-workspace")`.
+If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`. The CLI helper is `wordclaw domains create --name <value> --hostname <value>`, the MCP equivalent is `create_domain`, and the recommended bootstrap planner is `guide_task("bootstrap-workspace")` after `guide_task("discover-deployment")`.
 
 **Request:**
 ```bash

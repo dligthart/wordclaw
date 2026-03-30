@@ -8,7 +8,7 @@ MCP server.
 
 - **Codex** app, CLI, or IDE extension installed
 - **WordClaw** running locally or remotely with the database migrated
-- On a fresh install, read `system://deployment-status` or `GET /api/deployment-status` first. If no domains are provisioned yet, bootstrap the first one with `POST /api/domains` before asking Codex to author content.
+- On a fresh install, read `system://deployment-status` or `GET /api/deployment-status` first. If no domains are provisioned yet, call `guide_task("discover-deployment")`, then bootstrap the first one with `wordclaw domains create`, MCP `create_domain`, or REST `POST /api/domains` before asking Codex to author content.
 
 ## Quick Start
 

@@ -22,7 +22,7 @@ Use this page as the durable reference for what the runtime actually honors.
 Notes:
 
 - `AUTH_REQUIRED=false` only relaxes public discovery. Write-capable routes still require a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is also enabled in a non-production environment.
-- Fresh installs still need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status` or call `guide_task("bootstrap-workspace")` to see whether bootstrap is still blocked.
+- Fresh installs still need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status`, `wordclaw capabilities status`, or call `guide_task("bootstrap-workspace")` to see whether bootstrap is still blocked, then bootstrap with `wordclaw domains create`, MCP `create_domain`, or REST `POST /api/domains`.
 
 ## Semantic Search and Embeddings
 
@@ -107,7 +107,10 @@ instead of guessing from logs:
 ```bash
 curl http://localhost:4000/api/capabilities
 curl http://localhost:4000/api/deployment-status
+wordclaw capabilities status
 ```
+
+If the readiness snapshot reports `domainCount: 0`, bootstrap the first domain before content writes with `wordclaw domains create --name <value> --hostname <value>`, MCP `create_domain`, or REST `POST /api/domains`.
 
 Useful follow-up docs:
 

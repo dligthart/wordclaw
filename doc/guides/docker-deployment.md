@@ -48,7 +48,7 @@ RUN_DB_MIGRATIONS=false
 ## Production Notes
 
 - Review [Runtime Configuration](../reference/runtime-configuration.md) before deploying shared environments.
-- If the runtime reports `domainCount: 0`, bootstrap the first domain before trying to create content types or content items.
+- After startup, check `GET /api/deployment-status` or `wordclaw capabilities status`. If the runtime reports `domainCount: 0`, bootstrap the first domain before trying to create content types or content items with `wordclaw domains create --name <value> --hostname <value>`, MCP `create_domain`, or REST `POST /api/domains`.
 - If you want semantic search, set `OPENAI_API_KEY` before startup.
 - If you need stable preview links across restarts, set `PREVIEW_TOKEN_SECRET`.
 

@@ -33,7 +33,7 @@ For the durable-memory and semantic-retrieval pattern on top of those MCP connec
 Some client builds lag on MCP registry UX, and some operators want to bootstrap the workspace before wiring MCP at all. The supported fallback is:
 
 1. Read `GET /api/capabilities` and `GET /api/deployment-status`.
-2. If `checks.bootstrap.domainCount` is `0`, create the first domain with `wordclaw domains create --name <value> --hostname <value>` or `POST /api/domains`.
+2. If `checks.bootstrap.domainCount` is `0`, create the first domain with `wordclaw domains create --name <value> --hostname <value>`, MCP `create_domain`, or REST `POST /api/domains`.
 3. Confirm `checks.ui` if you expect the supervisor at `/ui/`, or run `npm run dev:all` for local API plus UI development.
 4. Once the runtime is provisioned, register the MCP server for your client and continue with `guide_task("bootstrap-workspace")` or `guide_task("discover-workspace")`.
 
@@ -119,37 +119,37 @@ node dist/cli/index.js mcp resource content://assets/44/derivatives \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
-node dist/cli/index.js mcp call guide_task '{"taskId":"discover-deployment"}' \
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-deployment"}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
-node dist/cli/index.js mcp call guide_task '{"taskId":"bootstrap-workspace"}' \
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"bootstrap-workspace"}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key remote-admin
 
-node dist/cli/index.js mcp call create_domain '{"name":"Local Development","hostname":"local.development"}' \
+node dist/cli/index.js mcp call create_domain --json '{"name":"Local Development","hostname":"local.development"}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key remote-admin
 
-node dist/cli/index.js mcp call guide_task '{"taskId":"discover-workspace","intent":"authoring","workspaceLimit":5}' \
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"discover-workspace","intent":"authoring","workspaceLimit":5}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
-node dist/cli/index.js mcp call guide_task '{"taskId":"manage-integrations"}' \
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"manage-integrations"}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
-node dist/cli/index.js mcp call resolve_workspace_target '{"intent":"review"}' \
+node dist/cli/index.js mcp call resolve_workspace_target --json '{"intent":"review"}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
 
-node dist/cli/index.js mcp call guide_task '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}' \
+node dist/cli/index.js mcp call guide_task --json '{"taskId":"verify-provenance","entityType":"content_item","entityId":123}' \
   --mcp-transport http \
   --mcp-url http://localhost:4000/mcp \
   --api-key writer
@@ -427,7 +427,7 @@ Read tools now return derived publication metadata too:
 | `agent-guidance` | Task-oriented routing hints and recipes for agent workflows |
 | `content-types`  | Returns the content type catalog as text |
 
-Resources give agents read-only context about the system state. If `system://deployment-status` shows `domainCount: 0`, bootstrap the first domain over REST before attempting MCP authoring writes.
+Resources give agents read-only context about the system state. If `system://deployment-status` shows `domainCount: 0`, bootstrap the first domain with `create_domain`, `wordclaw domains create`, or REST `POST /api/domains` before attempting MCP authoring writes.
 
 ## Prompts
 

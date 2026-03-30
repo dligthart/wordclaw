@@ -49,21 +49,27 @@ Verify the runtime:
 ```bash
 curl http://localhost:4000/health
 curl http://localhost:4000/api/deployment-status
+npx tsx src/cli/index.ts capabilities status
 ```
 
-If `deployment-status` reports `domainCount: 0`, bootstrap the first domain before creating content types or content items:
+If `deployment-status` reports `domainCount: 0`, bootstrap the first domain before creating content types or content items. Prefer the dedicated CLI path locally:
 
 ```bash
-curl -X POST http://localhost:4000/api/domains \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Local Development","hostname":"local.development"}'
+npx tsx src/cli/index.ts domains create \
+  --name "Local Development" \
+  --hostname local.development
 ```
+
+Equivalent bootstrap paths are MCP `create_domain` and REST `POST /api/domains`. `AUTH_REQUIRED=false` only opens public discovery; write-capable routes still need a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is active in a non-production environment.
 
 The step-by-step version lives in [Getting Started](doc/tutorials/getting-started.md).
 
 ## First Commands
 
 ```bash
+npx tsx src/cli/index.ts capabilities status
+npx tsx src/cli/index.ts mcp call guide_task --json '{"taskId":"discover-deployment"}'
+npx tsx src/cli/index.ts domains list
 npx tsx src/cli/index.ts mcp inspect --mcp-transport http --api-key writer
 npx tsx src/cli/index.ts workspace guide
 npx tsx src/cli/index.ts content guide
