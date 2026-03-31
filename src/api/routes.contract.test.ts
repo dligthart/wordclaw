@@ -2304,6 +2304,114 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('optionally creates a tenant-scoped supervisor during onboarding', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        mocks.dbMock.execute.mockResolvedValueOnce([{ total: 0 }]);
+        mocks.dbMock.transaction.mockImplementationOnce(async (callback: (tx: typeof mocks.dbMock) => Promise<unknown>) => {
+            const txInsert = vi.fn()
+                .mockImplementationOnce(() => ({
+                    values: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([{
+                            id: 2,
+                            name: 'Epilomedia',
+                            hostname: 'epilomedia.com',
+                            createdAt: new Date('2026-03-31T09:00:00.000Z'),
+                        }])
+                    })
+                }))
+                .mockImplementationOnce(() => ({
+                    values: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([{
+                            id: 19,
+                            domainId: 2,
+                            name: 'Epilomedia Admin',
+                            keyPrefix: 'wcak_testkey',
+                            scopes: 'admin',
+                            createdBy: null,
+                            createdAt: new Date('2026-03-31T09:00:00.000Z'),
+                            expiresAt: null,
+                        }])
+                    })
+                }))
+                .mockImplementationOnce(() => ({
+                    values: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([{
+                            id: 31,
+                            email: 'admin@epilomedia.com',
+                            domainId: 2,
+                            passwordHash: 'hash',
+                            createdAt: new Date('2026-03-31T09:00:00.000Z'),
+                            lastLoginAt: null,
+                        }])
+                    })
+                }));
+
+            const tx = {
+                ...mocks.dbMock,
+                select: vi.fn().mockImplementationOnce(() => ({
+                    from: () => ({
+                        where: vi.fn().mockResolvedValue([{
+                            id: 2,
+                            name: 'Epilomedia',
+                            hostname: 'epilomedia.com',
+                        }]),
+                    }),
+                })),
+                insert: txInsert,
+            } as unknown as typeof mocks.dbMock;
+
+            return callback(tx);
+        });
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/onboard',
+                headers: {
+                    'x-api-key': 'remote-admin',
+                },
+                payload: {
+                    tenantName: 'Epilomedia',
+                    hostname: 'epilomedia.com',
+                    supervisor: {
+                        email: 'admin@epilomedia.com',
+                        password: 'password123',
+                    }
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            const body = response.json() as {
+                data: {
+                    supervisor: { id: number; email: string; domainId: number } | null;
+                };
+            };
+
+            expect(body.data.supervisor).toEqual({
+                id: 31,
+                email: 'admin@epilomedia.com',
+                domainId: 2,
+            });
+            expect(mocks.logAuditMock).toHaveBeenNthCalledWith(
+                3,
+                2,
+                'create',
+                'supervisor',
+                31,
+                expect.objectContaining({
+                    onboardTenant: true,
+                    email: 'admin@epilomedia.com'
+                }),
+                expect.anything(),
+                expect.any(String)
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
     it('requires admin scope to onboard a tenant', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'writer=content:write';
@@ -2324,7 +2432,34 @@ describe('API Route Contracts', () => {
 
             expect(response.statusCode).toBe(403);
             const body = response.json() as ApiErrorBody;
-            expect(body.code).toBe('ADMIN_REQUIRED');
+            expect(body.code).toBe('PLATFORM_ADMIN_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('requires a platform-admin actor to create additional domains', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'writer=content:write';
+        mocks.dbMock.execute.mockResolvedValueOnce([{ total: 1 }]);
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/domains',
+                headers: {
+                    'x-api-key': 'writer'
+                },
+                payload: {
+                    name: 'Second Domain',
+                    hostname: 'second.example'
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('PLATFORM_ADMIN_REQUIRED');
         } finally {
             await app.close();
         }

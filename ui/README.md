@@ -65,4 +65,8 @@ curl -X POST http://localhost:4000/api/supervisors/setup-initial \
   -d '{"email":"admin@wordclaw.local","password":"password123"}'
 ```
 
+In production, set `SETUP_TOKEN` and pass it as `x-setup-token` for that one-time bootstrap call.
+
+After the first platform supervisor exists, create additional platform or tenant-scoped supervisors with `POST /api/supervisors`. Tenant-scoped supervisors are pinned to their assigned domain in the UI and cannot switch into other tenants by changing the `x-wordclaw-domain` header.
+
 See `doc/tutorials/getting-started.md` for the full setup flow.

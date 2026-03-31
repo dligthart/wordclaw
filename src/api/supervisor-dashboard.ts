@@ -3,26 +3,32 @@ import { sql, and, desc, eq, gt } from 'drizzle-orm';
 import { isExperimentalAgentRunsEnabled, isExperimentalRevenueEnabled } from '../config/runtime-features.js';
 import { db } from '../db/index.js';
 import { auditLogs, contentItems, contentTypes, payments } from '../db/schema.js';
-import { parseSupervisorDomainHeader } from './domain-context.js';
+import type { ActorPrincipal } from '../services/actor-identity.js';
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
+import { resolveSupervisorSessionPrincipal, type SupervisorSessionClaims } from './supervisor-session.js';
 
 export const supervisorDashboardRoutes: FastifyPluginAsync = async (server: FastifyInstance) => {
     // Shared authenticaton hook for these routes
     server.addHook('onRequest', async (request, reply) => {
         try {
             await request.jwtVerify({ onlyCookie: true });
+            const user = request.user as SupervisorSessionClaims;
+            const resolved = resolveSupervisorSessionPrincipal(user, request.headers);
+            if (!resolved.ok) {
+                return reply.status(resolved.statusCode).send(resolved.payload);
+            }
+            (request as { authPrincipal?: ActorPrincipal }).authPrincipal = resolved.principal;
         } catch (err) {
             return reply.status(401).send({ error: 'Unauthorized' });
         }
     });
 
     server.get('/dashboard', async (request, reply) => {
-        const domainContext = parseSupervisorDomainHeader(request.headers);
-        if (!domainContext.ok) {
-            return reply.status(domainContext.statusCode).send(domainContext.payload);
+        const domainId = (request as { authPrincipal?: ActorPrincipal }).authPrincipal?.domainId;
+        if (!domainId) {
+            return reply.status(401).send({ error: 'Unauthorized' });
         }
-        const domainId = domainContext.domainId;
 
         // 1. System Health
         let dbOk = false;

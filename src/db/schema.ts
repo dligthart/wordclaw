@@ -134,8 +134,13 @@ export const supervisors = pgTable('supervisors', {
     id: serial('id').primaryKey(),
     email: text('email').notNull().unique(),
     passwordHash: text('password_hash').notNull(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     lastLoginAt: timestamp('last_login_at'),
+}, (table) => {
+    return {
+        supervisorsDomainIdx: index('supervisors_domain_idx').on(table.domainId),
+    };
 });
 export const payments = pgTable('payments', {
     id: serial('id').primaryKey(),

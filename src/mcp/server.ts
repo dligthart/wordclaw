@@ -37,7 +37,7 @@ import { AssetStorageError } from '../services/asset-storage.js';
 
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext } from '../services/policy-adapters.js';
-import { buildCurrentActorSnapshot, buildMcpLocalPrincipal, type ActorPrincipal } from '../services/actor-identity.js';
+import { buildCurrentActorSnapshot, buildMcpLocalPrincipal, hasAdministrativeScope, isPlatformAdminPrincipal, type ActorPrincipal } from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
 import { getDeploymentStatusSnapshot } from '../services/deployment-status.js';
 import { buildContentGuide } from '../cli/lib/content-guide.js';
@@ -530,7 +530,11 @@ export function createServer(options: CreateMcpServerOptions = {}) {
     }
 
     function isAdminPrincipal(principal: ActorPrincipal) {
-        return principal.scopes.has('admin') || principal.scopes.has('tenant:admin');
+        return hasAdministrativeScope(principal);
+    }
+
+    function isPlatformAdminActor(principal: ActorPrincipal) {
+        return isPlatformAdminPrincipal(principal);
     }
 
     function hasActorScope(actor: ReturnType<typeof buildCurrentActorSnapshot>, scope: string): boolean {
@@ -833,15 +837,15 @@ server.tool(
         name: z.string().min(1).describe('Display name for the new domain'),
         hostname: z.string().min(1).describe('Unique hostname for the domain, e.g. docs.example.com'),
     },
-    withMCPPolicy('content.write', () => ({ type: 'system' }), async ({ name, hostname }, extra) => {
+    withMCPPolicy('tenant.create', () => ({ type: 'system' }), async ({ name, hostname }, extra) => {
         const principal = resolveMcpPrincipal(extra as McpRequestExtra | undefined);
 
         try {
             const domainCountResult = await db.execute(sql`SELECT COUNT(*)::int AS total FROM domains`);
             const domainCount = extractNumericCell(domainCountResult, ['total', 'count', '?column?']);
 
-            if (domainCount > 0 && !isAdminPrincipal(principal)) {
-                return err('DOMAIN_CREATE_FORBIDDEN: Use an actor with admin or tenant:admin scope to create additional domains.');
+            if (domainCount > 0 && !isPlatformAdminActor(principal)) {
+                return err('DOMAIN_CREATE_FORBIDDEN: Use a platform-admin actor such as a supervisor session, env-backed admin key, or local bootstrap admin to create additional domains.');
             }
 
             const [created] = await db.insert(domains).values({

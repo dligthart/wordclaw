@@ -10,6 +10,9 @@ vi.mock('./api', () => ({
 describe('Auth State Management', () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        vi.stubGlobal('localStorage', {
+            setItem: vi.fn(),
+        });
         // Reset auth state before each test
         auth.user = null;
         auth.loading = true;
@@ -23,13 +26,14 @@ describe('Auth State Management', () => {
     });
 
     it('checkAuth sets user on success', async () => {
-        const mockUser = { id: 1, email: 'admin@wordclaw.com' };
+        const mockUser = { id: 1, email: 'admin@wordclaw.com', domainId: 7, scope: 'tenant' as const };
         vi.mocked(api.fetchApi).mockResolvedValueOnce(mockUser);
 
         await checkAuth();
 
         expect(api.fetchApi).toHaveBeenCalledWith('/supervisors/me');
         expect(auth.user).toEqual(mockUser);
+        expect(localStorage.setItem).toHaveBeenCalledWith('__wc_domain_id', '7');
         expect(auth.loading).toBe(false);
         expect(auth.error).toBeNull();
     });

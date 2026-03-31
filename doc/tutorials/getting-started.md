@@ -320,7 +320,11 @@ curl -X POST http://localhost:4000/api/supervisors/setup-initial \
 
 *(Note: this endpoint will only work if zero supervisor accounts exist.)*
 
+In production, set `SETUP_TOKEN` first and send the same value in the `x-setup-token` header when calling that endpoint.
+
 Once a supervisor can sign in, the first tenant can be provisioned either through the supervisor UI's `API Keys -> Onboard Tenant` flow or directly through `POST /api/onboard` when you want to create the domain and first admin credential in one REST call.
+
+Additional supervisor accounts are no longer limited to the bootstrap path. Platform admins can create more operators with `POST /api/supervisors`, and can scope them to a single tenant by providing `domainId`. `POST /api/onboard` also accepts an optional `supervisor` payload so domain creation, initial API key issuance, and the first tenant-scoped UI login can happen in one transaction.
 
 ## API Authentication
 

@@ -7,6 +7,8 @@ import {
     buildApiKeyPrincipal,
     buildMcpLocalPrincipal,
     buildSupervisorPrincipal,
+    hasAdministrativeScope,
+    isPlatformAdminPrincipal,
     resolveActorIdentityRef,
     resolveActorProfileId,
     toAuditActor
@@ -70,6 +72,23 @@ describe('actor identity helpers', () => {
             scopes: ['content:write'],
             assignmentRefs: ['env_key:writer', 'writer'],
         });
+    });
+
+    it('distinguishes domain admins from platform admins by actor source', () => {
+        const dbAdmin = buildApiKeyPrincipal(42, 7, new Set(['admin']));
+        const envAdmin = buildEnvKeyPrincipal('ops', 1, new Set(['admin']));
+        const tenantSupervisor = buildSupervisorPrincipal(12, 3, { platformAdmin: false });
+        const platformSupervisor = buildSupervisorPrincipal(13, 3, { platformAdmin: true });
+
+        expect(hasAdministrativeScope(dbAdmin)).toBe(true);
+        expect(isPlatformAdminPrincipal(dbAdmin)).toBe(false);
+        expect(isPlatformAdminPrincipal(envAdmin)).toBe(true);
+        expect(isPlatformAdminPrincipal(tenantSupervisor)).toBe(false);
+        expect(isPlatformAdminPrincipal(platformSupervisor)).toBe(true);
+        expect(isPlatformAdminPrincipal({
+            scopes: ['tenant:admin'],
+            actorSource: 'db'
+        })).toBe(true);
     });
 
     it('builds assignment refs with both canonical actor ids and legacy key ids where needed', () => {

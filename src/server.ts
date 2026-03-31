@@ -24,10 +24,10 @@ import { db } from './db/index.js';
 import { auditEventBus, type AuditEventPayload } from './services/event-bus.js';
 import { PolicyEngine } from './services/policy.js';
 import { buildOperationContext } from './services/policy-adapters.js';
-import { parseSupervisorDomainHeader } from './api/domain-context.js';
-import { buildSupervisorPrincipal, type ActorPrincipal } from './services/actor-identity.js';
+import { type ActorPrincipal } from './services/actor-identity.js';
 import { McpHttpSessionManager } from './mcp/http-session-manager.js';
 import { assertValidRuntimeEnvironment } from './config/runtime-environment.js';
+import { resolveSupervisorSessionPrincipal, type SupervisorSessionClaims } from './api/supervisor-session.js';
 
 function readRequestIdHeader(raw: string | string[] | undefined): string | null {
     if (typeof raw === 'string' && raw.trim().length > 0) {
@@ -39,6 +39,21 @@ function readRequestIdHeader(raw: string | string[] | undefined): string | null 
     }
 
     return null;
+}
+
+function parseCorsAllowedOrigins(raw: string | undefined): string[] {
+    if (!raw) {
+        return [];
+    }
+
+    return Array.from(
+        new Set(
+            raw
+                .split(',')
+                .map((value) => value.trim())
+                .filter(Boolean)
+        )
+    );
 }
 
 function addRequestContextToErrorPayload(payload: unknown, requestId: string): unknown {
@@ -144,21 +159,21 @@ async function resolveInteractivePrincipal(request: {
 
     try {
         await request.jwtVerify({ onlyCookie: true });
-        const user = request.user as { sub: number; role: string } | undefined;
+        const user = request.user as SupervisorSessionClaims | undefined;
         if (user && user.role === 'supervisor') {
-            const domainContext = parseSupervisorDomainHeader(request.headers as IncomingHttpHeaders);
-            if (!domainContext.ok) {
-                const err = new Error(domainContext.payload.error) as Error & {
+            const resolved = resolveSupervisorSessionPrincipal(user, request.headers as IncomingHttpHeaders);
+            if (!resolved.ok) {
+                const err = new Error(resolved.payload.error) as Error & {
                     statusCode?: number;
                     code?: string;
                     remediation?: string;
                 };
-                err.statusCode = domainContext.statusCode;
-                err.code = domainContext.payload.code;
-                err.remediation = domainContext.payload.remediation;
+                err.statusCode = resolved.statusCode;
+                err.code = resolved.payload.code;
+                err.remediation = resolved.payload.remediation;
                 throw err;
             }
-            principal = buildSupervisorPrincipal(user.sub, domainContext.domainId);
+            principal = resolved.principal;
         }
     } catch (error) {
         if ((error as { code?: string }).code === 'FST_JWT_NO_AUTHORIZATION_IN_COOKIE') {
@@ -196,7 +211,20 @@ export async function buildServer(): Promise<FastifyInstance> {
         genReqId: (request) => readRequestIdHeader(request.headers['x-request-id']) || randomUUID()
     }).withTypeProvider<TypeBoxTypeProvider>();
 
-    server.register(cors);
+    const corsAllowedOrigins = parseCorsAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
+
+    server.register(cors, {
+        origin: corsAllowedOrigins.length === 0
+            ? false
+            : (origin, callback) => {
+                if (!origin) {
+                    callback(null, false);
+                    return;
+                }
+
+                callback(null, corsAllowedOrigins.includes(origin));
+            }
+    });
     server.register(idempotencyPlugin, { ttlMs: 5 * 60 * 1000 });
     server.register(fastifyMultipart, {
         limits: {
@@ -204,6 +232,19 @@ export async function buildServer(): Promise<FastifyInstance> {
         }
     });
     server.setErrorHandler(errorHandler);
+
+    server.addHook('onSend', async (_request, reply, payload) => {
+        reply.header('x-content-type-options', 'nosniff');
+        reply.header('x-frame-options', 'DENY');
+        reply.header('referrer-policy', 'no-referrer');
+        reply.header('x-xss-protection', '0');
+
+        if (process.env.NODE_ENV === 'production') {
+            reply.header('strict-transport-security', 'max-age=63072000; includeSubDomains; preload');
+        }
+
+        return payload;
+    });
 
     const enableDocs = process.env.ENABLE_DOCS === 'true' || process.env.NODE_ENV !== 'production';
     const enableGraphiql = process.env.ENABLE_GRAPHIQL === 'true' || process.env.NODE_ENV !== 'production';
@@ -486,24 +527,14 @@ export async function buildServer(): Promise<FastifyInstance> {
     });
 
     server.get('/health', async (_request, reply) => {
-        const timestamp = new Date().toISOString();
-
         try {
             await db.execute(sql`SELECT 1`);
             return {
-                status: 'ok',
-                services: {
-                    database: 'ok'
-                },
-                timestamp
+                status: 'ok'
             };
         } catch {
             return reply.status(503).send({
-                status: 'degraded',
-                services: {
-                    database: 'down'
-                },
-                timestamp
+                status: 'degraded'
             });
         }
     });

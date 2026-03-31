@@ -279,6 +279,47 @@ describe('getWorkspaceContextSnapshot', () => {
         }));
     });
 
+    it('keeps tenant-scoped supervisors pinned to their bound domain in accessibleDomains', async () => {
+        vi.spyOn(db, 'select')
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        name: 'Tenant A',
+                        hostname: 'tenant-a.example.com',
+                    }]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>)
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([]),
+                }),
+            }) as unknown as ReturnType<typeof db.select>);
+
+        const snapshot = await getWorkspaceContextSnapshot({
+            actorId: 'supervisor:4',
+            actorType: 'supervisor',
+            actorSource: 'cookie',
+            actorProfileId: 'supervisor-session',
+            domainId: 7,
+            scopes: ['admin'],
+            assignmentRefs: ['supervisor:4'],
+        });
+
+        expect(snapshot.currentDomain).toEqual({
+            id: 7,
+            name: 'Tenant A',
+            hostname: 'tenant-a.example.com',
+            current: true,
+        });
+        expect(snapshot.accessibleDomains).toEqual([{
+            id: 7,
+            name: 'Tenant A',
+            hostname: 'tenant-a.example.com',
+            current: true,
+        }]);
+    });
+
     it('resolves the single best target for a task intent', async () => {
         vi.spyOn(db, 'select')
             .mockImplementationOnce(() => ({

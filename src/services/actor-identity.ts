@@ -31,6 +31,46 @@ export type CurrentActorSnapshot = ActorIdentity & {
     assignmentRefs: string[];
 };
 
+type PrincipalScopeCarrier = {
+    scopes?: Set<string> | string[];
+    actorSource?: string;
+    source?: string;
+    actorType?: string;
+} | null | undefined;
+
+function normalizePrincipalScopes(principal: PrincipalScopeCarrier): string[] {
+    if (principal?.scopes instanceof Set) {
+        return Array.from(principal.scopes);
+    }
+
+    if (Array.isArray(principal?.scopes)) {
+        return principal.scopes;
+    }
+
+    return [];
+}
+
+export function hasAdministrativeScope(principal: PrincipalScopeCarrier): boolean {
+    const scopes = normalizePrincipalScopes(principal);
+    return scopes.includes('admin') || scopes.includes('tenant:admin');
+}
+
+export function isPlatformAdminPrincipal(principal: PrincipalScopeCarrier): boolean {
+    const scopes = normalizePrincipalScopes(principal);
+    const actorSource = principal?.actorSource ?? principal?.source;
+    const actorType = principal?.actorType;
+
+    if (scopes.includes('tenant:admin')) {
+        return true;
+    }
+
+    if (actorType === 'supervisor') {
+        return false;
+    }
+
+    return scopes.includes('admin') && actorSource !== 'db';
+}
+
 export function buildApiKeyPrincipal(apiKeyId: number, domainId: number, scopes: Set<string>): ActorPrincipal {
     return {
         actorRef: apiKeyId,
@@ -69,11 +109,19 @@ export function buildAnonymousLocalPrincipal(): ActorPrincipal {
     };
 }
 
-export function buildSupervisorPrincipal(supervisorId: number, domainId: number): ActorPrincipal {
+export function buildSupervisorPrincipal(
+    supervisorId: number,
+    domainId: number,
+    options: { platformAdmin?: boolean } = {}
+): ActorPrincipal {
+    const scopes = options.platformAdmin === false
+        ? new Set(['admin'])
+        : new Set(['admin', 'tenant:admin']);
+
     return {
         actorRef: `supervisor:${supervisorId}`,
         domainId,
-        scopes: new Set(['admin']),
+        scopes,
         source: 'cookie',
         actorId: `supervisor:${supervisorId}`,
         actorType: 'supervisor',

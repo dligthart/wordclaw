@@ -915,7 +915,7 @@ describe('MCP HTTP transport', () => {
         });
 
         expect(forbidden.isError).toBe(true);
-        expect(extractFirstText(forbidden.content as Array<{ type: string; text?: string }>)).toContain('DOMAIN_CREATE_FORBIDDEN');
+        expect(extractFirstText(forbidden.content as Array<{ type: string; text?: string }>)).toContain('PLATFORM_ADMIN_REQUIRED');
     });
 
     it('supports MCP asset management while keeping byte delivery REST-first', async () => {
@@ -1279,7 +1279,7 @@ describe('MCP HTTP transport', () => {
         });
 
         expect(onboardResult.isError).toBe(true);
-        expect(extractFirstText(onboardResult.content as Array<{ type: string; text?: string }>)).toContain('ADMIN_REQUIRED');
+        expect(extractFirstText(onboardResult.content as Array<{ type: string; text?: string }>)).toContain('PLATFORM_ADMIN_REQUIRED');
     });
 
     it('returns actor-aware reactive recommendations in task guidance payloads', async () => {

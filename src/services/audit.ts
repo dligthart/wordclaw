@@ -10,6 +10,7 @@ import { toAuditActor, type AuditActor } from './actor-identity.js';
 export type AuditAction = 'create' | 'update' | 'delete' | 'rollback' | 'restore' | 'purge' | 'preview';
 export type EntityType =
     | 'domain'
+    | 'supervisor'
     | 'content_type'
     | 'content_item'
     | 'form_definition'

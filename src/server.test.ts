@@ -9,6 +9,7 @@ const originalL402Secret = process.env.L402_SECRET;
 const originalPaymentProvider = process.env.PAYMENT_PROVIDER;
 const originalLnbitsBaseUrl = process.env.LNBITS_BASE_URL;
 const originalLnbitsAdminKey = process.env.LNBITS_ADMIN_KEY;
+const originalCorsAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
 
 function restoreEnv() {
     if (originalNodeEnv === undefined) {
@@ -52,6 +53,12 @@ function restoreEnv() {
     } else {
         process.env.LNBITS_ADMIN_KEY = originalLnbitsAdminKey;
     }
+
+    if (originalCorsAllowedOrigins === undefined) {
+        delete process.env.CORS_ALLOWED_ORIGINS;
+    } else {
+        process.env.CORS_ALLOWED_ORIGINS = originalCorsAllowedOrigins;
+    }
 }
 
 describe('buildServer', () => {
@@ -71,5 +78,61 @@ describe('buildServer', () => {
         await expect(buildServer()).rejects.toThrowError(
             /JWT_SECRET[\s\S]*COOKIE_SECRET/
         );
+    });
+
+    it('adds baseline security headers and disables wildcard CORS by default', async () => {
+        process.env.NODE_ENV = 'development';
+        delete process.env.CORS_ALLOWED_ORIGINS;
+
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    origin: 'https://evil.example'
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.headers['x-content-type-options']).toBe('nosniff');
+            expect(response.headers['x-frame-options']).toBe('DENY');
+            expect(response.headers['referrer-policy']).toBe('no-referrer');
+            expect(response.headers['x-xss-protection']).toBe('0');
+            expect(response.headers['access-control-allow-origin']).toBeUndefined();
+            expect(response.headers['strict-transport-security']).toBeUndefined();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('allows configured CORS origins and sets hsts in production', async () => {
+        process.env.NODE_ENV = 'production';
+        process.env.JWT_SECRET = 'jwt-secret-for-tests';
+        process.env.COOKIE_SECRET = 'cookie-secret-for-tests';
+        process.env.CORS_ALLOWED_ORIGINS = 'https://kb.lightheart.tech';
+        delete process.env.L402_SECRET;
+        delete process.env.PAYMENT_PROVIDER;
+        delete process.env.LNBITS_BASE_URL;
+        delete process.env.LNBITS_ADMIN_KEY;
+
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    origin: 'https://kb.lightheart.tech'
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.headers['access-control-allow-origin']).toBe('https://kb.lightheart.tech');
+            expect(response.headers['strict-transport-security']).toBe('max-age=63072000; includeSubDomains; preload');
+        } finally {
+            await app.close();
+        }
     });
 });

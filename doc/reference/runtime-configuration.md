@@ -20,11 +20,15 @@ Use this page as the durable reference for what the runtime actually honors.
 | `API_KEYS` | `writer=content:read|content:write|audit:read,reader=content:read|audit:read` | Comma-separated key to scope map |
 | `JWT_SECRET` | unset | Supervisor-session JWT signing secret |
 | `COOKIE_SECRET` | unset | Supervisor-session cookie signing secret |
+| `SETUP_TOKEN` | unset | Optional one-time token required by `/api/supervisors/setup-initial` in production |
+| `CORS_ALLOWED_ORIGINS` | unset | Comma-separated allowlist for cross-origin browser access |
 
 Notes:
 
 - `AUTH_REQUIRED=false` only relaxes public discovery. Write-capable routes still require a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is also enabled in a non-production environment.
 - In production, both `JWT_SECRET` and `COOKIE_SECRET` are strictly required.
+- In production, set `SETUP_TOKEN` before calling `POST /api/supervisors/setup-initial`. After the first supervisor exists, create additional platform or tenant-scoped supervisors through `POST /api/supervisors`.
+- Cross-origin browser access is disabled by default. Same-origin supervisor/API traffic does not need CORS headers; add `CORS_ALLOWED_ORIGINS` only when you intentionally support trusted external browser origins.
 - Fresh installs still need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status`, `wordclaw capabilities status`, or call `guide_task("bootstrap-workspace")` to see whether bootstrap is still blocked, then bootstrap with `wordclaw domains create`, MCP `create_domain`, or REST `POST /api/domains`.
 
 ## Semantic Search and Embeddings

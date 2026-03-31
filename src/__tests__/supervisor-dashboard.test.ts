@@ -163,6 +163,60 @@ describe('Supervisor Dashboard Domain Isolation', () => {
         expect(response.json().code).toBe('INVALID_DOMAIN_CONTEXT');
     });
 
+    it('defaults tenant-scoped supervisors to their bound domain when no header is provided', async () => {
+        process.env.ENABLE_EXPERIMENTAL_REVENUE = 'true';
+        process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';
+        const tenantScopedToken = app.jwt.sign({ sub: 2, role: 'supervisor', domainId: domainAId });
+
+        const response = await app.inject({
+            method: 'GET',
+            url: '/api/supervisors/dashboard',
+            headers: {
+                cookie: `supervisor_session=${tenantScopedToken}`
+            }
+        });
+
+        expect(response.statusCode).toBe(200);
+        const payload = response.json() as {
+            recentEvents: Array<{ domainId: number; details: string | null }>;
+            paymentSummary: {
+                settledTotal: number;
+                settledCount: number;
+                pendingTotal: number;
+                pendingCount: number;
+            };
+        };
+
+        expect(payload.recentEvents.every((event) => event.domainId === domainAId)).toBe(true);
+        expect(payload.recentEvents.some((event) => event.details === 'domain-b-create')).toBe(false);
+        expect(payload.paymentSummary).toEqual({
+            settledTotal: 150,
+            settledCount: 1,
+            pendingTotal: 70,
+            pendingCount: 1
+        });
+    });
+
+    it('rejects tenant-scoped supervisors that request another domain', async () => {
+        const tenantScopedToken = app.jwt.sign({ sub: 2, role: 'supervisor', domainId: domainAId });
+
+        const response = await app.inject({
+            method: 'GET',
+            url: '/api/supervisors/dashboard',
+            headers: {
+                cookie: `supervisor_session=${tenantScopedToken}`,
+                'x-wordclaw-domain': String(domainBId)
+            }
+        });
+
+        expect(response.statusCode).toBe(403);
+        expect(response.json()).toEqual({
+            error: 'Supervisor domain scope mismatch',
+            code: 'SUPERVISOR_DOMAIN_SCOPE_MISMATCH',
+            remediation: `Use x-wordclaw-domain: ${domainAId} or sign in with a platform-scoped supervisor session.`
+        });
+    });
+
     it('scopes dashboard aggregates and events to requested domain', async () => {
         process.env.ENABLE_EXPERIMENTAL_REVENUE = 'true';
         process.env.ENABLE_EXPERIMENTAL_AGENT_RUNS = 'false';

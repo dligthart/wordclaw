@@ -157,6 +157,10 @@
         void (async () => {
             await checkAuth();
             if (auth.user) {
+                if (typeof auth.user.domainId === "number") {
+                    currentDomain = String(auth.user.domainId);
+                    localStorage.setItem("__wc_domain_id", currentDomain);
+                }
                 await loadDomains();
             }
         })();

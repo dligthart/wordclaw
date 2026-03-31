@@ -5,6 +5,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { apiKeys, domains } from '../db/schema.js';
 import { apiKeyPrefix, generatePlaintextApiKey, hashApiKey, normalizeScopes, serializeScopes } from './api-key.js';
+import { createSupervisorAccount, type SupervisorDbExecutor } from './supervisor.js';
 
 export const DEFAULT_TENANT_ONBOARDING_SCOPES = ['admin'] as const;
 const DOMAIN_HOSTNAME_CONSTRAINTS = new Set([
@@ -39,6 +40,10 @@ type OnboardTenantInput = {
     hostname: string;
     apiKeyName?: string;
     scopes?: string[];
+    supervisor?: {
+        email: string;
+        password: string;
+    } | null;
     createdBy?: number | null;
     expiresAt?: Date | null;
 };
@@ -179,10 +184,19 @@ export async function onboardTenant(input: OnboardTenantInput) {
                 expiresAt: input.expiresAt ?? null
             }).returning();
 
+            const createdSupervisor = input.supervisor
+                ? await createSupervisorAccount({
+                    email: input.supervisor.email,
+                    password: input.supervisor.password,
+                    domainId: domain.id,
+                }, tx as SupervisorDbExecutor)
+                : null;
+
             return {
                 bootstrap,
                 domain,
                 apiKey,
+                supervisor: createdSupervisor?.supervisor ?? null,
                 plaintext,
                 scopes
             };

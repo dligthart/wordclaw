@@ -1,5 +1,6 @@
 import { db } from '../db/index.js';
 import { policyDecisionLogs } from '../db/schema.js';
+import { hasAdministrativeScope, isPlatformAdminPrincipal } from './actor-identity.js';
 
 export interface OperationContext {
     principal: {
@@ -66,15 +67,6 @@ export class PolicyEngine {
     private static evaluateSync(context: OperationContext): PolicyDecision {
         const { principal, operation, resource } = context;
 
-        // Admin scope can do everything globally across domains
-        if (principal.scopes.includes('admin') || principal.scopes.includes('tenant:admin')) {
-            return {
-                outcome: 'allow',
-                code: 'ALLOWED_ADMIN',
-                policyVersion: POLICY_VERSION
-            };
-        }
-
         if (resource.type !== 'system' && resource.domainId === undefined) {
             return {
                 outcome: 'deny',
@@ -84,8 +76,17 @@ export class PolicyEngine {
             };
         }
 
+        if (operation.startsWith('tenant.') && !isPlatformAdminPrincipal(principal)) {
+            return {
+                outcome: 'deny',
+                code: 'PLATFORM_ADMIN_REQUIRED',
+                remediation: 'Use a platform-admin actor such as a supervisor session, env-backed admin key, or local bootstrap admin before provisioning or listing tenants across domains.',
+                policyVersion: POLICY_VERSION
+            };
+        }
+
         // Cross-Tenant Boundary Enforcement
-        if (resource.domainId !== undefined && resource.domainId !== principal.domainId) {
+        if (resource.domainId !== undefined && resource.domainId !== principal.domainId && !isPlatformAdminPrincipal(principal)) {
             return {
                 outcome: 'deny',
                 code: 'TENANT_ISOLATION_VIOLATION',
@@ -94,10 +95,17 @@ export class PolicyEngine {
             }
         }
 
+        if (hasAdministrativeScope(principal)) {
+            return {
+                outcome: 'allow',
+                code: 'ALLOWED_ADMIN',
+                policyVersion: POLICY_VERSION
+            };
+        }
+
         if (
             operation.startsWith('apikey.')
             || operation.startsWith('webhook.')
-            || operation.startsWith('tenant.')
         ) {
             return {
                 outcome: 'deny',

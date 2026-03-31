@@ -66,8 +66,9 @@ export function buildBootstrapWorkspaceGuide(options: {
     const bootstrapCheck = deploymentStatus?.checks.bootstrap ?? null;
     const domainCount = bootstrapCheck?.domainCount ?? null;
     const bootstrapReady = domainCount !== null && domainCount > 0;
-    const isAdminActor = currentActor
-        ? currentActor.scopes.includes('admin') || currentActor.scopes.includes('tenant:admin')
+    const isPlatformAdminActor = currentActor
+        ? currentActor.scopes.includes('tenant:admin')
+            || (currentActor.scopes.includes('admin') && currentActor.actorProfileId !== 'api-key')
         : false;
     const actorReadinessNotes: string[] = [];
 
@@ -75,8 +76,8 @@ export function buildBootstrapWorkspaceGuide(options: {
         actorReadinessNotes.push('No authenticated actor snapshot is available yet.');
     } else {
         actorReadinessNotes.push(`Current actor ${currentActor.actorId} is using profile ${currentActor.actorProfileId} in domain ${currentActor.domainId}.`);
-        if (!isAdminActor) {
-            actorReadinessNotes.push('Additional domains require admin or tenant:admin scope once the first domain already exists.');
+        if (!isPlatformAdminActor) {
+            actorReadinessNotes.push('Additional domains require a platform-admin actor such as a supervisor session, env-backed admin key, or local bootstrap admin once the first domain already exists.');
         }
         if (domainCount === 0) {
             actorReadinessNotes.push('The current domain reference is only a placeholder until the first domain is created.');
@@ -85,7 +86,7 @@ export function buildBootstrapWorkspaceGuide(options: {
 
     const actorReadinessStatus = !currentActor
         ? 'blocked'
-        : !isAdminActor && bootstrapReady
+        : !isPlatformAdminActor && bootstrapReady
             ? 'warning'
             : 'ready';
     const createDomainCommand = buildCreateDomainCommand(bootstrapCheck, baseCommand);
@@ -94,9 +95,9 @@ export function buildBootstrapWorkspaceGuide(options: {
         : bootstrapReady
             ? [
                 `${bootstrapCheck.domainCount} domain(s) already exist, so first-domain bootstrap is complete.`,
-                isAdminActor
+                isPlatformAdminActor
                     ? 'Use the same path only if you intentionally need an additional domain.'
-                    : 'Use an admin or tenant:admin actor before creating additional domains.',
+                    : 'Use a platform-admin actor before creating additional domains.',
             ]
             : [
                 bootstrapCheck.note,

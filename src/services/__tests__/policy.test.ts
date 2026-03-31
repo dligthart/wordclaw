@@ -101,6 +101,45 @@ describe('PolicyEngine Multi-Tenant Isolation', () => {
 
         const result = await PolicyEngine.evaluate(context);
         expect(result.outcome).toBe('deny');
-        expect(result.code).toBe('ADMIN_REQUIRED');
+        expect(result.code).toBe('PLATFORM_ADMIN_REQUIRED');
+    });
+
+    it('denies tenant onboarding for domain-scoped db admin keys', async () => {
+        const context: OperationContext = {
+            principal: { id: 'api_key:42', domainId: 2, scopes: ['admin'], source: 'db' },
+            operation: 'tenant.onboard',
+            resource: { type: 'system' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('deny');
+        expect(result.code).toBe('PLATFORM_ADMIN_REQUIRED');
+    });
+
+    it('allows tenant onboarding for env-backed admin actors', async () => {
+        const context: OperationContext = {
+            principal: { id: 'env_key:ops', domainId: 1, scopes: ['admin'], source: 'env' },
+            operation: 'tenant.onboard',
+            resource: { type: 'system' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('allow');
+        expect(result.code).toBe('ALLOWED_ADMIN');
+    });
+
+    it('denies tenant creation for domain-scoped db admin keys', async () => {
+        const context: OperationContext = {
+            principal: { id: 'api_key:42', domainId: 2, scopes: ['admin'], source: 'db' },
+            operation: 'tenant.create',
+            resource: { type: 'system' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('deny');
+        expect(result.code).toBe('PLATFORM_ADMIN_REQUIRED');
     });
 });

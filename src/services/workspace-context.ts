@@ -864,10 +864,12 @@ export async function getWorkspaceContextSnapshot(
         warnings.push(`Current domain ${domainId} could not be resolved from the domains table. Using a fallback domain label.`);
     }
 
-    const accessibleDomainsRows = currentActor.actorProfileId === 'supervisor-session'
+    const canAccessAllDomains = currentActor.actorProfileId === 'supervisor-session'
+        && currentActor.scopes.includes('tenant:admin');
+    const accessibleDomainsRows = canAccessAllDomains
         ? await db.select().from(domains)
         : [];
-    const accessibleDomains = currentActor.actorProfileId === 'supervisor-session'
+    const accessibleDomains = canAccessAllDomains
         ? accessibleDomainsRows
             .map((domain) => ({
                 id: domain.id,
@@ -878,7 +880,7 @@ export async function getWorkspaceContextSnapshot(
             .sort(compareByNameThenId)
         : [currentDomain];
 
-    if (currentActor.actorProfileId === 'supervisor-session' && !accessibleDomains.some((domain) => domain.id === domainId)) {
+    if (canAccessAllDomains && !accessibleDomains.some((domain) => domain.id === domainId)) {
         accessibleDomains.unshift(currentDomain);
     }
 

@@ -45,7 +45,6 @@ import { paymentFlowMetrics } from '../services/payment-metrics.js';
 import { parsePaymentWebhookEvent, verifyPaymentWebhookSignature } from '../services/payment-webhook.js';
 import { AgentRunService, AgentRunServiceError, isAgentRunControlAction, isAgentRunStatus } from '../services/agent-runs.js';
 import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
-import { parseSupervisorDomainHeader } from './domain-context.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import { jobsWorker } from '../workers/jobs.worker.js';
 import {
@@ -77,7 +76,8 @@ import {
 import { AssetStorageError } from '../services/asset-storage.js';
 import {
     buildCurrentActorSnapshot,
-    buildSupervisorPrincipal,
+    hasAdministrativeScope,
+    isPlatformAdminPrincipal,
     resolveApiKeyId,
     toAuditActor,
     type ActorPrincipal,
@@ -120,6 +120,8 @@ import {
     serializeJob,
     type ListJobsOptions,
 } from '../services/jobs.js';
+import { SupervisorEmailConflictError } from '../services/supervisor.js';
+import { resolveSupervisorSessionPrincipal, type SupervisorSessionClaims } from './supervisor-session.js';
 
 type DryRunQueryType = { mode?: 'dry_run' };
 type IdParams = { id: number };
@@ -485,6 +487,14 @@ const OnboardTenantResponseSchema = Type.Object({
         expiresAt: Type.Union([Type.String(), Type.Null()]),
         apiKey: Type.String()
     }),
+    supervisor: Type.Union([
+        Type.Object({
+            id: Type.Number(),
+            email: Type.String(),
+            domainId: Type.Number(),
+        }),
+        Type.Null()
+    ]),
     endpoints: Type.Object({
         api: Type.Union([Type.String(), Type.Null()]),
         mcp: Type.Union([Type.String(), Type.Null()]),
@@ -1295,7 +1305,7 @@ function domainCreationForbidden(): AIErrorPayload {
     return toErrorPayload(
         'Domain creation forbidden',
         'DOMAIN_CREATE_FORBIDDEN',
-        'Use an admin or tenant:admin credential to create additional domains, or bootstrap the first domain on an empty install.'
+        'Use a platform-admin actor such as a supervisor session, env-backed admin key, or local bootstrap admin to create additional domains.'
     );
 }
 
@@ -1333,6 +1343,24 @@ function invalidPublicBaseUrl(): AIErrorPayload {
         'INVALID_PUBLIC_BASE_URL',
         'Provide publicBaseUrl as an absolute http(s) URL such as https://kb.lightheart.tech.'
     );
+}
+
+function supervisorEmailConflict(
+    email: string,
+    existingSupervisor: { id: number; email: string; domainId: number | null } | null = null
+): AIErrorPayload {
+    return {
+        error: 'Supervisor email already exists',
+        code: 'SUPERVISOR_EMAIL_CONFLICT',
+        remediation: existingSupervisor
+            ? `Supervisor ${existingSupervisor.id} already uses email '${email}'. Use a different email or update that account instead of creating a duplicate.`
+            : `A supervisor with email '${email}' already exists. Use a different email or update the existing account instead of creating a duplicate.`,
+        ...(existingSupervisor ? {
+            context: {
+                existingSupervisor,
+            }
+        } : {})
+    };
 }
 
 async function countProvisionedDomains() {
@@ -1583,8 +1611,11 @@ function toApiKeyIdFromRequest(request: RequestActorCarrier): number | undefined
 }
 
 function hasAdminScope(request: RequestActorCarrier): boolean {
-    const scopes = (request.authPrincipal as { scopes?: Set<string> } | undefined)?.scopes;
-    return Boolean(scopes?.has('admin') || scopes?.has('tenant:admin'));
+    return hasAdministrativeScope(request.authPrincipal as { scopes?: Set<string>; source?: string; actorSource?: string } | undefined);
+}
+
+function hasPlatformAdminScope(request: RequestActorCarrier): boolean {
+    return isPlatformAdminPrincipal(request.authPrincipal as { scopes?: Set<string>; source?: string; actorSource?: string } | undefined);
 }
 
 async function buildCurrentActorResponse(principal: ActorPrincipal) {
@@ -1828,13 +1859,13 @@ export default async function apiRoutes(server: FastifyInstance) {
         let principal: ActorPrincipal | null = null;
         try {
             await request.jwtVerify({ onlyCookie: true });
-            const user = request.user as { sub: number, role: string };
+            const user = request.user as SupervisorSessionClaims;
             if (user && user.role === 'supervisor') {
-                const domainContext = parseSupervisorDomainHeader(request.headers);
-                if (!domainContext.ok) {
-                    return reply.status(domainContext.statusCode).send(domainContext.payload);
+                const resolved = resolveSupervisorSessionPrincipal(user, request.headers);
+                if (!resolved.ok) {
+                    return reply.status(resolved.statusCode).send(resolved.payload);
                 }
-                principal = buildSupervisorPrincipal(user.sub, domainContext.domainId);
+                principal = resolved.principal;
             }
         } catch {
             // Ignore JWT errors, fallback to normal api key auth
@@ -3585,7 +3616,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request) => {
         const principal = (request as { authPrincipal?: { scopes?: Set<string> } }).authPrincipal;
-        const isAdmin = principal?.scopes?.has('admin') || principal?.scopes?.has('tenant:admin');
+        const isAdmin = isPlatformAdminPrincipal(principal as { scopes?: Set<string>; source?: string; actorSource?: string } | undefined);
         const accessibleDomains = isAdmin
             ? await db.select().from(domains).orderBy(domains.id)
             : await db.select()
@@ -3623,7 +3654,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const principal = (request as { authPrincipal?: { scopes?: Set<string> } }).authPrincipal;
-        const isAdmin = principal?.scopes?.has('admin') || principal?.scopes?.has('tenant:admin');
+        const isAdmin = isPlatformAdminPrincipal(principal as { scopes?: Set<string>; source?: string; actorSource?: string } | undefined);
         const domainCount = await countProvisionedDomains();
 
         if (domainCount > 0 && !isAdmin) {
@@ -3676,6 +3707,10 @@ export default async function apiRoutes(server: FastifyInstance) {
                 tenantName: Type.String({ minLength: 1 }),
                 hostname: Type.String({ minLength: 1 }),
                 adminEmail: Type.Optional(Type.String({ format: 'email' })),
+                supervisor: Type.Optional(Type.Object({
+                    email: Type.String({ format: 'email' }),
+                    password: Type.String({ minLength: 8 }),
+                })),
                 apiKeyName: Type.Optional(Type.String({ minLength: 1 })),
                 scopes: Type.Optional(Type.Array(Type.String())),
                 expiresAt: Type.Optional(Type.String({ format: 'date-time' })),
@@ -3692,6 +3727,10 @@ export default async function apiRoutes(server: FastifyInstance) {
             tenantName: string;
             hostname: string;
             adminEmail?: string;
+            supervisor?: {
+                email: string;
+                password: string;
+            };
             apiKeyName?: string;
             scopes?: string[];
             expiresAt?: string;
@@ -3723,6 +3762,7 @@ export default async function apiRoutes(server: FastifyInstance) {
             const created = await onboardTenant({
                 tenantName: body.tenantName,
                 hostname: body.hostname,
+                supervisor: body.supervisor,
                 apiKeyName: body.apiKeyName,
                 scopes: body.scopes,
                 createdBy: legacyActorUserId ?? null,
@@ -3737,7 +3777,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 {
                     hostname: created.domain.hostname,
                     onboardTenant: true,
-                    adminEmail: body.adminEmail ?? null
+                    adminEmail: body.adminEmail ?? body.supervisor?.email ?? null
                 },
                 actorId,
                 request.id
@@ -3756,6 +3796,20 @@ export default async function apiRoutes(server: FastifyInstance) {
                 actorId,
                 request.id
             );
+            if (created.supervisor) {
+                await logAudit(
+                    created.domain.id,
+                    'create',
+                    'supervisor',
+                    created.supervisor.id,
+                    {
+                        email: created.supervisor.email,
+                        onboardTenant: true,
+                    },
+                    actorId,
+                    request.id
+                );
+            }
 
             return reply.status(201).send({
                 data: {
@@ -3774,6 +3828,13 @@ export default async function apiRoutes(server: FastifyInstance) {
                         expiresAt: created.apiKey.expiresAt ? created.apiKey.expiresAt.toISOString() : null,
                         apiKey: created.plaintext
                     },
+                    supervisor: created.supervisor
+                        ? {
+                            id: created.supervisor.id,
+                            email: created.supervisor.email,
+                            domainId: created.supervisor.domainId ?? created.domain.id,
+                        }
+                        : null,
                     endpoints: buildRuntimeEndpoints(publicOrigin)
                 },
                 meta: buildMeta(
@@ -3787,6 +3848,9 @@ export default async function apiRoutes(server: FastifyInstance) {
             const err = error as Error & { code?: string; constraint?: string };
             if (error instanceof DomainHostnameConflictError) {
                 return reply.status(409).send(domainHostnameConflict(error.hostname, error.existingDomain));
+            }
+            if (error instanceof SupervisorEmailConflictError) {
+                return reply.status(409).send(supervisorEmailConflict(error.email, error.existingSupervisor));
             }
             if (err.message === 'EMPTY_ONBOARDING_SCOPES') {
                 return reply.status(400).send(toErrorPayload(
