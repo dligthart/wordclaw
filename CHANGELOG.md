@@ -1,3 +1,10 @@
+## [1.40.1](https://github.com/dligthart/wordclaw/compare/v1.40.0...v1.40.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* harden supervisor domain switching rate limits ([8f32e71](https://github.com/dligthart/wordclaw/commit/8f32e71d3a7abe325608ce6cb2b3813a6976da60))
+
 # [1.40.0](https://github.com/dligthart/wordclaw/compare/v1.39.1...v1.40.0) (2026-03-31)
 
 
