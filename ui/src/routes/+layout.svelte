@@ -220,9 +220,7 @@
         if (domainId === currentDomain) return;
         localStorage.setItem("__wc_domain_id", domainId);
         currentDomain = domainId;
-        window.location.assign(
-            $page.url.pathname + $page.url.search + $page.url.hash,
-        );
+        window.location.assign("/ui");
     }
 
     function setExperimentalVisibility(visible: boolean) {

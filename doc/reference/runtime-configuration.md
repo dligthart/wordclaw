@@ -22,6 +22,9 @@ Use this page as the durable reference for what the runtime actually honors.
 | `COOKIE_SECRET` | unset | Supervisor-session cookie signing secret |
 | `SETUP_TOKEN` | unset | Optional one-time token required by `/api/supervisors/setup-initial` in production |
 | `CORS_ALLOWED_ORIGINS` | unset | Comma-separated allowlist for cross-origin browser access |
+| `RATE_LIMIT_MAX` | `100` | Default per-bucket request limit inside the active rate-limit window |
+| `SUPERVISOR_RATE_LIMIT_MAX` | `500` | Higher per-session request limit for authenticated supervisor traffic |
+| `RATE_LIMIT_TIME_WINDOW` | `1 minute` | Shared Fastify rate-limit window |
 
 Notes:
 
@@ -29,6 +32,7 @@ Notes:
 - In production, both `JWT_SECRET` and `COOKIE_SECRET` are strictly required.
 - In production, set `SETUP_TOKEN` before calling `POST /api/supervisors/setup-initial`. After the first supervisor exists, create additional platform or tenant-scoped supervisors through `POST /api/supervisors`.
 - Cross-origin browser access is disabled by default. Same-origin supervisor/API traffic does not need CORS headers; add `CORS_ALLOWED_ORIGINS` only when you intentionally support trusted external browser origins.
+- Rate limiting is actor-aware rather than shared by IP alone. API keys and supervisor sessions each receive their own bucket, with `SUPERVISOR_RATE_LIMIT_MAX` providing a higher default allowance for authenticated first-party operator traffic.
 - Fresh installs still need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status`, `wordclaw capabilities status`, or call `guide_task("bootstrap-workspace")` to see whether bootstrap is still blocked, then bootstrap with `wordclaw domains create`, MCP `create_domain`, or REST `POST /api/domains`.
 
 ## Semantic Search and Embeddings

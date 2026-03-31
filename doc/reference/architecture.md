@@ -70,7 +70,7 @@ Every incoming HTTP request passes through a shared middleware pipeline before r
 | Middleware       | Purpose                                                    |
 |------------------|------------------------------------------------------------|
 | **Request ID**   | Assigns or propagates `x-request-id` for traceability      |
-| **Rate Limit**   | Fastify rate-limit plugin, per-IP throttling                |
+| **Rate Limit**   | Fastify rate-limit plugin with actor-aware buckets (API key, supervisor session, or IP fallback) |
 | **Idempotency**  | Caches POST/PUT/DELETE responses keyed by `Idempotency-Key` |
 | **Auth**         | Validates `x-api-key` or `Authorization: Bearer` headers   |
 | **L402**         | Optional micropayment gate using Lightning invoices         |

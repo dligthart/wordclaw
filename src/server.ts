@@ -26,6 +26,7 @@ import { PolicyEngine } from './services/policy.js';
 import { buildOperationContext } from './services/policy-adapters.js';
 import { type ActorPrincipal } from './services/actor-identity.js';
 import { McpHttpSessionManager } from './mcp/http-session-manager.js';
+import { getRateLimitTimeWindow, resolveRateLimitKey, resolveRateLimitMax } from './config/rate-limit.js';
 import { assertValidRuntimeEnvironment } from './config/runtime-environment.js';
 import { resolveSupervisorSessionPrincipal, type SupervisorSessionClaims } from './api/supervisor-session.js';
 
@@ -418,8 +419,12 @@ export async function buildServer(): Promise<FastifyInstance> {
     });
 
     server.register(import('@fastify/rate-limit'), {
-        max: 100,
-        timeWindow: '1 minute',
+        keyGenerator: (request) => resolveRateLimitKey({
+            headers: request.headers as IncomingHttpHeaders,
+            ip: request.ip,
+        }),
+        max: (_request, key) => resolveRateLimitMax(key),
+        timeWindow: getRateLimitTimeWindow(),
         errorResponseBuilder: (request, context) => ({
             statusCode: 429,
             error: 'Too Many Requests',
@@ -434,7 +439,7 @@ export async function buildServer(): Promise<FastifyInstance> {
                 availableActions: [],
                 actionPriority: 'high',
                 max: context.max,
-                timeWindow: '1 minute'
+                timeWindow: getRateLimitTimeWindow()
             }
         })
     });

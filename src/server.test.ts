@@ -10,6 +10,9 @@ const originalPaymentProvider = process.env.PAYMENT_PROVIDER;
 const originalLnbitsBaseUrl = process.env.LNBITS_BASE_URL;
 const originalLnbitsAdminKey = process.env.LNBITS_ADMIN_KEY;
 const originalCorsAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
+const originalRateLimitMax = process.env.RATE_LIMIT_MAX;
+const originalSupervisorRateLimitMax = process.env.SUPERVISOR_RATE_LIMIT_MAX;
+const originalRateLimitTimeWindow = process.env.RATE_LIMIT_TIME_WINDOW;
 
 function restoreEnv() {
     if (originalNodeEnv === undefined) {
@@ -58,6 +61,24 @@ function restoreEnv() {
         delete process.env.CORS_ALLOWED_ORIGINS;
     } else {
         process.env.CORS_ALLOWED_ORIGINS = originalCorsAllowedOrigins;
+    }
+
+    if (originalRateLimitMax === undefined) {
+        delete process.env.RATE_LIMIT_MAX;
+    } else {
+        process.env.RATE_LIMIT_MAX = originalRateLimitMax;
+    }
+
+    if (originalSupervisorRateLimitMax === undefined) {
+        delete process.env.SUPERVISOR_RATE_LIMIT_MAX;
+    } else {
+        process.env.SUPERVISOR_RATE_LIMIT_MAX = originalSupervisorRateLimitMax;
+    }
+
+    if (originalRateLimitTimeWindow === undefined) {
+        delete process.env.RATE_LIMIT_TIME_WINDOW;
+    } else {
+        process.env.RATE_LIMIT_TIME_WINDOW = originalRateLimitTimeWindow;
     }
 }
 
@@ -131,6 +152,107 @@ describe('buildServer', () => {
             expect(response.statusCode).toBe(200);
             expect(response.headers['access-control-allow-origin']).toBe('https://kb.lightheart.tech');
             expect(response.headers['strict-transport-security']).toBe('max-age=63072000; includeSubDomains; preload');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('isolates rate-limit buckets per api credential', async () => {
+        process.env.NODE_ENV = 'development';
+        process.env.RATE_LIMIT_MAX = '2';
+        process.env.SUPERVISOR_RATE_LIMIT_MAX = '4';
+        process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
+
+        const app = await buildServer();
+
+        try {
+            const first = await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    'x-api-key': 'writer-a',
+                }
+            });
+            const second = await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    'x-api-key': 'writer-a',
+                }
+            });
+            const blocked = await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    'x-api-key': 'writer-a',
+                }
+            });
+            const separateBucket = await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    'x-api-key': 'writer-b',
+                }
+            });
+
+            expect(first.statusCode).toBe(200);
+            expect(second.statusCode).toBe(200);
+            expect(blocked.statusCode).toBe(429);
+            expect(separateBucket.statusCode).toBe(200);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('applies the higher supervisor-session limit to supervisor buckets', async () => {
+        process.env.NODE_ENV = 'development';
+        process.env.RATE_LIMIT_MAX = '2';
+        process.env.SUPERVISOR_RATE_LIMIT_MAX = '4';
+        process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
+
+        const app = await buildServer();
+
+        try {
+            const requests = [];
+
+            requests.push(await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    cookie: 'supervisor_session=tenant-1-session'
+                }
+            }));
+            requests.push(await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    cookie: 'supervisor_session=tenant-1-session'
+                }
+            }));
+            requests.push(await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    cookie: 'supervisor_session=tenant-1-session'
+                }
+            }));
+            requests.push(await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    cookie: 'supervisor_session=tenant-1-session'
+                }
+            }));
+            requests.push(await app.inject({
+                method: 'GET',
+                url: '/api/capabilities',
+                headers: {
+                    cookie: 'supervisor_session=tenant-1-session'
+                }
+            }));
+
+            expect(requests.slice(0, 4).every((response) => response.statusCode === 200)).toBe(true);
+            expect(requests[4].statusCode).toBe(429);
         } finally {
             await app.close();
         }
