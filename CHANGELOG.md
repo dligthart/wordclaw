@@ -1,3 +1,10 @@
+# [1.41.0](https://github.com/dligthart/wordclaw/compare/v1.40.1...v1.41.0) (2026-03-31)
+
+
+### Features
+
+* expand supervisor account controls ([3289a97](https://github.com/dligthart/wordclaw/commit/3289a9717791bf5c744a82b1106de3603e956e73))
+
 ## [1.40.1](https://github.com/dligthart/wordclaw/compare/v1.40.0...v1.40.1) (2026-03-31)
 
 
