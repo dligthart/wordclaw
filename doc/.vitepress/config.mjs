@@ -5,10 +5,11 @@ export default withMermaid(defineConfig({
     title: "WordClaw",
     base: "/wordclaw/docs/",
     outDir: ".vitepress/dist/docs",
-    description: "Documentation for the WordClaw safe content runtime for AI agents",
+    description: "Documentation for the WordClaw governed content runtime for AI agents and human supervisors",
     themeConfig: {
         nav: [
             { text: 'Home', link: '/' },
+            { text: 'Current State', link: '/reference/current-state' },
             { text: 'Documentation', link: '/tutorials/getting-started' },
             { text: 'RFCs', link: '/rfc/' }
         ],
@@ -29,16 +30,21 @@ export default withMermaid(defineConfig({
                     { text: 'CI Migrations and Tests Troubleshooting', link: '/guides/ci-migrations-troubleshooting' },
                     { text: 'Blog Integration', link: '/guides/blog-integration-guide' },
                     { text: 'CLI Guide', link: '/guides/cli-guide' },
+                    { text: 'Codex Integration', link: '/guides/codex-integration/README' },
                     { text: 'Docker Deployment', link: '/guides/docker-deployment' },
                     { text: 'Demos', link: '/guides/demos' },
+                    { text: 'Fly Deployment', link: '/guides/fly-deployment' },
                     { text: 'LangGraph MCP Starter', link: '/guides/langgraph-mcp-starter' },
                     { text: 'MCP Integration', link: '/guides/mcp-integration' },
+                    { text: 'Native Vector RAG', link: '/guides/native-vector-rag' },
+                    { text: 'OpenClaw Integration', link: '/guides/openclaw-integration/README' },
                     { text: 'Vercel Deploy Webhook', link: '/guides/vercel-deploy-webhook' }
                 ]
             },
             {
                 text: 'Reference',
                 items: [
+                    { text: 'Current State', link: '/reference/current-state' },
                     { text: 'API Reference', link: '/reference/api-reference' },
                     { text: 'Architecture Diagram', link: '/reference/architecture' },
                     { text: 'Capability Parity', link: '/reference/capability-parity' },

@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WordClaw - Safe Content Runtime for AI Agents</title>
+    <title>WordClaw - Governed Content Runtime for AI Agents</title>
     <meta name="description"
-        content="WordClaw is a safe content runtime for AI agents with schema-aware content and assets, reactive MCP sessions, workflow approvals, public write lanes, and built-in L402 payments.">
+        content="WordClaw is a governed content runtime for AI agents with schema-aware content, assets, forms, jobs, reactive MCP sessions, workflow approvals, public write lanes, and built-in paid-access flows.">
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +33,9 @@
             </button>
             <nav id="site-nav" class="nav-links">
                 <a href="/wordclaw/docs/">Docs</a>
+                <a href="/wordclaw/docs/reference/current-state">Current State</a>
                 <a href="#features">Features</a>
+                <a href="#state">Status</a>
                 <a href="#architecture">Architecture</a>
                 <a href="https://github.com/dligthart/wordclaw" target="_blank" rel="noopener noreferrer"
                     class="btn btn-outline">GitHub</a>
@@ -45,19 +47,20 @@
         <section class="hero">
             <div class="container">
                 <div class="hero-content">
-                    <div class="badge fade-in-up">REST + MCP + Reactive Sessions</div>
-                    <h1 class="fade-in-up delay-1">The Safe Content Runtime for <span class="text-gradient">AI
+                    <div class="badge fade-in-up">Tracking `main` at v1.39.0 · 2026-03-31 snapshot</div>
+                    <h1 class="fade-in-up delay-1">The Governed Content Runtime for <span class="text-gradient">AI
                             Agents</span></h1>
                     <p class="hero-subtitle fade-in-up delay-2">
-                        Designed for governed automation. WordClaw combines schema-aware content, first-class media
-                        assets, public write lanes, TTL lifecycle policies, workflow approvals, auditability, and
-                        agent-native REST/MCP access in one runtime. Agents can discover the live deployment contract,
-                        resolve the best workspace target, and stay reactive through remote MCP subscriptions instead
-                        of polling.
+                        Designed for governed automation. WordClaw combines structured content, schema-aware assets,
+                        reusable forms, background jobs, public write lanes, workflow approvals, auditability,
+                        first-tenant onboarding, and agent-native REST/MCP access in one runtime. Agents can discover
+                        the live deployment contract, resolve the best workspace target, and stay reactive through
+                        remote MCP subscriptions instead of polling.
                     </p>
                     <div class="hero-actions fade-in-up delay-3">
                         <a href="/wordclaw/docs/" class="btn btn-primary">Read Documentation</a>
-                        <a href="https://github.com/dligthart/wordclaw" class="btn btn-secondary">View Source</a>
+                        <a href="/wordclaw/docs/reference/current-state" class="btn btn-secondary">Current State</a>
+                        <a href="https://github.com/dligthart/wordclaw" class="btn btn-outline">View Source</a>
                     </div>
                 </div>
 
@@ -71,13 +74,19 @@
                         <div class="window-body">
                             <pre><code><span class="comment">// Discover the live contract before acting</span>
 <span class="keyword">const</span> <span class="variable">manifest</span> = <span class="keyword">await</span> <span class="function">fetch</span>(<span class="string">'/api/capabilities'</span>).<span class="function">then</span>(<span class="variable">r</span> =&gt; <span class="variable">r</span>.<span class="function">json</span>());
+<span class="keyword">const</span> <span class="variable">status</span> = <span class="keyword">await</span> <span class="function">fetch</span>(<span class="string">'/api/deployment-status'</span>).<span class="function">then</span>(<span class="variable">r</span> =&gt; <span class="variable">r</span>.<span class="function">json</span>());
 
 <span class="comment">// Confirm the current actor and resolve a concrete target</span>
 <span class="keyword">const</span> <span class="variable">target</span> = <span class="keyword">await</span> <span class="function">fetch</span>(<span class="string">'/api/workspace-target?intent=review'</span>, {
   <span class="property">headers</span>: { <span class="string">'x-api-key'</span>: <span class="string">'writer'</span> }
 }).<span class="function">then</span>(<span class="variable">r</span> =&gt; <span class="variable">r</span>.<span class="function">json</span>());
 
-<span class="comment">// Attach a reactive MCP session for live workflow events</span>
+<span class="comment">// Ask MCP for concrete next steps, then subscribe for live events</span>
+<span class="keyword">await</span> <span class="function">mcp</span>.<span class="function">call</span>(<span class="string">'guide_task'</span>, {
+  <span class="property">taskId</span>: <span class="string">'author-content'</span>,
+  <span class="property">contentTypeId</span>: <span class="number">7</span>
+});
+
 <span class="keyword">await</span> <span class="function">mcp</span>.<span class="function">call</span>(<span class="string">'subscribe_events'</span>, {
   <span class="property">recipeId</span>: <span class="string">'review-decisions'</span>,
   <span class="property">filters</span>: { <span class="property">contentTypeId</span>: <span class="number">7</span> }
@@ -107,22 +116,23 @@
             <div class="container">
                 <div class="section-header fade-in-up">
                     <h2>Core Capabilities</h2>
-                    <p>WordClaw helps agents work on governed content, assets, and paid-access flows without losing human oversight or runtime safety.</p>
+                    <p>WordClaw helps agents work on governed content, assets, public intake flows, and paid-access contracts without losing human oversight or runtime safety.</p>
                 </div>
 
                 <div class="feature-grid">
-                    <div class="feature-card fade-in-up">
-                        <div class="feature-icon">🔌</div>
-                        <h3>REST + Reactive MCP</h3>
-                        <p>Expose the core runtime through deterministic REST contracts and remote MCP sessions that
-                            can subscribe to review, content, and integration events in real time.</p>
+                        <div class="feature-card fade-in-up">
+                        <div class="feature-icon">🧭</div>
+                        <h3>Deployment Discovery</h3>
+                        <p>Start with capability, status, identity, and workspace discovery so agents can see the
+                            active transport, auth posture, domain state, onboarding path, and best next target
+                            before writing.</p>
                     </div>
 
                     <div class="feature-card fade-in-up delay-1">
-                        <div class="feature-icon">🧭</div>
-                        <h3>Capability Manifest</h3>
-                        <p>Let agents inspect transports, actor profiles, enabled modules, task recipes, storage
-                            providers, and runtime query support before they mutate state.</p>
+                        <div class="feature-icon">🧱</div>
+                        <h3>Governed Content Runtime</h3>
+                        <p>Collections, singleton globals, localization, preview tokens, reverse references, and
+                            publication-state aware reads sit behind one policy and audit model.</p>
                     </div>
 
                     <div class="feature-card fade-in-up delay-2">
@@ -140,6 +150,27 @@
                     </div>
 
                     <div class="feature-card fade-in-up delay-1">
+                        <div class="feature-icon">🧾</div>
+                        <h3>Forms + Public Write Lanes</h3>
+                        <p>Support bounded external writes through reusable forms, short-lived write tokens, optional
+                            workflow transitions, and follow-up webhook or job execution.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up delay-2">
+                        <div class="feature-icon">⚙️</div>
+                        <h3>Background Jobs</h3>
+                        <p>Queue webhook delivery, deferred transitions, and generic domain-scoped work with worker
+                            health visibility instead of ad hoc side processes.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up">
+                        <div class="feature-icon">🔌</div>
+                        <h3>REST + Reactive MCP</h3>
+                        <p>Expose the runtime through deterministic REST contracts and remote MCP sessions that can
+                            subscribe to review, content, and integration events in real time.</p>
+                    </div>
+
+                    <div class="feature-card fade-in-up delay-1">
                         <div class="feature-icon">🛡️</div>
                         <h3>Workflow + Approvals</h3>
                         <p>Route content changes through review gates so agents can draft and propose safely while
@@ -147,32 +178,59 @@
                     </div>
 
                     <div class="feature-card fade-in-up delay-2">
-                        <div class="feature-icon">⚡</div>
-                        <h3>Built-in L402 Payments</h3>
-                        <p>Run Lightning-gated offers, entitlement purchases, and paid reads as part of the core
-                            runtime contract.</p>
+                        <div class="feature-icon">💳</div>
+                        <h3>L402 + Entitlements</h3>
+                        <p>Run Lightning-gated offers, entitlement purchases, and paid reads or asset access as part
+                            of the core runtime contract.</p>
                     </div>
+                </div>
+            </div>
+        </section>
 
-                    <div class="feature-card fade-in-up">
-                        <div class="feature-icon">🧾</div>
-                        <h3>Public Write Lanes</h3>
-                        <p>Issue short-lived write tokens for player or session-like actors without exposing the full
-                            supervisor API-key surface.</p>
-                    </div>
+        <section id="state" class="state section">
+            <div class="container">
+                <div class="section-header fade-in-up">
+                    <h2>Current System State</h2>
+                    <p>As of 2026-03-31, GitHub Pages tracks `main` at `v1.39.0` and separates what is shipped, what is still being hardened, and what stays opt-in.</p>
+                </div>
 
-                    <div class="feature-card fade-in-up delay-1">
-                        <div class="feature-icon">📝</div>
-                        <h3>Supervisor Control Plane</h3>
-                        <p>A focused oversight UI for approvals, audits, schemas, content inspection, payments, and
-                            asset lifecycle management.</p>
-                    </div>
+                <div class="state-grid">
+                    <article class="feature-card state-card fade-in-up">
+                        <span class="state-meta">Shipped on `main`</span>
+                        <h3>Core Runtime Is Broad</h3>
+                        <p>Structured content, globals, localization, preview tokens, forms, jobs, assets, workflow review, auditability, paid access, and supervisor tooling are live.</p>
+                        <ul class="state-list">
+                            <li><strong>Provisioning:</strong> first-tenant onboarding, fail-fast production guards, Docker and Fly.io deployment paths.</li>
+                            <li><strong>Content:</strong> field-aware queries, grouped projections, public write lanes, TTL lifecycle.</li>
+                            <li><strong>Assets:</strong> local or S3-compatible storage, direct upload, signed and entitled delivery, variants.</li>
+                            <li><strong>Supervision:</strong> schemas, approvals, audits, jobs, forms, payments, and API keys.</li>
+                        </ul>
+                        <a href="/wordclaw/docs/reference/current-state" class="btn btn-primary">Read Status Page</a>
+                    </article>
 
-                    <div class="feature-card fade-in-up delay-2">
-                        <div class="feature-icon">🌐</div>
-                        <h3>Multi-Tenant Governance</h3>
-                        <p>Host multiple projects or organizations on one instance with domain-scoped content,
-                            credentials, workflows, and delivery policy boundaries.</p>
-                    </div>
+                    <article class="feature-card state-card fade-in-up delay-1">
+                        <span class="state-meta">Rolling out</span>
+                        <h3>Reactive MCP + Vector RAG</h3>
+                        <p>The main hardening work now sits around reactive agent coordination and simpler semantic-search operations.</p>
+                        <ul class="state-list">
+                            <li><strong>Reactive MCP:</strong> remote sessions, topic subscriptions, recipes, and follow-up guidance are live.</li>
+                            <li><strong>Vector RAG:</strong> semantic search and embedding sync are available with continued operator-polish work.</li>
+                            <li><strong>Discovery:</strong> capability and status endpoints advertise both contracts directly.</li>
+                        </ul>
+                        <a href="/wordclaw/docs/reference/roadmap" class="btn btn-secondary">View Roadmap</a>
+                    </article>
+
+                    <article class="feature-card state-card fade-in-up delay-2">
+                        <span class="state-meta">Opt-in only</span>
+                        <h3>Experimental Modules Stay Scoped</h3>
+                        <p>Delegation and broader platform experiments remain intentionally outside the default supported WordClaw path.</p>
+                        <ul class="state-list">
+                            <li><strong>Agent runs:</strong> gated behind `ENABLE_EXPERIMENTAL_AGENT_RUNS`.</li>
+                            <li><strong>Monetization experiments:</strong> AP2 and payout expansion stay in RFC history or optional code paths.</li>
+                            <li><strong>Rule of thumb:</strong> build against REST, MCP, and the Tier 1 feature set first.</li>
+                        </ul>
+                        <a href="/wordclaw/docs/reference/capability-parity" class="btn btn-outline">Check Parity</a>
+                    </article>
                 </div>
             </div>
         </section>
@@ -182,26 +240,27 @@
                 <div class="arch-content">
                     <div class="arch-text fade-in-up">
                         <h2>Built for Governed Automation</h2>
-                        <p>WordClaw is now more than schema CRUD. The live runtime combines target resolution,
-                            lifecycle-aware content reads, first-class asset delivery, and reactive agent coordination
-                            in one governable control plane.</p>
+                        <p>WordClaw is now more than schema CRUD. The live runtime combines deployment discovery,
+                            lifecycle-aware content reads, first-class asset delivery, reusable intake flows, and
+                            reactive agent coordination in one governable control plane.</p>
                         <ul class="arch-list">
                             <li><strong>Backend:</strong> Node.js, Fastify, Drizzle ORM</li>
                             <li><strong>Database:</strong> PostgreSQL with pgvector</li>
-                            <li><strong>Content Runtime:</strong> schema refs, field-aware queries, grouped projections, public write lanes, and TTL lifecycle archival</li>
-                            <li><strong>Asset Layer:</strong> local or S3-compatible storage with public, signed, and entitled delivery</li>
-                            <li><strong>Control Plane:</strong> SvelteKit supervisor UI with asset lifecycle controls</li>
-                            <li><strong>Agent Surface:</strong> REST, MCP, and remote reactive subscriptions</li>
+                            <li><strong>Discovery Layer:</strong> capabilities, deployment status, identity, workspace context, and target resolution</li>
+                            <li><strong>Content Runtime:</strong> schema refs, field-aware queries, grouped projections, public write lanes, forms, jobs, and TTL lifecycle archival</li>
+                            <li><strong>Asset Layer:</strong> local or S3-compatible storage with multipart and direct upload, signed delivery, entitlement checks, and variants</li>
+                            <li><strong>Control Plane:</strong> SvelteKit supervisor UI for audits, schemas, approvals, jobs, forms, assets, and payments</li>
+                            <li><strong>Agent Surface:</strong> REST, MCP, CLI guidance, and remote reactive subscriptions</li>
                         </ul>
                     </div>
                     <div class="arch-visual fade-in-up delay-2">
                         <div class="glass-panel">
                             <h3>What ships today?</h3>
-                            <p>Schema-aware content and assets, review workflows, L402 paid reads, public write lanes,
-                                and reactive MCP sessions are all live on `main`.
+                            <p>Core runtime, assets, forms, background jobs, paid access, and supervisor tooling are
+                                shipped on `main`. Reactive MCP and vector-RAG ergonomics are the main hardening areas.
                             </p>
-                            <a href="https://github.com/dligthart/wordclaw" class="btn btn-primary mt-4">Fork on
-                                GitHub</a>
+                            <a href="/wordclaw/docs/reference/current-state" class="btn btn-primary mt-4">Open Status
+                                Page</a>
                         </div>
                     </div>
                 </div>

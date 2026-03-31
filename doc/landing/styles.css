@@ -560,6 +560,62 @@ h3 {
     font-size: 0.93rem;
 }
 
+.state-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+}
+
+@media (min-width: 900px) {
+    .state-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 24px;
+    }
+}
+
+.state-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.state-meta {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    margin-bottom: 14px;
+    padding: 5px 12px;
+    border-radius: 9999px;
+    border: 1px solid rgba(129, 140, 248, 0.25);
+    background: rgba(129, 140, 248, 0.08);
+    color: var(--accent-primary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.state-card p {
+    margin-bottom: 16px;
+}
+
+.state-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+    color: var(--text-secondary);
+    font-size: 0.93rem;
+}
+
+.state-list strong {
+    color: var(--text-primary);
+}
+
+.state-card .btn {
+    margin-top: auto;
+}
+
 /* Architecture */
 .arch-content {
     display: grid;
