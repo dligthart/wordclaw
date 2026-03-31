@@ -1,23 +1,24 @@
 # RFC 0014: L402 Production Readiness - Operator Runbook Addendum
 
-**Author:** Codex (AI-assisted)  
-**Status:** Implemented  
-**Date:** 2026-02-24  
+**Author:** Codex (AI-assisted)
+**Status:** Implemented
+**Date:** 2026-02-24
+**Updated:** 2026-03-31
 **Related RFCs:** RFC 0003, RFC 0004, RFC 0006
 
 ## 1. Summary
 This RFC is an operational addendum to RFC 0003. It defines what must be completed to move WordClaw's current L402 implementation from "development-capable" to "production-ready," and explicitly lists the account, wallet, infrastructure, and secret inputs required from the operator.
 
 ## 2. Why This Addendum Exists
-RFC 0003 already defines the technical target and high-level gap analysis. Since then, the codebase still contains mock-provider behavior and placeholder token logic in the L402 path. This addendum closes the execution gap by turning RFC 0003 into a concrete launch runbook with owner-supplied prerequisites.
+RFC 0003 already defines the technical target and high-level gap analysis. This addendum remains useful because Lightning-enabled deployments still need an explicit operator runbook covering wallet architecture, secret ownership, settlement readiness, and production rollout sequencing. It turns RFC 0003 into a concrete launch checklist with owner-supplied prerequisites.
 
-## 3. Current State (as of 2026-02-24)
-The following remains true in the code:
-- `src/services/l402-config.ts` still hard-fails non-mock providers in production unless explicitly overridden.
-- `src/interfaces/payment-provider.ts` still exposes `verifyPayment(...): Promise<boolean>` and lacks explicit status/expiry semantics.
-- `src/middleware/l402.ts` still issues HMAC-signed placeholder tokens, not real macaroons with caveats.
-- Settlement remains synchronous request-time verification, without provider webhook ingestion, replay-safe eventing, or reconciliation worker.
-- Payment domain scoping in L402 paths still relies on raw header extraction in parts of the flow.
+## 3. Current State (as of 2026-03-31)
+The Lightning-oriented operator path is still supported, but the runtime posture is now clearer than when this addendum was first written:
+
+- production startup no longer assumes LNbits or any payment provider; if `PAYMENT_PROVIDER` is unset, WordClaw boots with payments disabled
+- L402-protected paths now fail deterministically with `503 PAYMENT_PROVIDER_UNAVAILABLE` when a required provider is not configured
+- current operator docs and `.env.example` now reflect the actual production env contract for payment-enabled versus payment-disabled deployments
+- the remaining Lightning-specific items in this RFC should now be read as the explicit hardening path for deployments that choose to enable Lightning, not as a prerequisite for booting the core runtime
 
 ## 4. Operator Inputs Required (What You Need To Provide)
 

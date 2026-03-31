@@ -1,8 +1,25 @@
 # RFC 0005: Multi-Channel Distribution Orchestrator
 
-**Author:** AI Assistant  
-**Status:** Proposed  
-**Date:** 2026-02-21  
+**Author:** AI Assistant
+**Status:** Proposed
+**Date:** 2026-02-21
+**Updated:** 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0005 remains an optional historical proposal and is not rolling out on `main`.
+
+Implemented foundations:
+
+- outbound webhooks with HMAC signatures and retries
+- domain-scoped background jobs plus worker health/status reporting
+- audit-linked integration management across REST, MCP, CLI, and the supervisor UI
+
+Still absent:
+
+- distribution plans, targets, and adapter transforms
+- first-class RSS, SMTP, or social-channel delivery abstractions
+- multi-channel dry-run, receipt tracking, and dead-letter replay contracts
 
 ## 1. Summary
 This RFC introduces a robust distribution orchestration layer allowing agents to publish licensed content to multiple formats and channels (webhooks, RSS/Atom, SMTP, social APIs). It provides configurable adapter transforms, PostgreSQL-backed reliable queues, dry-runs, and deterministic delivery state tracking.
@@ -77,4 +94,3 @@ Valid `distribution_plans.status` transitions:
 3.  **Phase 3**: Implement Webhook, RSS, and Email adapters mapped to a `TransformPolicy`.
 4.  **Phase 4**: Add cancellation, deduplication, dry-run, and synchronous `awaitDelivery` API concepts.
 5.  **Phase 5**: Add Webhook event emissions for completions and failures.
-

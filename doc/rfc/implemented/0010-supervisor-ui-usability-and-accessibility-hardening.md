@@ -1,8 +1,27 @@
 # RFC 0010: Supervisor UI Usability and Accessibility Hardening
 
-**Author:** AI Assistant  
-**Status:** Partially Implemented  
-**Date:** 2026-02-21  
+**Author:** AI Assistant
+**Status:** Partially Implemented
+**Date:** 2026-02-21
+**Updated:** 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0010 is partially implemented and most of its foundation is live on `main`.
+
+Implemented so far:
+
+- responsive supervisor shell and mobile-safe navigation
+- shared feedback primitives with toast, confirmation, and inline error patterns
+- removal of raw `alert()` usage from production UI flows
+- broader operator coverage across schemas, content, approvals, forms, jobs, assets, audits, payments, and API-key management
+- safer onboarding and supervisor-account flows layered onto the same control plane
+
+Still pending:
+
+- deeper accessibility auditing and CI coverage for keyboard and assistive-tech flows
+- full table/list standardization on every page
+- some page-specific productivity improvements from the later rollout phases, especially around approvals and rollback ergonomics
 
 ## 1. Summary
 This RFC proposes a focused usability and accessibility hardening program for the WordClaw Supervisor UI. It introduces a responsive app shell, a consistent feedback model (toasts, confirmations, non-blocking errors), reusable data-view components, and keyboard-accessible interaction standards across all operational pages.

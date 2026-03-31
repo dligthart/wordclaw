@@ -1,15 +1,15 @@
 # RFC 0015: Paid Content Consumption Contract
 
-**Author:** AI Assistant  
-**Status:** Partially Implemented  
-**Date:** 2026-02-25  
-**Updated:** 2026-03-17  
+**Author:** AI Assistant
+**Status:** Partially Implemented
+**Date:** 2026-02-25
+**Updated:** 2026-03-31
 **Depends on:** RFC 0003, RFC 0004, RFC 0011  
 **Related:** RFC 0006, RFC 0009, RFC 0016
 
 ## 0. Current Status
 
-As of 2026-03-17, the core paid-content contract described here is partially implemented on `main`.
+As of 2026-03-31, the core paid-content contract described here is still partially implemented on `main`.
 
 Implemented so far:
 
@@ -17,6 +17,7 @@ Implemented so far:
 - L402-based purchase confirmation
 - entitlement activation and offer-first gated reads
 - tenant-scoped purchase and entitlement enforcement across the supported runtime
+- non-Lightning startup posture by default, with payment-gated flows returning deterministic provider-unavailable errors when payments are disabled
 
 Still pending or intentionally deferred:
 

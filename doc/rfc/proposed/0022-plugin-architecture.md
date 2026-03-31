@@ -1,8 +1,19 @@
 # RFC 0022: Plugin Architecture for WordClaw
 
-**Author:** WordClaw Core Team  
-**Status:** Proposed  
-**Date:** 2026-03-12  
+**Author:** WordClaw Core Team
+**Status:** Proposed
+**Date:** 2026-03-12
+**Updated:** 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0022 remains proposed and no runtime plugin registry is shipped on `main`.
+
+Current reality:
+
+- the supported product path still assumes core runtime capabilities are implemented in-repo rather than mounted through a stable plugin API
+- external integrations are currently handled through REST, MCP, webhooks, CLI helpers, and framework-specific guidance instead of server-side plugin loading
+- a real plugin contract is still demand-driven follow-up work, not a near-term flagship
 
 ## 1. Summary
 This RFC proposes a robust, Strapi-inspired Plugin Architecture for the WordClaw platform. It aims to provide developers with a structured methodology to extend the core Headless CMS and Model Context Protocol (MCP) Agent runtimes without modifying core repository code. Plugins will be able to inject custom schemas, REST/GraphQL endpoints, lifecycle hooks, admin UI components, and native LLM tools into the workspace context.

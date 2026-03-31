@@ -1,24 +1,26 @@
 # RFC 0009: Content Discovery and Consumption API
 
-**Author:** Codex  
-**Status:** Rolling out  
-**Date:** 2026-03-12  
-**Updated:** 2026-03-17  
+**Author:** Codex
+**Status:** Rolling out
+**Date:** 2026-03-12
+**Updated:** 2026-03-31
 
 ## 0. Current Status
 
-As of 2026-03-17, RFC 0009 is rolling out in slices.
+As of 2026-03-31, RFC 0009 is still rolling out in slices, but more of its read-side foundation now ships on `main`.
 
 Implemented so far:
 
 - cursor pagination for `GET /api/content-items`
 - matching MCP, GraphQL, CLI, and demo-client adoption for cursor-based content listing
-- content-runtime query groundwork that supports safer consumption on top of the existing content surface
+- published-versus-draft reads, locale-aware resolution, singleton/global reads, preview tokens, and reverse-reference inspection in the broader content-runtime query layer
+- paid/protected read flows for content and assets through offers, entitlements, and L402-aware remediation
+- capability and deployment discovery that now expose the current content-runtime query contract to agents before they read
 
 Still pending:
 
 - full collection browsing and catalog-search endpoints described in this RFC
-- completing the broader consumer-facing discovery contract beyond the current content-items foundation
+- a thinner consumer-facing discovery contract that is more opinionated than the current general-purpose content runtime
 
 ## 1. Summary
 This RFC proposes a consumer-facing discovery surface for published content and paid offers that matches WordClaw's current runtime model.

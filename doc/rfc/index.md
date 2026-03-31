@@ -9,19 +9,23 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0017: Tenant Boundary and Contract Hardening (partially implemented)](/archive/rfc/0017-tenant-boundary-and-contract-hardening)
 - [RFC-0021: Core Product Focus and Feature Pruning (accepted)](/archive/rfc/0021-core-product-focus-and-feature-pruning)
 - [RFC-0025: Reactive Agentic Webhooks via MCP (rolling out)](/rfc/proposed/0025-agentic-webhooks)
-- [RFC-0027: Structured Marketing Website Support Without Page Builder Drift (proposed)](/rfc/proposed/0027-structured-marketing-website-support)
+- [RFC-0027: Structured Marketing Website Support Without Page Builder Drift (partially implemented)](/rfc/proposed/0027-structured-marketing-website-support)
 - [RFC-0028: Content Modeling and Supervisor Ergonomics (implemented)](/rfc/implemented/0028-content-modeling-and-supervisor-ergonomics)
 - [RFC-0029: Agent Provisioning and Runtime Self-Description (implemented)](/rfc/implemented/0029-agent-provisioning-and-runtime-self-description)
 - [RFC-0030: Safe Domain Deletion and Decommissioning (proposed)](/rfc/proposed/0030-safe-domain-deletion-and-decommissioning)
+- [RFC-0031: Reserving `/` for a Customizable Public Front Door (proposed)](/rfc/proposed/0031-customizable-public-front-door)
+- [RFC-0032: Multimodal Agent Intake and Draft Generation Pipelines (proposed)](/rfc/proposed/0032-multimodal-agent-intake-and-draft-generation)
 
-## Historical / Non-Core Proposals
+## Historical / Optional / Incubating
 
 - [RFC-0001: Blog Valuation Architecture](/rfc/proposed/0001-blog-valuation-architecture)
 - [RFC-0005: Multi-Channel Distribution Orchestrator](/rfc/proposed/0005-multi-channel-distribution-orchestrator)
 - [RFC-0009: Content Discovery and Consumption API (rolling out)](/rfc/proposed/0009-content-discovery-and-consumption-api)
+- [RFC-0020: Autonomous Content Ops Agent (experimental)](/rfc/proposed/0020-autonomous-content-ops-agent)
 - [RFC-0019: Internal Agentic Content Recommender Engine](/rfc/proposed/0019-internal-agentic-content-recommender-engine)
 - [RFC-0016: AP2 Agentic Monetization](/rfc/proposed/0016-ap2-agentic-monetization)
-- [RFC-0020: Autonomous Content Ops Agent](/rfc/proposed/0020-autonomous-content-ops-agent)
+- [RFC-0022: Plugin Architecture](/rfc/proposed/0022-plugin-architecture)
+- [RFC-0026: Adventure Game CMS Integration for Enhanced Playability](/rfc/proposed/0026-adventure-game-cms-playability)
 
 ## Implemented Core / Optional
 

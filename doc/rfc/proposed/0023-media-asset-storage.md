@@ -3,7 +3,7 @@ title: Media Asset Storage
 status: shipped
 author: WordClaw Team
 date: 2026-03-13
-updated: 2026-03-17
+updated: 2026-03-31
 ---
 
 # RFC 0023: Media Asset Storage
@@ -23,7 +23,7 @@ This RFC proposes a native asset system with schema-aware references, managed st
 
 ## 1.1 Current Status
 
-As of 2026-03-17, RFC 0023 is shipped for the supported product path and the core asset runtime is live on `main`.
+As of 2026-03-31, RFC 0023 is shipped for the supported product path and the core asset runtime is live on `main`.
 
 Implemented so far:
 

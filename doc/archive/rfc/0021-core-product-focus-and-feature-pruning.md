@@ -1,13 +1,13 @@
 # RFC 0021: Core Product Focus and Feature Pruning
 
-**Author:** Codex  
-**Status:** Accepted  
-**Date:** 2026-03-06  
-**Updated:** 2026-03-17  
+**Author:** Codex
+**Status:** Accepted
+**Date:** 2026-03-06
+**Updated:** 2026-03-31
 
 ## 0. Current Status
 
-As of 2026-03-17, RFC 0021 is accepted and is the active product-direction document for WordClaw.
+As of 2026-03-31, RFC 0021 is accepted and remains the active product-direction document for WordClaw.
 
 Already reflected in the current project state:
 
@@ -15,6 +15,7 @@ Already reflected in the current project state:
 - GraphQL is treated as a compatibility layer
 - docs, roadmap, and supervisor UI distinguish core from experimental features
 - sandbox/incubator surfaces are hidden behind explicit experimental controls in the default operator flow
+- newer onboarding, supervisor-scoping, and provisioning work has continued to reinforce the content-runtime-first product boundary
 
 Still ongoing:
 

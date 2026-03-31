@@ -1,13 +1,13 @@
 # RFC 0025: Reactive Agentic Webhooks via MCP
 
-**Author:** Codex  
-**Status:** Rolling out  
-**Date:** 2026-03-12  
-**Updated:** 2026-03-17  
+**Author:** Codex
+**Status:** Rolling out
+**Date:** 2026-03-12
+**Updated:** 2026-03-31
 
 ## 0. Current Status
 
-As of 2026-03-17, RFC 0025 is actively rolling out and the core reactive MCP runtime is already live on `main`.
+As of 2026-03-31, RFC 0025 is actively rolling out and the reactive MCP runtime is live on `main`.
 
 Implemented so far:
 
@@ -18,6 +18,7 @@ Implemented so far:
 - capability and deployment-status discovery for reactive transports, filter fields, topics, and recipes
 - `guide_task` reactive follow-up recommendations for the core workflow classes
 - verification and demo-agent flows for live reactive subscription testing
+- current roadmap and reference docs now treat reactive MCP as a flagship rolling-out capability rather than a side experiment
 
 Still pending:
 

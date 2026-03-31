@@ -1,8 +1,25 @@
 # RFC 0019: Internal Agentic Content Recommender Engine
 
-**Author:** Codex  
-**Status:** Proposed  
-**Date:** 2026-02-28  
+**Author:** Codex
+**Status:** Proposed
+**Date:** 2026-02-28
+**Updated:** 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0019 remains an incubating proposal and is not implemented as a first-class service on `main`.
+
+Available building blocks today:
+
+- semantic search and embedding sync
+- workflow, audit, offer, and entitlement signals
+- grouped content projections and workspace-target guidance
+
+Still absent:
+
+- a ranked recommendation service
+- explainable recommendation payloads and tuning controls
+- a promoted operator-facing recommender workflow in the supervisor UI
 
 ## 1. Summary
 This RFC proposes an internal recommender engine that helps agents choose the next best content items to read, update, distribute, or monetize inside WordClaw. The engine is tenant-scoped, policy-aware, and exposed with parity across REST, GraphQL, and MCP.

@@ -1,8 +1,19 @@
 # RFC 0001: Blog Valuation & Third-Party Metrics Integration
 
-**Author:** AI Assistant  
-**Status:** Proposed  
-**Date:** 2026-02-21  
+**Author:** AI Assistant
+**Status:** Proposed
+**Date:** 2026-02-21
+**Updated:** 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0001 remains a historical proposal and is not part of the supported product path on `main`.
+
+Current reality:
+
+- no valuation engine, external-metrics provider registry, or valuation snapshot workflow is implemented in the runtime
+- current roadmap focus is the governed content runtime, assets, forms, jobs, onboarding, supervision, and reactive MCP
+- if valuation work returns, it should come back as an optional extension lane rather than as a default core capability
 
 ## 1. Summary
 This RFC proposes a modular architecture to automatically estimate the monetary value of a blog or digital content asset within WordClaw. It outlines a strategy to combine SEO metrics (from providers like Ahrefs) and financial metrics (from providers like Stripe) using a standardized Provider Pattern.
@@ -147,4 +158,3 @@ The valuation engine requires read-only access to highly sensitive financial dat
 3.  **Phase 3**: Expose REST/GraphQL/MCP parity endpoints with 24-hour TTL caching.
 4.  **Phase 4**: Build the `AhrefsProvider` utilizing their Traffic Value and DR metrics.
 5.  **Phase 5**: Build the `StripeProvider` to extract net profit figures.
-

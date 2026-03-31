@@ -1,9 +1,20 @@
 # RFC 0030: Safe Domain Deletion and Decommissioning
 
-**Author:** Codex  
-**Status:** Proposed  
-**Date:** 2026-03-31  
+**Author:** Codex
+**Status:** Proposed
+**Date:** 2026-03-31
+**Updated:** 2026-03-31
 **Tracking Issue:** #178  
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0030 is proposed and no safe domain decommission/delete contract is shipped on `main` yet.
+
+Current runtime context:
+
+- tenant onboarding, identity, and domain-scoped supervision are now much stronger than before
+- the schema still contains wide tenant-owned cascade graphs, so a naive domain delete would remain unsafe
+- this RFC is the current design direction for turning raw SQL cleanup into an operator-safe lifecycle
 
 ## 1. Summary
 

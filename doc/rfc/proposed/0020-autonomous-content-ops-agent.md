@@ -1,8 +1,25 @@
 # RFC 0020: Autonomous Content Ops Agent
 
-**Author:** Codex  
-**Status:** Proposed  
-**Date:** 2026-02-28  
+**Author:** Codex
+**Status:** Experimental
+**Date:** 2026-02-28
+**Updated:** 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, the broader product bet in RFC 0020 is still incubating, but experimental foundations are now present on `main`.
+
+Implemented experimentally behind `ENABLE_EXPERIMENTAL_AGENT_RUNS`:
+
+- persisted `agent_run_definitions`, `agent_runs`, `agent_run_steps`, and `agent_run_checkpoints`
+- REST, GraphQL, and MCP surfaces for creating, listing, inspecting, and controlling runs
+- checkpoint-aware execution, approval waits, audit linkage, and parity coverage for the gated module
+
+Still not true of the default supported product path:
+
+- agent runs are not enabled by default in production
+- the supervisor control plane does not yet treat autonomous runs as a first-class core workflow
+- the broader content-ops automation story is still experimental rather than promoted
 
 ## 1. Summary
 This RFC proposes a first-class autonomous content operations agent that can continuously run editorial and growth loops inside WordClaw: triage drafts, apply safe updates, submit for review, and execute post-publish actions.  

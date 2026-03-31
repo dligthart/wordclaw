@@ -1,14 +1,32 @@
 # RFC 0027: Structured Marketing Website Support Without Page Builder Drift
 
-**Author:** Codex  
-**Status:** Proposed  
-**Date:** 2026-03-19  
+**Author:** Codex
+**Status:** Partially Implemented
+**Date:** 2026-03-19
+**Updated:** 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0027 is partially implemented.
+
+Implemented so far:
+
+- schema-level localization plus locale-aware reads
+- short-lived preview tokens for content items and globals
+- singleton/global content, working-copy versus published reads, and reverse-reference inspection
+- reusable forms, bounded public write lanes, workflow transitions, and webhook follow-up primitives
+
+Still pending:
+
+- a lightweight published route manifest for site-generation and sitemap consumers
+- a canonical website reference implementation built on the current runtime
+- a clearer decision about how structured websites relate to the future public front door in RFC 0031
 
 ## 1. Summary
 
-The `demos/demo-lightheart-site` exercise shows that a site like `lightheart.tech` is feasible on top of WordClaw's current runtime, but not frictionless. The core content-runtime primitives already cover much of the model: typed page records, reusable section content, asset references, content references, field-aware slug queries, approval-aware publishing, and bounded public write lanes.
+The `demos/demo-lightheart-site` exercise still shows that a site like `lightheart.tech` is feasible on top of WordClaw's runtime, but the work remaining is now much narrower than when this RFC was first drafted. The core content-runtime primitives already cover most of the model: typed page records, reusable section content, asset references, localized fields, preview tokens, content references, field-aware slug queries, approval-aware publishing, and bounded public write lanes.
 
-The remaining gaps are mostly about **website ergonomics**, not raw storage capability. WordClaw does not yet provide first-class localized field semantics, browser-safe draft preview tokens for site frontends, or a lightweight route manifest for sitemap/SEO-oriented consumers. This RFC proposes a narrow support lane for structured marketing websites while explicitly rejecting a drift into generic WYSIWYG or page-builder product scope.
+The remaining gaps are now mostly about **website ergonomics and packaging**, not missing core storage contracts. The main open items are a lightweight route manifest, a clearer docs/demo path for structured sites, and the public-front-door decision described in RFC 0031. This RFC still proposes a narrow support lane for structured marketing websites while explicitly rejecting drift into generic WYSIWYG or page-builder scope.
 
 ## 2. Motivation
 
@@ -33,10 +51,10 @@ WordClaw's accepted product focus is a safe content runtime for AI agents and hu
 
 | Gap | Why it blocked a cleaner WordClaw-backed version |
 | --- | --- |
-| **Localized field semantics** | The Lightheart site is bilingual. Today WordClaw can store locale data, but the runtime does not provide a first-class schema pattern, fallback behavior, or locale-resolved read contract. |
-| **Draft website preview** | Marketing teams need browser-safe preview of draft content in the site frontend. Today this requires custom API-key proxying or a staging-only integration. |
+| **Localized field semantics** | This gap is now closed in the runtime. The remaining work is mostly example coverage and packaging for site builders. |
+| **Draft website preview** | This gap is now closed through scoped preview tokens for content items and globals. The remaining work is frontend reference usage, not backend contract design. |
 | **Route manifest / sitemap ergonomics** | Site frontends need a clean way to enumerate published routes, locale variants, and SEO metadata for static generation or sitemap production. |
-| **Reference implementation for website forms** | Public write lanes are powerful, but the repo does not yet offer a canonical website-contact pattern that combines public submission, moderation/workflow, and outbound delivery. |
+| **Reference implementation for website forms** | Forms, public write lanes, workflow hooks, and webhook follow-up now exist, but the repo still lacks a polished website-oriented starter pattern that packages them together. |
 
 ### 2.3 Important Boundary
 
@@ -319,8 +337,8 @@ The proposal keeps WordClaw's existing safety model intact:
 | Phase | Scope | Outcome |
 | --- | --- | --- |
 | **Phase 1: Docs-first site guide** | Document the current best-practice model for `site_settings`, `marketing_page`, `case_study`, and `contact_request`; wire the Lightheart demo to a real seed path if practical. | Operators can build a WordClaw-backed website today with known tradeoffs. |
-| **Phase 2: Localized field contract** | Add schema semantics and locale-resolved reads. | Bilingual and multilingual sites no longer need ad hoc locale conventions. |
-| **Phase 3: Preview tokens** | Add browser-safe draft preview issuance and validation. | Marketing sites get a clean preview workflow without exposing API keys. |
+| **Phase 2 [Implemented]: Localized field contract** | Add schema semantics and locale-resolved reads. | Bilingual and multilingual sites no longer need ad hoc locale conventions. |
+| **Phase 3 [Implemented]: Preview tokens** | Add browser-safe draft preview issuance and validation. | Marketing sites get a clean preview workflow without exposing API keys. |
 | **Phase 4: Route manifest** | Add published route enumeration for sitemap/static-generation consumers. | Website frontends can hydrate route inventories and SEO metadata with less fan-out code. |
 | **Phase 5: Form reference implementation** | Publish a guide/demo for website submissions using existing public-write, workflow, and webhook surfaces. | Contact forms become a documented recipe instead of custom guesswork. |
 

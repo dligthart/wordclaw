@@ -1,10 +1,21 @@
 # RFC 0016: AP2 (Agent Payments Protocol) for Agentic Monetization
 
-**Author:** AI Assistant  
-**Status:** Proposed  
-**Date:** 2026-02-25  
+**Author:** AI Assistant
+**Status:** Proposed
+**Date:** 2026-02-25
+**Updated:** 2026-03-31
 **Depends on:** RFC 0003, RFC 0004, RFC 0011, RFC 0015  
 **Related:** RFC 0006, RFC 0009
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0016 remains a non-core proposal and is not part of the supported paid-access path on `main`.
+
+Current reality:
+
+- the supported monetization path is still offers, entitlements, and L402-oriented access
+- production startup no longer assumes Lightning by default; when `PAYMENT_PROVIDER` is unset, WordClaw boots with payments disabled instead of forcing an AP2- or Lightning-style configuration
+- no AP2 mandate lifecycle, settlement webhook path, or mixed-rail buyer contract is active in the default runtime
 
 ## 1. Summary
 This RFC adds AP2 (Agent Payments Protocol) as a second payment rail for Wordclaw monetization, alongside Lightning.

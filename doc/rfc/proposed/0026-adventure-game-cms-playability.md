@@ -1,8 +1,25 @@
 # RFC 0026: Adventure Game CMS Integration for Enhanced Playability
 
-**Author:** DLIGTHART  
-**Status:** Proposed  
-**Date:** 2026-03-16  
+**Author:** DLIGTHART
+**Status:** Proposed
+**Date:** 2026-03-16
+**Updated:** 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0026 remains a demo-adjacent proposal and is not on the core product roadmap.
+
+What the current runtime already provides for a future playable slice:
+
+- structured content types, assets, workflows, public write lanes, and supervisor review
+- grouped projections and lifecycle patterns that could support leaderboard/session-style reads
+- multi-domain isolation and auditability for game-state content
+
+What is still not implemented as product scope:
+
+- a first-class adventure-game feature set
+- dedicated player/session gameplay contracts built into the default runtime
+- a supported supervisor/game authoring workflow beyond general CMS primitives
 
 ## 1. Summary
 

@@ -3,10 +3,28 @@
 - **Status**: Proposed
 - **Author**: DLIGTHART
 - **Created**: 2026-03-12
+- **Updated**: 2026-03-31
+
+## 0. Current Status
+
+As of 2026-03-31, RFC 0024 remains proposed. Some protective runtime work has landed, but the main scalability architecture in this RFC is still open.
+
+Already true on `main`:
+
+- actor-aware rate limiting reduces cross-actor contention between supervisor sessions and API credentials
+- background jobs, worker-status reporting, and deployment discovery make deferred work and readiness more observable
+- the runtime is increasingly explicit about capability, health, and workload posture through `/api/capabilities` and `/api/deployment-status`
+
+Still pending from this RFC:
+
+- shared Redis-backed caching
+- formal read-replica routing
+- horizontal worker locking strategy for clustered deployments
+- published load-test benchmarks and latency SLO reporting
 
 ## 1. Summary
 
-As WordClaw transitions into a primary ecosystem for agentic content operations, the system profile changes radically. Instead of predictable human click-paths, WordClaw must sustain massive spikes of concurrent agent activity—such as hundreds of simultaneous dry-runs, rapid semantic searches, capability polling over MCP, and aggressive workflow evaluations.
+As WordClaw transitions into a primary ecosystem for agentic content operations, the system profile changes radically. Instead of predictable human click-paths, WordClaw must sustain spikes of concurrent agent activity such as dry-runs, semantic searches, capability polling over MCP, and aggressive workflow evaluations.
 
 While PostgreSQL and `pgvector` provide a solid, ACID-compliant foundation, direct database hits for every agent read operation will eventually create a bottleneck. This RFC outlines the architectural next steps for ensuring WordClaw can scale horizontally and sustain high-throughput agent traffic while preserving sub-200ms latency.
 
