@@ -1,3 +1,10 @@
+# [1.39.0](https://github.com/dligthart/wordclaw/compare/v1.38.0...v1.39.0) (2026-03-31)
+
+
+### Features
+
+* improve production provisioning dx ([ff4cfc6](https://github.com/dligthart/wordclaw/commit/ff4cfc64ba6b8bb38616d2d17eb30b3d682c2816))
+
 # [1.38.0](https://github.com/dligthart/wordclaw/compare/v1.37.0...v1.38.0) (2026-03-31)
 
 
