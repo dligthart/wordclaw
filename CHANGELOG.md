@@ -1,3 +1,10 @@
+# [1.42.0](https://github.com/dligthart/wordclaw/compare/v1.41.0...v1.42.0) (2026-03-31)
+
+
+### Features
+
+* add supervisor invite lifecycle ([c1466b5](https://github.com/dligthart/wordclaw/commit/c1466b5f32c3fdb1aacfe8f4707a894a43ca2b02))
+
 # [1.41.0](https://github.com/dligthart/wordclaw/compare/v1.40.1...v1.41.0) (2026-03-31)
 
 
