@@ -1,12 +1,38 @@
 import { type IncomingHttpHeaders } from 'node:http';
 
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { apiKeys, domains } from '../db/schema.js';
 import { apiKeyPrefix, generatePlaintextApiKey, hashApiKey, normalizeScopes, serializeScopes } from './api-key.js';
 
 export const DEFAULT_TENANT_ONBOARDING_SCOPES = ['admin'] as const;
+const DOMAIN_HOSTNAME_CONSTRAINTS = new Set([
+    'domains_hostname_unique'
+]);
+
+export type DomainContextSummary = {
+    id: number;
+    name: string;
+    hostname: string;
+};
+
+export class DomainHostnameConflictError extends Error {
+    readonly code = 'DOMAIN_HOSTNAME_CONFLICT';
+    readonly hostname: string;
+    readonly existingDomain: DomainContextSummary | null;
+
+    constructor(hostname: string, existingDomain: DomainContextSummary | null, cause?: unknown) {
+        super('DOMAIN_HOSTNAME_CONFLICT');
+        this.name = 'DomainHostnameConflictError';
+        this.hostname = hostname;
+        this.existingDomain = existingDomain;
+
+        if (cause !== undefined) {
+            (this as Error & { cause?: unknown }).cause = cause;
+        }
+    }
+}
 
 type OnboardTenantInput = {
     tenantName: string;
@@ -37,6 +63,36 @@ function extractNumericCell(result: unknown, keys: string[]) {
     }
 
     return 0;
+}
+
+function isUniqueViolation(error: unknown, constraints: Set<string>): boolean {
+    const visited = new Set<unknown>();
+    let candidate: unknown = error;
+
+    while (candidate && typeof candidate === 'object' && !visited.has(candidate)) {
+        visited.add(candidate);
+        const maybeDbError = candidate as { code?: string; constraint?: string; cause?: unknown };
+        if (
+            maybeDbError.code === '23505'
+            && typeof maybeDbError.constraint === 'string'
+            && constraints.has(maybeDbError.constraint)
+        ) {
+            return true;
+        }
+        candidate = maybeDbError.cause;
+    }
+
+    return false;
+}
+
+async function findDomainByHostname(hostname: string): Promise<DomainContextSummary | null> {
+    const [domain] = await db.select({
+        id: domains.id,
+        name: domains.name,
+        hostname: domains.hostname
+    }).from(domains).where(eq(domains.hostname, hostname));
+
+    return domain ?? null;
 }
 
 function readSingleHeaderValue(raw: string | string[] | undefined): string | null {
@@ -105,29 +161,44 @@ export async function onboardTenant(input: OnboardTenantInput) {
     const countResult = await db.execute(sql`SELECT COUNT(*)::int AS total FROM domains`);
     const bootstrap = extractNumericCell(countResult, ['total', 'count', '?column?']) === 0;
 
-    return db.transaction(async (tx) => {
-        const [domain] = await tx.insert(domains).values({
-            name: tenantName,
-            hostname
-        }).returning();
+    try {
+        return await db.transaction(async (tx) => {
+            const [domain] = await tx.insert(domains).values({
+                name: tenantName,
+                hostname
+            }).returning();
 
-        const plaintext = generatePlaintextApiKey();
-        const [apiKey] = await tx.insert(apiKeys).values({
-            domainId: domain.id,
-            name: apiKeyName,
-            keyPrefix: apiKeyPrefix(plaintext),
-            keyHash: hashApiKey(plaintext),
-            scopes: serializeScopes(scopes),
-            createdBy: input.createdBy ?? null,
-            expiresAt: input.expiresAt ?? null
-        }).returning();
+            const plaintext = generatePlaintextApiKey();
+            const [apiKey] = await tx.insert(apiKeys).values({
+                domainId: domain.id,
+                name: apiKeyName,
+                keyPrefix: apiKeyPrefix(plaintext),
+                keyHash: hashApiKey(plaintext),
+                scopes: serializeScopes(scopes),
+                createdBy: input.createdBy ?? null,
+                expiresAt: input.expiresAt ?? null
+            }).returning();
 
-        return {
-            bootstrap,
-            domain,
-            apiKey,
-            plaintext,
-            scopes
-        };
-    });
+            return {
+                bootstrap,
+                domain,
+                apiKey,
+                plaintext,
+                scopes
+            };
+        });
+    } catch (error) {
+        if (!isUniqueViolation(error, DOMAIN_HOSTNAME_CONSTRAINTS)) {
+            throw error;
+        }
+
+        let existingDomain: DomainContextSummary | null = null;
+        try {
+            existingDomain = await findDomainByHostname(hostname);
+        } catch {
+            existingDomain = null;
+        }
+
+        throw new DomainHostnameConflictError(hostname, existingDomain, error);
+    }
 }

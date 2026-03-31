@@ -27,6 +27,7 @@ import { authenticateApiRequest, authorizeApiRequest, getDomainId } from './auth
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
 import {
     buildRuntimeEndpoints,
+    DomainHostnameConflictError,
     inferRuntimeOriginFromHeaders,
     normalizePublicBaseUrl,
     onboardTenant
@@ -263,6 +264,9 @@ const CONTENT_TYPE_SLUG_CONSTRAINTS = new Set([
     'content_types_slug_unique',
     'content_types_domain_slug_unique'
 ]);
+const DOMAIN_HOSTNAME_CONSTRAINTS = new Set([
+    'domains_hostname_unique'
+]);
 const ContentLocaleResolutionSchema = Type.Object({
     requestedLocale: Type.String(),
     fallbackLocale: Type.String(),
@@ -435,6 +439,40 @@ const DomainResponseSchema = Type.Object({
     name: Type.String(),
     hostname: Type.String(),
     createdAt: Type.String()
+});
+const DomainContextSchema = Type.Object({
+    id: Type.Number(),
+    name: Type.String(),
+    hostname: Type.String()
+});
+const CurrentActorProfileSchema = Type.Object({
+    id: Type.String(),
+    label: Type.String(),
+    actorType: Type.String(),
+    authMode: Type.String(),
+    availableSurfaces: Type.Array(Type.String()),
+    actorIdExamples: Type.Array(Type.String()),
+    recommendedFor: Type.Array(Type.String()),
+    developmentOnly: Type.Optional(Type.Boolean()),
+    domainContext: Type.Object({
+        required: Type.Boolean(),
+        strategy: Type.String(),
+        header: Type.Optional(Type.String()),
+        environmentVariable: Type.Optional(Type.String()),
+        note: Type.String()
+    }),
+    notes: Type.Array(Type.String())
+});
+const CurrentActorResponseSchema = Type.Object({
+    actorId: Type.String(),
+    actorType: Type.String(),
+    actorSource: Type.String(),
+    actorProfileId: Type.String(),
+    domainId: Type.Number(),
+    domain: Type.Union([DomainContextSchema, Type.Null()]),
+    scopes: Type.Array(Type.String()),
+    assignmentRefs: Type.Array(Type.String()),
+    profile: Type.Union([CurrentActorProfileSchema, Type.Null()])
 });
 const OnboardTenantResponseSchema = Type.Object({
     bootstrap: Type.Boolean(),
@@ -1261,12 +1299,32 @@ function domainCreationForbidden(): AIErrorPayload {
     );
 }
 
-function domainHostnameConflict(hostname: string): AIErrorPayload {
-    return toErrorPayload(
-        'Domain hostname already exists',
-        'DOMAIN_HOSTNAME_CONFLICT',
-        `Choose a different hostname than '${hostname}'.`
-    );
+async function resolveDomainContext(domainId: number): Promise<{ id: number; name: string; hostname: string } | null> {
+    const [domain] = await db.select({
+        id: domains.id,
+        name: domains.name,
+        hostname: domains.hostname
+    }).from(domains).where(eq(domains.id, domainId));
+
+    return domain ?? null;
+}
+
+function domainHostnameConflict(
+    hostname: string,
+    existingDomain: { id: number; name: string; hostname: string } | null = null
+): AIErrorPayload {
+    return {
+        error: 'Domain hostname already exists',
+        code: 'DOMAIN_HOSTNAME_CONFLICT',
+        remediation: existingDomain
+            ? `Domain ${existingDomain.id} ('${existingDomain.name}') already uses hostname '${hostname}'. Reuse that tenant and create additional credentials with POST /api/auth/keys instead of onboarding it again.`
+            : `A domain with hostname '${hostname}' already exists. Reuse that tenant and create additional credentials with POST /api/auth/keys instead of onboarding it again. You can also inspect current tenants with GET /api/domains.`,
+        ...(existingDomain ? {
+            context: {
+                existingDomain
+            }
+        } : {})
+    };
 }
 
 function invalidPublicBaseUrl(): AIErrorPayload {
@@ -1529,15 +1587,17 @@ function hasAdminScope(request: RequestActorCarrier): boolean {
     return Boolean(scopes?.has('admin') || scopes?.has('tenant:admin'));
 }
 
-function buildCurrentActorResponse(principal: ActorPrincipal) {
+async function buildCurrentActorResponse(principal: ActorPrincipal) {
     const manifest = buildCapabilityManifest();
     const snapshot = buildCurrentActorSnapshot(principal);
+    const domain = await resolveDomainContext(snapshot.domainId);
     const profile = manifest.agentGuidance.actorProfiles.find(
         (candidate) => candidate.id === snapshot.actorProfileId,
     );
 
     return {
         ...snapshot,
+        domain,
         profile: profile ?? null,
     };
 }
@@ -2420,51 +2480,24 @@ export default async function apiRoutes(server: FastifyInstance) {
         return payload;
     });
 
-    server.get('/identity', {
+    const currentActorRouteOptions = {
         schema: {
             response: {
-                200: createAIResponse(Type.Object({
-                    actorId: Type.String(),
-                    actorType: Type.String(),
-                    actorSource: Type.String(),
-                    actorProfileId: Type.String(),
-                    domainId: Type.Number(),
-                    scopes: Type.Array(Type.String()),
-                    assignmentRefs: Type.Array(Type.String()),
-                    profile: Type.Union([
-                        Type.Object({
-                            id: Type.String(),
-                            label: Type.String(),
-                            actorType: Type.String(),
-                            authMode: Type.String(),
-                            availableSurfaces: Type.Array(Type.String()),
-                            actorIdExamples: Type.Array(Type.String()),
-                            recommendedFor: Type.Array(Type.String()),
-                            developmentOnly: Type.Optional(Type.Boolean()),
-                            domainContext: Type.Object({
-                                required: Type.Boolean(),
-                                strategy: Type.String(),
-                                header: Type.Optional(Type.String()),
-                                environmentVariable: Type.Optional(Type.String()),
-                                note: Type.String()
-                            }),
-                            notes: Type.Array(Type.String())
-                        }),
-                        Type.Null(),
-                    ]),
-                })),
+                200: createAIResponse(CurrentActorResponseSchema),
                 401: AIErrorResponse,
                 403: AIErrorResponse,
             }
         }
-    }, async (request) => {
+    } as const;
+
+    const currentActorHandler = async (request: FastifyRequest) => {
         const principal = (request as { authPrincipal?: ActorPrincipal }).authPrincipal;
         if (!principal) {
             throw new Error('AUTH_PRINCIPAL_UNAVAILABLE');
         }
 
         return {
-            data: buildCurrentActorResponse(principal),
+            data: await buildCurrentActorResponse(principal),
             meta: buildMeta(
                 'Use this actor snapshot to confirm the active credential, domain, and scope set before mutating runtime state.',
                 ['GET /api/capabilities'],
@@ -2472,7 +2505,10 @@ export default async function apiRoutes(server: FastifyInstance) {
                 1,
             )
         };
-    });
+    };
+
+    server.get('/identity', currentActorRouteOptions, currentActorHandler);
+    server.get('/whoami', currentActorRouteOptions, currentActorHandler);
 
     server.get('/workspace-context', {
         schema: {
@@ -3627,8 +3663,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 )
             });
         } catch (error) {
-            const err = error as { code?: string; constraint?: string };
-            if (err.code === '23505' || err.constraint === 'domains_hostname_unique') {
+            if (isUniqueViolation(error, DOMAIN_HOSTNAME_CONSTRAINTS)) {
                 return reply.status(409).send(domainHostnameConflict(body.hostname));
             }
             throw error;
@@ -3750,6 +3785,9 @@ export default async function apiRoutes(server: FastifyInstance) {
             });
         } catch (error) {
             const err = error as Error & { code?: string; constraint?: string };
+            if (error instanceof DomainHostnameConflictError) {
+                return reply.status(409).send(domainHostnameConflict(error.hostname, error.existingDomain));
+            }
             if (err.message === 'EMPTY_ONBOARDING_SCOPES') {
                 return reply.status(400).send(toErrorPayload(
                     'Invalid scopes',
@@ -3764,7 +3802,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     `Use only supported scopes: content:read, content:write, audit:read, admin. Details: ${err.message}`
                 ));
             }
-            if (err.code === '23505' || err.constraint === 'domains_hostname_unique') {
+            if (isUniqueViolation(error, DOMAIN_HOSTNAME_CONSTRAINTS)) {
                 return reply.status(409).send(domainHostnameConflict(body.hostname));
             }
             throw error;
@@ -3911,6 +3949,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 .groupBy(contentItems.contentTypeId, contentItems.status)
             : [];
         const data = includeStats === true ? withContentTypeStats(types, stats) : types;
+        const domain = await resolveDomainContext(domainId);
 
         const hasMore = offset + data.length < total;
         return {
@@ -3921,7 +3960,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 'low',
                 1,
                 false,
-                { total, offset, limit, hasMore }
+                { total, offset, limit, hasMore, domain }
             )
         };
     });

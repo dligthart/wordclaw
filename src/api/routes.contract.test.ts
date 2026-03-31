@@ -1564,6 +1564,15 @@ describe('API Route Contracts', () => {
     it('returns the current canonical actor snapshot for authenticated callers', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'remote-admin=admin';
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 1,
+                    name: 'Default',
+                    hostname: 'default.local'
+                }]),
+            }),
+        }));
         const app = await buildServer();
 
         try {
@@ -1583,6 +1592,11 @@ describe('API Route Contracts', () => {
                     actorSource: string;
                     actorProfileId: string;
                     domainId: number;
+                    domain: {
+                        id: number;
+                        name: string;
+                        hostname: string;
+                    } | null;
                     scopes: string[];
                     assignmentRefs: string[];
                     profile: {
@@ -1598,12 +1612,67 @@ describe('API Route Contracts', () => {
                 actorSource: 'env',
                 actorProfileId: 'env-key',
                 domainId: 1,
+                domain: {
+                    id: 1,
+                    name: 'Default',
+                    hostname: 'default.local'
+                },
                 scopes: ['admin'],
                 assignmentRefs: ['env_key:remote-admin', 'remote-admin'],
                 profile: expect.objectContaining({
                     id: 'env-key',
                     authMode: 'api-key',
                 }),
+            }));
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('aliases the current actor snapshot at /api/whoami', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 1,
+                    name: 'Default',
+                    hostname: 'default.local'
+                }]),
+            }),
+        }));
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/whoami',
+                headers: {
+                    'x-api-key': 'remote-admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    actorId: string;
+                    domainId: number;
+                    domain: {
+                        id: number;
+                        name: string;
+                        hostname: string;
+                    } | null;
+                };
+            };
+
+            expect(body.data).toEqual(expect.objectContaining({
+                actorId: 'env_key:remote-admin',
+                domainId: 1,
+                domain: {
+                    id: 1,
+                    name: 'Default',
+                    hostname: 'default.local'
+                }
             }));
         } finally {
             await app.close();
@@ -2177,6 +2246,64 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('returns DOMAIN_HOSTNAME_CONFLICT with existing domain context for duplicate onboarding hostname', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        const duplicateError = Object.assign(new Error('Failed query: insert into "domains"'), {
+            cause: {
+                code: '23505',
+                constraint: 'domains_hostname_unique'
+            }
+        });
+        mocks.dbMock.execute.mockResolvedValueOnce([{ total: 1 }]);
+        mocks.dbMock.transaction.mockRejectedValueOnce(duplicateError);
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 7,
+                    name: 'Epilomedia',
+                    hostname: 'epilomedia.com'
+                }]),
+            }),
+        }));
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/onboard',
+                headers: {
+                    'x-api-key': 'remote-admin'
+                },
+                payload: {
+                    tenantName: 'Epilomedia',
+                    hostname: 'epilomedia.com'
+                }
+            });
+
+            expect(response.statusCode).toBe(409);
+            const body = response.json() as ApiErrorBody & {
+                context?: {
+                    existingDomain?: {
+                        id: number;
+                        name: string;
+                        hostname: string;
+                    };
+                };
+            };
+
+            expect(body.code).toBe('DOMAIN_HOSTNAME_CONFLICT');
+            expect(body.remediation).toContain('POST /api/auth/keys');
+            expect(body.context?.existingDomain).toEqual({
+                id: 7,
+                name: 'Epilomedia',
+                hostname: 'epilomedia.com'
+            });
+        } finally {
+            await app.close();
+        }
+    });
+
     it('requires admin scope to onboard a tenant', async () => {
         process.env.AUTH_REQUIRED = 'true';
         process.env.API_KEYS = 'writer=content:write';
@@ -2625,6 +2752,15 @@ describe('API Route Contracts', () => {
                         ]),
                     }),
                 }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        name: 'Default',
+                        hostname: 'default.local'
+                    }]),
+                }),
             }));
 
         try {
@@ -2644,6 +2780,13 @@ describe('API Route Contracts', () => {
                         statusCounts: Record<string, number>;
                     };
                 }>;
+                meta: {
+                    domain: {
+                        id: number;
+                        name: string;
+                        hostname: string;
+                    } | null;
+                };
             };
 
             expect(body.data).toEqual([
@@ -2667,6 +2810,11 @@ describe('API Route Contracts', () => {
                     }
                 })
             ]);
+            expect(body.meta.domain).toEqual({
+                id: 1,
+                name: 'Default',
+                hostname: 'default.local'
+            });
         } finally {
             await app.close();
         }
