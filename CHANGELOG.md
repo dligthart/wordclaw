@@ -1,3 +1,10 @@
+## [1.39.1](https://github.com/dligthart/wordclaw/compare/v1.39.0...v1.39.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* harden tenant onboarding contracts ([f40d944](https://github.com/dligthart/wordclaw/commit/f40d944d4cfc76476dcde65ba5ec12dd2a4cee42))
+
 # [1.39.0](https://github.com/dligthart/wordclaw/compare/v1.38.0...v1.39.0) (2026-03-31)
 
 
