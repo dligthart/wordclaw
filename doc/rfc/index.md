@@ -12,6 +12,7 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0027: Structured Marketing Website Support Without Page Builder Drift (proposed)](/rfc/proposed/0027-structured-marketing-website-support)
 - [RFC-0028: Content Modeling and Supervisor Ergonomics (implemented)](/rfc/implemented/0028-content-modeling-and-supervisor-ergonomics)
 - [RFC-0029: Agent Provisioning and Runtime Self-Description (implemented)](/rfc/implemented/0029-agent-provisioning-and-runtime-self-description)
+- [RFC-0030: Safe Domain Deletion and Decommissioning (proposed)](/rfc/proposed/0030-safe-domain-deletion-and-decommissioning)
 
 ## Historical / Non-Core Proposals
 
