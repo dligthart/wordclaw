@@ -290,6 +290,9 @@
     }
 
     let currentPath = $derived($page.url.pathname);
+    let isPublicRoute = $derived(
+        currentPath.endsWith("/login") || currentPath.endsWith("/invite"),
+    );
     let activeExperimentalItem = $derived(
         experimentalNavItems.find((item) => item.match(currentPath)) ?? null,
     );
@@ -319,7 +322,7 @@
         if (
             !auth.loading &&
             !auth.user &&
-            !$page.url.pathname.endsWith("/login")
+            !isPublicRoute
         ) {
             goto("/ui/login");
         }
@@ -330,7 +333,7 @@
     <link rel="icon" href={favicon} />
 </svelte:head>
 
-{#if $page.url.pathname.endsWith("/login")}
+{#if isPublicRoute}
     {@render children()}
 {:else if auth.loading}
     <div

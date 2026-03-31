@@ -142,6 +142,24 @@ export const supervisors = pgTable('supervisors', {
         supervisorsDomainIdx: index('supervisors_domain_idx').on(table.domainId),
     };
 });
+
+export const supervisorInvites = pgTable('supervisor_invites', {
+    id: serial('id').primaryKey(),
+    email: text('email').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }),
+    invitedBySupervisorId: integer('invited_by_supervisor_id').references(() => supervisors.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at').notNull(),
+    acceptedAt: timestamp('accepted_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        supervisorInvitesDomainIdx: index('supervisor_invites_domain_idx').on(table.domainId),
+        supervisorInvitesEmailIdx: index('supervisor_invites_email_idx').on(table.email),
+        supervisorInvitesTokenHashIdx: uniqueIndex('supervisor_invites_token_hash_unique').on(table.tokenHash),
+    };
+});
+
 export const payments = pgTable('payments', {
     id: serial('id').primaryKey(),
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),

@@ -328,9 +328,11 @@ In production, set `SETUP_TOKEN` first and send the same value in the `x-setup-t
 
 Once a supervisor can sign in, the first tenant can be provisioned either through the supervisor UI's `API Keys -> Onboard Tenant` flow or directly through `POST /api/onboard` when you want to create the domain and first admin credential in one REST call.
 
-Additional supervisor accounts are no longer limited to the bootstrap path. Platform admins can create more operators with `POST /api/supervisors`, and can scope them to a single tenant by providing `domainId`. `POST /api/onboard` also accepts an optional `supervisor` payload so domain creation, initial API key issuance, and the first tenant-scoped UI login can happen in one transaction.
+Additional supervisor accounts are no longer limited to the bootstrap path. Platform admins can create more operators with `POST /api/supervisors`, and can scope them to a single tenant by providing `domainId`. Platform admins can also remove other supervisors with `DELETE /api/supervisors/:id`; the runtime blocks self-delete and prevents removal of the last remaining platform-scoped supervisor. `POST /api/onboard` also accepts an optional `supervisor` payload so domain creation, initial API key issuance, and the first tenant-scoped UI login can happen in one transaction.
 
 Existing supervisors can rotate their own password with `PUT /api/supervisors/me/password` once they are signed in.
+
+Supervisor invites are now a separate flow from direct account creation. Use `POST /api/supervisors/invite` to issue a time-limited invite link. Tenant-scoped supervisors can only issue invites for their own bound domain; platform-scoped supervisors and platform-admin API keys can issue either platform-level or tenant-scoped invites. Invited operators can inspect the token through `GET /api/supervisors/invite/:token` and complete registration through the built-in `/ui/invite?token=...` page, which posts to `POST /api/supervisors/invite/accept` and starts the supervisor session immediately after account creation.
 
 ## API Authentication
 

@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
         select: vi.fn(),
         insert: vi.fn(),
         update: vi.fn(),
+        delete: vi.fn(),
+        transaction: vi.fn(),
     },
 }));
 
@@ -43,6 +45,8 @@ function resetMocks() {
     mocks.dbMock.select.mockReset();
     mocks.dbMock.insert.mockReset();
     mocks.dbMock.update.mockReset();
+    mocks.dbMock.delete.mockReset();
+    mocks.dbMock.transaction.mockReset();
 }
 
 describe('supervisorAuthRoutes', () => {
@@ -326,6 +330,336 @@ describe('supervisorAuthRoutes', () => {
             expect(response.json()).toEqual({
                 error: 'Unauthorized',
             });
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('issues tenant-scoped invites for tenant supervisor sessions', async () => {
+        const app = await buildServer();
+
+        try {
+            const token = app.jwt.sign({
+                sub: 7,
+                email: 'tenant-admin@example.com',
+                role: 'supervisor',
+                domainId: 12,
+            });
+
+            mocks.dbMock.select
+                .mockReturnValueOnce({
+                    from: () => ({
+                        where: vi.fn().mockResolvedValue([]),
+                    }),
+                })
+                .mockReturnValueOnce({
+                    from: () => ({
+                        where: vi.fn().mockResolvedValue([{
+                            id: 12,
+                            name: 'ACME Publishing',
+                            hostname: 'acme.example.com',
+                        }]),
+                    }),
+                });
+            mocks.dbMock.insert.mockReturnValueOnce({
+                values: vi.fn().mockReturnValue({
+                    returning: vi.fn().mockResolvedValue([{
+                        id: 33,
+                        email: 'new-operator@example.com',
+                        tokenHash: 'hashed-token',
+                        domainId: 12,
+                        invitedBySupervisorId: 7,
+                        expiresAt: new Date('2026-04-03T16:00:00Z'),
+                        acceptedAt: null,
+                        createdAt: new Date('2026-03-31T16:00:00Z'),
+                    }]),
+                }),
+            });
+
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/supervisors/invite',
+                headers: {
+                    cookie: `supervisor_session=${token}`,
+                    host: 'kb.lightheart.tech',
+                    'x-forwarded-proto': 'https',
+                },
+                payload: {
+                    email: 'new-operator@example.com',
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toEqual(expect.objectContaining({
+                email: 'new-operator@example.com',
+                scope: 'tenant',
+                domainId: 12,
+                domain: {
+                    id: 12,
+                    name: 'ACME Publishing',
+                    hostname: 'acme.example.com',
+                },
+                invitePath: expect.stringMatching(/^\/ui\/invite\?token=/),
+                inviteUrl: expect.stringMatching(/^https:\/\/kb\.lightheart\.tech\/ui\/invite\?token=/),
+                token: expect.any(String),
+                expiresAt: '2026-04-03T16:00:00.000Z',
+            }));
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('rejects invite domain overrides for tenant-scoped supervisor sessions', async () => {
+        const app = await buildServer();
+
+        try {
+            const token = app.jwt.sign({
+                sub: 7,
+                email: 'tenant-admin@example.com',
+                role: 'supervisor',
+                domainId: 12,
+            });
+
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/supervisors/invite',
+                headers: {
+                    cookie: `supervisor_session=${token}`,
+                },
+                payload: {
+                    email: 'new-operator@example.com',
+                    domainId: 44,
+                },
+            });
+
+            expect(response.statusCode).toBe(403);
+            expect(response.json()).toEqual({
+                error: 'Supervisor invite scope mismatch',
+                code: 'SUPERVISOR_INVITE_DOMAIN_SCOPE_MISMATCH',
+                remediation: 'Tenant-scoped supervisors can only invite operators for domain 12. Omit domainId or use the bound domain.',
+            });
+            expect(mocks.dbMock.select).not.toHaveBeenCalled();
+            expect(mocks.dbMock.insert).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('accepts valid supervisor invites and starts a supervisor session', async () => {
+        const app = await buildServer();
+
+        try {
+            mocks.dbMock.transaction.mockImplementationOnce(async (callback: (tx: {
+                select: typeof vi.fn;
+                insert: typeof vi.fn;
+                update: typeof vi.fn;
+            }) => Promise<unknown>) => {
+                const txSelect = vi.fn()
+                    .mockReturnValueOnce({
+                        from: () => ({
+                            leftJoin: () => ({
+                                where: vi.fn().mockResolvedValue([{
+                                    id: 41,
+                                    email: 'invited@example.com',
+                                    domainId: 12,
+                                    invitedBySupervisorId: 7,
+                                    expiresAt: new Date('2026-04-03T16:00:00Z'),
+                                    acceptedAt: null,
+                                    createdAt: new Date('2026-03-31T16:00:00Z'),
+                                    domainName: 'ACME Publishing',
+                                    domainHostname: 'acme.example.com',
+                                }]),
+                            }),
+                        }),
+                    })
+                    .mockReturnValueOnce({
+                        from: () => ({
+                            where: vi.fn().mockResolvedValue([{
+                                id: 12,
+                                name: 'ACME Publishing',
+                                hostname: 'acme.example.com',
+                            }]),
+                        }),
+                    });
+
+                const txInsert = vi.fn().mockReturnValue({
+                    values: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([{
+                            id: 18,
+                            email: 'invited@example.com',
+                            passwordHash: 'hashed-password',
+                            domainId: 12,
+                            createdAt: new Date('2026-03-31T16:05:00Z'),
+                            lastLoginAt: null,
+                        }]),
+                    }),
+                });
+
+                const txUpdate = vi.fn().mockReturnValue({
+                    set: vi.fn().mockReturnValue({
+                        where: vi.fn().mockResolvedValue(undefined),
+                    }),
+                });
+
+                return callback({
+                    select: txSelect,
+                    insert: txInsert,
+                    update: txUpdate,
+                });
+            });
+
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/supervisors/invite/accept',
+                payload: {
+                    token: 'invite-token-123',
+                    password: 'super-secret-123',
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toEqual({
+                ok: true,
+                supervisor: {
+                    id: 18,
+                    email: 'invited@example.com',
+                    scope: 'tenant',
+                    domainId: 12,
+                    domain: {
+                        id: 12,
+                        name: 'ACME Publishing',
+                        hostname: 'acme.example.com',
+                    },
+                },
+            });
+            expect(response.headers['set-cookie']).toEqual(
+                expect.stringContaining('supervisor_session='),
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('deletes tenant-scoped supervisors for platform supervisor sessions', async () => {
+        const app = await buildServer();
+
+        try {
+            const token = app.jwt.sign({
+                sub: 1,
+                email: 'platform@example.com',
+                role: 'supervisor',
+                domainId: null,
+            });
+            const deleteWhereMock = vi.fn().mockResolvedValue(undefined);
+
+            mocks.dbMock.select.mockReturnValueOnce({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        email: 'tenant-admin@example.com',
+                        domainId: 12,
+                    }]),
+                }),
+            });
+            mocks.dbMock.delete.mockReturnValueOnce({
+                where: deleteWhereMock,
+            });
+
+            const response = await app.inject({
+                method: 'DELETE',
+                url: '/api/supervisors/7',
+                headers: {
+                    cookie: `supervisor_session=${token}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(204);
+            expect(mocks.dbMock.delete).toHaveBeenCalledTimes(1);
+            expect(deleteWhereMock).toHaveBeenCalledTimes(1);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('rejects self-delete for platform supervisor sessions', async () => {
+        const app = await buildServer();
+
+        try {
+            const token = app.jwt.sign({
+                sub: 1,
+                email: 'platform@example.com',
+                role: 'supervisor',
+                domainId: null,
+            });
+
+            mocks.dbMock.select.mockReturnValueOnce({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 1,
+                        email: 'platform@example.com',
+                        domainId: null,
+                    }]),
+                }),
+            });
+
+            const response = await app.inject({
+                method: 'DELETE',
+                url: '/api/supervisors/1',
+                headers: {
+                    cookie: `supervisor_session=${token}`,
+                },
+            });
+
+            expect(response.statusCode).toBe(409);
+            expect(response.json()).toEqual({
+                error: 'Supervisor cannot delete the current session account',
+                code: 'SUPERVISOR_SELF_DELETE_FORBIDDEN',
+                remediation: 'Use a different platform supervisor account to remove this operator, or sign out instead.',
+            });
+            expect(mocks.dbMock.delete).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('rejects deleting the last remaining platform supervisor', async () => {
+        process.env.API_KEYS = 'platform-admin=admin|tenant:admin';
+        const app = await buildServer();
+
+        try {
+            mocks.dbMock.select
+                .mockReturnValueOnce({
+                    from: () => ({
+                        where: vi.fn().mockResolvedValue([{
+                            id: 1,
+                            email: 'platform@example.com',
+                            domainId: null,
+                        }]),
+                    }),
+                })
+                .mockReturnValueOnce({
+                    from: () => ({
+                        where: vi.fn().mockResolvedValue([{
+                            id: 1,
+                        }]),
+                    }),
+                });
+
+            const response = await app.inject({
+                method: 'DELETE',
+                url: '/api/supervisors/1',
+                headers: {
+                    'x-api-key': 'platform-admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(409);
+            expect(response.json()).toEqual({
+                error: 'Cannot remove the last platform supervisor',
+                code: 'SUPERVISOR_LAST_PLATFORM_SUPERVISOR',
+                remediation: 'Create another platform-scoped supervisor before deleting the final remaining platform admin account.',
+            });
+            expect(mocks.dbMock.delete).not.toHaveBeenCalled();
         } finally {
             await app.close();
         }

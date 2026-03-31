@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { domains, supervisors } from '../db/schema.js';
@@ -11,6 +11,7 @@ const SUPERVISOR_EMAIL_CONSTRAINTS = new Set([
 
 export type SupervisorDbExecutor = Pick<typeof db, 'insert' | 'select'>;
 type SupervisorPasswordDbExecutor = Pick<typeof db, 'select' | 'update'>;
+type SupervisorDeleteDbExecutor = Pick<typeof db, 'select' | 'delete'>;
 
 export type SupervisorDomainSummary = {
     id: number;
@@ -31,6 +32,12 @@ export type SupervisorListEntry = {
     createdAt: Date;
     lastLoginAt: Date | null;
     domain: SupervisorDomainSummary | null;
+};
+
+export type SupervisorAccountSummary = {
+    id: number;
+    email: string;
+    domainId: number | null;
 };
 
 type CreateSupervisorInput = {
@@ -111,6 +118,28 @@ export class SupervisorPasswordMismatchError extends Error {
     }
 }
 
+export class SupervisorSelfDeleteForbiddenError extends Error {
+    readonly code = 'SUPERVISOR_SELF_DELETE_FORBIDDEN';
+    readonly supervisorId: number;
+
+    constructor(supervisorId: number) {
+        super('SUPERVISOR_SELF_DELETE_FORBIDDEN');
+        this.name = 'SupervisorSelfDeleteForbiddenError';
+        this.supervisorId = supervisorId;
+    }
+}
+
+export class LastPlatformSupervisorError extends Error {
+    readonly code = 'SUPERVISOR_LAST_PLATFORM_SUPERVISOR';
+    readonly supervisorId: number;
+
+    constructor(supervisorId: number) {
+        super('SUPERVISOR_LAST_PLATFORM_SUPERVISOR');
+        this.name = 'LastPlatformSupervisorError';
+        this.supervisorId = supervisorId;
+    }
+}
+
 async function findSupervisorByEmail(
     email: string,
     executor: SupervisorDbExecutor = db
@@ -123,6 +152,22 @@ async function findSupervisorByEmail(
         })
         .from(supervisors)
         .where(eq(supervisors.email, email));
+
+    return supervisor ?? null;
+}
+
+async function findSupervisorById(
+    supervisorId: number,
+    executor: Pick<typeof db, 'select'> = db
+): Promise<SupervisorAccountSummary | null> {
+    const [supervisor] = await executor
+        .select({
+            id: supervisors.id,
+            email: supervisors.email,
+            domainId: supervisors.domainId,
+        })
+        .from(supervisors)
+        .where(eq(supervisors.id, supervisorId));
 
     return supervisor ?? null;
 }
@@ -244,4 +289,38 @@ export async function changeSupervisorPassword(
         .update(supervisors)
         .set({ passwordHash })
         .where(eq(supervisors.id, input.supervisorId));
+}
+
+export async function deleteSupervisorAccount(
+    input: {
+        supervisorId: number;
+        currentSupervisorId?: number | null;
+    },
+    executor: SupervisorDeleteDbExecutor = db
+): Promise<SupervisorAccountSummary> {
+    const supervisor = await findSupervisorById(input.supervisorId, executor);
+    if (!supervisor) {
+        throw new SupervisorNotFoundError(input.supervisorId);
+    }
+
+    if (typeof input.currentSupervisorId === 'number' && input.currentSupervisorId === supervisor.id) {
+        throw new SupervisorSelfDeleteForbiddenError(supervisor.id);
+    }
+
+    if (supervisor.domainId === null) {
+        const platformSupervisors = await executor
+            .select({ id: supervisors.id })
+            .from(supervisors)
+            .where(isNull(supervisors.domainId));
+
+        if (platformSupervisors.length <= 1) {
+            throw new LastPlatformSupervisorError(supervisor.id);
+        }
+    }
+
+    await executor
+        .delete(supervisors)
+        .where(eq(supervisors.id, supervisor.id));
+
+    return supervisor;
 }

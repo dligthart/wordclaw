@@ -67,10 +67,12 @@ curl -X POST http://localhost:4000/api/supervisors/setup-initial \
 
 In production, set `SETUP_TOKEN` and pass it as `x-setup-token` for that one-time bootstrap call.
 
-After the first platform supervisor exists, create additional platform or tenant-scoped supervisors with `POST /api/supervisors`. Tenant-scoped supervisors are pinned to their assigned domain in the UI and cannot switch into other tenants by changing the `x-wordclaw-domain` header.
+After the first platform supervisor exists, create additional platform or tenant-scoped supervisors with `POST /api/supervisors`. Platform supervisors can also remove other supervisor accounts with `DELETE /api/supervisors/:id`; the runtime blocks self-delete and protects the last remaining platform-scoped supervisor. Tenant-scoped supervisors are pinned to their assigned domain in the UI and cannot switch into other tenants by changing the `x-wordclaw-domain` header.
 
 Platform-scoped supervisors can switch domains from the header selector. The shell resets them onto the dashboard on every switch so the next tenant workspace loads from a clean surface instead of replaying whichever heavy page was open before.
 
 Existing supervisors can rotate their own password through `PUT /api/supervisors/me/password`.
+
+Invite-driven onboarding is also available now. `POST /api/supervisors/invite` issues a time-limited invite link. Tenant-scoped supervisors can only issue invites for their own domain, while platform-scoped supervisors can issue either platform or tenant invites. Invite recipients land on `/ui/invite?token=...`, set their password, and the UI starts their supervisor session immediately after `POST /api/supervisors/invite/accept` succeeds.
 
 See `doc/tutorials/getting-started.md` for the full setup flow.

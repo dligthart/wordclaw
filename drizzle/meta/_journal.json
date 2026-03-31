@@ -225,6 +225,13 @@
       "when": 1774974600000,
       "tag": "0031_supervisor_scoping",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1774982400000,
+      "tag": "0032_supervisor_invites",
+      "breakpoints": true
     }
   ]
 }
