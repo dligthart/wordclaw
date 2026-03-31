@@ -1,3 +1,10 @@
+# [1.38.0](https://github.com/dligthart/wordclaw/compare/v1.37.0...v1.38.0) (2026-03-31)
+
+
+### Features
+
+* add tenant onboarding flow ([9a2671b](https://github.com/dligthart/wordclaw/commit/9a2671b908d2ccc7958bce7c7f592a3f8bb4173b))
+
 # [1.37.0](https://github.com/dligthart/wordclaw/compare/v1.36.1...v1.37.0) (2026-03-29)
 
 
