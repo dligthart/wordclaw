@@ -330,6 +330,8 @@ Once a supervisor can sign in, the first tenant can be provisioned either throug
 
 Additional supervisor accounts are no longer limited to the bootstrap path. Platform admins can create more operators with `POST /api/supervisors`, and can scope them to a single tenant by providing `domainId`. `POST /api/onboard` also accepts an optional `supervisor` payload so domain creation, initial API key issuance, and the first tenant-scoped UI login can happen in one transaction.
 
+Existing supervisors can rotate their own password with `PUT /api/supervisors/me/password` once they are signed in.
+
 ## API Authentication
 
 When `AUTH_REQUIRED=true` (in your `.env`), include an API key on `/api` requests:

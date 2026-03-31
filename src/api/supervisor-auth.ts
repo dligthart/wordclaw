@@ -10,11 +10,14 @@ import { db } from '../db/index.js';
 import { domains, supervisors } from '../db/schema.js';
 import { isPlatformAdminPrincipal } from '../services/actor-identity.js';
 import {
+    changeSupervisorPassword,
     createSupervisorAccount,
     listSupervisors,
     normalizeSupervisorEmail,
     SupervisorDomainNotFoundError,
     SupervisorEmailConflictError,
+    SupervisorNotFoundError,
+    SupervisorPasswordMismatchError,
 } from '../services/supervisor.js';
 import { isPlatformSupervisorSession, type SupervisorSessionClaims } from './supervisor-session.js';
 
@@ -78,6 +81,22 @@ function supervisorDomainNotFoundPayload(domainId: number) {
         error: 'Supervisor domain not found',
         code: 'SUPERVISOR_DOMAIN_NOT_FOUND',
         remediation: `Provision domain ${domainId} first or use an existing tenant ID before assigning a scoped supervisor.`,
+    };
+}
+
+function supervisorNotFoundPayload(supervisorId: number) {
+    return {
+        error: 'Supervisor not found',
+        code: 'SUPERVISOR_NOT_FOUND',
+        remediation: `Refresh the current session and retry. Supervisor ${supervisorId} no longer exists.`,
+    };
+}
+
+function supervisorPasswordMismatchPayload() {
+    return {
+        error: 'Current password is incorrect',
+        code: 'SUPERVISOR_PASSWORD_MISMATCH',
+        remediation: 'Provide the current supervisor password and retry the password change.',
     };
 }
 
@@ -278,6 +297,71 @@ export const supervisorAuthRoutes: FastifyPluginAsync = async (server: FastifyIn
             });
         } catch {
             return reply.status(401).send({ error: 'Unauthorized' });
+        }
+    });
+
+    server.put('/me/password', {
+        schema: {
+            body: Type.Object({
+                currentPassword: Type.String({ minLength: 1 }),
+                newPassword: Type.String({ minLength: 8 }),
+            }),
+            response: {
+                200: Type.Object({
+                    ok: Type.Literal(true),
+                    message: Type.String(),
+                }),
+                401: Type.Object({
+                    error: Type.String(),
+                }),
+                403: Type.Object({
+                    error: Type.String(),
+                    code: Type.String(),
+                    remediation: Type.String(),
+                }),
+                404: Type.Object({
+                    error: Type.String(),
+                    code: Type.String(),
+                    remediation: Type.String(),
+                }),
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            await request.jwtVerify({ onlyCookie: true });
+            const user = request.user as SupervisorSessionClaims;
+            const supervisorId = Number(user.sub);
+            if (!Number.isInteger(supervisorId) || supervisorId <= 0) {
+                return reply.status(401).send({ error: 'Unauthorized' });
+            }
+
+            const { currentPassword, newPassword } = request.body as {
+                currentPassword: string;
+                newPassword: string;
+            };
+
+            await changeSupervisorPassword({
+                supervisorId,
+                currentPassword,
+                newPassword,
+            });
+
+            return {
+                ok: true,
+                message: 'Password updated successfully',
+            };
+        } catch (error) {
+            if (error instanceof SupervisorPasswordMismatchError) {
+                return reply.status(403).send(supervisorPasswordMismatchPayload());
+            }
+            if (error instanceof SupervisorNotFoundError) {
+                return reply.status(404).send(supervisorNotFoundPayload(error.supervisorId));
+            }
+            if ((error as { code?: string }).code?.startsWith('FST_JWT')) {
+                return reply.status(401).send({ error: 'Unauthorized' });
+            }
+
+            throw error;
         }
     });
 

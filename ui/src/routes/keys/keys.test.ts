@@ -5,6 +5,24 @@ import KeysPage from "./+page.svelte";
 import { fetchApi } from "$lib/api";
 import { feedbackStore } from "$lib/ui-feedback.svelte";
 
+const authState = vi.hoisted(() => ({
+    auth: {
+        user: null as null | {
+            id: number;
+            email: string;
+            scope: "platform" | "tenant";
+            domainId: number | null;
+            domain: {
+                id: number;
+                name: string;
+                hostname: string;
+            } | null;
+        },
+        loading: false,
+        error: null,
+    },
+}));
+
 vi.mock("$lib/api", () => ({
     fetchApi: vi.fn(),
     ApiError: class extends Error {
@@ -20,9 +38,18 @@ vi.mock("$lib/ui-feedback.svelte", () => ({
     },
 }));
 
+vi.mock("$lib/auth.svelte", () => authState);
+
 describe("Keys Page", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        authState.auth.user = {
+            id: 1,
+            email: "platform@example.com",
+            scope: "platform",
+            domainId: null,
+            domain: null,
+        };
         const storage = new Map<string, string>();
         vi.stubGlobal("localStorage", {
             getItem: vi.fn((key: string) => storage.get(key) ?? null),
@@ -132,5 +159,36 @@ describe("Keys Page", () => {
             severity: "success",
             title: "Tenant provisioned",
         }));
+    });
+
+    it("hides tenant onboarding controls for tenant-scoped supervisors", async () => {
+        authState.auth.user = {
+            id: 7,
+            email: "tenant-admin@example.com",
+            scope: "tenant",
+            domainId: 12,
+            domain: {
+                id: 12,
+                name: "ACME Publishing",
+                hostname: "acme.example.com",
+            },
+        };
+
+        vi.mocked(fetchApi).mockResolvedValue({
+            data: [],
+        });
+
+        render(KeysPage);
+
+        await screen.findByText("No API keys yet");
+
+        expect(
+            screen.queryByRole("button", { name: "Onboard Tenant" }),
+        ).toBeNull();
+        expect(
+            screen.getByText(
+                "Manage credentials for agents and operator integrations for the current tenant.",
+            ),
+        ).toBeTruthy();
     });
 });

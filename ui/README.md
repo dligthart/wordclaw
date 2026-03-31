@@ -71,4 +71,6 @@ After the first platform supervisor exists, create additional platform or tenant
 
 Platform-scoped supervisors can switch domains from the header selector. The shell resets them onto the dashboard on every switch so the next tenant workspace loads from a clean surface instead of replaying whichever heavy page was open before.
 
+Existing supervisors can rotate their own password through `PUT /api/supervisors/me/password`.
+
 See `doc/tutorials/getting-started.md` for the full setup flow.

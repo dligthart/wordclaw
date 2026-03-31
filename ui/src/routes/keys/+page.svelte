@@ -1,5 +1,6 @@
 <script lang="ts">
     import { fetchApi, ApiError } from "$lib/api";
+    import { auth } from "$lib/auth.svelte";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
@@ -66,6 +67,12 @@
     let revokedKeyCount = $derived(revokedKeys.length);
     let adminKeyCount = $derived.by(
         () => activeKeys.filter((key) => key.scopes.includes("admin")).length,
+    );
+    let canOnboardTenants = $derived(auth.user?.scope === "platform");
+    let pageDescription = $derived(
+        canOnboardTenants
+            ? "Manage credentials for agents and operator integrations, and provision initial tenant admin access."
+            : "Manage credentials for agents and operator integrations for the current tenant.",
     );
 
     const activeColumns = [
@@ -166,6 +173,11 @@
     }
 
     async function createTenant() {
+        if (!canOnboardTenants) {
+            error = "Only platform supervisors can onboard new tenants.";
+            return;
+        }
+
         if (!onboardTenantName.trim() || !onboardHostname.trim()) return;
 
         onboarding = true;
@@ -398,7 +410,7 @@
                 API Keys
             </h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Manage credentials for agents and operator integrations, and provision initial tenant admin access.
+                {pageDescription}
             </p>
             <div class="mt-3 flex flex-wrap gap-2">
                 <Badge variant="outline">{activeKeyCount} active</Badge>
@@ -408,13 +420,15 @@
             </div>
         </div>
         <div class="flex flex-wrap gap-3">
-            <Button
-                variant="outline"
-                onclick={() => (showOnboardModal = true)}
-            >
-                <Icon src={Key} class="w-5 h-5" />
-                Onboard Tenant
-            </Button>
+            {#if canOnboardTenants}
+                <Button
+                    variant="outline"
+                    onclick={() => (showOnboardModal = true)}
+                >
+                    <Icon src={Key} class="w-5 h-5" />
+                    Onboard Tenant
+                </Button>
+            {/if}
             <Button
                 onclick={() => (showNewKeyModal = true)}
             >
@@ -510,7 +524,7 @@
         </div>
     {/if}
 
-    {#if showOnboardModal}
+    {#if showOnboardModal && canOnboardTenants}
         <div
             class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50"
         >

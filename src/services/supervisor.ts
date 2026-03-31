@@ -10,6 +10,7 @@ const SUPERVISOR_EMAIL_CONSTRAINTS = new Set([
 ]);
 
 export type SupervisorDbExecutor = Pick<typeof db, 'insert' | 'select'>;
+type SupervisorPasswordDbExecutor = Pick<typeof db, 'select' | 'update'>;
 
 export type SupervisorDomainSummary = {
     id: number;
@@ -87,6 +88,26 @@ export class SupervisorDomainNotFoundError extends Error {
         super('SUPERVISOR_DOMAIN_NOT_FOUND');
         this.name = 'SupervisorDomainNotFoundError';
         this.domainId = domainId;
+    }
+}
+
+export class SupervisorNotFoundError extends Error {
+    readonly code = 'SUPERVISOR_NOT_FOUND';
+    readonly supervisorId: number;
+
+    constructor(supervisorId: number) {
+        super('SUPERVISOR_NOT_FOUND');
+        this.name = 'SupervisorNotFoundError';
+        this.supervisorId = supervisorId;
+    }
+}
+
+export class SupervisorPasswordMismatchError extends Error {
+    readonly code = 'SUPERVISOR_PASSWORD_MISMATCH';
+
+    constructor() {
+        super('SUPERVISOR_PASSWORD_MISMATCH');
+        this.name = 'SupervisorPasswordMismatchError';
     }
 }
 
@@ -191,4 +212,36 @@ export async function listSupervisors(): Promise<SupervisorListEntry[]> {
             }
             : null,
     }));
+}
+
+export async function changeSupervisorPassword(
+    input: {
+        supervisorId: number;
+        currentPassword: string;
+        newPassword: string;
+    },
+    executor: SupervisorPasswordDbExecutor = db
+): Promise<void> {
+    const [supervisor] = await executor
+        .select({
+            id: supervisors.id,
+            passwordHash: supervisors.passwordHash,
+        })
+        .from(supervisors)
+        .where(eq(supervisors.id, input.supervisorId));
+
+    if (!supervisor) {
+        throw new SupervisorNotFoundError(input.supervisorId);
+    }
+
+    const passwordMatches = await bcrypt.compare(input.currentPassword, supervisor.passwordHash);
+    if (!passwordMatches) {
+        throw new SupervisorPasswordMismatchError();
+    }
+
+    const passwordHash = await bcrypt.hash(input.newPassword, 10);
+    await executor
+        .update(supervisors)
+        .set({ passwordHash })
+        .where(eq(supervisors.id, input.supervisorId));
 }

@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
+import bcrypt from 'bcryptjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -199,6 +200,131 @@ describe('supervisorAuthRoutes', () => {
                 },
                 createdAt: '2026-03-31T16:00:00.000Z',
                 lastLoginAt: null,
+            });
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('allows authenticated supervisors to change their own password', async () => {
+        const app = await buildServer();
+
+        try {
+            const token = app.jwt.sign({
+                sub: 7,
+                email: 'tenant-admin@example.com',
+                role: 'supervisor',
+                domainId: 7,
+            });
+            const currentPasswordHash = await bcrypt.hash('old-password', 10);
+            const setMock = vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue(undefined),
+            });
+
+            mocks.dbMock.select.mockReturnValueOnce({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        passwordHash: currentPasswordHash,
+                    }]),
+                }),
+            });
+            mocks.dbMock.update.mockReturnValueOnce({
+                set: setMock,
+            });
+
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/supervisors/me/password',
+                headers: {
+                    cookie: `supervisor_session=${token}`,
+                },
+                payload: {
+                    currentPassword: 'old-password',
+                    newPassword: 'new-password-123',
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toEqual({
+                ok: true,
+                message: 'Password updated successfully',
+            });
+            expect(mocks.dbMock.update).toHaveBeenCalledTimes(1);
+            expect(setMock).toHaveBeenCalledTimes(1);
+            expect(setMock.mock.calls[0][0]).toEqual({
+                passwordHash: expect.any(String),
+            });
+            expect(setMock.mock.calls[0][0].passwordHash).not.toBe(currentPasswordHash);
+            await expect(
+                bcrypt.compare('new-password-123', setMock.mock.calls[0][0].passwordHash)
+            ).resolves.toBe(true);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('rejects password changes when the current password is wrong', async () => {
+        const app = await buildServer();
+
+        try {
+            const token = app.jwt.sign({
+                sub: 7,
+                email: 'tenant-admin@example.com',
+                role: 'supervisor',
+                domainId: 7,
+            });
+            const currentPasswordHash = await bcrypt.hash('old-password', 10);
+
+            mocks.dbMock.select.mockReturnValueOnce({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        passwordHash: currentPasswordHash,
+                    }]),
+                }),
+            });
+
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/supervisors/me/password',
+                headers: {
+                    cookie: `supervisor_session=${token}`,
+                },
+                payload: {
+                    currentPassword: 'wrong-password',
+                    newPassword: 'new-password-123',
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
+            expect(response.json()).toEqual({
+                error: 'Current password is incorrect',
+                code: 'SUPERVISOR_PASSWORD_MISMATCH',
+                remediation: 'Provide the current supervisor password and retry the password change.',
+            });
+            expect(mocks.dbMock.update).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('requires an authenticated supervisor session for password changes', async () => {
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/supervisors/me/password',
+                payload: {
+                    currentPassword: 'old-password',
+                    newPassword: 'new-password-123',
+                }
+            });
+
+            expect(response.statusCode).toBe(401);
+            expect(response.json()).toEqual({
+                error: 'Unauthorized',
             });
         } finally {
             await app.close();
