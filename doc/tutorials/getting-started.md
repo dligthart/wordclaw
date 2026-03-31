@@ -296,6 +296,8 @@ For remote MCP clients, the same deployment guidance is also available in-band:
 
 WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, approvals, payments, L402 readiness, API keys, and audit review. Experimental pages remain available, but they stay hidden by default so the main operator workflow stays focused on supported control-plane surfaces.
 
+The `API Keys` page is also the operator-facing tenant bootstrap surface. Use `Onboard Tenant` there to create a new domain, issue its first `admin` API key, reveal the secret once, and switch the supervisor's active domain selector to the newly created tenant.
+
 To run the frontend locally:
 1. Ensure the WordClaw backend is running (`npm run dev` in the root folder).
 2. Start the SvelteKit development server:
@@ -317,6 +319,8 @@ curl -X POST http://localhost:4000/api/supervisors/setup-initial \
 ```
 
 *(Note: this endpoint will only work if zero supervisor accounts exist.)*
+
+Once a supervisor can sign in, the first tenant can be provisioned either through the supervisor UI's `API Keys -> Onboard Tenant` flow or directly through `POST /api/onboard` when you want to create the domain and first admin credential in one REST call.
 
 ## API Authentication
 

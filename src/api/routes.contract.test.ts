@@ -2062,6 +2062,147 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('onboards a tenant and returns its initial admin key', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        mocks.dbMock.execute.mockResolvedValueOnce([{ total: 0 }]);
+        mocks.dbMock.transaction.mockImplementation(async (callback: (tx: typeof mocks.dbMock) => Promise<unknown>) => {
+            let insertCount = 0;
+            const tx = {
+                insert: vi.fn().mockImplementation(() => ({
+                    values: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([
+                            insertCount++ === 0
+                                ? {
+                                    id: 2,
+                                    name: 'Epilomedia',
+                                    hostname: 'epilomedia.com',
+                                    createdAt: new Date('2026-03-31T09:00:00.000Z')
+                                }
+                                : {
+                                    id: 19,
+                                    domainId: 2,
+                                    name: 'Epilomedia Admin',
+                                    keyPrefix: 'wcak_testkey',
+                                    scopes: 'admin',
+                                    createdBy: null,
+                                    createdAt: new Date('2026-03-31T09:00:01.000Z'),
+                                    expiresAt: null,
+                                    revokedAt: null,
+                                    lastUsedAt: null
+                                }
+                        ])
+                    })
+                }))
+            } as unknown as typeof mocks.dbMock;
+
+            return callback(tx);
+        });
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/onboard',
+                headers: {
+                    'x-api-key': 'remote-admin',
+                    host: 'kb.lightheart.tech',
+                    'x-forwarded-proto': 'https'
+                },
+                payload: {
+                    tenantName: 'Epilomedia',
+                    hostname: 'epilomedia.com',
+                    apiKeyName: 'Epilomedia Admin'
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            const body = response.json() as {
+                data: {
+                    bootstrap: boolean;
+                    domain: { id: number; name: string; hostname: string; createdAt: string };
+                    apiKey: { id: number; name: string; keyPrefix: string; scopes: string[]; expiresAt: string | null; apiKey: string };
+                    endpoints: { api: string | null; mcp: string | null };
+                };
+            };
+
+            expect(body.data.bootstrap).toBe(true);
+            expect(body.data.domain).toEqual({
+                id: 2,
+                name: 'Epilomedia',
+                hostname: 'epilomedia.com',
+                createdAt: '2026-03-31T09:00:00.000Z'
+            });
+            expect(body.data.apiKey).toEqual(expect.objectContaining({
+                id: 19,
+                name: 'Epilomedia Admin',
+                keyPrefix: 'wcak_testkey',
+                scopes: ['admin'],
+                expiresAt: null,
+                apiKey: expect.stringMatching(/^wcak_/)
+            }));
+            expect(body.data.endpoints).toEqual({
+                api: 'https://kb.lightheart.tech/api',
+                mcp: 'https://kb.lightheart.tech/mcp'
+            });
+            expect(mocks.logAuditMock).toHaveBeenNthCalledWith(
+                1,
+                2,
+                'create',
+                'domain',
+                2,
+                expect.objectContaining({
+                    onboardTenant: true,
+                    hostname: 'epilomedia.com'
+                }),
+                expect.anything(),
+                expect.any(String)
+            );
+            expect(mocks.logAuditMock).toHaveBeenNthCalledWith(
+                2,
+                2,
+                'create',
+                'api_key',
+                19,
+                expect.objectContaining({
+                    onboardTenant: true,
+                    authKeyCreated: true,
+                    scopes: ['admin']
+                }),
+                expect.anything(),
+                expect.any(String)
+            );
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('requires admin scope to onboard a tenant', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'writer=content:write';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/onboard',
+                headers: {
+                    'x-api-key': 'writer'
+                },
+                payload: {
+                    tenantName: 'Epilomedia',
+                    hostname: 'epilomedia.com'
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('ADMIN_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
     it('returns CONTENT_TYPE_SLUG_CONFLICT for content-type update duplicate slug in domain', async () => {
         const app = await buildServer();
         const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint'), {
@@ -5145,6 +5286,59 @@ describe('API Route Contracts', () => {
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('INVALID_WEBHOOK_EVENTS');
             expect(mocks.dbMock.insert).not.toHaveBeenCalled();
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('requires admin scope to create API keys', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'writer=content:write';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/auth/keys',
+                headers: {
+                    'x-api-key': 'writer'
+                },
+                payload: {
+                    name: 'Writer Managed Key',
+                    scopes: ['content:read']
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('ADMIN_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('requires admin scope to create webhooks', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'writer=content:write';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/webhooks',
+                headers: {
+                    'x-api-key': 'writer'
+                },
+                payload: {
+                    url: 'https://example.com/hooks/wordclaw',
+                    events: ['content_item.create'],
+                    secret: 'test-secret'
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('ADMIN_REQUIRED');
         } finally {
             await app.close();
         }

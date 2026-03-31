@@ -94,6 +94,19 @@ export class PolicyEngine {
             }
         }
 
+        if (
+            operation.startsWith('apikey.')
+            || operation.startsWith('webhook.')
+            || operation.startsWith('tenant.')
+        ) {
+            return {
+                outcome: 'deny',
+                code: 'ADMIN_REQUIRED',
+                remediation: 'Use an actor with the admin or tenant:admin scope before onboarding tenants or managing API keys and webhooks.',
+                policyVersion: POLICY_VERSION
+            };
+        }
+
         // Role-based fallbacks based on capability/operation mapping
         if (operation.startsWith('audit.') || operation.startsWith('payment.')) {
             if (!principal.scopes.includes('audit:read')) {

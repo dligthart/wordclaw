@@ -69,6 +69,11 @@ import {
     listGlobalContentTypes,
     normalizeContentTypeKind
 } from '../services/content-type.service.js';
+import {
+    buildRuntimeEndpoints,
+    normalizePublicBaseUrl,
+    onboardTenant
+} from '../services/tenant-onboarding.js';
 import { findAssetUsage, findContentItemUsage, type ReferenceUsageSummary } from '../services/reference-usage.js';
 import {
     FormServiceError,
@@ -541,7 +546,7 @@ export function createServer(options: CreateMcpServerOptions = {}) {
     }
 
     function canManageIntegrations(actor: ReturnType<typeof buildCurrentActorSnapshot>): boolean {
-        return hasActorScope(actor, 'content:write');
+        return actor.scopes.includes('admin') || actor.scopes.includes('tenant:admin');
     }
 
     function serializeApiKeyForGuide(key: Awaited<ReturnType<typeof listApiKeys>>[number]) {
@@ -859,6 +864,91 @@ server.tool(
             }
 
             return err(`Error creating domain: ${(error as Error).message}`);
+        }
+    }),
+);
+
+server.tool(
+    'onboard_tenant',
+    'Create a tenant domain and issue its first admin-capable API key in one step',
+    {
+        tenantName: z.string().min(1).describe('Display name for the tenant domain'),
+        hostname: z.string().min(1).describe('Unique hostname for the tenant domain, e.g. epilomedia.example'),
+        adminEmail: z.string().email().optional().describe('Optional operator contact email for audit context'),
+        apiKeyName: z.string().min(1).optional().describe('Optional label for the initial API key'),
+        scopes: z.array(z.string()).optional().describe('Optional initial scopes; defaults to admin'),
+        expiresAt: z.string().optional().describe('Optional ISO expiry timestamp for the initial API key'),
+        publicBaseUrl: z.string().optional().describe('Optional absolute public base URL used to populate API and MCP endpoints'),
+    },
+    withMCPPolicy('tenant.onboard', () => ({ type: 'system' }), async ({ tenantName, hostname, adminEmail, apiKeyName, scopes, expiresAt, publicBaseUrl }) => {
+        let parsedExpiry: Date | null = null;
+        if (expiresAt) {
+            parsedExpiry = new Date(expiresAt);
+            if (Number.isNaN(parsedExpiry.getTime())) {
+                return err('INVALID_EXPIRES_AT: Provide expiresAt as an ISO-8601 date-time string.');
+            }
+        }
+
+        let publicOrigin: string | null;
+        try {
+            publicOrigin = normalizePublicBaseUrl(publicBaseUrl);
+        } catch {
+            return err('INVALID_PUBLIC_BASE_URL: Provide publicBaseUrl as an absolute http(s) URL such as https://kb.lightheart.tech.');
+        }
+
+        try {
+            const created = await onboardTenant({
+                tenantName,
+                hostname,
+                apiKeyName,
+                scopes,
+                expiresAt: parsedExpiry
+            });
+
+            await logAudit(created.domain.id, 'create', 'domain', created.domain.id, {
+                hostname: created.domain.hostname,
+                onboardTenant: true,
+                adminEmail: adminEmail ?? null,
+                mcpTool: 'onboard_tenant'
+            });
+            await logAudit(created.domain.id, 'create', 'api_key', created.apiKey.id, {
+                onboardTenant: true,
+                authKeyCreated: true,
+                scopes: created.scopes,
+                name: created.apiKey.name,
+                mcpTool: 'onboard_tenant'
+            });
+
+            return okJson({
+                bootstrap: created.bootstrap,
+                domain: {
+                    id: created.domain.id,
+                    name: created.domain.name,
+                    hostname: created.domain.hostname,
+                    createdAt: created.domain.createdAt.toISOString()
+                },
+                apiKey: {
+                    id: created.apiKey.id,
+                    name: created.apiKey.name,
+                    keyPrefix: created.apiKey.keyPrefix,
+                    scopes: created.scopes,
+                    expiresAt: created.apiKey.expiresAt,
+                    apiKey: created.plaintext
+                },
+                endpoints: buildRuntimeEndpoints(publicOrigin)
+            });
+        } catch (error) {
+            if ((error as Error).message === 'EMPTY_ONBOARDING_SCOPES') {
+                return err('INVALID_KEY_SCOPES: Provide at least one scope for the initial tenant API key.');
+            }
+            if ((error as Error).message.startsWith('Invalid scopes:')) {
+                return err(`INVALID_KEY_SCOPES: ${(error as Error).message}`);
+            }
+            if (isUniqueViolation(error, DOMAIN_HOSTNAME_CONSTRAINTS) || (error as { code?: string }).code === '23505') {
+                return err(`DOMAIN_HOSTNAME_CONFLICT: Choose a different hostname than '${hostname}'.`);
+            }
+
+            return err(`Error onboarding tenant: ${(error as Error).message}`);
         }
     }),
 );
@@ -4187,7 +4277,7 @@ server.tool(
                 apiKeys = (await listApiKeys(domainId)).map(serializeApiKeyForGuide);
                 webhooks = (await listWebhooks(domainId)).map(serializeWebhookForGuide);
             } else {
-                warnings.push('Integration inventory is unavailable until the current actor has content write access.');
+                warnings.push('Integration inventory is unavailable until the current actor has admin or tenant:admin scope.');
             }
 
             const guide = buildIntegrationGuide({

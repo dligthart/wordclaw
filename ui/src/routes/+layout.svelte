@@ -51,6 +51,10 @@
         notice?: string;
     };
 
+    type DomainRefreshEventDetail = {
+        selectDomainId?: string;
+    };
+
     const coreNavItems: NavItem[] = [
         {
             name: "Dashboard",
@@ -164,13 +168,20 @@
             }
         };
 
+        const handleDomainsChanged = (event: Event) => {
+            const preferredDomainId = (event as CustomEvent<DomainRefreshEventDetail>).detail?.selectDomainId;
+            void loadDomains(preferredDomainId);
+        };
+
         document.addEventListener("click", handleDocumentClick);
+        window.addEventListener("wordclaw:domains-changed", handleDomainsChanged as EventListener);
         return () => {
             document.removeEventListener("click", handleDocumentClick);
+            window.removeEventListener("wordclaw:domains-changed", handleDomainsChanged as EventListener);
         };
     });
 
-    async function loadDomains() {
+    async function loadDomains(preferredDomainId?: string) {
         try {
             const res = await fetchApi("/domains");
             const fetched = (
@@ -186,9 +197,14 @@
 
             if (fetched.length > 0) {
                 domainOptions = fetched;
-                if (!fetched.some((domain) => domain.id === currentDomain)) {
-                    currentDomain = fetched[0].id;
-                }
+                const nextDomainId =
+                    preferredDomainId &&
+                    fetched.some((domain) => domain.id === preferredDomainId)
+                        ? preferredDomainId
+                        : currentDomain;
+                currentDomain = fetched.some((domain) => domain.id === nextDomainId)
+                    ? nextDomainId
+                    : fetched[0].id;
                 localStorage.setItem("__wc_domain_id", currentDomain);
             }
         } catch {

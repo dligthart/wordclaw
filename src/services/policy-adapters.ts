@@ -53,6 +53,9 @@ export function buildOperationContext(
 export function resolveRestOperation(method: string, routePath: string): string {
     const upperMethod = method.toUpperCase();
 
+    if (routePath.startsWith('/api/onboard')) {
+        return 'tenant.onboard';
+    }
     if (routePath.startsWith('/api/auth/keys')) {
         return upperMethod === 'GET' ? 'apikey.list' : 'apikey.write';
     }

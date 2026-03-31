@@ -11,7 +11,7 @@ describe('buildIntegrationGuide', () => {
                 actorSource: 'db',
                 actorProfileId: 'api-key',
                 domainId: 2,
-                scopes: ['content:write'],
+                scopes: ['admin'],
                 assignmentRefs: ['api_key:12', '12'],
             },
             apiKeys: [

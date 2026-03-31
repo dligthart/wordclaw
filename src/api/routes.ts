@@ -25,6 +25,12 @@ import {
 import { AIErrorResponse, DryRunQuery, createAIResponse } from './types.js';
 import { authenticateApiRequest, authorizeApiRequest, getDomainId } from './auth.js';
 import { createApiKey, listApiKeys, normalizeScopes, revokeApiKey, rotateApiKey } from '../services/api-key.js';
+import {
+    buildRuntimeEndpoints,
+    inferRuntimeOriginFromHeaders,
+    normalizePublicBaseUrl,
+    onboardTenant
+} from '../services/tenant-onboarding.js';
 import { createWebhook, deleteWebhook, getWebhookById, listWebhooks, normalizeWebhookEvents, parseWebhookEvents, updateWebhook, isSafeWebhookUrl } from '../services/webhook.js';
 import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from '../services/policy-adapters.js';
@@ -429,6 +435,22 @@ const DomainResponseSchema = Type.Object({
     name: Type.String(),
     hostname: Type.String(),
     createdAt: Type.String()
+});
+const OnboardTenantResponseSchema = Type.Object({
+    bootstrap: Type.Boolean(),
+    domain: DomainResponseSchema,
+    apiKey: Type.Object({
+        id: Type.Number(),
+        name: Type.String(),
+        keyPrefix: Type.String(),
+        scopes: Type.Array(Type.String()),
+        expiresAt: Type.Union([Type.String(), Type.Null()]),
+        apiKey: Type.String()
+    }),
+    endpoints: Type.Object({
+        api: Type.Union([Type.String(), Type.Null()]),
+        mcp: Type.Union([Type.String(), Type.Null()]),
+    }),
 });
 const JsonTextOrObjectSchema = Type.Union([Type.String(), Type.Object({}, { additionalProperties: true })]);
 const ContentTypeSchemaSourceBodySchema = {
@@ -1244,6 +1266,14 @@ function domainHostnameConflict(hostname: string): AIErrorPayload {
         'Domain hostname already exists',
         'DOMAIN_HOSTNAME_CONFLICT',
         `Choose a different hostname than '${hostname}'.`
+    );
+}
+
+function invalidPublicBaseUrl(): AIErrorPayload {
+    return toErrorPayload(
+        'Invalid public base URL',
+        'INVALID_PUBLIC_BASE_URL',
+        'Provide publicBaseUrl as an absolute http(s) URL such as https://kb.lightheart.tech.'
     );
 }
 
@@ -3598,6 +3628,142 @@ export default async function apiRoutes(server: FastifyInstance) {
             });
         } catch (error) {
             const err = error as { code?: string; constraint?: string };
+            if (err.code === '23505' || err.constraint === 'domains_hostname_unique') {
+                return reply.status(409).send(domainHostnameConflict(body.hostname));
+            }
+            throw error;
+        }
+    });
+
+    server.post('/onboard', {
+        schema: {
+            body: Type.Object({
+                tenantName: Type.String({ minLength: 1 }),
+                hostname: Type.String({ minLength: 1 }),
+                adminEmail: Type.Optional(Type.String({ format: 'email' })),
+                apiKeyName: Type.Optional(Type.String({ minLength: 1 })),
+                scopes: Type.Optional(Type.Array(Type.String())),
+                expiresAt: Type.Optional(Type.String({ format: 'date-time' })),
+                publicBaseUrl: Type.Optional(Type.String({ format: 'uri' }))
+            }),
+            response: {
+                201: createAIResponse(OnboardTenantResponseSchema),
+                400: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const body = request.body as {
+            tenantName: string;
+            hostname: string;
+            adminEmail?: string;
+            apiKeyName?: string;
+            scopes?: string[];
+            expiresAt?: string;
+            publicBaseUrl?: string;
+        };
+        const actorId = toAuditActorFromRequest(request as RequestActorCarrier);
+        const legacyActorUserId = toLegacyActorUserId(request as RequestActorCarrier);
+
+        let expiresAt: Date | null = null;
+        if (body.expiresAt) {
+            expiresAt = new Date(body.expiresAt);
+            if (Number.isNaN(expiresAt.getTime())) {
+                return reply.status(400).send(toErrorPayload(
+                    'Invalid expiresAt timestamp',
+                    'INVALID_EXPIRES_AT',
+                    'Provide expiresAt as an ISO-8601 date-time string.'
+                ));
+            }
+        }
+
+        let publicOrigin: string | null;
+        try {
+            publicOrigin = normalizePublicBaseUrl(body.publicBaseUrl) ?? inferRuntimeOriginFromHeaders(request.headers);
+        } catch {
+            return reply.status(400).send(invalidPublicBaseUrl());
+        }
+
+        try {
+            const created = await onboardTenant({
+                tenantName: body.tenantName,
+                hostname: body.hostname,
+                apiKeyName: body.apiKeyName,
+                scopes: body.scopes,
+                createdBy: legacyActorUserId ?? null,
+                expiresAt
+            });
+
+            await logAudit(
+                created.domain.id,
+                'create',
+                'domain',
+                created.domain.id,
+                {
+                    hostname: created.domain.hostname,
+                    onboardTenant: true,
+                    adminEmail: body.adminEmail ?? null
+                },
+                actorId,
+                request.id
+            );
+            await logAudit(
+                created.domain.id,
+                'create',
+                'api_key',
+                created.apiKey.id,
+                {
+                    authKeyCreated: true,
+                    onboardTenant: true,
+                    scopes: created.scopes,
+                    name: created.apiKey.name
+                },
+                actorId,
+                request.id
+            );
+
+            return reply.status(201).send({
+                data: {
+                    bootstrap: created.bootstrap,
+                    domain: {
+                        id: created.domain.id,
+                        name: created.domain.name,
+                        hostname: created.domain.hostname,
+                        createdAt: created.domain.createdAt.toISOString()
+                    },
+                    apiKey: {
+                        id: created.apiKey.id,
+                        name: created.apiKey.name,
+                        keyPrefix: created.apiKey.keyPrefix,
+                        scopes: created.scopes,
+                        expiresAt: created.apiKey.expiresAt ? created.apiKey.expiresAt.toISOString() : null,
+                        apiKey: created.plaintext
+                    },
+                    endpoints: buildRuntimeEndpoints(publicOrigin)
+                },
+                meta: buildMeta(
+                    'Store the initial admin key securely and hand it to the tenant operator through a secure channel.',
+                    ['GET /api/domains', 'GET /api/auth/keys', 'POST /api/content-types'],
+                    'high',
+                    1
+                )
+            });
+        } catch (error) {
+            const err = error as Error & { code?: string; constraint?: string };
+            if (err.message === 'EMPTY_ONBOARDING_SCOPES') {
+                return reply.status(400).send(toErrorPayload(
+                    'Invalid scopes',
+                    'INVALID_KEY_SCOPES',
+                    'Provide at least one scope for the initial tenant API key.'
+                ));
+            }
+            if (err.message.startsWith('Invalid scopes:')) {
+                return reply.status(400).send(toErrorPayload(
+                    'Invalid scopes',
+                    'INVALID_KEY_SCOPES',
+                    `Use only supported scopes: content:read, content:write, audit:read, admin. Details: ${err.message}`
+                ));
+            }
             if (err.code === '23505' || err.constraint === 'domains_hostname_unique') {
                 return reply.status(409).send(domainHostnameConflict(body.hostname));
             }

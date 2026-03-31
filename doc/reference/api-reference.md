@@ -14,7 +14,7 @@ The fastest task-oriented preflight sequence is:
 
 1. `GET /api/capabilities`
 2. `GET /api/deployment-status`
-   - if `domainCount` is `0`, bootstrap the first domain with `wordclaw domains create --name <value> --hostname <value>`, `POST /api/domains`, or MCP `create_domain`
+   - if `domainCount` is `0`, bootstrap the first domain with `wordclaw domains create --name <value> --hostname <value>`, `POST /api/domains`, `POST /api/onboard`, or MCP `create_domain`
    - CLI/MCP `wordclaw mcp call guide_task --json '{"taskId":"discover-deployment"}'` packages the same readiness snapshot into concrete next steps for bootstrap, write-actor auth posture, and vector-RAG readiness
 3. `GET /api/identity`
 4. `GET /api/workspace-context`
@@ -83,7 +83,7 @@ curl -H "x-api-key: writer" "http://localhost:4000/api/workspace-context?intent=
 
 ### 2. Bootstrapping the First Domain
 
-If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`. The CLI helper is `wordclaw domains create --name <value> --hostname <value>`, the MCP equivalent is `create_domain`, and the recommended bootstrap planner is `guide_task("bootstrap-workspace")` after `guide_task("discover-deployment")`.
+If the deployment is fresh and `GET /api/deployment-status` reports `domainCount: 0`, create the first domain before attempting content writes. Otherwise content-type and content-item writes fail with `NO_DOMAIN`. The CLI helper is `wordclaw domains create --name <value> --hostname <value>`, the MCP equivalent is `create_domain`, and the recommended bootstrap planner is `guide_task("bootstrap-workspace")` after `guide_task("discover-deployment")`. When the operator also needs the first tenant credential in the same step, use `POST /api/onboard` instead of `POST /api/domains`.
 
 **Request:**
 ```bash
@@ -106,6 +106,19 @@ curl -X POST http://localhost:4000/api/domains \
     "createdAt": "2026-03-29T09:00:00.000Z"
   }
 }
+```
+
+If you want the domain and its first admin API key together, call the onboarding route instead:
+
+```bash
+curl -X POST http://localhost:4000/api/onboard \
+  -H "x-api-key: admin" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantName": "Local Development",
+    "hostname": "local.development",
+    "adminEmail": "ops@example.test"
+  }'
 ```
 
 ### 3. Creating Content (Authoring)

@@ -22,6 +22,24 @@
         lastUsedAt: string | null;
     };
 
+    type RevealedCredential = {
+        name: string;
+        apiKey: string;
+        description: string;
+        scopes?: string[];
+        bootstrap?: boolean;
+        domain?: {
+            id: number;
+            name: string;
+            hostname: string;
+            createdAt: string;
+        };
+        endpoints?: {
+            api: string | null;
+            mcp: string | null;
+        };
+    };
+
     let keys = $state<ApiKey[]>([]);
     let loading = $state(true);
     let error = $state<string | null>(null);
@@ -30,8 +48,14 @@
     let newKeyScopes = $state<string[]>(["content:read", "content:write"]);
     let showNewKeyModal = $state(false);
     let creating = $state(false);
+    let showOnboardModal = $state(false);
+    let onboarding = $state(false);
+    let onboardTenantName = $state("");
+    let onboardHostname = $state("");
+    let onboardAdminEmail = $state("");
+    let onboardApiKeyName = $state("");
 
-    let generatedKey = $state<{ name: string; apiKey: string } | null>(null);
+    let revealedCredential = $state<RevealedCredential | null>(null);
     let activeKeys = $derived.by(() =>
         keys.filter((key) => !key.revokedAt),
     );
@@ -98,7 +122,11 @@
                     scopes: newKeyScopes,
                 }),
             });
-            generatedKey = { name: res.data.name, apiKey: res.data.apiKey };
+            revealedCredential = {
+                name: res.data.name,
+                apiKey: res.data.apiKey,
+                description: `This is the only time the API key for ${res.data.name} will be shown. Treat it like a password.`,
+            };
             showNewKeyModal = false;
             newKeyName = "";
             newKeyScopes = ["content:read", "content:write"];
@@ -115,6 +143,67 @@
             newKeyScopes = newKeyScopes.filter((s) => s !== scope);
         } else {
             newKeyScopes = [...newKeyScopes, scope];
+        }
+    }
+
+    function resetOnboardingForm() {
+        onboardTenantName = "";
+        onboardHostname = "";
+        onboardAdminEmail = "";
+        onboardApiKeyName = "";
+    }
+
+    function switchSupervisorDomain(domainId: number) {
+        if (typeof window === "undefined") return;
+
+        const nextDomainId = String(domainId);
+        localStorage.setItem("__wc_domain_id", nextDomainId);
+        window.dispatchEvent(
+            new CustomEvent("wordclaw:domains-changed", {
+                detail: { selectDomainId: nextDomainId },
+            }),
+        );
+    }
+
+    async function createTenant() {
+        if (!onboardTenantName.trim() || !onboardHostname.trim()) return;
+
+        onboarding = true;
+        error = null;
+
+        try {
+            const res = await fetchApi("/onboard", {
+                method: "POST",
+                body: JSON.stringify({
+                    tenantName: onboardTenantName,
+                    hostname: onboardHostname,
+                    adminEmail: onboardAdminEmail.trim() || undefined,
+                    apiKeyName: onboardApiKeyName.trim() || undefined,
+                }),
+            });
+
+            switchSupervisorDomain(res.data.domain.id);
+            revealedCredential = {
+                name: res.data.apiKey.name,
+                apiKey: res.data.apiKey.apiKey,
+                description: `This initial admin key for ${res.data.domain.name} will only be shown once. Store it securely before handing it to the tenant operator.`,
+                scopes: res.data.apiKey.scopes,
+                bootstrap: res.data.bootstrap,
+                domain: res.data.domain,
+                endpoints: res.data.endpoints,
+            };
+            showOnboardModal = false;
+            resetOnboardingForm();
+            feedbackStore.pushToast({
+                severity: "success",
+                title: "Tenant provisioned",
+                message: `Switched supervisor context to ${res.data.domain.name}.`,
+            });
+            await loadKeys();
+        } catch (err: any) {
+            error = err.message || "Failed to onboard tenant";
+        } finally {
+            onboarding = false;
         }
     }
 
@@ -161,9 +250,10 @@
                     const res = await fetchApi(`/auth/keys/${id}`, {
                         method: "PUT",
                     });
-                    generatedKey = {
+                    revealedCredential = {
                         name: "Rotated Key",
                         apiKey: res.data.apiKey,
+                        description: "The previous secret is no longer valid. Store this replacement key securely before closing this dialog.",
                     };
                     feedbackStore.pushToast({
                         severity: "success",
@@ -197,7 +287,7 @@
 </svelte:head>
 
 <!-- Generate Key Result Modal -->
-{#if generatedKey}
+{#if revealedCredential}
     <div
         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75"
     >
@@ -210,35 +300,89 @@
                         New secret
                     </p>
                     <h3 class="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                Save this API Key
+                        Save this API Key
                     </h3>
                 </div>
                 <Badge variant="warning">Shown once</Badge>
             </div>
             <p class="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                This is the only time the API key for
-                <strong class="text-slate-700 dark:text-slate-200">{generatedKey.name}</strong>
-                will be shown. Treat it like a password.
+                {revealedCredential.description}
             </p>
             <div
                 class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60"
             >
                 <code
                     class="block break-all font-mono text-sm text-slate-800 select-all dark:text-slate-200"
-                    >{generatedKey.apiKey}</code
+                    >{revealedCredential.apiKey}</code
                 >
             </div>
+            {#if revealedCredential.scopes?.length}
+                <div class="mt-4">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Initial scopes
+                    </p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        {#each revealedCredential.scopes as scope}
+                            <Badge variant="muted" class="font-mono normal-case text-[0.65rem]">{scope}</Badge>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+            {#if revealedCredential.domain}
+                <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/50">
+                    <div class="flex items-start justify-between gap-4 flex-wrap">
+                        <div>
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                Tenant
+                            </p>
+                            <h4 class="mt-2 text-base font-semibold text-slate-900 dark:text-white">
+                                {revealedCredential.domain.name}
+                            </h4>
+                            <p class="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">
+                                {revealedCredential.domain.hostname}
+                            </p>
+                        </div>
+                        <Badge variant={revealedCredential.bootstrap ? "info" : "outline"}>
+                            {revealedCredential.bootstrap ? "Bootstrap domain" : "Additional tenant"}
+                        </Badge>
+                    </div>
+                    {#if revealedCredential.endpoints?.api || revealedCredential.endpoints?.mcp}
+                        <div class="mt-4 grid gap-3">
+                            {#if revealedCredential.endpoints?.api}
+                                <div>
+                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                        API endpoint
+                                    </p>
+                                    <code class="mt-1 block break-all rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800 select-all dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                                        {revealedCredential.endpoints.api}
+                                    </code>
+                                </div>
+                            {/if}
+                            {#if revealedCredential.endpoints?.mcp}
+                                <div>
+                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                                        MCP endpoint
+                                    </p>
+                                    <code class="mt-1 block break-all rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800 select-all dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                                        {revealedCredential.endpoints.mcp}
+                                    </code>
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
+                </div>
+            {/if}
             <div class="mt-6 flex justify-end gap-3">
                 <Button
                     onclick={() => {
-                        navigator.clipboard.writeText(generatedKey!.apiKey);
+                        navigator.clipboard.writeText(revealedCredential!.apiKey);
                     }}
                 >
                     Copy to Clipboard
                 </Button>
                 <Button
                     variant="secondary"
-                    onclick={() => (generatedKey = null)}
+                    onclick={() => (revealedCredential = null)}
                 >
                     Close
                 </Button>
@@ -254,7 +398,7 @@
                 API Keys
             </h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Manage credentials for agents and operator integrations.
+                Manage credentials for agents and operator integrations, and provision initial tenant admin access.
             </p>
             <div class="mt-3 flex flex-wrap gap-2">
                 <Badge variant="outline">{activeKeyCount} active</Badge>
@@ -263,12 +407,21 @@
                 {/if}
             </div>
         </div>
-        <Button
-            onclick={() => (showNewKeyModal = true)}
-        >
-            <Icon src={Plus} class="w-5 h-5" />
-            Create Key
-        </Button>
+        <div class="flex flex-wrap gap-3">
+            <Button
+                variant="outline"
+                onclick={() => (showOnboardModal = true)}
+            >
+                <Icon src={Key} class="w-5 h-5" />
+                Onboard Tenant
+            </Button>
+            <Button
+                onclick={() => (showNewKeyModal = true)}
+            >
+                <Icon src={Plus} class="w-5 h-5" />
+                Create Key
+            </Button>
+        </div>
     </div>
 
     <!-- Create Key Modal -->
@@ -350,6 +503,131 @@
                             Saving...
                         {:else}
                             Create Key
+                        {/if}
+                    </Button>
+                </div>
+            </div>
+        </div>
+    {/if}
+
+    {#if showOnboardModal}
+        <div
+            class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50"
+        >
+            <div
+                class="mx-4 w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-950"
+            >
+                <div
+                    class="flex items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-700"
+                >
+                    <div>
+                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white">
+                            Onboard Tenant
+                        </h3>
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            Create a new domain and issue its first admin credential in one step.
+                        </p>
+                    </div>
+                    <button
+                        aria-label="Close dialog"
+                        onclick={() => {
+                            showOnboardModal = false;
+                            resetOnboardingForm();
+                        }}
+                        class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+                    >
+                        <Icon src={XMark} class="w-5 h-5" />
+                    </button>
+                </div>
+                <div class="px-6 py-4 space-y-4">
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <div>
+                            <label
+                                for="tenantName"
+                                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                >Tenant Name</label
+                            >
+                            <Input
+                                id="tenantName"
+                                bind:value={onboardTenantName}
+                                type="text"
+                                placeholder="e.g. ACME Publishing"
+                            />
+                        </div>
+                        <div>
+                            <label
+                                for="tenantHostname"
+                                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                >Hostname</label
+                            >
+                            <Input
+                                id="tenantHostname"
+                                bind:value={onboardHostname}
+                                type="text"
+                                placeholder="acme.example.com"
+                            />
+                        </div>
+                    </div>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <div>
+                            <label
+                                for="tenantAdminEmail"
+                                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                >Operator Email</label
+                            >
+                            <Input
+                                id="tenantAdminEmail"
+                                bind:value={onboardAdminEmail}
+                                type="email"
+                                placeholder="ops@acme.example.com"
+                            />
+                        </div>
+                        <div>
+                            <label
+                                for="tenantApiKeyName"
+                                class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                >Initial Key Name</label
+                            >
+                            <Input
+                                id="tenantApiKeyName"
+                                bind:value={onboardApiKeyName}
+                                type="text"
+                                placeholder="Defaults to &quot;Tenant Admin&quot;"
+                            />
+                        </div>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                            Initial credential
+                        </p>
+                        <p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                            The first key is provisioned with
+                            <code class="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.72rem] text-slate-800 dark:bg-slate-800 dark:text-slate-200">admin</code>
+                            scope so the tenant operator can complete setup. The raw secret is shown once after provisioning.
+                        </p>
+                    </div>
+                </div>
+                <div
+                    class="flex justify-end gap-3 border-t border-slate-200 bg-slate-50/80 px-6 py-4 dark:border-slate-700 dark:bg-slate-900/40"
+                >
+                    <Button
+                        onclick={() => {
+                            showOnboardModal = false;
+                            resetOnboardingForm();
+                        }}
+                        variant="outline"
+                    >Cancel</Button>
+                    <Button
+                        onclick={createTenant}
+                        disabled={!onboardTenantName.trim() ||
+                            !onboardHostname.trim() ||
+                            onboarding}
+                    >
+                        {#if onboarding}
+                            <LoadingSpinner size="sm" color="white" />
+                            Provisioning...
+                        {:else}
+                            Create Tenant
                         {/if}
                     </Button>
                 </div>

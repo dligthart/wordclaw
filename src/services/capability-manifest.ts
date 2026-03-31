@@ -488,7 +488,7 @@ export function buildCapabilityManifest() {
                 recommendedAuth: 'api-key-or-supervisor',
                 preferredActorProfile: 'api-key',
                 supportedActorProfiles: ['api-key', 'env-key', 'supervisor-session', 'mcp-local'],
-                recommendedApiKeyScopes: ['content:write'],
+                recommendedApiKeyScopes: ['admin'],
                 requiredModules: ['api-keys-webhooks'],
                 dryRunRecommended: false,
                 steps: [

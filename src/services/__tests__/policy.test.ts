@@ -64,4 +64,43 @@ describe('PolicyEngine Multi-Tenant Isolation', () => {
         expect(result.outcome).toBe('deny');
         expect(result.code).toBe('POLICY_RESOURCE_DOMAIN_UNRESOLVED');
     });
+
+    it('denies API key management without admin-grade scope', async () => {
+        const context: OperationContext = {
+            principal: { id: 'user1', domainId: 2, scopes: ['content:write'], source: 'db' },
+            operation: 'apikey.write',
+            resource: { type: 'system' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('deny');
+        expect(result.code).toBe('ADMIN_REQUIRED');
+    });
+
+    it('allows API key management for admin-grade actors', async () => {
+        const context: OperationContext = {
+            principal: { id: 'admin1', domainId: 2, scopes: ['content:write', 'admin'], source: 'db' },
+            operation: 'apikey.write',
+            resource: { type: 'system' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('allow');
+        expect(result.code).toBe('ALLOWED_ADMIN');
+    });
+
+    it('denies tenant onboarding without admin-grade scope', async () => {
+        const context: OperationContext = {
+            principal: { id: 'user1', domainId: 2, scopes: ['content:write'], source: 'db' },
+            operation: 'tenant.onboard',
+            resource: { type: 'system' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('deny');
+        expect(result.code).toBe('ADMIN_REQUIRED');
+    });
 });

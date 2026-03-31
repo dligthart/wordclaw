@@ -1218,6 +1218,70 @@ describe('MCP HTTP transport', () => {
         expect(extractFirstText(purgeResult.content as Array<{ type: string; text?: string }>)).toContain('ADMIN_REQUIRED');
     });
 
+    it('blocks create_api_key for non-admin actors', async () => {
+        process.env.API_KEYS = 'writer=content:write';
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-http-api-key-admin-test',
+            version: '1.0.0'
+        });
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'writer'
+                }
+            }
+        });
+
+        await client.connect(transport);
+
+        const createResult = await client.callTool({
+            name: 'create_api_key',
+            arguments: {
+                name: 'Blocked Key',
+                scopes: ['content:read']
+            }
+        });
+
+        expect(createResult.isError).toBe(true);
+        expect(extractFirstText(createResult.content as Array<{ type: string; text?: string }>)).toContain('ADMIN_REQUIRED');
+    });
+
+    it('blocks onboard_tenant for non-admin actors', async () => {
+        process.env.API_KEYS = 'writer=content:write';
+        app = await buildServer();
+        const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+
+        client = new Client({
+            name: 'wordclaw-http-onboard-admin-test',
+            version: '1.0.0'
+        });
+
+        const transport = new StreamableHTTPClientTransport(new URL('/mcp', `${baseUrl}/`), {
+            requestInit: {
+                headers: {
+                    'x-api-key': 'writer'
+                }
+            }
+        });
+
+        await client.connect(transport);
+
+        const onboardResult = await client.callTool({
+            name: 'onboard_tenant',
+            arguments: {
+                tenantName: 'Blocked Tenant',
+                hostname: 'blocked.example'
+            }
+        });
+
+        expect(onboardResult.isError).toBe(true);
+        expect(extractFirstText(onboardResult.content as Array<{ type: string; text?: string }>)).toContain('ADMIN_REQUIRED');
+    });
+
     it('returns actor-aware reactive recommendations in task guidance payloads', async () => {
         app = await buildServer();
         const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });

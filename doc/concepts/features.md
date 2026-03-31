@@ -56,7 +56,7 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 - **Forms Workspace** — Configure reusable public forms, inspect their sanitized public contract, and send test submissions through the same REST path external clients use.
 - **Jobs Workspace** — Inspect worker health, browse queued/running/completed jobs, enqueue generic background work, and schedule content status changes without dropping to the CLI.
 - **Approval Queue** — Review and decide pending workflow items.
-- **API Keys** — Provision, rotate, and revoke API credentials for agents and operator integrations.
+- **API Keys and Tenant Bootstrap** — Provision, rotate, and revoke API credentials for agents and operator integrations, and onboard a tenant by creating its domain plus first admin key in one step.
 - **Asset Library** — Upload assets, inspect delivery policy, preview image content, and manage delete/restore/purge lifecycle without dropping to the CLI.
 
 ## Tier 2: Optional Modules

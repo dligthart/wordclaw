@@ -98,12 +98,12 @@ export function buildIntegrationGuide(options: {
         'supervisor-session',
         'mcp-local',
     ];
-    const requiredScopes = ['content:write'];
+    const requiredScopes = ['admin', 'tenant:admin'];
     const supportedActorProfile = currentActor
         ? requiredActorProfiles.includes(currentActor.actorProfileId as typeof requiredActorProfiles[number])
         : false;
     const requiredScopesSatisfied = currentActor
-        ? currentActor.scopes.includes('admin') || requiredScopes.every((scope) => currentActor.scopes.includes(scope))
+        ? requiredScopes.some((scope) => currentActor.scopes.includes(scope))
         : false;
     const actorReadinessNotes: string[] = [];
 
@@ -115,7 +115,7 @@ export function buildIntegrationGuide(options: {
             actorReadinessNotes.push('Integration management requires an API key, supervisor session, or local MCP actor profile.');
         }
         if (!requiredScopesSatisfied) {
-            actorReadinessNotes.push('The current actor is missing content:write or admin scope for API-key and webhook mutations.');
+            actorReadinessNotes.push('The current actor is missing admin or tenant:admin scope for API-key and webhook mutations.');
         }
         if (currentActor.actorProfileId === 'env-key') {
             actorReadinessNotes.push('Environment-configured API keys are best suited for local or single-domain deployments.');
