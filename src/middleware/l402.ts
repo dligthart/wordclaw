@@ -5,6 +5,7 @@ import MacaroonsVerifier from 'macaroons.js/lib/MacaroonsVerifier';
 import {
   Invoice,
   PaymentProvider,
+  PaymentProviderUnavailableError,
   PaymentVerificationResult,
   ProviderPaymentStatus
 } from '../interfaces/payment-provider.js';
@@ -60,6 +61,7 @@ export interface L402Options {
 
 export interface L402EnforcementResult {
   ok: boolean;
+  statusCode?: number;
   paymentConsumed?: boolean;
   mustChallenge?: boolean;
   challengeHeaders?: Record<string, string>;
@@ -88,6 +90,18 @@ type MacaroonExpectations = {
   domainId: number;
   amountSatoshis: number;
 };
+
+function toProviderUnavailableResult(error: PaymentProviderUnavailableError): L402EnforcementResult {
+  return {
+    ok: false,
+    statusCode: 503,
+    errorPayload: {
+      error: 'Payment provider unavailable',
+      code: error.code,
+      remediation: error.message
+    }
+  };
+}
 
 function getRequestPath(requestDetails: RequestDetails): string {
   const rawPath = requestDetails.path ?? '/api';
@@ -282,6 +296,23 @@ export async function enforceL402Payment(
   authHeader: string | undefined,
   requestDetails: RequestDetails = {}
 ): Promise<L402EnforcementResult> {
+  const createChallengeResult = async (reason: L402ChallengeReason): Promise<L402EnforcementResult> => {
+    try {
+      const challenge = await createL402Challenge(options, context, requestDetails, requiredPrice, reason);
+      return {
+        ok: false,
+        mustChallenge: true,
+        challengeHeaders: challenge.headers,
+        errorPayload: challenge.payload
+      };
+    } catch (error) {
+      if (error instanceof PaymentProviderUnavailableError) {
+        return toProviderUnavailableResult(error);
+      }
+      throw error;
+    }
+  };
+
   const requiredPriceRaw = await options.getPrice(context);
 
   if (requiredPriceRaw === null || requiredPriceRaw <= 0) {
@@ -332,16 +363,18 @@ export async function enforceL402Payment(
       }
 
       if (initialState === 'expired' || initialState === 'failed') {
-        const challenge = await createL402Challenge(options, context, requestDetails, requiredPrice, initialState);
-        return {
-          ok: false,
-          mustChallenge: true,
-          challengeHeaders: challenge.headers,
-          errorPayload: challenge.payload
-        };
+        return createChallengeResult(initialState);
       }
 
-      const verification = await options.provider.verifyPayment(paymentHash, parsedCredentials.preimage);
+      let verification;
+      try {
+        verification = await options.provider.verifyPayment(paymentHash, parsedCredentials.preimage);
+      } catch (error) {
+        if (error instanceof PaymentProviderUnavailableError) {
+          return toProviderUnavailableResult(error);
+        }
+        throw error;
+      }
 
       if (options.onPaymentStatusObserved) {
         await options.onPaymentStatusObserved(paymentHash, verification.status, requestDetails, verification);
@@ -363,40 +396,16 @@ export async function enforceL402Payment(
       }
 
       if (verification.status === 'expired' || verification.status === 'failed') {
-        const challenge = await createL402Challenge(options, context, requestDetails, requiredPrice, verification.status);
-        return {
-          ok: false,
-          mustChallenge: true,
-          challengeHeaders: challenge.headers,
-          errorPayload: challenge.payload
-        };
+        return createChallengeResult(verification.status);
       }
 
-      const pendingChallenge = await createL402Challenge(options, context, requestDetails, requiredPrice, 'pending');
-      return {
-        ok: false,
-        mustChallenge: true,
-        challengeHeaders: pendingChallenge.headers,
-        errorPayload: pendingChallenge.payload
-      };
+      return createChallengeResult('pending');
     }
 
-    const invalidChallenge = await createL402Challenge(options, context, requestDetails, requiredPrice, 'invalid');
-    return {
-      ok: false,
-      mustChallenge: true,
-      challengeHeaders: invalidChallenge.headers,
-      errorPayload: invalidChallenge.payload
-    };
+    return createChallengeResult('invalid');
   }
 
-  const challenge = await createL402Challenge(options, context, requestDetails, requiredPrice, 'initial');
-  return {
-    ok: false,
-    mustChallenge: true,
-    challengeHeaders: challenge.headers,
-    errorPayload: challenge.payload
-  };
+  return createChallengeResult('initial');
 }
 
 export function l402Middleware(options: L402Options) {
@@ -484,6 +493,12 @@ export function l402Middleware(options: L402Options) {
 
     if (result.paymentConsumed) {
       reply.status(403);
+      reply.send(result.errorPayload);
+      return reply;
+    }
+
+    if (result.statusCode === 503) {
+      reply.status(503);
       reply.send(result.errorPayload);
       return reply;
     }

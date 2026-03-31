@@ -6,11 +6,13 @@ import { contentItems, contentTypes, entitlements, offers, payments } from '../d
 import { PaymentProvider, ProviderPaymentStatus } from '../interfaces/payment-provider.js';
 import { L402Options, PricingContext } from '../middleware/l402.js';
 import { LicensingService } from './licensing.js';
+import { DisabledPaymentProvider } from './disabled-payment-provider.js';
 import { LnbitsPaymentProvider } from './lnbits-payment-provider.js';
 import { MockPaymentProvider } from './mock-payment-provider.js';
 import { paymentFlowMetrics } from './payment-metrics.js';
 import { getPaymentByHash, transitionPaymentStatus } from './payment-ledger.js';
 import { type ActorIdentity } from './actor-identity.js';
+import { isProductionEnvironment, resolvePaymentProviderName } from '../config/runtime-environment.js';
 
 const SAFE_PAYMENT_HEADER_ALLOWLIST = new Set([
   'user-agent',
@@ -96,20 +98,29 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return Math.floor(parsed);
 }
 
-function buildPaymentProvider(): PaymentProvider {
-  const providerName = (process.env.PAYMENT_PROVIDER || (process.env.NODE_ENV === 'production' ? 'lnbits' : 'mock')).toLowerCase();
+type ResolvedL402Runtime = {
+  provider: PaymentProvider;
+  secretKey: string;
+};
+
+function buildPaymentProvider(env: NodeJS.ProcessEnv = process.env): PaymentProvider {
+  const providerName = resolvePaymentProviderName(env);
 
   if (providerName === 'mock') {
-    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_MOCK_PROVIDER_IN_PRODUCTION !== 'true') {
+    if (isProductionEnvironment(env) && env.ALLOW_MOCK_PROVIDER_IN_PRODUCTION !== 'true') {
       throw new Error("Mock payment provider is blocked in production. Set PAYMENT_PROVIDER=lnbits or explicitly ALLOW_MOCK_PROVIDER_IN_PRODUCTION=true for controlled testing.");
     }
 
     return new MockPaymentProvider();
   }
 
+  if (providerName === 'disabled') {
+    return new DisabledPaymentProvider();
+  }
+
   if (providerName === 'lnbits') {
-    const baseUrl = process.env.LNBITS_BASE_URL;
-    const adminKey = process.env.LNBITS_ADMIN_KEY;
+    const baseUrl = env.LNBITS_BASE_URL;
+    const adminKey = env.LNBITS_ADMIN_KEY;
     if (!baseUrl || !adminKey) {
       throw new Error('LNBITS_BASE_URL and LNBITS_ADMIN_KEY are required when PAYMENT_PROVIDER=lnbits');
     }
@@ -117,24 +128,48 @@ function buildPaymentProvider(): PaymentProvider {
     return new LnbitsPaymentProvider({
       baseUrl,
       adminKey,
-      invoiceExpirySeconds: parsePositiveInt(process.env.L402_INVOICE_EXPIRY_SECONDS, 3600),
-      timeoutMs: parsePositiveInt(process.env.PAYMENT_PROVIDER_TIMEOUT_MS, 10000)
+      invoiceExpirySeconds: parsePositiveInt(env.L402_INVOICE_EXPIRY_SECONDS, 3600),
+      timeoutMs: parsePositiveInt(env.PAYMENT_PROVIDER_TIMEOUT_MS, 10000)
     });
   }
 
   throw new Error(`Unsupported PAYMENT_PROVIDER '${providerName}'. Supported providers: mock, lnbits`);
 }
 
-const paymentProvider = buildPaymentProvider();
+function resolveL402Secret(env: NodeJS.ProcessEnv = process.env): string {
+  if (resolvePaymentProviderName(env) === 'disabled') {
+    return 'l402-disabled-provider';
+  }
 
-let l402Secret = process.env.L402_SECRET;
-if (!l402Secret) {
-  if (process.env.NODE_ENV === 'production') {
+  const configuredSecret = env.L402_SECRET?.trim();
+  if (configuredSecret) {
+    return configuredSecret;
+  }
+
+  if (isProductionEnvironment(env)) {
     throw new Error('L402_SECRET environment variable is strictly required in production.');
   }
 
-  l402Secret = crypto.randomBytes(32).toString('hex');
+  const generatedSecret = crypto.randomBytes(32).toString('hex');
   console.warn('[WARNING] L402_SECRET is not set. Generated ephemeral secret for development.');
+  return generatedSecret;
+}
+
+let cachedL402Runtime: ResolvedL402Runtime | null = null;
+
+function resolveL402Runtime(): ResolvedL402Runtime {
+  if (!cachedL402Runtime) {
+    cachedL402Runtime = {
+      provider: buildPaymentProvider(),
+      secretKey: resolveL402Secret()
+    };
+  }
+
+  return cachedL402Runtime;
+}
+
+function getPaymentProvider(): PaymentProvider {
+  return resolveL402Runtime().provider;
 }
 
 async function applyProviderStatusObservation(
@@ -148,6 +183,8 @@ async function applyProviderStatusObservation(
     failureReason?: string | null;
   }
 ): Promise<void> {
+  const paymentProvider = getPaymentProvider();
+
   if (status === 'pending') {
     return;
   }
@@ -216,8 +253,12 @@ async function markConsumed(paymentHash: string): Promise<void> {
 }
 
 export const globalL402Options: L402Options = {
-  provider: paymentProvider,
-  secretKey: l402Secret,
+  get provider() {
+    return getPaymentProvider();
+  },
+  get secretKey() {
+    return resolveL402Runtime().secretKey;
+  },
 
   getPrice: async (context: PricingContext): Promise<number | null> => {
     const domainId = getDomainIdFromContext(context);
@@ -326,6 +367,7 @@ export const globalL402Options: L402Options = {
 
   onPaymentVerified: async (paymentHash, requestDetails, verification) => {
     const existing = await getPaymentByHash(paymentHash);
+    const paymentProvider = getPaymentProvider();
     await transitionPaymentStatus(paymentHash, 'paid', {
       providerName: paymentProvider.providerName,
       providerInvoiceId: verification.providerInvoiceId ?? null,

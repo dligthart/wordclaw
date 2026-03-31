@@ -6633,6 +6633,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 })),
                 400: AIErrorResponse,
                 402: Type.Any(),
+                503: AIErrorResponse,
                 404: AIErrorResponse,
                 409: AIErrorResponse,
             }
@@ -6674,6 +6675,14 @@ export default async function apiRoutes(server: FastifyInstance) {
             if (!enforcement.ok) {
                 for (const [header, value] of Object.entries(enforcement.challengeHeaders ?? {})) {
                     reply.header(header, value);
+                }
+
+                if (enforcement.statusCode === 503) {
+                    return reply.status(503).send(enforcement.errorPayload ?? toErrorPayload(
+                        'Payment provider unavailable',
+                        'PAYMENT_PROVIDER_UNAVAILABLE',
+                        'Enable a payment provider before accepting paid form submissions.'
+                    ));
                 }
 
                 return reply.status(402).send(enforcement.errorPayload ?? toErrorPayload(
@@ -7933,6 +7942,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 400: AIErrorResponse,
                 402: AIErrorResponse,
                 403: AIErrorResponse,
+                503: AIErrorResponse,
                 404: AIErrorResponse,
                 409: AIErrorResponse
             }
@@ -8040,7 +8050,16 @@ export default async function apiRoutes(server: FastifyInstance) {
             });
         }
 
-        const verification = await globalL402Options.provider.verifyPayment(targetEntitlement.paymentHash, credentials.preimage);
+        let verification;
+        try {
+            verification = await globalL402Options.provider.verifyPayment(targetEntitlement.paymentHash, credentials.preimage);
+        } catch (error) {
+            return reply.status(503).send(toErrorPayload(
+                'Payment provider unavailable',
+                'PAYMENT_PROVIDER_UNAVAILABLE',
+                `Unable to verify Lightning payment: ${(error as Error).message}`
+            ));
+        }
         if (verification.status === 'pending') {
             return reply.status(402).send(toErrorPayload(
                 'Payment settlement pending',
