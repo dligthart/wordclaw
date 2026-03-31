@@ -1,5 +1,14 @@
 export type ProviderPaymentStatus = 'pending' | 'paid' | 'expired' | 'failed';
 
+export class PaymentProviderUnavailableError extends Error {
+  readonly code = 'PAYMENT_PROVIDER_UNAVAILABLE';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'PaymentProviderUnavailableError';
+  }
+}
+
 export interface Invoice {
   id: string;
   provider: string;

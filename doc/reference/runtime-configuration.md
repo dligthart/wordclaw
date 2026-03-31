@@ -18,10 +18,13 @@ Use this page as the durable reference for what the runtime actually honors.
 | `AUTH_REQUIRED` | `true` | Requires API-key auth on `/api` routes |
 | `ALLOW_INSECURE_LOCAL_ADMIN` | `false` | Local-only escape hatch for manual development without API keys |
 | `API_KEYS` | `writer=content:read|content:write|audit:read,reader=content:read|audit:read` | Comma-separated key to scope map |
+| `JWT_SECRET` | unset | Supervisor-session JWT signing secret |
+| `COOKIE_SECRET` | unset | Supervisor-session cookie signing secret |
 
 Notes:
 
 - `AUTH_REQUIRED=false` only relaxes public discovery. Write-capable routes still require a credential unless `ALLOW_INSECURE_LOCAL_ADMIN=true` is also enabled in a non-production environment.
+- In production, both `JWT_SECRET` and `COOKIE_SECRET` are strictly required.
 - Fresh installs still need a first domain before content-type or content-item writes will succeed. Check `GET /api/deployment-status`, `wordclaw capabilities status`, or call `guide_task("bootstrap-workspace")` to see whether bootstrap is still blocked, then bootstrap with `wordclaw domains create`, MCP `create_domain`, or REST `POST /api/domains`.
 
 ## Semantic Search and Embeddings
@@ -76,16 +79,31 @@ Notes:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PAYMENT_PROVIDER` | `mock` in development, `lnbits` in production | Payment backend |
+| `PAYMENT_PROVIDER` | `mock` in development, `disabled` in production | Payment backend |
 | `PAYMENT_PROVIDER_TIMEOUT_MS` | `10000` | Provider request timeout |
+| `L402_SECRET` | unset | Signing secret for L402 macaroons |
 | `LNBITS_BASE_URL` | unset | LNBits base URL when `PAYMENT_PROVIDER=lnbits` |
 | `LNBITS_ADMIN_KEY` | unset | LNBits admin key when `PAYMENT_PROVIDER=lnbits` |
 | `ALLOW_MOCK_PROVIDER_IN_PRODUCTION` | `false` | Controlled testing override for mock provider in production |
 
 Notes:
 
+- In production, `L402_SECRET` is required only when `PAYMENT_PROVIDER=lnbits` or `PAYMENT_PROVIDER=mock`.
 - In production, the mock provider is blocked unless `ALLOW_MOCK_PROVIDER_IN_PRODUCTION=true` is explicitly set.
 - When `PAYMENT_PROVIDER=lnbits`, both `LNBITS_BASE_URL` and `LNBITS_ADMIN_KEY` are required.
+- When `PAYMENT_PROVIDER` is unset in production, WordClaw defaults to `disabled`, which allows the runtime to boot while returning deterministic `PAYMENT_PROVIDER_UNAVAILABLE` errors for L402-protected flows.
+
+## Documentation Surfaces
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ENABLE_DOCS` | `false` in production, `true` otherwise | Enables the Swagger UI at `/documentation` |
+| `ENABLE_GRAPHIQL` | `false` in production, `true` otherwise | Enables GraphiQL |
+
+Notes:
+
+- Production deployments return `404` for `/documentation` unless `ENABLE_DOCS=true`.
+- The published GHCR image includes built supervisor UI assets at `/ui`. Source-checkout API runs still require `npm --prefix ui run build` when you want the Fastify process to serve the UI directly.
 
 ## Experimental Modules
 

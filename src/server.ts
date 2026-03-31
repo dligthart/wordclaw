@@ -27,6 +27,7 @@ import { buildOperationContext } from './services/policy-adapters.js';
 import { parseSupervisorDomainHeader } from './api/domain-context.js';
 import { buildSupervisorPrincipal, type ActorPrincipal } from './services/actor-identity.js';
 import { McpHttpSessionManager } from './mcp/http-session-manager.js';
+import { assertValidRuntimeEnvironment } from './config/runtime-environment.js';
 
 function readRequestIdHeader(raw: string | string[] | undefined): string | null {
     if (typeof raw === 'string' && raw.trim().length > 0) {
@@ -188,6 +189,8 @@ async function resolveInteractivePrincipal(request: {
 }
 
 export async function buildServer(): Promise<FastifyInstance> {
+    assertValidRuntimeEnvironment();
+
     const server: FastifyInstance = Fastify({
         logger: true,
         genReqId: (request) => readRequestIdHeader(request.headers['x-request-id']) || randomUUID()

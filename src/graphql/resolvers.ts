@@ -1190,7 +1190,18 @@ function withPolicy(
             );
 
             if (!l402Result.ok) {
-                if (l402Result.mustChallenge && l402Result.challengeHeaders) {
+                if (l402Result.statusCode === 503 && l402Result.errorPayload) {
+                    const l402ErrorPayload = l402Result.errorPayload as {
+                        code?: string;
+                        error?: string;
+                        remediation?: string;
+                    };
+                    throw toError(
+                        'Payment Provider Unavailable',
+                        l402ErrorPayload.code || 'PAYMENT_PROVIDER_UNAVAILABLE',
+                        l402ErrorPayload.remediation || l402ErrorPayload.error || 'Payment processing is not available in this deployment.'
+                    );
+                } else if (l402Result.mustChallenge && l402Result.challengeHeaders) {
                     const authenticateHeader = l402Result.challengeHeaders['WWW-Authenticate'] || '';
                     const macaroonMatch = /macaroon="([^"]+)"/.exec(authenticateHeader);
                     const invoiceMatch = /invoice="([^"]+)"/.exec(authenticateHeader);
