@@ -1,3 +1,10 @@
+# [1.40.0](https://github.com/dligthart/wordclaw/compare/v1.39.1...v1.40.0) (2026-03-31)
+
+
+### Features
+
+* harden platform admin and supervisor scoping ([1d7f03d](https://github.com/dligthart/wordclaw/commit/1d7f03d2d8d431ac3ff115044047ff5552958ced))
+
 ## [1.39.1](https://github.com/dligthart/wordclaw/compare/v1.39.0...v1.39.1) (2026-03-31)
 
 
