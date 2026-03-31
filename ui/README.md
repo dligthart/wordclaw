@@ -69,4 +69,6 @@ In production, set `SETUP_TOKEN` and pass it as `x-setup-token` for that one-tim
 
 After the first platform supervisor exists, create additional platform or tenant-scoped supervisors with `POST /api/supervisors`. Tenant-scoped supervisors are pinned to their assigned domain in the UI and cannot switch into other tenants by changing the `x-wordclaw-domain` header.
 
+Platform-scoped supervisors can switch domains from the header selector. The shell resets them onto the dashboard on every switch so the next tenant workspace loads from a clean surface instead of replaying whichever heavy page was open before.
+
 See `doc/tutorials/getting-started.md` for the full setup flow.

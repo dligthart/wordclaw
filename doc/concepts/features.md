@@ -30,7 +30,7 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 - **Audit Logging** — Mutations record action, entity, actor, and request trace data for inspection and forensics.
 - **Idempotency** — Replayed POST/PUT/DELETE requests can return cached responses instead of creating duplicate writes.
 - **Multi-Tenant Isolation** — Domains scope content, keys, and workflows to prevent cross-tenant overlap.
-- **Request Tracing and Rate Limiting** — Every request carries an `x-request-id`, and per-IP throttling protects the runtime.
+- **Request Tracing and Rate Limiting** — Every request carries an `x-request-id`, and actor-aware rate limiting protects the runtime with separate buckets for API keys, supervisor sessions, and IP fallback traffic.
 
 ### Payments and Entitlements
 
@@ -56,7 +56,7 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 - **Forms Workspace** — Configure reusable public forms, inspect their sanitized public contract, and send test submissions through the same REST path external clients use.
 - **Jobs Workspace** — Inspect worker health, browse queued/running/completed jobs, enqueue generic background work, and schedule content status changes without dropping to the CLI.
 - **Approval Queue** — Review and decide pending workflow items.
-- **API Keys and Tenant Bootstrap** — Provision, rotate, and revoke API credentials for agents and operator integrations, and onboard a tenant by creating its domain plus first admin key in one step.
+- **API Keys and Tenant Bootstrap** — Provision, rotate, and revoke API credentials for agents and operator integrations, onboard a tenant by creating its domain plus first admin key in one step, and hand off platform- or tenant-scoped supervisor access for that tenant.
 - **Asset Library** — Upload assets, inspect delivery policy, preview image content, and manage delete/restore/purge lifecycle without dropping to the CLI.
 
 ## Tier 2: Optional Modules

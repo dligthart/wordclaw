@@ -1,7 +1,7 @@
 # Current State
 
 Updated: 2026-03-31  
-Tracking: `v1.39.0` on `main` (latest changelog entry dated 2026-03-31)
+Tracking: `v1.40.0` on `main` (latest changelog entry dated 2026-03-31)
 
 WordClaw's supported product path is now a governed content runtime for AI agents and human supervisors. REST and MCP are the primary surfaces. GraphQL remains available as a compatibility layer, but it no longer defines the product.
 
@@ -37,6 +37,8 @@ WordClaw's supported product path is now a governed content runtime for AI agent
 
 - Workflow approvals, dry-run mutation paths, idempotency, audit logging, and request tracing are part of the core runtime contract.
 - The supervisor UI now covers schemas, content inspection, approvals, forms, jobs, assets, payments, audits, and API-key management.
+- Supervisor access now supports both platform-scoped and tenant-scoped sessions, with tenant-scoped supervisors pinned to one domain.
+- Request-rate limiting is actor-aware, so API credentials and supervisor sessions no longer collide in one shared IP bucket.
 - Multi-domain isolation remains the tenant boundary for content, credentials, workflows, and delivery policy.
 
 ### Paid Content and Agent Access
@@ -66,6 +68,7 @@ WordClaw's supported product path is now a governed content runtime for AI agent
 
 ## Recent Additions In March 2026
 
+- `v1.40.0` on 2026-03-31: actor-aware rate limits and safer supervisor domain switching.
 - `v1.39.0` on 2026-03-31: production provisioning DX improvements and clearer deployment guards.
 - `v1.38.0` on 2026-03-31: tenant onboarding flow for domain plus first admin credential bootstrap.
 - `v1.37.0` on 2026-03-29: Codex WordClaw skill and Codex-facing integration path.
