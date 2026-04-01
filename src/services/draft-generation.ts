@@ -226,6 +226,204 @@ function stripCustomSchemaExtensions(value: unknown): unknown {
     );
 }
 
+function parseSanitizedTargetSchema(schemaText: string): JsonObject {
+    const sanitizedSchema = stripCustomSchemaExtensions(parseSchemaObject(schemaText));
+    if (!isObject(sanitizedSchema)) {
+        throw new DraftGenerationError(
+            'DRAFT_GENERATION_TARGET_SCHEMA_INVALID',
+            'Target content type schema must remain a JSON object after sanitization.',
+            409,
+        );
+    }
+
+    return sanitizedSchema;
+}
+
+function normalizeSchemaTypeList(typeValue: unknown): string[] | null {
+    if (typeof typeValue === 'string') {
+        return [typeValue];
+    }
+
+    if (!isArray(typeValue)) {
+        return null;
+    }
+
+    const normalized = typeValue.filter((entry): entry is string => typeof entry === 'string');
+    return normalized.length > 0 ? normalized : null;
+}
+
+function schemaAllowsNull(schema: JsonObject): boolean {
+    const typeList = normalizeSchemaTypeList(schema.type);
+    if (typeList?.includes('null')) {
+        return true;
+    }
+
+    if (isArray(schema.enum) && schema.enum.includes(null)) {
+        return true;
+    }
+
+    if (schema.const === null) {
+        return true;
+    }
+
+    if (isArray(schema.anyOf)) {
+        return schema.anyOf.some((entry) => isObject(entry) && schemaAllowsNull(entry));
+    }
+
+    if (isArray(schema.oneOf)) {
+        return schema.oneOf.some((entry) => isObject(entry) && schemaAllowsNull(entry));
+    }
+
+    return false;
+}
+
+function makeSchemaNullable(schema: JsonObject): JsonObject {
+    if (schemaAllowsNull(schema)) {
+        return schema;
+    }
+
+    const typeList = normalizeSchemaTypeList(schema.type);
+    if (typeList) {
+        return {
+            ...schema,
+            type: [...typeList, 'null'],
+        };
+    }
+
+    if (isArray(schema.enum)) {
+        return {
+            ...schema,
+            enum: [...schema.enum, null],
+        };
+    }
+
+    if (isArray(schema.anyOf)) {
+        return {
+            ...schema,
+            anyOf: [
+                ...schema.anyOf,
+                { type: 'null' },
+            ],
+        };
+    }
+
+    if (isArray(schema.oneOf)) {
+        return {
+            ...schema,
+            oneOf: [
+                ...schema.oneOf,
+                { type: 'null' },
+            ],
+        };
+    }
+
+    return {
+        anyOf: [
+            schema,
+            { type: 'null' },
+        ],
+    };
+}
+
+function transformSchemaForOpenAiStructuredOutputs(schema: unknown): unknown {
+    if (isArray(schema)) {
+        return schema.map((entry) => transformSchemaForOpenAiStructuredOutputs(entry));
+    }
+
+    if (!isObject(schema)) {
+        return schema;
+    }
+
+    if (schema.type === 'object' || isObject(schema.properties)) {
+        const rawProperties = isObject(schema.properties) ? schema.properties : {};
+        const requiredFields = new Set(
+            isArray(schema.required)
+                ? schema.required.filter((entry): entry is string => typeof entry === 'string')
+                : [],
+        );
+
+        const transformedProperties = Object.fromEntries(
+            Object.entries(rawProperties).map(([key, value]) => {
+                const transformedProperty = transformSchemaForOpenAiStructuredOutputs(value);
+                if (!isObject(transformedProperty)) {
+                    return [key, transformedProperty];
+                }
+
+                return [
+                    key,
+                    requiredFields.has(key)
+                        ? transformedProperty
+                        : makeSchemaNullable(transformedProperty),
+                ];
+            }),
+        );
+
+        return {
+            ...Object.fromEntries(
+                Object.entries(schema)
+                    .filter(([key]) => key !== 'properties' && key !== 'required' && key !== 'additionalProperties')
+                    .map(([key, value]) => [key, transformSchemaForOpenAiStructuredOutputs(value)]),
+            ),
+            type: 'object',
+            properties: transformedProperties,
+            required: Object.keys(rawProperties),
+            additionalProperties: false,
+        };
+    }
+
+    return Object.fromEntries(
+        Object.entries(schema).map(([key, value]) => [key, transformSchemaForOpenAiStructuredOutputs(value)]),
+    );
+}
+
+function pruneNullOptionalFields(value: unknown, originalSchema: unknown): unknown {
+    if (value === null || !isObject(originalSchema)) {
+        return value;
+    }
+
+    if (isArray(value)) {
+        const itemSchema = originalSchema.items;
+        return isObject(itemSchema)
+            ? value.map((entry) => pruneNullOptionalFields(entry, itemSchema))
+            : value;
+    }
+
+    if (!isObject(value)) {
+        return value;
+    }
+
+    if (originalSchema.type === 'object' || isObject(originalSchema.properties)) {
+        const propertySchemas = isObject(originalSchema.properties) ? originalSchema.properties : {};
+        const requiredFields = new Set(
+            isArray(originalSchema.required)
+                ? originalSchema.required.filter((entry): entry is string => typeof entry === 'string')
+                : [],
+        );
+
+        return Object.fromEntries(
+            Object.entries(value).flatMap(([key, childValue]) => {
+                const childSchema = propertySchemas[key];
+                if (
+                    childValue === null
+                    && childSchema !== undefined
+                    && !requiredFields.has(key)
+                ) {
+                    return [];
+                }
+
+                return [[
+                    key,
+                    childSchema !== undefined
+                        ? pruneNullOptionalFields(childValue, childSchema)
+                        : childValue,
+                ]];
+            }),
+        );
+    }
+
+    return value;
+}
+
 function sanitizeSchemaName(input: string): string {
     const normalized = input
         .trim()
@@ -508,11 +706,12 @@ async function generateDraftDataWithOpenAI(
         ?? normalizeOptionalString(provisionedOpenAi?.defaultModel)
         ?? process.env.OPENAI_DRAFT_GENERATION_MODEL
         ?? 'gpt-4o';
-    const sanitizedSchema = stripCustomSchemaExtensions(parseSchemaObject(input.targetContentType.schema));
-    if (!isObject(sanitizedSchema)) {
+    const sanitizedSchema = parseSanitizedTargetSchema(input.targetContentType.schema);
+    const openAiSchema = transformSchemaForOpenAiStructuredOutputs(sanitizedSchema);
+    if (!isObject(openAiSchema)) {
         throw new DraftGenerationError(
             'DRAFT_GENERATION_TARGET_SCHEMA_INVALID',
-            'Target content type schema must remain a JSON object after sanitization.',
+            'Target content type schema must remain a JSON object after OpenAI schema translation.',
             409,
         );
     }
@@ -531,7 +730,7 @@ async function generateDraftDataWithOpenAI(
                 type: 'json_schema',
                 name: sanitizeSchemaName(`${input.targetContentType.slug}_draft_output`),
                 strict: true,
-                schema: sanitizedSchema,
+                schema: openAiSchema,
             },
         },
     });
@@ -543,10 +742,11 @@ async function generateDraftDataWithOpenAI(
         'DRAFT_GENERATION_OPENAI_INVALID_OUTPUT',
         'OpenAI draft generation returned invalid JSON',
     );
+    const normalizedGeneratedData = pruneNullOptionalFields(generatedData, sanitizedSchema);
 
     return {
         data: {
-            ...generatedData,
+            ...(isObject(normalizedGeneratedData) ? normalizedGeneratedData : generatedData),
             ...deterministicBaseline,
         },
         strategy: 'openai_structured_outputs_v1',
@@ -572,14 +772,7 @@ async function generateDraftDataWithAnthropic(
 
     const provisionedAnthropic = requireProvisionedProvider(input, 'anthropic');
     const model = resolveExplicitProviderModel(input.provider, provisionedAnthropic);
-    const sanitizedSchema = stripCustomSchemaExtensions(parseSchemaObject(input.targetContentType.schema));
-    if (!isObject(sanitizedSchema)) {
-        throw new DraftGenerationError(
-            'DRAFT_GENERATION_TARGET_SCHEMA_INVALID',
-            'Target content type schema must remain a JSON object after sanitization.',
-            409,
-        );
-    }
+    const sanitizedSchema = parseSanitizedTargetSchema(input.targetContentType.schema);
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -658,14 +851,7 @@ async function generateDraftDataWithGemini(
 
     const provisionedGemini = requireProvisionedProvider(input, 'gemini');
     const model = resolveExplicitProviderModel(input.provider, provisionedGemini);
-    const sanitizedSchema = stripCustomSchemaExtensions(parseSchemaObject(input.targetContentType.schema));
-    if (!isObject(sanitizedSchema)) {
-        throw new DraftGenerationError(
-            'DRAFT_GENERATION_TARGET_SCHEMA_INVALID',
-            'Target content type schema must remain a JSON object after sanitization.',
-            409,
-        );
-    }
+    const sanitizedSchema = parseSanitizedTargetSchema(input.targetContentType.schema);
 
     const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,

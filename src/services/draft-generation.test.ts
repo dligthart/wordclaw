@@ -43,6 +43,27 @@ function buildTargetContentType(): DraftGenerationTargetContentType {
     };
 }
 
+function buildTargetContentTypeWithOptionalField(): DraftGenerationTargetContentType {
+    return {
+        id: 14,
+        name: 'Proposal Draft (optional field)',
+        slug: 'proposal-draft-optional',
+        schema: JSON.stringify({
+            type: 'object',
+            properties: {
+                title: { type: 'string' },
+                brief: { type: 'string' },
+                summary: { type: 'string' },
+                company: { type: 'string' },
+            },
+            required: ['title', 'brief', 'summary'],
+            'x-wordclaw-preview': {
+                titleField: 'title',
+            },
+        }),
+    };
+}
+
 function buildInput(overrides: Partial<DraftGenerationInput> = {}): DraftGenerationInput {
     return {
         domainId: 1,
@@ -135,6 +156,7 @@ describe('draft generation service', () => {
                             summary: { type: 'string' },
                         },
                         required: ['title', 'brief', 'summary'],
+                        additionalProperties: false,
                     },
                 }),
             }),
@@ -155,6 +177,52 @@ describe('draft generation service', () => {
                 type: 'openai',
                 model: 'gpt-4o',
                 responseId: 'resp_123',
+            },
+        });
+    });
+
+    it('translates optional fields into OpenAI-compatible strict schema and prunes null placeholders', async () => {
+        mocks.responsesCreateMock.mockResolvedValue({
+            id: 'resp_optional',
+            output_text: JSON.stringify({
+                title: 'Model generated title',
+                summary: 'Generated summary',
+                company: null,
+            }),
+        });
+
+        const result = await generateDraftData(buildInput({
+            targetContentType: buildTargetContentTypeWithOptionalField(),
+        }));
+
+        expect(mocks.responsesCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+            text: expect.objectContaining({
+                format: expect.objectContaining({
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            title: { type: 'string' },
+                            brief: { type: 'string' },
+                            summary: { type: 'string' },
+                            company: { type: ['string', 'null'] },
+                        },
+                        required: ['title', 'brief', 'summary', 'company'],
+                        additionalProperties: false,
+                    },
+                }),
+            }),
+        }));
+        expect(result).toEqual({
+            data: {
+                title: 'Draft proposal',
+                brief: 'Need a proposal',
+                summary: 'Generated summary',
+            },
+            strategy: 'openai_structured_outputs_v1',
+            provider: {
+                type: 'openai',
+                model: 'gpt-4o',
+                responseId: 'resp_optional',
             },
         });
     });
