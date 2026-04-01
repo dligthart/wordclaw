@@ -1,3 +1,10 @@
+## [1.45.1](https://github.com/dligthart/wordclaw/compare/v1.45.0...v1.45.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* degrade forms when workforce registry fails ([68888f4](https://github.com/dligthart/wordclaw/commit/68888f4055502c42bb29f0dc8b5501929dec6ddb))
+
 # [1.45.0](https://github.com/dligthart/wordclaw/compare/v1.44.0...v1.45.0) (2026-04-01)
 
 
