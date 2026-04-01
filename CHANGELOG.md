@@ -1,3 +1,10 @@
+# [1.47.0](https://github.com/dligthart/wordclaw/compare/v1.46.0...v1.47.0) (2026-04-01)
+
+
+### Features
+
+* move agent provisioning into dedicated page ([1f78c32](https://github.com/dligthart/wordclaw/commit/1f78c320c156632a74dd275ece4743716b5270f5))
+
 # [1.46.0](https://github.com/dligthart/wordclaw/compare/v1.45.2...v1.46.0) (2026-04-01)
 
 
