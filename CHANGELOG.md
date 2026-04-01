@@ -1,3 +1,10 @@
+# [1.45.0](https://github.com/dligthart/wordclaw/compare/v1.44.0...v1.45.0) (2026-04-01)
+
+
+### Features
+
+* add multimodal draft generation pipeline ([396c2ea](https://github.com/dligthart/wordclaw/commit/396c2ea94d4d062dee1e308958b1c835ad61d44d))
+
 # [1.44.0](https://github.com/dligthart/wordclaw/compare/v1.43.0...v1.44.0) (2026-04-01)
 
 
