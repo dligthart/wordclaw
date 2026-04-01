@@ -14,7 +14,7 @@ We promote one major flagship feature per minor version release to ensure stabil
 ### v0.3: Schema-Aware Media Assets (Shipped)
 * **Goal**: Make media files a first-class part of the core runtime instead of pushing agents toward ad hoc external URLs.
 * **Status**: Shipped. Local and S3-compatible storage, schema-level asset references, derivative variants, multipart and direct-provider upload flows, signed and entitlement-gated delivery, MCP/CLI tooling, supervisor asset controls, and restore/purge lifecycle are live on `main`.
-* **Documentation**: See [RFC 0023](../rfc/proposed/0023-media-asset-storage.md).
+* **Documentation**: See [RFC 0023](../rfc/implemented/0023-media-asset-storage.md).
 
 ### v0.2: Production-Ready L402 Flows (Shipped)
 * **Goal**: Provide an end-to-end, secure payment path for machine-to-machine transactions.

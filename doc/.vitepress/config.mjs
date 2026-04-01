@@ -75,10 +75,11 @@ export default withMermaid(defineConfig({
                     {
                         text: 'Current Direction',
                         items: [
+                            { text: '0010 Supervisor UI Usability and Accessibility Hardening (partial)', link: '/rfc/proposed/0010-supervisor-ui-usability-and-accessibility-hardening' },
                             { text: '0015 Paid Content Consumption Contract (partial)', link: '/archive/rfc/0015-paid-content-consumption-contract' },
                             { text: '0017 Tenant Boundary and Contract Hardening (partial)', link: '/archive/rfc/0017-tenant-boundary-and-contract-hardening' },
                             { text: '0021 Core Product Focus and Feature Pruning (accepted)', link: '/archive/rfc/0021-core-product-focus-and-feature-pruning' },
-                            { text: '0023 Media Asset Storage (rolling out)', link: '/rfc/proposed/0023-media-asset-storage' },
+                            { text: '0023 Media Asset Storage (shipped)', link: '/rfc/implemented/0023-media-asset-storage' },
                             { text: '0025 Reactive Agentic Webhooks via MCP (rolling out)', link: '/rfc/proposed/0025-agentic-webhooks' }
                         ]
                     },
@@ -102,7 +103,6 @@ export default withMermaid(defineConfig({
                             { text: '0004 Agentic Content Licensing and Entitlements', link: '/rfc/implemented/0004-agentic-content-licensing-and-entitlements' },
                             { text: '0007 Policy-Driven Editorial Workflow', link: '/rfc/implemented/0007-policy-driven-editorial-workflow' },
                             { text: '0008 Cross-Protocol Policy Parity Framework', link: '/rfc/implemented/0008-cross-protocol-policy-parity-framework' },
-                            { text: '0010 Supervisor UI Usability and Accessibility Hardening', link: '/rfc/implemented/0010-supervisor-ui-usability-and-accessibility-hardening' },
                             { text: '0011 Multi-Domain Tenant Support', link: '/rfc/implemented/0011-multi-domain-tenant-support' },
                             { text: '0012 Native Vector RAG Endpoints', link: '/rfc/implemented/0012-native-vector-rag-endpoints' },
                             { text: '0014 L402 Production Readiness Operator Runbook', link: '/rfc/implemented/0014-l402-production-readiness-operator-runbook' },
