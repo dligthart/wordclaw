@@ -1,3 +1,10 @@
+## [1.47.1](https://github.com/dligthart/wordclaw/compare/v1.47.0...v1.47.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* journal tenant ai migrations ([c00fcec](https://github.com/dligthart/wordclaw/commit/c00fcec8299b47e03156a652ba6a4b1043beb7b6))
+
 # [1.47.0](https://github.com/dligthart/wordclaw/compare/v1.46.0...v1.47.0) (2026-04-01)
 
 
