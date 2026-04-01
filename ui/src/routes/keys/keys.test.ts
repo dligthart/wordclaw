@@ -204,6 +204,47 @@ describe("Keys Page", () => {
         ).toBeTruthy();
     });
 
+    it("keeps API key management available when provider and workforce registries fail", async () => {
+        vi.mocked(fetchApi).mockImplementation(async (endpoint, options = {}) => {
+            if (endpoint === "/auth/keys" && (!options.method || options.method === "GET")) {
+                return {
+                    data: [{
+                        id: 91,
+                        name: "Tenant Admin",
+                        keyPrefix: "wcak_123456",
+                        scopes: ["admin"],
+                        createdBy: null,
+                        createdAt: "2026-04-01T10:00:00.000Z",
+                        expiresAt: null,
+                        revokedAt: null,
+                        lastUsedAt: null,
+                    }],
+                };
+            }
+
+            if (endpoint === "/ai/providers" && (!options.method || options.method === "GET")) {
+                throw new Error('Failed query: select "id" from "ai_provider_configs"');
+            }
+
+            if (endpoint === "/workforce/agents" && (!options.method || options.method === "GET")) {
+                throw new Error('Failed query: select "id" from "workforce_agents"');
+            }
+
+            throw new Error(`Unexpected request: ${endpoint} ${options.method ?? "GET"}`);
+        });
+
+        render(KeysPage);
+
+        expect(await screen.findByText("Tenant Admin")).toBeTruthy();
+        expect(screen.queryByText("Access workspace unavailable")).toBeNull();
+        expect(
+            screen.getByText(/Provider provisioning is unavailable right now\./),
+        ).toBeTruthy();
+        expect(
+            screen.getByText(/Workforce agents are unavailable right now\./),
+        ).toBeTruthy();
+    });
+
     it("configures a tenant-scoped OpenAI provider", async () => {
         let providerLoads = 0;
         vi.mocked(fetchApi).mockImplementation(async (endpoint, options = {}) => {

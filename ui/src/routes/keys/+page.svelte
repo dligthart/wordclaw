@@ -98,6 +98,8 @@
     let creating = $state(false);
     let providerConfigs = $state<AiProviderConfig[]>([]);
     let workforceAgents = $state<WorkforceAgent[]>([]);
+    let providerConfigsError = $state<string | null>(null);
+    let workforceAgentsError = $state<string | null>(null);
     let showProviderModal = $state(false);
     let savingProvider = $state(false);
     let selectedProviderType = $state<ConfigurableProviderType>("openai");
@@ -205,14 +207,36 @@
         loading = true;
         error = null;
         try {
-            const [keyRes, providerRes, workforceRes] = await Promise.all([
-                fetchApi("/auth/keys"),
-                fetchApi("/ai/providers"),
-                fetchApi("/workforce/agents"),
-            ]);
+            const keyRes = await fetchApi("/auth/keys");
             keys = keyRes.data;
-            providerConfigs = providerRes.data;
-            workforceAgents = workforceRes.data;
+
+            try {
+                const providerRes = await fetchApi("/ai/providers");
+                providerConfigs = providerRes.data;
+                providerConfigsError = null;
+            } catch (providerError) {
+                providerConfigs = [];
+                providerConfigsError =
+                    providerError instanceof ApiError
+                        ? providerError.remediation ??
+                          providerError.message ??
+                          "Tenant AI providers are unavailable."
+                        : "Tenant AI providers are unavailable.";
+            }
+
+            try {
+                const workforceRes = await fetchApi("/workforce/agents");
+                workforceAgents = workforceRes.data;
+                workforceAgentsError = null;
+            } catch (workforceError) {
+                workforceAgents = [];
+                workforceAgentsError =
+                    workforceError instanceof ApiError
+                        ? workforceError.remediation ??
+                          workforceError.message ??
+                          "Tenant workforce registry is unavailable."
+                        : "Tenant workforce registry is unavailable.";
+            }
         } catch (err: any) {
             error = err.message || "Failed to load access and agent configuration";
         } finally {
@@ -1377,6 +1401,12 @@
                 </div>
             {/each}
         </div>
+
+        {#if providerConfigsError}
+            <div class="mt-5 rounded-3xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                Provider provisioning is unavailable right now. API key management and tenant bootstrap still work, but provider-backed draft-generation setup is temporarily limited. Details: {providerConfigsError}
+            </div>
+        {/if}
     </Surface>
 
     <Surface class="mt-4 p-5">
@@ -1486,6 +1516,12 @@
                         </div>
                     </div>
                 {/each}
+            </div>
+        {/if}
+
+        {#if workforceAgentsError}
+            <div class="mt-5 rounded-3xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                Workforce agents are unavailable right now. API key management and tenant bootstrap still work, but reusable SOUL profiles cannot be managed until the workforce registry is back. Details: {workforceAgentsError}
             </div>
         {/if}
     </Surface>
