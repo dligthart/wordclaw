@@ -73,10 +73,31 @@ export const readDrizzleJournal = (
     return journal.entries;
 };
 
+export const listDrizzleSqlMigrationTags = (
+    migrationsFolder: string = getDefaultMigrationsFolder()
+): string[] => {
+    return fs.readdirSync(migrationsFolder)
+        .filter((entry) => entry.endsWith('.sql'))
+        .map((entry) => entry.slice(0, -4))
+        .sort();
+};
+
 export const readDrizzleMigrations = (
     migrationsFolder: string = getDefaultMigrationsFolder()
 ): DrizzleMigrationRecord[] => {
-    return readDrizzleJournal(migrationsFolder).map((entry) => {
+    const journalEntries = readDrizzleJournal(migrationsFolder);
+    const journalTags = new Set(journalEntries.map((entry) => entry.tag));
+    const unjournaledSqlTags = listDrizzleSqlMigrationTags(migrationsFolder)
+        .filter((tag) => !journalTags.has(tag));
+
+    if (unjournaledSqlTags.length > 0) {
+        throw new Error(
+            `Unjournaled Drizzle migration file(s) found: ${unjournaledSqlTags.join(', ')}. `
+            + 'Add them to drizzle/meta/_journal.json before running migrations.'
+        );
+    }
+
+    return journalEntries.map((entry) => {
         const migrationPath = path.join(migrationsFolder, `${entry.tag}.sql`);
 
         if (!fs.existsSync(migrationPath)) {

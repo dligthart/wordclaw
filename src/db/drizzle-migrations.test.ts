@@ -1,8 +1,14 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
     assessDrizzleDatabaseState,
     formatBaselineGuidance,
+    getDefaultMigrationsFolder,
+    listDrizzleSqlMigrationTags,
+    readDrizzleMigrations,
     resolveDrizzleMigrationTarget,
     type DrizzleDatabaseAssessment,
     type DrizzleMigrationRecord
@@ -50,6 +56,19 @@ describe('drizzle migration helpers', () => {
         expect(() => resolveDrizzleMigrationTarget(migrations, '0099_missing')).toThrow(
             'Unknown migration tag "0099_missing"'
         );
+    });
+
+    it('lists repo SQL migration tags including the latest tenant AI migrations', () => {
+        const tags = listDrizzleSqlMigrationTags(getDefaultMigrationsFolder());
+
+        expect(tags).toContain('0034_ai_provider_configs');
+        expect(tags).toContain('0035_workforce_agents');
+    });
+
+    it('loads repo migrations through the latest journaled tenant AI migrations', () => {
+        const repoMigrations = readDrizzleMigrations(getDefaultMigrationsFolder());
+
+        expect(repoMigrations.at(-1)?.tag).toBe('0035_workforce_agents');
     });
 
     it('formats baseline guidance with the latest tag by default', () => {
@@ -117,5 +136,36 @@ describe('drizzle migration helpers', () => {
             expectedMigrationCount: 3,
             appliedMigrationCount: 4,
         });
+    });
+
+    it('throws when a migration SQL file is missing from the journal', () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordclaw-drizzle-'));
+        const migrationsDir = path.join(tempDir, 'drizzle');
+        const metaDir = path.join(migrationsDir, 'meta');
+
+        fs.mkdirSync(metaDir, { recursive: true });
+        fs.writeFileSync(path.join(metaDir, '_journal.json'), JSON.stringify({
+            version: '7',
+            dialect: 'postgresql',
+            entries: [
+                {
+                    idx: 0,
+                    version: '7',
+                    when: 1,
+                    tag: '0000_public_magma',
+                    breakpoints: true,
+                }
+            ]
+        }));
+        fs.writeFileSync(path.join(migrationsDir, '0000_public_magma.sql'), 'select 1;');
+        fs.writeFileSync(path.join(migrationsDir, '0001_unjournaled.sql'), 'select 2;');
+
+        try {
+            expect(() => readDrizzleMigrations(migrationsDir)).toThrow(
+                'Unjournaled Drizzle migration file(s) found: 0001_unjournaled.'
+            );
+        } finally {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
     });
 });

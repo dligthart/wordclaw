@@ -239,6 +239,20 @@
       "when": 1774986000000,
       "tag": "0033_form_draft_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1774989600000,
+      "tag": "0034_ai_provider_configs",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1774993200000,
+      "tag": "0035_workforce_agents",
+      "breakpoints": true
     }
   ]
 }
