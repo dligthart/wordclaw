@@ -1,3 +1,10 @@
+## [1.47.2](https://github.com/dligthart/wordclaw/compare/v1.47.1...v1.47.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* normalize OpenAI draft generation schema ([a6cc5d8](https://github.com/dligthart/wordclaw/commit/a6cc5d8f590e885e39e2458e0f513add0c95134d))
+
 ## [1.47.1](https://github.com/dligthart/wordclaw/compare/v1.47.0...v1.47.1) (2026-04-01)
 
 
