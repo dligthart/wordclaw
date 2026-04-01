@@ -53,6 +53,7 @@ export function buildCapabilityManifest() {
     const vectorRagModel = vectorRagEnabled
         ? (process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small')
         : null;
+    const openAiDraftGenerationModel = process.env.OPENAI_DRAFT_GENERATION_MODEL || null;
     const actorProfiles = [
         {
             id: 'public-discovery',
@@ -727,6 +728,52 @@ export function buildCapabilityManifest() {
             note: vectorRagEnabled
                 ? `Semantic search is enabled with embedding model ${vectorRagModel}.`
                 : 'Semantic search is disabled until OPENAI_API_KEY is configured.',
+        },
+        draftGeneration: {
+            defaultProvider: 'deterministic',
+            supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
+            provisionedProviders: ['deterministic'],
+            provisioningMode: 'tenant-scoped',
+            providers: {
+                deterministic: {
+                    enabled: true,
+                    requiresProvisioning: false,
+                    note: 'Deterministic draft generation is always available and does not depend on an external AI provider.',
+                },
+                openai: {
+                    enabled: false,
+                    model: openAiDraftGenerationModel,
+                    requiresProvisioning: true,
+                    provisioningScope: 'tenant',
+                    managementRestPath: '/api/ai/providers/openai',
+                    managementMcpTool: 'list_ai_provider_configs',
+                    reason: 'tenant_provider_config_required',
+                    note: openAiDraftGenerationModel
+                        ? `OpenAI draft generation is supported, but each tenant must configure its own API key. The runtime fallback model is ${openAiDraftGenerationModel}.`
+                        : 'OpenAI draft generation is supported, but each tenant must configure its own API key before provider-backed draft jobs can run.',
+                },
+                anthropic: {
+                    enabled: false,
+                    model: null,
+                    requiresProvisioning: true,
+                    provisioningScope: 'tenant',
+                    managementRestPath: '/api/ai/providers/anthropic',
+                    managementMcpTool: 'list_ai_provider_configs',
+                    reason: 'tenant_provider_config_required',
+                    note: 'Anthropic-backed draft generation is supported, but each tenant must configure its own API key and choose a model through provider provisioning or workforce-agent defaults.',
+                },
+                gemini: {
+                    enabled: false,
+                    model: null,
+                    requiresProvisioning: true,
+                    provisioningScope: 'tenant',
+                    managementRestPath: '/api/ai/providers/gemini',
+                    managementMcpTool: 'list_ai_provider_configs',
+                    reason: 'tenant_provider_config_required',
+                    note: 'Gemini-backed draft generation is supported, but each tenant must configure its own API key and choose a model through provider provisioning or workforce-agent defaults.',
+                },
+            },
+            note: 'Deterministic draft generation is always available. External AI providers are tenant-managed and must be provisioned per domain before model-backed jobs can run.',
         },
         toolEquivalence: [
             {

@@ -106,11 +106,13 @@ export class PolicyEngine {
         if (
             operation.startsWith('apikey.')
             || operation.startsWith('webhook.')
+            || operation.startsWith('ai_provider.')
+            || operation.startsWith('workforce.')
         ) {
             return {
                 outcome: 'deny',
                 code: 'ADMIN_REQUIRED',
-                remediation: 'Use an actor with the admin or tenant:admin scope before onboarding tenants or managing API keys and webhooks.',
+                remediation: 'Use an actor with the admin or tenant:admin scope before onboarding tenants or managing API keys, AI providers, workforce agents, and webhooks.',
                 policyVersion: POLICY_VERSION
             };
         }

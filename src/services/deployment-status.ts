@@ -77,6 +77,55 @@ export type DeploymentStatusSnapshot = {
             reason: string;
             note: string;
         };
+        draftGeneration: {
+            status: DeploymentCheckLevel;
+            defaultProvider: string;
+            supportedProviders: string[];
+            provisionedProviders: string[];
+            provisioningMode: string;
+            note: string;
+            providers: {
+                deterministic: {
+                    status: DeploymentCheckLevel;
+                    enabled: boolean;
+                    requiresProvisioning: boolean;
+                    note: string;
+                };
+                openai: {
+                    status: DeploymentCheckLevel;
+                    enabled: boolean;
+                    model: string | null;
+                    requiresProvisioning: boolean;
+                    provisioningScope: string;
+                    managementRestPath: string;
+                    managementMcpTool: string | null;
+                    reason: string;
+                    note: string;
+                };
+                anthropic: {
+                    status: DeploymentCheckLevel;
+                    enabled: boolean;
+                    model: string | null;
+                    requiresProvisioning: boolean;
+                    provisioningScope: string;
+                    managementRestPath: string;
+                    managementMcpTool: string | null;
+                    reason: string;
+                    note: string;
+                };
+                gemini: {
+                    status: DeploymentCheckLevel;
+                    enabled: boolean;
+                    model: string | null;
+                    requiresProvisioning: boolean;
+                    provisioningScope: string;
+                    managementRestPath: string;
+                    managementMcpTool: string | null;
+                    reason: string;
+                    note: string;
+                };
+            };
+        };
         embeddings: {
             status: DeploymentCheckLevel;
             enabled: boolean;
@@ -391,6 +440,55 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
         reason: manifest.vectorRag.enabled ? 'configured' : 'OPENAI_API_KEY not set',
         note: manifest.vectorRag.note,
     };
+    const draftGenerationStatus: DeploymentStatusSnapshot['checks']['draftGeneration'] = {
+        status: 'ready',
+        defaultProvider: manifest.draftGeneration.defaultProvider,
+        supportedProviders: [...manifest.draftGeneration.supportedProviders],
+        provisionedProviders: [...manifest.draftGeneration.provisionedProviders],
+        provisioningMode: manifest.draftGeneration.provisioningMode,
+        note: manifest.draftGeneration.note,
+        providers: {
+            deterministic: {
+                status: 'ready',
+                enabled: manifest.draftGeneration.providers.deterministic.enabled,
+                requiresProvisioning: manifest.draftGeneration.providers.deterministic.requiresProvisioning,
+                note: manifest.draftGeneration.providers.deterministic.note,
+            },
+            openai: {
+                status: 'disabled',
+                enabled: manifest.draftGeneration.providers.openai.enabled,
+                model: manifest.draftGeneration.providers.openai.model,
+                requiresProvisioning: manifest.draftGeneration.providers.openai.requiresProvisioning,
+                provisioningScope: manifest.draftGeneration.providers.openai.provisioningScope,
+                managementRestPath: manifest.draftGeneration.providers.openai.managementRestPath,
+                managementMcpTool: manifest.draftGeneration.providers.openai.managementMcpTool,
+                reason: manifest.draftGeneration.providers.openai.reason,
+                note: manifest.draftGeneration.providers.openai.note,
+            },
+            anthropic: {
+                status: 'disabled',
+                enabled: manifest.draftGeneration.providers.anthropic.enabled,
+                model: manifest.draftGeneration.providers.anthropic.model,
+                requiresProvisioning: manifest.draftGeneration.providers.anthropic.requiresProvisioning,
+                provisioningScope: manifest.draftGeneration.providers.anthropic.provisioningScope,
+                managementRestPath: manifest.draftGeneration.providers.anthropic.managementRestPath,
+                managementMcpTool: manifest.draftGeneration.providers.anthropic.managementMcpTool,
+                reason: manifest.draftGeneration.providers.anthropic.reason,
+                note: manifest.draftGeneration.providers.anthropic.note,
+            },
+            gemini: {
+                status: 'disabled',
+                enabled: manifest.draftGeneration.providers.gemini.enabled,
+                model: manifest.draftGeneration.providers.gemini.model,
+                requiresProvisioning: manifest.draftGeneration.providers.gemini.requiresProvisioning,
+                provisioningScope: manifest.draftGeneration.providers.gemini.provisioningScope,
+                managementRestPath: manifest.draftGeneration.providers.gemini.managementRestPath,
+                managementMcpTool: manifest.draftGeneration.providers.gemini.managementMcpTool,
+                reason: manifest.draftGeneration.providers.gemini.reason,
+                note: manifest.draftGeneration.providers.gemini.note,
+            },
+        },
+    };
     const embeddingRuntime = EmbeddingService.getRuntimeStatus();
     const embeddingsStatus: DeploymentStatusSnapshot['checks']['embeddings'] = {
         status: !embeddingRuntime.enabled
@@ -470,6 +568,7 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
                 note: manifest.auth.effective.note,
             },
             vectorRag: vectorRagStatus,
+            draftGeneration: draftGenerationStatus,
             embeddings: embeddingsStatus,
             ui: uiStatus,
             contentRuntime: {

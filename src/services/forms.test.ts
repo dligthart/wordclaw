@@ -80,6 +80,104 @@ describe('forms service', () => {
         });
     });
 
+    it('rejects draft generation field maps that reference unknown form fields', async () => {
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 12,
+                        domainId: 1,
+                        name: 'Proposal Request',
+                        slug: 'proposal-request',
+                        basePrice: 0,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                company: { type: 'string' },
+                                requirements: { type: 'string' },
+                            },
+                            required: ['company', 'requirements'],
+                        }),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 13,
+                        domainId: 1,
+                        name: 'Proposal Draft',
+                        slug: 'proposal-draft',
+                        basePrice: 0,
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                brief: { type: 'string' },
+                            },
+                        }),
+                    }]),
+                }),
+            }));
+
+        await expect(createFormDefinition({
+            domainId: 1,
+            name: 'Proposal Request',
+            slug: 'proposal-request',
+            contentTypeId: 12,
+            fields: [
+                { name: 'company' },
+                { name: 'requirements' },
+            ],
+            draftGeneration: {
+                targetContentTypeId: 13,
+                agentSoul: 'software-proposal-writer',
+                fieldMap: {
+                    summary: 'brief',
+                },
+            },
+        })).rejects.toMatchObject({
+            code: 'FORM_DRAFT_GENERATION_FIELD_MAP_SOURCE_INVALID',
+        });
+    });
+
+    it('rejects unsupported draft generation providers', async () => {
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 12,
+                    domainId: 1,
+                    name: 'Proposal Request',
+                    slug: 'proposal-request',
+                    basePrice: 0,
+                    schema: JSON.stringify({
+                        type: 'object',
+                        properties: {
+                            company: { type: 'string' },
+                        },
+                        required: ['company'],
+                    }),
+                }]),
+            }),
+        }));
+
+        await expect(createFormDefinition({
+            domainId: 1,
+            name: 'Proposal Request',
+            slug: 'proposal-request',
+            contentTypeId: 12,
+            fields: [{ name: 'company' }],
+            draftGeneration: {
+                targetContentTypeId: 12,
+                agentSoul: 'software-proposal-writer',
+                provider: {
+                    type: 'xai',
+                },
+            },
+        })).rejects.toMatchObject({
+            code: 'FORM_DRAFT_GENERATION_PROVIDER_UNSUPPORTED',
+        });
+    });
+
     it('queues draft generation jobs for configured form submissions', async () => {
         const formRow = {
             id: 5,
@@ -104,8 +202,17 @@ describe('forms service', () => {
             draftGeneration: {
                 targetContentTypeId: 13,
                 agentSoul: 'software-proposal-writer',
+                fieldMap: {
+                    company: 'clientName',
+                    requirements: 'brief',
+                },
                 defaultData: {
                     title: 'Draft proposal',
+                },
+                provider: {
+                    type: 'openai',
+                    model: 'gpt-4o',
+                    instructions: 'Write a concise proposal draft.',
                 },
                 postGenerationWorkflowTransitionId: null,
             },
@@ -202,9 +309,22 @@ describe('forms service', () => {
                 requirements: 'Need a proposal',
             },
             targetContentTypeId: 13,
+            workforceAgentId: null,
+            workforceAgentSlug: null,
+            workforceAgentName: null,
+            workforceAgentPurpose: null,
             agentSoul: 'software-proposal-writer',
+            fieldMap: {
+                company: 'clientName',
+                requirements: 'brief',
+            },
             defaultData: {
                 title: 'Draft proposal',
+            },
+            provider: {
+                type: 'openai',
+                model: 'gpt-4o',
+                instructions: 'Write a concise proposal draft.',
             },
             postGenerationWorkflowTransitionId: null,
         });

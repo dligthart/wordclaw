@@ -284,6 +284,28 @@ describe('API Route Contracts', () => {
                         restPath: string;
                         mcpTool: string;
                     };
+                    draftGeneration: {
+                        defaultProvider: string;
+                        supportedProviders: string[];
+                        provisionedProviders: string[];
+                        provisioningMode?: string;
+                        providers: {
+                            deterministic: {
+                                enabled: boolean;
+                                requiresProvisioning: boolean;
+                            };
+                            openai: {
+                                enabled: boolean;
+                                model: string | null;
+                                requiresProvisioning?: boolean;
+                                provisioningScope?: string;
+                                managementRestPath?: string;
+                                managementMcpTool?: string | null;
+                                reason?: string;
+                            };
+                        };
+                        note: string;
+                    };
                     toolEquivalence: Array<{
                         intent: string;
                         rest: string;
@@ -468,6 +490,45 @@ describe('API Route Contracts', () => {
                 model: null,
                 restPath: '/api/search/semantic',
                 mcpTool: 'search_semantic_knowledge',
+            }));
+            expect(body.data.draftGeneration).toEqual(expect.objectContaining({
+                defaultProvider: 'deterministic',
+                supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
+                provisionedProviders: ['deterministic'],
+                provisioningMode: 'tenant-scoped',
+                providers: expect.objectContaining({
+                    deterministic: expect.objectContaining({
+                        enabled: true,
+                        requiresProvisioning: false,
+                    }),
+                    openai: expect.objectContaining({
+                        enabled: false,
+                        model: null,
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/openai',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                    }),
+                    anthropic: expect.objectContaining({
+                        enabled: false,
+                        model: null,
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/anthropic',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                    }),
+                    gemini: expect.objectContaining({
+                        enabled: false,
+                        model: null,
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/gemini',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                    }),
+                }),
             }));
             expect(body.data.toolEquivalence).toEqual(expect.arrayContaining([
                 expect.objectContaining({
@@ -701,6 +762,30 @@ describe('API Route Contracts', () => {
                             mcpTool: string;
                             reason: string;
                         };
+                        draftGeneration: {
+                            status: string;
+                            defaultProvider: string;
+                            supportedProviders: string[];
+                            provisionedProviders: string[];
+                            provisioningMode?: string;
+                            providers: {
+                                deterministic: {
+                                    status: string;
+                                    enabled: boolean;
+                                    requiresProvisioning: boolean;
+                                };
+                                openai: {
+                                    status: string;
+                                    enabled: boolean;
+                                    model: string | null;
+                                    reason: string;
+                                    requiresProvisioning?: boolean;
+                                    provisioningScope?: string;
+                                    managementRestPath?: string;
+                                    managementMcpTool?: string | null;
+                                };
+                            };
+                        };
                         embeddings: {
                             status: string;
                             enabled: boolean;
@@ -830,6 +915,50 @@ describe('API Route Contracts', () => {
                 restPath: '/api/search/semantic',
                 mcpTool: 'search_semantic_knowledge',
                 reason: 'OPENAI_API_KEY not set',
+            }));
+            expect(body.data.checks.draftGeneration).toEqual(expect.objectContaining({
+                status: 'ready',
+                defaultProvider: 'deterministic',
+                supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
+                provisionedProviders: ['deterministic'],
+                provisioningMode: 'tenant-scoped',
+                providers: expect.objectContaining({
+                    deterministic: expect.objectContaining({
+                        status: 'ready',
+                        enabled: true,
+                        requiresProvisioning: false,
+                    }),
+                    openai: expect.objectContaining({
+                        status: 'disabled',
+                        enabled: false,
+                        model: null,
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/openai',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                    }),
+                    anthropic: expect.objectContaining({
+                        status: 'disabled',
+                        enabled: false,
+                        model: null,
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/anthropic',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                    }),
+                    gemini: expect.objectContaining({
+                        status: 'disabled',
+                        enabled: false,
+                        model: null,
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/gemini',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                    }),
+                }),
             }));
             expect(body.data.checks.embeddings).toEqual(expect.objectContaining({
                 status: 'disabled',
@@ -3704,73 +3833,49 @@ describe('API Route Contracts', () => {
 
     it('creates form definitions over REST', async () => {
         const app = await buildServer();
-
-        mocks.dbMock.select
-            .mockImplementationOnce(() => ({
-                from: () => ({
-                    where: vi.fn().mockResolvedValue([{
-                        id: 12,
-                        domainId: 1,
-                        name: 'Lead',
-                        slug: 'lead',
-                        basePrice: 0,
-                        schema: JSON.stringify({
-                            type: 'object',
-                            properties: {
-                                email: { type: 'string' },
-                                message: { type: 'string' }
-                            },
-                            required: ['email']
-                        })
-                    }]),
-                }),
-            }))
-            .mockImplementationOnce(() => ({
-                from: () => ({
-                    where: vi.fn().mockResolvedValue([{
-                        id: 12,
-                        domainId: 1,
-                        name: 'Lead',
-                        slug: 'lead',
-                        basePrice: 0,
-                        schema: JSON.stringify({
-                            type: 'object',
-                            properties: {
-                                email: { type: 'string' },
-                                message: { type: 'string' }
-                            },
-                            required: ['email']
-                        })
-                    }]),
-                }),
-            }));
-
-        mocks.dbMock.insert.mockReturnValue({
-            values: vi.fn().mockReturnValue({
-                returning: vi.fn().mockResolvedValue([{
-                    id: 5,
-                    domainId: 1,
-                    name: 'Contact Form',
-                    slug: 'contact',
-                    description: 'Inbound contact form',
-                    contentTypeId: 12,
-                    fields: [
-                        { name: 'email', type: 'text', required: true, label: 'Email' },
-                        { name: 'message', type: 'text', required: false, label: 'Message' }
-                    ],
-                    defaultData: {},
-                    active: true,
-                    publicRead: true,
-                    submissionStatus: 'draft',
-                    workflowTransitionId: null,
-                    requirePayment: false,
-                    webhookUrl: null,
-                    webhookSecret: null,
-                    successMessage: 'Thanks',
-                    createdAt: new Date('2026-03-29T10:00:00.000Z'),
-                    updatedAt: new Date('2026-03-29T10:00:00.000Z')
-                }])
-            })
+        const createFormSpy = vi.spyOn(formsService, 'createFormDefinition').mockResolvedValue({
+            id: 5,
+            domainId: 1,
+            name: 'Contact Form',
+            slug: 'contact',
+            description: 'Inbound contact form',
+            contentTypeId: 12,
+            contentTypeName: 'Lead',
+            contentTypeSlug: 'lead',
+            active: true,
+            publicRead: true,
+            submissionStatus: 'draft',
+            workflowTransitionId: null,
+            requirePayment: false,
+            successMessage: 'Thanks',
+            draftGeneration: {
+                targetContentTypeId: 13,
+                targetContentTypeName: 'Lead Draft',
+                targetContentTypeSlug: 'lead-draft',
+                workforceAgentId: null,
+                workforceAgentSlug: null,
+                workforceAgentName: null,
+                workforceAgentPurpose: null,
+                agentSoul: 'lead-draft-writer',
+                fieldMap: {
+                    email: 'contactEmail',
+                    message: 'contactMessage',
+                },
+                defaultData: {},
+                provider: {
+                    type: 'openai',
+                    model: 'gpt-4o',
+                    instructions: 'Draft an inbound lead summary.',
+                },
+                postGenerationWorkflowTransitionId: null,
+            },
+            fields: [
+                { name: 'email', type: 'text', required: true, label: 'Email' },
+                { name: 'message', type: 'text', required: false, label: 'Message' }
+            ],
+            defaultData: {},
+            createdAt: new Date('2026-03-29T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-29T10:00:00.000Z')
         });
 
         try {
@@ -3786,10 +3891,32 @@ describe('API Route Contracts', () => {
                         { name: 'email', label: 'Email' },
                         { name: 'message', label: 'Message' }
                     ],
-                    successMessage: 'Thanks'
+                    successMessage: 'Thanks',
+                    draftGeneration: {
+                        targetContentTypeId: 13,
+                        workforceAgentId: null,
+                        agentSoul: 'lead-draft-writer',
+                        fieldMap: {
+                            email: 'contactEmail',
+                            message: 'contactMessage',
+                        },
+                        provider: {
+                            type: 'openai',
+                            model: 'gpt-4o',
+                            instructions: 'Draft an inbound lead summary.',
+                        },
+                    }
                 }
             });
 
+            expect(createFormSpy).toHaveBeenCalledWith(expect.objectContaining({
+                domainId: 1,
+                slug: 'contact',
+                draftGeneration: expect.objectContaining({
+                    targetContentTypeId: 13,
+                    agentSoul: 'lead-draft-writer',
+                }),
+            }));
             expect(response.statusCode).toBe(201);
             expect(response.json()).toMatchObject({
                 data: {
@@ -3798,6 +3925,24 @@ describe('API Route Contracts', () => {
                     contentTypeId: 12,
                     contentTypeSlug: 'lead',
                     successMessage: 'Thanks',
+                    draftGeneration: {
+                        targetContentTypeId: 13,
+                        targetContentTypeSlug: 'lead-draft',
+                        workforceAgentId: null,
+                        workforceAgentSlug: null,
+                        workforceAgentName: null,
+                        workforceAgentPurpose: null,
+                        agentSoul: 'lead-draft-writer',
+                        fieldMap: {
+                            email: 'contactEmail',
+                            message: 'contactMessage',
+                        },
+                        provider: {
+                            type: 'openai',
+                            model: 'gpt-4o',
+                            instructions: 'Draft an inbound lead summary.',
+                        },
+                    },
                     fields: expect.arrayContaining([
                         expect.objectContaining({ name: 'email', required: true }),
                         expect.objectContaining({ name: 'message', required: false })
@@ -3817,6 +3962,7 @@ describe('API Route Contracts', () => {
                 expect.any(String)
             );
         } finally {
+            createFormSpy.mockRestore();
             await app.close();
         }
     });
@@ -3970,8 +4116,18 @@ describe('API Route Contracts', () => {
                 targetContentTypeId: 13,
                 targetContentTypeName: 'Proposal Draft',
                 targetContentTypeSlug: 'proposal-draft',
+                workforceAgentId: null,
+                workforceAgentSlug: null,
+                workforceAgentName: null,
+                workforceAgentPurpose: null,
                 agentSoul: 'software-proposal-writer',
+                fieldMap: {
+                    company: 'clientName',
+                },
                 defaultData: {},
+                provider: {
+                    type: 'deterministic' as const,
+                },
                 postGenerationWorkflowTransitionId: null,
             },
             fields: [
@@ -5730,6 +5886,275 @@ describe('API Route Contracts', () => {
             expect(response.statusCode).toBe(403);
             const body = response.json() as ApiErrorBody;
             expect(body.code).toBe('ADMIN_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('requires admin scope to configure tenant AI providers', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'writer=content:write';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/ai/providers/openai',
+                headers: {
+                    'x-api-key': 'writer'
+                },
+                payload: {
+                    apiKey: 'sk-openai-1234567890',
+                    defaultModel: 'gpt-4o',
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('ADMIN_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('lists tenant-scoped AI provider configs without returning raw secrets', async () => {
+        const app = await buildServer();
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: () => ({
+                    orderBy: vi.fn().mockResolvedValue([{
+                        id: 41,
+                        domainId: 1,
+                        provider: 'openai',
+                        apiKey: 'sk-openai-1234567890',
+                        defaultModel: 'gpt-4o',
+                        settings: {},
+                        createdAt: new Date('2026-04-01T10:00:00.000Z'),
+                        updatedAt: new Date('2026-04-01T11:00:00.000Z'),
+                    }]),
+                }),
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/ai/providers',
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: Array<{
+                    provider: string;
+                    maskedApiKey: string;
+                    defaultModel: string | null;
+                }>;
+            };
+            expect(body.data).toEqual([expect.objectContaining({
+                provider: 'openai',
+                maskedApiKey: 'sk-o...7890',
+                defaultModel: 'gpt-4o',
+            })]);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('upserts a tenant-scoped AI provider config', async () => {
+        const app = await buildServer();
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([]),
+            }),
+        }));
+        mocks.dbMock.insert.mockReturnValue({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 41,
+                    domainId: 1,
+                    provider: 'openai',
+                    apiKey: 'sk-openai-1234567890',
+                    defaultModel: 'gpt-4o',
+                    settings: {},
+                    createdAt: new Date('2026-04-01T10:00:00.000Z'),
+                    updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+                }]),
+            }),
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'PUT',
+                url: '/api/ai/providers/openai',
+                payload: {
+                    apiKey: 'sk-openai-1234567890',
+                    defaultModel: 'gpt-4o',
+                }
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    provider: string;
+                    maskedApiKey: string;
+                    defaultModel: string | null;
+                };
+            };
+            expect(body.data).toEqual(expect.objectContaining({
+                provider: 'openai',
+                maskedApiKey: 'sk-o...7890',
+                defaultModel: 'gpt-4o',
+            }));
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('requires admin scope to create workforce agents', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'writer=content:write';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/workforce/agents',
+                headers: {
+                    'x-api-key': 'writer'
+                },
+                payload: {
+                    name: 'Software Proposal Writer',
+                    slug: 'software-proposal-writer',
+                    purpose: 'Draft software proposals from inbound requirement forms.',
+                    soul: 'You are a senior solution consultant.',
+                }
+            });
+
+            expect(response.statusCode).toBe(403);
+            const body = response.json() as ApiErrorBody;
+            expect(body.code).toBe('ADMIN_REQUIRED');
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('lists tenant-managed workforce agents', async () => {
+        const app = await buildServer();
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: () => ({
+                    orderBy: vi.fn().mockResolvedValue([{
+                        id: 7,
+                        domainId: 1,
+                        name: 'Software Proposal Writer',
+                        slug: 'software-proposal-writer',
+                        purpose: 'Draft software proposals from inbound requirement forms.',
+                        soul: 'You are a senior solution consultant.',
+                        provider: {
+                            type: 'openai',
+                            model: 'gpt-4o',
+                        },
+                        active: true,
+                        createdAt: new Date('2026-04-01T10:00:00.000Z'),
+                        updatedAt: new Date('2026-04-01T11:00:00.000Z'),
+                    }]),
+                }),
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/workforce/agents',
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: Array<{
+                    slug: string;
+                    provider: {
+                        type: string;
+                        model?: string;
+                    };
+                    active: boolean;
+                }>;
+            };
+            expect(body.data).toEqual([expect.objectContaining({
+                slug: 'software-proposal-writer',
+                provider: {
+                    type: 'openai',
+                    model: 'gpt-4o',
+                },
+                active: true,
+            })]);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('creates a tenant-managed workforce agent', async () => {
+        const app = await buildServer();
+        mocks.dbMock.select.mockImplementation(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([]),
+            }),
+        }));
+        mocks.dbMock.insert.mockReturnValue({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 7,
+                    domainId: 1,
+                    name: 'Software Proposal Writer',
+                    slug: 'software-proposal-writer',
+                    purpose: 'Draft software proposals from inbound requirement forms.',
+                    soul: 'You are a senior solution consultant.',
+                    provider: {
+                        type: 'openai',
+                        model: 'gpt-4o',
+                    },
+                    active: true,
+                    createdAt: new Date('2026-04-01T10:00:00.000Z'),
+                    updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+                }]),
+            }),
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/workforce/agents',
+                payload: {
+                    name: 'Software Proposal Writer',
+                    slug: 'software-proposal-writer',
+                    purpose: 'Draft software proposals from inbound requirement forms.',
+                    soul: 'You are a senior solution consultant.',
+                    provider: {
+                        type: 'openai',
+                        model: 'gpt-4o',
+                    },
+                    active: true,
+                }
+            });
+
+            expect(response.statusCode).toBe(201);
+            const body = response.json() as {
+                data: {
+                    id: number;
+                    slug: string;
+                    provider: {
+                        type: string;
+                        model?: string;
+                    };
+                };
+            };
+            expect(body.data).toEqual(expect.objectContaining({
+                id: 7,
+                slug: 'software-proposal-writer',
+                provider: {
+                    type: 'openai',
+                    model: 'gpt-4o',
+                },
+            }));
         } finally {
             await app.close();
         }

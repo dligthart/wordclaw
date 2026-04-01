@@ -132,8 +132,15 @@ describe('jobs service', () => {
                 },
                 targetContentTypeId: 13,
                 agentSoul: 'software-proposal-writer',
+                fieldMap: {
+                    title: 'headline',
+                },
                 defaultData: {
+                    title: 'Draft proposal',
                     statusNote: 'Generated from intake',
+                },
+                provider: {
+                    type: 'deterministic',
                 },
                 postGenerationWorkflowTransitionId: null,
             },
@@ -177,10 +184,11 @@ describe('jobs service', () => {
                             type: 'object',
                             properties: {
                                 title: { type: 'string' },
+                                headline: { type: 'string' },
                                 summary: { type: 'string' },
                                 statusNote: { type: 'string' },
                             },
-                            required: ['title', 'summary'],
+                            required: ['headline', 'summary'],
                         }),
                     }]),
                 }),
@@ -214,9 +222,10 @@ describe('jobs service', () => {
                     domainId: 1,
                     contentTypeId: 13,
                     data: JSON.stringify({
-                        statusNote: 'Generated from intake',
-                        title: 'Proposal for Acme',
+                        title: 'Draft proposal',
+                        headline: 'Proposal for Acme',
                         summary: 'Need a proposal',
+                        statusNote: 'Generated from intake',
                     }),
                     status: 'draft',
                     version: 1,
@@ -239,6 +248,14 @@ describe('jobs service', () => {
                 source: 'draft_generation_job',
                 intakeContentItemId: 88,
                 agentSoul: 'software-proposal-writer',
+                fieldMap: {
+                    title: 'headline',
+                },
+                provider: {
+                    type: 'deterministic',
+                    model: null,
+                    responseId: null,
+                },
             }),
         );
         expect(updateCalls[1]).toEqual(expect.objectContaining({
@@ -246,6 +263,14 @@ describe('jobs service', () => {
             result: expect.objectContaining({
                 generatedContentItemId: 144,
                 intakeContentItemId: 88,
+                fieldMap: {
+                    title: 'headline',
+                },
+                provider: {
+                    type: 'deterministic',
+                    model: null,
+                    responseId: null,
+                },
             }),
             lastError: null,
         }));

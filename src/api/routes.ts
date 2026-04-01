@@ -7,6 +7,24 @@ import { db } from '../db/index.js';
 import { assets, auditLogs, contentItemVersions, contentItems, contentTypes, domains, formDefinitions, jobs, paymentProviderEvents, payments, workflows, workflowTransitions, agentProfiles, offers, entitlements } from '../db/schema.js';
 import { logAudit } from '../services/audit.js';
 import {
+    AiProviderConfigError,
+    type AiProviderConfigSummary,
+    deleteAiProviderConfig,
+    getAiProviderConfig,
+    listAiProviderConfigs,
+    normalizeAiProviderType,
+    upsertAiProviderConfig,
+} from '../services/ai-provider-config.js';
+import {
+    createWorkforceAgent,
+    deleteWorkforceAgent,
+    getWorkforceAgentById,
+    listWorkforceAgents,
+    type WorkforceAgentSummary,
+    updateWorkforceAgent,
+    WorkforceAgentError,
+} from '../services/workforce-agent.js';
+import {
     isExperimentalAgentRunsEnabled,
     isExperimentalDelegationEnabled,
     isExperimentalRevenueEnabled
@@ -374,6 +392,50 @@ const CapabilityVectorRagSchema = Type.Object({
     mcpTool: Type.String(),
     note: Type.String()
 });
+const CapabilityDraftGenerationSchema = Type.Object({
+    defaultProvider: Type.String(),
+    supportedProviders: Type.Array(Type.String()),
+    provisionedProviders: Type.Array(Type.String()),
+    provisioningMode: Type.String(),
+    note: Type.String(),
+    providers: Type.Object({
+        deterministic: Type.Object({
+            enabled: Type.Boolean(),
+            requiresProvisioning: Type.Boolean(),
+            note: Type.String(),
+        }),
+        openai: Type.Object({
+            enabled: Type.Boolean(),
+            model: Type.Union([Type.String(), Type.Null()]),
+            requiresProvisioning: Type.Boolean(),
+            provisioningScope: Type.String(),
+            managementRestPath: Type.String(),
+            managementMcpTool: Type.Union([Type.String(), Type.Null()]),
+            reason: Type.String(),
+            note: Type.String(),
+        }),
+        anthropic: Type.Object({
+            enabled: Type.Boolean(),
+            model: Type.Union([Type.String(), Type.Null()]),
+            requiresProvisioning: Type.Boolean(),
+            provisioningScope: Type.String(),
+            managementRestPath: Type.String(),
+            managementMcpTool: Type.Union([Type.String(), Type.Null()]),
+            reason: Type.String(),
+            note: Type.String(),
+        }),
+        gemini: Type.Object({
+            enabled: Type.Boolean(),
+            model: Type.Union([Type.String(), Type.Null()]),
+            requiresProvisioning: Type.Boolean(),
+            provisioningScope: Type.String(),
+            managementRestPath: Type.String(),
+            managementMcpTool: Type.Union([Type.String(), Type.Null()]),
+            reason: Type.String(),
+            note: Type.String(),
+        }),
+    }),
+});
 const CapabilityToolEquivalenceSchema = Type.Object({
     intent: Type.String(),
     rest: Type.String(),
@@ -410,6 +472,55 @@ const DeploymentVectorRagCheckSchema = Type.Object({
     requiredEnvironmentVariables: Type.Array(Type.String()),
     reason: Type.String(),
     note: Type.String(),
+});
+const DeploymentDraftGenerationCheckSchema = Type.Object({
+    status: Type.String(),
+    defaultProvider: Type.String(),
+    supportedProviders: Type.Array(Type.String()),
+    provisionedProviders: Type.Array(Type.String()),
+    provisioningMode: Type.String(),
+    note: Type.String(),
+    providers: Type.Object({
+        deterministic: Type.Object({
+            status: Type.String(),
+            enabled: Type.Boolean(),
+            requiresProvisioning: Type.Boolean(),
+            note: Type.String(),
+        }),
+        openai: Type.Object({
+            status: Type.String(),
+            enabled: Type.Boolean(),
+            model: Type.Union([Type.String(), Type.Null()]),
+            requiresProvisioning: Type.Boolean(),
+            provisioningScope: Type.String(),
+            managementRestPath: Type.String(),
+            managementMcpTool: Type.Union([Type.String(), Type.Null()]),
+            reason: Type.String(),
+            note: Type.String(),
+        }),
+        anthropic: Type.Object({
+            status: Type.String(),
+            enabled: Type.Boolean(),
+            model: Type.Union([Type.String(), Type.Null()]),
+            requiresProvisioning: Type.Boolean(),
+            provisioningScope: Type.String(),
+            managementRestPath: Type.String(),
+            managementMcpTool: Type.Union([Type.String(), Type.Null()]),
+            reason: Type.String(),
+            note: Type.String(),
+        }),
+        gemini: Type.Object({
+            status: Type.String(),
+            enabled: Type.Boolean(),
+            model: Type.Union([Type.String(), Type.Null()]),
+            requiresProvisioning: Type.Boolean(),
+            provisioningScope: Type.String(),
+            managementRestPath: Type.String(),
+            managementMcpTool: Type.Union([Type.String(), Type.Null()]),
+            reason: Type.String(),
+            note: Type.String(),
+        }),
+    }),
 });
 const DeploymentEmbeddingsCheckSchema = Type.Object({
     status: Type.String(),
@@ -559,18 +670,100 @@ const FormFieldResponseSchema = Type.Object({
         label: Type.Optional(Type.String()),
     }))),
 });
+const DraftGenerationProviderDeterministicSchema = Type.Object({
+    type: Type.Literal('deterministic'),
+});
+const DraftGenerationProviderOpenAiSchema = Type.Object({
+    type: Type.Literal('openai'),
+    model: Type.Optional(Type.String()),
+    instructions: Type.Optional(Type.String()),
+});
+const DraftGenerationProviderAnthropicSchema = Type.Object({
+    type: Type.Literal('anthropic'),
+    model: Type.Optional(Type.String()),
+    instructions: Type.Optional(Type.String()),
+});
+const DraftGenerationProviderGeminiSchema = Type.Object({
+    type: Type.Literal('gemini'),
+    model: Type.Optional(Type.String()),
+    instructions: Type.Optional(Type.String()),
+});
+const DraftGenerationProviderSchema = Type.Union([
+    DraftGenerationProviderDeterministicSchema,
+    DraftGenerationProviderOpenAiSchema,
+    DraftGenerationProviderAnthropicSchema,
+    DraftGenerationProviderGeminiSchema,
+]);
+const AiProviderTypeSchema = Type.Union([
+    Type.Literal('openai'),
+    Type.Literal('anthropic'),
+    Type.Literal('gemini'),
+]);
+const AiProviderConfigResponseSchema = Type.Object({
+    id: Type.Number(),
+    domainId: Type.Number(),
+    provider: AiProviderTypeSchema,
+    configured: Type.Boolean(),
+    maskedApiKey: Type.String(),
+    defaultModel: Type.Union([Type.String(), Type.Null()]),
+    settings: Type.Object({}, { additionalProperties: true }),
+    createdAt: Type.String(),
+    updatedAt: Type.String(),
+});
+const AiProviderConfigRequestSchema = Type.Object({
+    apiKey: Type.String(),
+    defaultModel: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    settings: Type.Optional(Type.Object({}, { additionalProperties: true })),
+});
+const WorkforceAgentResponseSchema = Type.Object({
+    id: Type.Number(),
+    domainId: Type.Number(),
+    name: Type.String(),
+    slug: Type.String(),
+    purpose: Type.String(),
+    soul: Type.String(),
+    provider: DraftGenerationProviderSchema,
+    active: Type.Boolean(),
+    createdAt: Type.String(),
+    updatedAt: Type.String(),
+});
+const WorkforceAgentCreateRequestSchema = Type.Object({
+    name: Type.String(),
+    slug: Type.String(),
+    purpose: Type.String(),
+    soul: Type.String(),
+    provider: Type.Optional(DraftGenerationProviderSchema),
+    active: Type.Optional(Type.Boolean()),
+});
+const WorkforceAgentUpdateRequestSchema = Type.Object({
+    name: Type.Optional(Type.String()),
+    slug: Type.Optional(Type.String()),
+    purpose: Type.Optional(Type.String()),
+    soul: Type.Optional(Type.String()),
+    provider: Type.Optional(DraftGenerationProviderSchema),
+    active: Type.Optional(Type.Boolean()),
+});
 const DraftGenerationConfigResponseSchema = Type.Object({
     targetContentTypeId: Type.Number(),
     targetContentTypeName: Type.String(),
     targetContentTypeSlug: Type.String(),
+    workforceAgentId: Type.Union([Type.Number(), Type.Null()]),
+    workforceAgentSlug: Type.Union([Type.String(), Type.Null()]),
+    workforceAgentName: Type.Union([Type.String(), Type.Null()]),
+    workforceAgentPurpose: Type.Union([Type.String(), Type.Null()]),
     agentSoul: Type.String(),
+    fieldMap: Type.Record(Type.String(), Type.String()),
     defaultData: Type.Object({}, { additionalProperties: true }),
+    provider: DraftGenerationProviderSchema,
     postGenerationWorkflowTransitionId: Type.Union([Type.Number(), Type.Null()]),
 });
 const DraftGenerationConfigRequestSchema = Type.Object({
     targetContentTypeId: Type.Number(),
-    agentSoul: Type.String(),
+    workforceAgentId: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+    agentSoul: Type.Optional(Type.String()),
+    fieldMap: Type.Optional(Type.Record(Type.String(), Type.String())),
     defaultData: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    provider: Type.Optional(DraftGenerationProviderSchema),
     postGenerationWorkflowTransitionId: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 });
 const FormDefinitionResponseSchema = Type.Object({
@@ -1218,6 +1411,38 @@ function fromFormServiceError(error: FormServiceError): AIErrorPayload {
         code: error.code,
         remediation: error.remediation,
         ...(error.context ? { context: error.context } : {})
+    };
+}
+
+function fromAiProviderConfigError(error: AiProviderConfigError): AIErrorPayload {
+    return {
+        error: error.message,
+        code: error.code,
+        remediation: error.remediation,
+    };
+}
+
+function fromWorkforceAgentError(error: WorkforceAgentError): AIErrorPayload {
+    return {
+        error: error.message,
+        code: error.code,
+        remediation: error.remediation,
+    };
+}
+
+function serializeAiProviderConfigForApi(config: AiProviderConfigSummary) {
+    return {
+        ...config,
+        createdAt: config.createdAt.toISOString(),
+        updatedAt: config.updatedAt.toISOString(),
+    };
+}
+
+function serializeWorkforceAgentForApi(agent: WorkforceAgentSummary) {
+    return {
+        ...agent,
+        createdAt: agent.createdAt.toISOString(),
+        updatedAt: agent.updatedAt.toISOString(),
     };
 }
 
@@ -2024,6 +2249,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                     }),
                     bootstrap: CapabilityBootstrapSchema,
                     vectorRag: CapabilityVectorRagSchema,
+                    draftGeneration: CapabilityDraftGenerationSchema,
                     toolEquivalence: Type.Array(CapabilityToolEquivalenceSchema),
                     modules: Type.Array(Type.Object({
                         id: Type.String(),
@@ -2267,6 +2493,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                         bootstrap: DeploymentBootstrapCheckSchema,
                         auth: DeploymentAuthCheckSchema,
                         vectorRag: DeploymentVectorRagCheckSchema,
+                        draftGeneration: DeploymentDraftGenerationCheckSchema,
                         embeddings: DeploymentEmbeddingsCheckSchema,
                         ui: DeploymentUiCheckSchema,
                         contentRuntime: Type.Object({
@@ -2394,6 +2621,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                         bootstrap: DeploymentBootstrapCheckSchema,
                         auth: DeploymentAuthCheckSchema,
                         vectorRag: DeploymentVectorRagCheckSchema,
+                        draftGeneration: DeploymentDraftGenerationCheckSchema,
                         embeddings: DeploymentEmbeddingsCheckSchema,
                         ui: DeploymentUiCheckSchema,
                         contentRuntime: Type.Object({
@@ -3204,6 +3432,425 @@ export default async function apiRoutes(server: FastifyInstance) {
                 ['GET /api/auth/keys'],
                 'critical',
                 1
+            )
+        };
+    });
+
+    server.get('/ai/providers', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Array(AiProviderConfigResponseSchema)),
+            }
+        }
+    }, async (request) => {
+        const configs = await listAiProviderConfigs(getDomainId(request));
+
+        return {
+            data: configs.map((config) => serializeAiProviderConfigForApi(config)),
+            meta: buildMeta(
+                'Inspect tenant-scoped AI provider credentials for provider-backed draft generation.',
+                ['GET /api/ai/providers/:provider', 'PUT /api/ai/providers/:provider', 'DELETE /api/ai/providers/:provider'],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.get('/ai/providers/:provider', {
+        schema: {
+            params: Type.Object({
+                provider: AiProviderTypeSchema,
+            }),
+            response: {
+                200: createAIResponse(AiProviderConfigResponseSchema),
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { provider } = request.params as { provider: string };
+        const config = await getAiProviderConfig(getDomainId(request), provider);
+        if (!config) {
+            return reply.status(404).send(toErrorPayload(
+                'AI provider config not found',
+                'AI_PROVIDER_CONFIG_NOT_FOUND',
+                `Configure provider '${provider}' for the current tenant before using provider-backed draft generation.`,
+            ));
+        }
+
+        return {
+            data: serializeAiProviderConfigForApi(config),
+            meta: buildMeta(
+                'Update or remove this tenant-scoped AI provider credential.',
+                [`PUT /api/ai/providers/${provider}`, `DELETE /api/ai/providers/${provider}`],
+                'low',
+                1
+            )
+        };
+    });
+
+    server.put('/ai/providers/:provider', {
+        schema: {
+            params: Type.Object({
+                provider: AiProviderTypeSchema,
+            }),
+            body: AiProviderConfigRequestSchema,
+            response: {
+                200: createAIResponse(AiProviderConfigResponseSchema),
+                400: AIErrorResponse,
+                500: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorFromRequest(request as RequestActorCarrier);
+        const { provider } = request.params as { provider: string };
+        const body = request.body as {
+            apiKey: string;
+            defaultModel?: string | null;
+            settings?: Record<string, unknown>;
+        };
+
+        try {
+            const configured = await upsertAiProviderConfig({
+                domainId: getDomainId(request),
+                provider,
+                apiKey: body.apiKey,
+                defaultModel: body.defaultModel,
+                settings: body.settings,
+            });
+
+            await logAudit(
+                getDomainId(request),
+                'update',
+                'ai_provider_config',
+                configured.id,
+                {
+                    provider: configured.provider,
+                    defaultModel: configured.defaultModel,
+                    configured: true,
+                },
+                actorId,
+                request.id
+            );
+
+            return {
+                data: serializeAiProviderConfigForApi(configured),
+                meta: buildMeta(
+                    'Provider-backed draft jobs for this tenant can now resolve the configured external AI credential.',
+                    [`GET /api/ai/providers/${configured.provider}`],
+                    'medium',
+                    1
+                )
+            };
+        } catch (error) {
+            if (error instanceof AiProviderConfigError) {
+                const statusCode = error.statusCode === 500 ? 500 : 400;
+                return reply.status(statusCode).send(fromAiProviderConfigError(error));
+            }
+
+            throw error;
+        }
+    });
+
+    server.delete('/ai/providers/:provider', {
+        schema: {
+            params: Type.Object({
+                provider: AiProviderTypeSchema,
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    provider: AiProviderTypeSchema,
+                    message: Type.String(),
+                })),
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorFromRequest(request as RequestActorCarrier);
+        const { provider } = request.params as { provider: string };
+
+        const deleted = await deleteAiProviderConfig(getDomainId(request), provider);
+        if (!deleted) {
+            return reply.status(404).send(toErrorPayload(
+                'AI provider config not found',
+                'AI_PROVIDER_CONFIG_NOT_FOUND',
+                `Configure provider '${provider}' for the current tenant before trying to delete it.`,
+            ));
+        }
+
+        await logAudit(
+            getDomainId(request),
+            'delete',
+            'ai_provider_config',
+            deleted.id,
+            {
+                provider: deleted.provider,
+                configured: false,
+            },
+            actorId,
+            request.id
+        );
+
+        return {
+            data: {
+                provider: normalizeAiProviderType(provider),
+                message: 'AI provider config deleted successfully',
+            },
+            meta: buildMeta(
+                'Provider-backed draft jobs will fail until this tenant reconfigures the deleted provider.',
+                ['GET /api/ai/providers'],
+                'high',
+                1
+            )
+        };
+    });
+
+    server.get('/workforce/agents', {
+        schema: {
+            response: {
+                200: createAIResponse(Type.Array(WorkforceAgentResponseSchema)),
+            }
+        }
+    }, async (request) => {
+        const agents = await listWorkforceAgents(getDomainId(request));
+
+        return {
+            data: agents.map((agent) => serializeWorkforceAgentForApi(agent)),
+            meta: buildMeta(
+                'Inspect the tenant workforce registry used by form-driven draft-generation jobs.',
+                ['POST /api/workforce/agents', 'GET /api/workforce/agents/:id', 'PUT /api/workforce/agents/:id', 'DELETE /api/workforce/agents/:id'],
+                'low',
+                1,
+            )
+        };
+    });
+
+    server.post('/workforce/agents', {
+        schema: {
+            body: WorkforceAgentCreateRequestSchema,
+            response: {
+                201: createAIResponse(WorkforceAgentResponseSchema),
+                400: AIErrorResponse,
+                409: AIErrorResponse,
+                500: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorFromRequest(request as RequestActorCarrier);
+        const body = request.body as {
+            name: string;
+            slug: string;
+            purpose: string;
+            soul: string;
+            provider?: Record<string, unknown>;
+            active?: boolean;
+        };
+
+        try {
+            const created = await createWorkforceAgent({
+                domainId: getDomainId(request),
+                name: body.name,
+                slug: body.slug,
+                purpose: body.purpose,
+                soul: body.soul,
+                provider: body.provider,
+                active: body.active,
+            });
+
+            await logAudit(
+                getDomainId(request),
+                'create',
+                'workforce_agent',
+                created.id,
+                {
+                    slug: created.slug,
+                    provider: created.provider,
+                    active: created.active,
+                },
+                actorId,
+                request.id,
+            );
+
+            return reply.status(201).send({
+                data: serializeWorkforceAgentForApi(created),
+                meta: buildMeta(
+                    'The workforce agent can now be referenced by id and slug from forms or other tenant automation.',
+                    [`GET /api/workforce/agents/${created.id}`, 'GET /api/forms'],
+                    'medium',
+                    1,
+                )
+            });
+        } catch (error) {
+            if (error instanceof WorkforceAgentError) {
+                const statusCode: 400 | 409 | 500 = error.statusCode === 409
+                    ? 409
+                    : error.statusCode === 500
+                        ? 500
+                        : 400;
+                return reply.status(statusCode).send(fromWorkforceAgentError(error));
+            }
+
+            throw error;
+        }
+    });
+
+    server.get('/workforce/agents/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            response: {
+                200: createAIResponse(WorkforceAgentResponseSchema),
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const agent = await getWorkforceAgentById(getDomainId(request), id);
+        if (!agent) {
+            return reply.status(404).send(toErrorPayload(
+                'Workforce agent not found',
+                'WORKFORCE_AGENT_NOT_FOUND',
+                `No workforce agent with ID ${id} exists in the current tenant.`,
+            ));
+        }
+
+        return {
+            data: serializeWorkforceAgentForApi(agent),
+            meta: buildMeta(
+                'Review or update this workforce agent profile before attaching it to forms or jobs.',
+                [`PUT /api/workforce/agents/${agent.id}`, `DELETE /api/workforce/agents/${agent.id}`],
+                'low',
+                1,
+            )
+        };
+    });
+
+    server.put('/workforce/agents/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            body: WorkforceAgentUpdateRequestSchema,
+            response: {
+                200: createAIResponse(WorkforceAgentResponseSchema),
+                400: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+                500: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorFromRequest(request as RequestActorCarrier);
+        const { id } = request.params as IdParams;
+        const body = request.body as {
+            name?: string;
+            slug?: string;
+            purpose?: string;
+            soul?: string;
+            provider?: Record<string, unknown>;
+            active?: boolean;
+        };
+
+        try {
+            const updated = await updateWorkforceAgent(id, {
+                domainId: getDomainId(request),
+                name: body.name,
+                slug: body.slug,
+                purpose: body.purpose,
+                soul: body.soul,
+                provider: body.provider,
+                active: body.active,
+            });
+
+            await logAudit(
+                getDomainId(request),
+                'update',
+                'workforce_agent',
+                updated.id,
+                {
+                    slug: updated.slug,
+                    provider: updated.provider,
+                    active: updated.active,
+                },
+                actorId,
+                request.id,
+            );
+
+            return {
+                data: serializeWorkforceAgentForApi(updated),
+                meta: buildMeta(
+                    'Future form submissions referencing this workforce agent will pick up the updated SOUL and provider/model defaults.',
+                    [`GET /api/workforce/agents/${updated.id}`],
+                    'medium',
+                    1,
+                )
+            };
+        } catch (error) {
+            if (error instanceof WorkforceAgentError) {
+                const statusCode: 400 | 404 | 409 | 500 = error.statusCode === 404
+                    ? 404
+                    : error.statusCode === 409
+                        ? 409
+                        : error.statusCode === 500
+                            ? 500
+                            : 400;
+                return reply.status(statusCode).send(fromWorkforceAgentError(error));
+            }
+
+            throw error;
+        }
+    });
+
+    server.delete('/workforce/agents/:id', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number(),
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    id: Type.Number(),
+                    slug: Type.String(),
+                    message: Type.String(),
+                })),
+                404: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const actorId = toAuditActorFromRequest(request as RequestActorCarrier);
+        const { id } = request.params as IdParams;
+        const deleted = await deleteWorkforceAgent(getDomainId(request), id);
+
+        if (!deleted) {
+            return reply.status(404).send(toErrorPayload(
+                'Workforce agent not found',
+                'WORKFORCE_AGENT_NOT_FOUND',
+                `No workforce agent with ID ${id} exists in the current tenant.`,
+            ));
+        }
+
+        await logAudit(
+            getDomainId(request),
+            'delete',
+            'workforce_agent',
+            deleted.id,
+            {
+                slug: deleted.slug,
+            },
+            actorId,
+            request.id,
+        );
+
+        return {
+            data: {
+                id: deleted.id,
+                slug: deleted.slug,
+                message: 'Workforce agent deleted successfully',
+            },
+            meta: buildMeta(
+                'Update any forms that still reference this workforce agent before accepting more submissions.',
+                ['GET /api/workforce/agents', 'GET /api/forms'],
+                'medium',
+                1,
             )
         };
     });

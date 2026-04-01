@@ -76,6 +76,22 @@ import {
 } from '../services/tenant-onboarding.js';
 import { findAssetUsage, findContentItemUsage, type ReferenceUsageSummary } from '../services/reference-usage.js';
 import {
+    AiProviderConfigError,
+    deleteAiProviderConfig,
+    getAiProviderConfig,
+    listAiProviderConfigs,
+    upsertAiProviderConfig,
+    type ConfigurableAiProviderType,
+} from '../services/ai-provider-config.js';
+import {
+    createWorkforceAgent,
+    deleteWorkforceAgent,
+    getWorkforceAgentById,
+    listWorkforceAgents,
+    updateWorkforceAgent,
+    WorkforceAgentError,
+} from '../services/workforce-agent.js';
+import {
     FormServiceError,
     createFormDefinition,
     deleteFormDefinition,
@@ -318,6 +334,14 @@ export function createServer(options: CreateMcpServerOptions = {}) {
 
     function formatFormError(error: FormServiceError): string {
         return `${error.code}: ${error.message}. ${error.remediation}${error.context ? ` Context: ${JSON.stringify(error.context)}` : ''}`;
+    }
+
+    function formatAiProviderConfigError(error: AiProviderConfigError): string {
+        return `${error.code}: ${error.message}. ${error.remediation}`;
+    }
+
+    function formatWorkforceAgentError(error: WorkforceAgentError): string {
+        return `${error.code}: ${error.message}. ${error.remediation}`;
     }
 
     function withMCPPolicy<T>(
@@ -1414,8 +1438,30 @@ server.tool(
         successMessage: z.string().optional().describe('Optional public-facing success message'),
         draftGeneration: z.object({
             targetContentTypeId: z.number().describe('Target content type for generated drafts'),
-            agentSoul: z.string().describe('Lightweight SOUL/agent key for the draft pipeline'),
+            workforceAgentId: z.number().nullable().optional().describe('Optional tenant workforce agent id to resolve SOUL and provider/model defaults'),
+            agentSoul: z.string().optional().describe('Optional direct SOUL override when not using a workforce agent'),
+            fieldMap: z.record(z.string(), z.string()).optional().describe('Optional source-to-target field mapping for draft output'),
             defaultData: z.record(z.string(), z.any()).optional().describe('Default output fields merged before copied intake fields'),
+            provider: z.union([
+                z.object({
+                    type: z.literal('deterministic'),
+                }),
+                z.object({
+                    type: z.literal('openai'),
+                    model: z.string().optional().describe('Optional OpenAI model override'),
+                    instructions: z.string().optional().describe('Optional extra provider instructions'),
+                }),
+                z.object({
+                    type: z.literal('anthropic'),
+                    model: z.string().optional().describe('Optional Anthropic model override'),
+                    instructions: z.string().optional().describe('Optional extra provider instructions'),
+                }),
+                z.object({
+                    type: z.literal('gemini'),
+                    model: z.string().optional().describe('Optional Gemini model override'),
+                    instructions: z.string().optional().describe('Optional extra provider instructions'),
+                }),
+            ]).optional().describe('Optional draft-generation provider config'),
             postGenerationWorkflowTransitionId: z.number().nullable().optional().describe('Optional workflow transition to submit the generated draft after creation'),
         }).nullable().optional().describe('Optional draft-generation pipeline config'),
     },
@@ -1460,8 +1506,30 @@ server.tool(
         successMessage: z.string().nullable().optional().describe('Optional public-facing success message'),
         draftGeneration: z.object({
             targetContentTypeId: z.number().describe('Target content type for generated drafts'),
-            agentSoul: z.string().describe('Lightweight SOUL/agent key for the draft pipeline'),
+            workforceAgentId: z.number().nullable().optional().describe('Optional tenant workforce agent id to resolve SOUL and provider/model defaults'),
+            agentSoul: z.string().optional().describe('Optional direct SOUL override when not using a workforce agent'),
+            fieldMap: z.record(z.string(), z.string()).optional().describe('Optional source-to-target field mapping for draft output'),
             defaultData: z.record(z.string(), z.any()).optional().describe('Default output fields merged before copied intake fields'),
+            provider: z.union([
+                z.object({
+                    type: z.literal('deterministic'),
+                }),
+                z.object({
+                    type: z.literal('openai'),
+                    model: z.string().optional().describe('Optional OpenAI model override'),
+                    instructions: z.string().optional().describe('Optional extra provider instructions'),
+                }),
+                z.object({
+                    type: z.literal('anthropic'),
+                    model: z.string().optional().describe('Optional Anthropic model override'),
+                    instructions: z.string().optional().describe('Optional extra provider instructions'),
+                }),
+                z.object({
+                    type: z.literal('gemini'),
+                    model: z.string().optional().describe('Optional Gemini model override'),
+                    instructions: z.string().optional().describe('Optional extra provider instructions'),
+                }),
+            ]).optional().describe('Optional draft-generation provider config'),
             postGenerationWorkflowTransitionId: z.number().nullable().optional().describe('Optional workflow transition to submit the generated draft after creation'),
         }).nullable().optional().describe('Optional draft-generation pipeline config'),
     },
@@ -2214,6 +2282,256 @@ server.tool(
         })));
     }
     ));
+
+server.tool(
+    'list_ai_provider_configs',
+    'List tenant-scoped AI provider credentials for provider-backed draft generation',
+    {},
+    withMCPPolicy('ai_provider.list', () => ({ type: 'system' }), async (_args, _extra, domainId) => {
+        const configs = await listAiProviderConfigs(domainId);
+        return okJson(configs);
+    })
+);
+
+server.tool(
+    'get_ai_provider_config',
+    'Inspect one tenant-scoped AI provider credential record',
+    {
+        provider: z.enum(['openai', 'anthropic', 'gemini']).describe('External AI provider type'),
+    },
+    withMCPPolicy('ai_provider.list', (args) => ({ type: 'system', id: args.provider }), async ({ provider }, _extra, domainId) => {
+        const config = await getAiProviderConfig(domainId, provider);
+        if (!config) {
+            return err(`AI_PROVIDER_CONFIG_NOT_FOUND: Provider '${provider}' is not configured for the current tenant.`);
+        }
+
+        return okJson(config);
+    })
+);
+
+server.tool(
+    'configure_ai_provider',
+    'Create or update a tenant-scoped AI provider credential',
+    {
+        provider: z.enum(['openai', 'anthropic', 'gemini']).describe('External AI provider type'),
+        apiKey: z.string().describe('Provider API key stored for background draft-generation jobs'),
+        defaultModel: z.string().nullable().optional().describe('Optional tenant-level default model'),
+        settings: z.record(z.string(), z.any()).optional().describe('Optional provider-specific settings object'),
+    },
+    withMCPPolicy('ai_provider.write', (args) => ({ type: 'system', id: args.provider }), async ({ provider, apiKey, defaultModel, settings }, _extra, domainId) => {
+        try {
+            const configured = await upsertAiProviderConfig({
+                domainId,
+                provider,
+                apiKey,
+                defaultModel,
+                settings,
+            });
+
+            await logAudit(domainId, 'update', 'ai_provider_config', configured.id, {
+                mcpTool: 'configure_ai_provider',
+                provider: configured.provider,
+                defaultModel: configured.defaultModel,
+                configured: true,
+            });
+
+            return okJson(configured);
+        } catch (error) {
+            if (error instanceof AiProviderConfigError) {
+                return err(formatAiProviderConfigError(error));
+            }
+
+            return err(`Error configuring AI provider: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'delete_ai_provider_config',
+    'Delete a tenant-scoped AI provider credential',
+    {
+        provider: z.enum(['openai', 'anthropic', 'gemini']).describe('External AI provider type'),
+    },
+    withMCPPolicy('ai_provider.write', (args) => ({ type: 'system', id: args.provider }), async ({ provider }, _extra, domainId) => {
+        const deleted = await deleteAiProviderConfig(domainId, provider);
+        if (!deleted) {
+            return err(`AI_PROVIDER_CONFIG_NOT_FOUND: Provider '${provider}' is not configured for the current tenant.`);
+        }
+
+        await logAudit(domainId, 'delete', 'ai_provider_config', deleted.id, {
+            mcpTool: 'delete_ai_provider_config',
+            provider: deleted.provider,
+            configured: false,
+        });
+
+        return okJson({
+            provider: deleted.provider as ConfigurableAiProviderType,
+            deleted: true,
+        });
+    })
+);
+
+server.tool(
+    'list_workforce_agents',
+    'List tenant-managed workforce agents that carry SOUL and provider/model defaults',
+    {},
+    withMCPPolicy('workforce.list', () => ({ type: 'system' }), async (_args, _extra, domainId) => {
+        const agents = await listWorkforceAgents(domainId);
+        return okJson(agents);
+    })
+);
+
+server.tool(
+    'get_workforce_agent',
+    'Inspect one tenant-managed workforce agent',
+    {
+        id: z.number().describe('Workforce agent id'),
+    },
+    withMCPPolicy('workforce.list', (args) => ({ type: 'system', id: args.id }), async ({ id }, _extra, domainId) => {
+        const agent = await getWorkforceAgentById(domainId, id);
+        if (!agent) {
+            return err(`WORKFORCE_AGENT_NOT_FOUND: No workforce agent with id ${id} exists in the current tenant.`);
+        }
+
+        return okJson(agent);
+    })
+);
+
+server.tool(
+    'create_workforce_agent',
+    'Create a tenant-managed workforce agent with a bounded SOUL, purpose, and provider/model defaults',
+    {
+        name: z.string().describe('Human-readable workforce agent name'),
+        slug: z.string().describe('Stable slug for API references'),
+        purpose: z.string().describe('Short purpose statement for this agent'),
+        soul: z.string().describe('SOUL text or persona definition for this agent'),
+        provider: z.union([
+            z.object({
+                type: z.literal('deterministic'),
+            }),
+            z.object({
+                type: z.literal('openai'),
+                model: z.string().optional().describe('Optional OpenAI model override'),
+                instructions: z.string().optional().describe('Optional extra provider instructions'),
+            }),
+            z.object({
+                type: z.literal('anthropic'),
+                model: z.string().optional().describe('Optional Anthropic model override'),
+                instructions: z.string().optional().describe('Optional extra provider instructions'),
+            }),
+            z.object({
+                type: z.literal('gemini'),
+                model: z.string().optional().describe('Optional Gemini model override'),
+                instructions: z.string().optional().describe('Optional extra provider instructions'),
+            }),
+        ]).optional().describe('Provider and model defaults for this workforce agent'),
+        active: z.boolean().optional().describe('Whether forms can use this workforce agent'),
+    },
+    withMCPPolicy('workforce.write', () => ({ type: 'system' }), async (args, _extra, domainId) => {
+        try {
+            const created = await createWorkforceAgent({
+                domainId,
+                ...args,
+            });
+
+            await logAudit(domainId, 'create', 'workforce_agent', created.id, {
+                mcpTool: 'create_workforce_agent',
+                slug: created.slug,
+                provider: created.provider,
+                active: created.active,
+            });
+
+            return okJson(created);
+        } catch (error) {
+            if (error instanceof WorkforceAgentError) {
+                return err(formatWorkforceAgentError(error));
+            }
+
+            return err(`Error creating workforce agent: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'update_workforce_agent',
+    'Update a tenant-managed workforce agent',
+    {
+        id: z.number().describe('Workforce agent id'),
+        name: z.string().optional().describe('Optional updated name'),
+        slug: z.string().optional().describe('Optional updated slug'),
+        purpose: z.string().optional().describe('Optional updated purpose'),
+        soul: z.string().optional().describe('Optional updated SOUL text'),
+        provider: z.union([
+            z.object({
+                type: z.literal('deterministic'),
+            }),
+            z.object({
+                type: z.literal('openai'),
+                model: z.string().optional().describe('Optional OpenAI model override'),
+                instructions: z.string().optional().describe('Optional extra provider instructions'),
+            }),
+            z.object({
+                type: z.literal('anthropic'),
+                model: z.string().optional().describe('Optional Anthropic model override'),
+                instructions: z.string().optional().describe('Optional extra provider instructions'),
+            }),
+            z.object({
+                type: z.literal('gemini'),
+                model: z.string().optional().describe('Optional Gemini model override'),
+                instructions: z.string().optional().describe('Optional extra provider instructions'),
+            }),
+        ]).optional().describe('Optional updated provider/model defaults'),
+        active: z.boolean().optional().describe('Whether forms can use this workforce agent'),
+    },
+    withMCPPolicy('workforce.write', (args) => ({ type: 'system', id: args.id }), async ({ id, ...args }, _extra, domainId) => {
+        try {
+            const updated = await updateWorkforceAgent(id, {
+                domainId,
+                ...args,
+            });
+
+            await logAudit(domainId, 'update', 'workforce_agent', updated.id, {
+                mcpTool: 'update_workforce_agent',
+                slug: updated.slug,
+                provider: updated.provider,
+                active: updated.active,
+            });
+
+            return okJson(updated);
+        } catch (error) {
+            if (error instanceof WorkforceAgentError) {
+                return err(formatWorkforceAgentError(error));
+            }
+
+            return err(`Error updating workforce agent: ${(error as Error).message}`);
+        }
+    })
+);
+
+server.tool(
+    'delete_workforce_agent',
+    'Delete a tenant-managed workforce agent',
+    {
+        id: z.number().describe('Workforce agent id'),
+    },
+    withMCPPolicy('workforce.write', (args) => ({ type: 'system', id: args.id }), async ({ id }, _extra, domainId) => {
+        const deleted = await deleteWorkforceAgent(domainId, id);
+        if (!deleted) {
+            return err(`WORKFORCE_AGENT_NOT_FOUND: No workforce agent with id ${id} exists in the current tenant.`);
+        }
+
+        await logAudit(domainId, 'delete', 'workforce_agent', deleted.id, {
+            mcpTool: 'delete_workforce_agent',
+            slug: deleted.slug,
+        });
+
+        return okJson({
+            id: deleted.id,
+            slug: deleted.slug,
+            deleted: true,
+        });
+    })
+);
 
 server.tool(
     'revoke_api_key',

@@ -409,6 +409,40 @@ export const l402OperatorConfigs = pgTable('l402_operator_configs', {
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+export const aiProviderConfigs = pgTable('ai_provider_configs', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    provider: text('provider').notNull(),
+    apiKey: text('api_key').notNull(),
+    defaultModel: text('default_model'),
+    settings: jsonb('settings').notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        aiProviderConfigsDomainProviderUniqueIdx: uniqueIndex('ai_provider_configs_domain_provider_unique').on(table.domainId, table.provider),
+        aiProviderConfigsDomainIdx: index('ai_provider_configs_domain_idx').on(table.domainId),
+    };
+});
+
+export const workforceAgents = pgTable('workforce_agents', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    purpose: text('purpose').notNull(),
+    soul: text('soul').notNull(),
+    provider: jsonb('provider').notNull().default({ type: 'deterministic' }),
+    active: boolean('active').notNull().default(true),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        workforceAgentsDomainSlugUniqueIdx: uniqueIndex('workforce_agents_domain_slug_unique').on(table.domainId, table.slug),
+        workforceAgentsDomainIdx: index('workforce_agents_domain_idx').on(table.domainId),
+    };
+});
+
 export const contributionEvents = pgTable('contribution_events', {
     id: serial('id').primaryKey(),
     domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),

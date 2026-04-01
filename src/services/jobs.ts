@@ -5,7 +5,14 @@ import { and, asc, eq, lte, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { contentItems, contentItemVersions, contentTypes, jobs, webhooks, workflows } from '../db/schema.js';
 import { logAudit } from './audit.js';
+import { getAiProviderSecretConfig } from './ai-provider-config.js';
 import { validateContentDataAgainstSchema } from './content-schema.js';
+import {
+    generateDraftData,
+    type DraftGenerationProviderConfig,
+    type DraftGenerationProviderProvisioning,
+    type DraftGenerationWorkforceAgentReference,
+} from './draft-generation.js';
 import { EmbeddingService } from './embedding.js';
 import { WorkflowService } from './workflow.js';
 
@@ -33,8 +40,14 @@ export type DraftGenerationJobPayload = {
     intakeContentItemId: number;
     intakeData: Record<string, unknown>;
     targetContentTypeId: number;
+    workforceAgentId?: number | null;
+    workforceAgentSlug?: string | null;
+    workforceAgentName?: string | null;
+    workforceAgentPurpose?: string | null;
     agentSoul: string;
+    fieldMap?: Record<string, string>;
     defaultData?: Record<string, unknown>;
+    provider?: DraftGenerationProviderConfig;
     postGenerationWorkflowTransitionId?: number | null;
 };
 
@@ -173,6 +186,23 @@ function parseDraftGenerationPayload(payload: unknown): DraftGenerationJobPayloa
         throw new Error('Draft generation jobs require formId, formSlug, intakeContentItemId, intakeData, targetContentTypeId, and agentSoul.');
     }
 
+    const workforceAgentId = payload.workforceAgentId === undefined
+        ? null
+        : payload.workforceAgentId === null
+            ? null
+            : typeof payload.workforceAgentId === 'number'
+                && Number.isInteger(payload.workforceAgentId)
+                && payload.workforceAgentId > 0
+                ? payload.workforceAgentId
+                : null;
+    if (
+        payload.workforceAgentId !== undefined
+        && payload.workforceAgentId !== null
+        && workforceAgentId === null
+    ) {
+        throw new Error('Draft generation jobs require workforceAgentId to be a positive integer or null.');
+    }
+
     const defaultData = payload.defaultData === undefined
         ? {}
         : isObject(payload.defaultData)
@@ -180,6 +210,81 @@ function parseDraftGenerationPayload(payload: unknown): DraftGenerationJobPayloa
             : null;
     if (defaultData === null) {
         throw new Error('Draft generation jobs require defaultData to be an object when provided.');
+    }
+
+    const fieldMap = payload.fieldMap === undefined
+        ? {}
+        : isObject(payload.fieldMap)
+            ? Object.fromEntries(
+                Object.entries(payload.fieldMap).map(([sourceFieldName, targetFieldName]) => {
+                    const normalizedSourceFieldName = sourceFieldName.trim();
+                    if (!normalizedSourceFieldName || typeof targetFieldName !== 'string' || targetFieldName.trim().length === 0) {
+                        throw new Error('Draft generation jobs require fieldMap entries to use non-empty string source and target field names.');
+                    }
+
+                    return [normalizedSourceFieldName, targetFieldName.trim()];
+                }),
+            )
+            : null;
+    if (fieldMap === null) {
+        throw new Error('Draft generation jobs require fieldMap to be an object when provided.');
+    }
+
+    const mappedTargetFieldNames = Object.values(fieldMap);
+    if (new Set(mappedTargetFieldNames).size !== mappedTargetFieldNames.length) {
+        throw new Error('Draft generation jobs require unique target field names in fieldMap.');
+    }
+
+    const providerValue = payload.provider;
+    let provider: DraftGenerationProviderConfig = {
+        type: 'deterministic',
+    };
+    if (providerValue !== undefined) {
+        if (!isObject(providerValue)) {
+            throw new Error('Draft generation jobs require provider to be an object when provided.');
+        }
+
+        const providerType = typeof providerValue.type === 'string' && providerValue.type.trim().length > 0
+            ? providerValue.type.trim()
+            : 'deterministic';
+
+        if (providerType === 'deterministic') {
+            provider = {
+                type: 'deterministic',
+            };
+        } else if (providerType === 'openai') {
+            provider = {
+                type: 'openai',
+                ...(typeof providerValue.model === 'string' && providerValue.model.trim().length > 0
+                    ? { model: providerValue.model.trim() }
+                    : {}),
+                ...(typeof providerValue.instructions === 'string' && providerValue.instructions.trim().length > 0
+                    ? { instructions: providerValue.instructions.trim() }
+                    : {}),
+            };
+        } else if (providerType === 'anthropic') {
+            provider = {
+                type: 'anthropic',
+                ...(typeof providerValue.model === 'string' && providerValue.model.trim().length > 0
+                    ? { model: providerValue.model.trim() }
+                    : {}),
+                ...(typeof providerValue.instructions === 'string' && providerValue.instructions.trim().length > 0
+                    ? { instructions: providerValue.instructions.trim() }
+                    : {}),
+            };
+        } else if (providerType === 'gemini') {
+            provider = {
+                type: 'gemini',
+                ...(typeof providerValue.model === 'string' && providerValue.model.trim().length > 0
+                    ? { model: providerValue.model.trim() }
+                    : {}),
+                ...(typeof providerValue.instructions === 'string' && providerValue.instructions.trim().length > 0
+                    ? { instructions: providerValue.instructions.trim() }
+                    : {}),
+            };
+        } else {
+            throw new Error(`Unsupported draft generation provider '${providerType}'.`);
+        }
     }
 
     const postGenerationWorkflowTransitionId = payload.postGenerationWorkflowTransitionId === undefined
@@ -206,8 +311,20 @@ function parseDraftGenerationPayload(payload: unknown): DraftGenerationJobPayloa
         intakeContentItemId: payload.intakeContentItemId,
         intakeData: payload.intakeData as Record<string, unknown>,
         targetContentTypeId: payload.targetContentTypeId,
+        workforceAgentId,
+        workforceAgentSlug: typeof payload.workforceAgentSlug === 'string' && payload.workforceAgentSlug.trim().length > 0
+            ? payload.workforceAgentSlug.trim()
+            : null,
+        workforceAgentName: typeof payload.workforceAgentName === 'string' && payload.workforceAgentName.trim().length > 0
+            ? payload.workforceAgentName.trim()
+            : null,
+        workforceAgentPurpose: typeof payload.workforceAgentPurpose === 'string' && payload.workforceAgentPurpose.trim().length > 0
+            ? payload.workforceAgentPurpose.trim()
+            : null,
         agentSoul: payload.agentSoul.trim(),
+        fieldMap,
         defaultData,
+        provider,
         postGenerationWorkflowTransitionId,
     };
 }
@@ -348,25 +465,6 @@ async function runContentStatusTransitionJob(domainId: number, payload: ContentS
     };
 }
 
-function parseTopLevelSchemaProperties(schemaText: string): Set<string> {
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(schemaText);
-    } catch {
-        throw new Error('Target content type schema is invalid JSON.');
-    }
-
-    if (
-        !isObject(parsed)
-        || parsed.type !== 'object'
-        || !isObject(parsed.properties)
-    ) {
-        throw new Error('Target content type schema must be a top-level object with properties for draft generation.');
-    }
-
-    return new Set(Object.keys(parsed.properties as Record<string, unknown>));
-}
-
 async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJobPayload) {
     const [targetContentType] = await db.select()
         .from(contentTypes)
@@ -379,16 +477,69 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
         throw new Error(`Target content type ${payload.targetContentTypeId} not found in domain ${domainId}.`);
     }
 
-    const targetKeys = parseTopLevelSchemaProperties(targetContentType.schema);
-    const copiedInputData = Object.fromEntries(
-        Object.entries(payload.intakeData).filter(([key]) => targetKeys.has(key)),
-    );
-    const generatedData = {
-        ...(payload.defaultData ?? {}),
-        ...copiedInputData,
+    const explicitFieldMap = payload.fieldMap ?? {};
+    const provider = payload.provider ?? { type: 'deterministic' };
+    const workforceAgent: DraftGenerationWorkforceAgentReference | null = payload.workforceAgentId
+        ? {
+            id: payload.workforceAgentId,
+            slug: payload.workforceAgentSlug ?? `agent-${payload.workforceAgentId}`,
+            name: payload.workforceAgentName ?? `Agent ${payload.workforceAgentId}`,
+            purpose: payload.workforceAgentPurpose ?? 'Tenant-defined drafting agent',
+        }
+        : null;
+    let providerProvisioning: DraftGenerationProviderProvisioning | null = {
+        type: 'deterministic',
     };
+    if (provider.type === 'openai') {
+        const configuredProvider = await getAiProviderSecretConfig(domainId, provider.type);
+        providerProvisioning = configuredProvider
+            ? {
+                type: 'openai',
+                apiKey: configuredProvider.apiKey,
+                defaultModel: configuredProvider.defaultModel,
+            }
+            : null;
+    } else if (provider.type === 'anthropic') {
+        const configuredProvider = await getAiProviderSecretConfig(domainId, provider.type);
+        providerProvisioning = configuredProvider
+            ? {
+                type: 'anthropic',
+                apiKey: configuredProvider.apiKey,
+                defaultModel: configuredProvider.defaultModel,
+            }
+            : null;
+    } else if (provider.type === 'gemini') {
+        const configuredProvider = await getAiProviderSecretConfig(domainId, provider.type);
+        providerProvisioning = configuredProvider
+            ? {
+                type: 'gemini',
+                apiKey: configuredProvider.apiKey,
+                defaultModel: configuredProvider.defaultModel,
+            }
+            : null;
+    }
 
-    const serializedData = JSON.stringify(generatedData);
+    const generation = await generateDraftData({
+        domainId,
+        formId: payload.formId,
+        formSlug: payload.formSlug,
+        intakeContentItemId: payload.intakeContentItemId,
+        intakeData: payload.intakeData,
+        targetContentType: {
+            id: targetContentType.id,
+            name: targetContentType.name,
+            slug: targetContentType.slug,
+            schema: targetContentType.schema,
+        },
+        agentSoul: payload.agentSoul,
+        fieldMap: explicitFieldMap,
+        defaultData: payload.defaultData ?? {},
+        provider,
+        providerProvisioning,
+        workforceAgent,
+    });
+
+    const serializedData = JSON.stringify(generation.data);
     const validationFailure = await validateContentDataAgainstSchema(
         targetContentType.schema,
         serializedData,
@@ -411,8 +562,13 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
         formSlug: payload.formSlug,
         intakeContentItemId: payload.intakeContentItemId,
         targetContentTypeId: payload.targetContentTypeId,
+        workforceAgentId: workforceAgent?.id ?? null,
+        workforceAgentSlug: workforceAgent?.slug ?? null,
+        workforceAgentName: workforceAgent?.name ?? null,
         agentSoul: payload.agentSoul,
-        strategy: 'schema_overlap_defaults_v1',
+        fieldMap: explicitFieldMap,
+        provider: generation.provider,
+        strategy: generation.strategy,
     });
 
     let reviewTaskId: number | null = null;
@@ -431,8 +587,13 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
         reviewTaskId,
         intakeContentItemId: payload.intakeContentItemId,
         targetContentTypeId: payload.targetContentTypeId,
+        workforceAgentId: workforceAgent?.id ?? null,
+        workforceAgentSlug: workforceAgent?.slug ?? null,
+        workforceAgentName: workforceAgent?.name ?? null,
         agentSoul: payload.agentSoul,
-        strategy: 'schema_overlap_defaults_v1',
+        fieldMap: explicitFieldMap,
+        provider: generation.provider,
+        strategy: generation.strategy,
     };
 }
 
@@ -518,8 +679,14 @@ export async function enqueueDraftGenerationJob(input: {
     intakeContentItemId: number;
     intakeData: Record<string, unknown>;
     targetContentTypeId: number;
+    workforceAgentId?: number | null;
+    workforceAgentSlug?: string | null;
+    workforceAgentName?: string | null;
+    workforceAgentPurpose?: string | null;
     agentSoul: string;
+    fieldMap?: Record<string, string>;
     defaultData?: Record<string, unknown>;
+    provider?: DraftGenerationProviderConfig;
     postGenerationWorkflowTransitionId?: number | null;
     runAt?: Date;
     maxAttempts?: number;
@@ -533,8 +700,14 @@ export async function enqueueDraftGenerationJob(input: {
             intakeContentItemId: input.intakeContentItemId,
             intakeData: input.intakeData,
             targetContentTypeId: input.targetContentTypeId,
+            workforceAgentId: input.workforceAgentId ?? null,
+            workforceAgentSlug: input.workforceAgentSlug ?? null,
+            workforceAgentName: input.workforceAgentName ?? null,
+            workforceAgentPurpose: input.workforceAgentPurpose ?? null,
             agentSoul: input.agentSoul,
+            fieldMap: input.fieldMap ?? {},
             defaultData: input.defaultData ?? {},
+            provider: input.provider ?? { type: 'deterministic' },
             postGenerationWorkflowTransitionId: input.postGenerationWorkflowTransitionId ?? null,
         },
         queue: 'drafts',

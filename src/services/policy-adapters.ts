@@ -65,6 +65,12 @@ export function resolveRestOperation(method: string, routePath: string): string 
     if (routePath.startsWith('/api/webhooks')) {
         return upperMethod === 'GET' ? 'webhook.list' : 'webhook.write';
     }
+    if (routePath.startsWith('/api/ai/providers')) {
+        return upperMethod === 'GET' ? 'ai_provider.list' : 'ai_provider.write';
+    }
+    if (routePath.startsWith('/api/workforce/agents')) {
+        return upperMethod === 'GET' ? 'workforce.list' : 'workforce.write';
+    }
     if (routePath.startsWith('/ws/events') || routePath.startsWith('/api/audit-logs')) {
         return 'audit.read';
     }

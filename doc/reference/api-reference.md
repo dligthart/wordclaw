@@ -45,6 +45,10 @@ The current REST content contract includes a few authoring-state primitives that
 - Short-lived preview tokens are issued through `POST /api/content-items/:id/preview-token` and `POST /api/globals/:slug/preview-token`, then redeemed through `/api/preview/...` paths.
 - Reverse-reference usage graphs are available through `GET /api/content-items/:id/used-by` and `GET /api/assets/:id/used-by`.
 - Reusable forms are managed through `GET/POST /api/forms`, `GET/PUT/DELETE /api/forms/:id`, and the public submission surface at `GET /api/public/forms/:slug` plus `POST /api/public/forms/:slug/submissions`.
+- Form definitions can optionally attach `draftGeneration` config so a submission enqueues a background drafting job. Forms can still use a direct `agentSoul`, but the preferred shape is `draftGeneration.workforceAgentId`, which resolves a tenant-managed workforce agent with its own SOUL and provider/model defaults.
+- External draft-generation provisioning is tenant-scoped. Configure it with `GET /api/ai/providers`, `GET /api/ai/providers/:provider`, `PUT /api/ai/providers/:provider`, or `DELETE /api/ai/providers/:provider`, where `:provider` is currently `openai`, `anthropic`, or `gemini`. The REST read surface returns masked secrets only.
+- Workforce agents are also tenant-scoped. Use `GET /api/workforce/agents`, `POST /api/workforce/agents`, `GET /api/workforce/agents/:id`, `PUT /api/workforce/agents/:id`, and `DELETE /api/workforce/agents/:id` to manage reusable agents with a stable slug, a purpose, a SOUL, and provider/model defaults.
+- Deployment discovery now reports draft-generation provisioning separately from semantic-search embeddings, and it explicitly marks external AI providers as tenant-managed rather than process-global.
 - Background jobs are managed through `GET/POST /api/jobs`, `GET/DELETE /api/jobs/:id`, `GET /api/jobs/worker-status`, and `POST /api/content-items/:id/schedule-status`.
 - Preview reads stay scoped to one item or global, remain auditable, and currently reject paywalled targets.
 

@@ -547,6 +547,49 @@ describe('MCP HTTP transport', () => {
                     pendingItemCount: 0,
                     reason: 'OPENAI_API_KEY not set',
                 }),
+                draftGeneration: expect.objectContaining({
+                    status: 'ready',
+                    defaultProvider: 'deterministic',
+                    supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
+                    provisionedProviders: ['deterministic'],
+                    provisioningMode: 'tenant-scoped',
+                    providers: expect.objectContaining({
+                        deterministic: expect.objectContaining({
+                            status: 'ready',
+                            enabled: true,
+                        }),
+                        openai: expect.objectContaining({
+                            status: 'disabled',
+                            enabled: false,
+                            model: null,
+                            reason: 'tenant_provider_config_required',
+                            requiresProvisioning: true,
+                            provisioningScope: 'tenant',
+                            managementRestPath: '/api/ai/providers/openai',
+                            managementMcpTool: 'list_ai_provider_configs',
+                        }),
+                        anthropic: expect.objectContaining({
+                            status: 'disabled',
+                            enabled: false,
+                            model: null,
+                            reason: 'tenant_provider_config_required',
+                            requiresProvisioning: true,
+                            provisioningScope: 'tenant',
+                            managementRestPath: '/api/ai/providers/anthropic',
+                            managementMcpTool: 'list_ai_provider_configs',
+                        }),
+                        gemini: expect.objectContaining({
+                            status: 'disabled',
+                            enabled: false,
+                            model: null,
+                            reason: 'tenant_provider_config_required',
+                            requiresProvisioning: true,
+                            provisioningScope: 'tenant',
+                            managementRestPath: '/api/ai/providers/gemini',
+                            managementMcpTool: 'list_ai_provider_configs',
+                        }),
+                    }),
+                }),
                 ui: expect.objectContaining({
                     routePrefix: '/ui/',
                     devCommand: 'npm run dev:all',
@@ -744,6 +787,14 @@ describe('MCP HTTP transport', () => {
                 status: 'disabled',
                 enabled: false,
             }),
+            draftGeneration: expect.objectContaining({
+                status: 'ready',
+                provisionedProviders: ['deterministic'],
+                enabledProviders: [],
+                provisionableProviders: ['openai', 'anthropic', 'gemini'],
+                pendingProviders: ['openai', 'anthropic', 'gemini'],
+                provisioningMode: 'tenant-scoped',
+            }),
             steps: expect.arrayContaining([
                 expect.objectContaining({
                     id: 'resolve-bootstrap-blocker',
@@ -759,6 +810,11 @@ describe('MCP HTTP transport', () => {
                     id: 'check-semantic-search-posture',
                     status: 'optional',
                     command: 'node dist/cli/index.js capabilities status',
+                }),
+                expect.objectContaining({
+                    id: 'check-draft-generation-provider-provisioning',
+                    status: 'optional',
+                    command: 'node dist/cli/index.js mcp call list_ai_provider_configs',
                 }),
                 expect.objectContaining({
                     command: 'node dist/cli/index.js capabilities show',

@@ -22,6 +22,7 @@ function buildDeploymentStatus(overrides: {
     bootstrap?: Partial<DeploymentStatusSnapshot['checks']['bootstrap']>;
     auth?: Partial<DeploymentStatusSnapshot['checks']['auth']>;
     vectorRag?: Partial<DeploymentStatusSnapshot['checks']['vectorRag']>;
+    draftGeneration?: Partial<DeploymentStatusSnapshot['checks']['draftGeneration']>;
     warnings?: string[];
 } = {}): DeploymentStatusSnapshot {
     const base: DeploymentStatusSnapshot = {
@@ -66,6 +67,55 @@ function buildDeploymentStatus(overrides: {
                 requiredEnvironmentVariables: ['OPENAI_API_KEY'],
                 reason: 'ready',
                 note: 'Semantic search is enabled.',
+            },
+            draftGeneration: {
+                status: 'ready',
+                defaultProvider: 'deterministic',
+                supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
+                provisionedProviders: ['deterministic'],
+                provisioningMode: 'tenant-scoped',
+                note: 'Deterministic draft generation is always available. External AI providers are tenant-managed and must be provisioned per domain before model-backed jobs can run.',
+                providers: {
+                    deterministic: {
+                        status: 'ready',
+                        enabled: true,
+                        requiresProvisioning: false,
+                        note: 'Deterministic draft generation is always available.',
+                    },
+                    openai: {
+                        status: 'disabled',
+                        enabled: false,
+                        model: 'gpt-4o',
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/openai',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                        note: 'OpenAI draft generation is supported, but each tenant must configure its own API key before provider-backed draft jobs can run.',
+                    },
+                    anthropic: {
+                        status: 'disabled',
+                        enabled: false,
+                        model: null,
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/anthropic',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                        note: 'Anthropic draft generation is supported, but each tenant must configure its own API key and model before provider-backed draft jobs can run.',
+                    },
+                    gemini: {
+                        status: 'disabled',
+                        enabled: false,
+                        model: null,
+                        requiresProvisioning: true,
+                        provisioningScope: 'tenant',
+                        managementRestPath: '/api/ai/providers/gemini',
+                        managementMcpTool: 'list_ai_provider_configs',
+                        reason: 'tenant_provider_config_required',
+                        note: 'Gemini draft generation is supported, but each tenant must configure its own API key and model before provider-backed draft jobs can run.',
+                    },
+                },
             },
             embeddings: {
                 status: 'ready',
@@ -219,6 +269,10 @@ function buildDeploymentStatus(overrides: {
                 ...base.checks.vectorRag,
                 ...overrides.vectorRag,
             },
+            draftGeneration: {
+                ...base.checks.draftGeneration,
+                ...overrides.draftGeneration,
+            },
         },
         warnings: overrides.warnings ?? base.warnings,
     };
@@ -249,6 +303,53 @@ describe('buildDeploymentGuide', () => {
                     reason: 'OPENAI_API_KEY not set',
                     note: 'Semantic search is disabled until embeddings are configured.',
                 },
+                draftGeneration: {
+                    status: 'ready',
+                    provisionedProviders: ['deterministic'],
+                    provisioningMode: 'tenant-scoped',
+                    note: 'Deterministic draft generation is always available. External AI providers are tenant-managed and must be provisioned per domain before model-backed jobs can run.',
+                    providers: {
+                        deterministic: {
+                            status: 'ready',
+                            enabled: true,
+                            requiresProvisioning: false,
+                            note: 'Deterministic draft generation is always available.',
+                        },
+                        openai: {
+                            status: 'disabled',
+                            enabled: false,
+                            model: null,
+                            requiresProvisioning: true,
+                            provisioningScope: 'tenant',
+                            managementRestPath: '/api/ai/providers/openai',
+                            managementMcpTool: 'list_ai_provider_configs',
+                            reason: 'tenant_provider_config_required',
+                            note: 'OpenAI draft generation is supported, but each tenant must configure its own API key before provider-backed draft jobs can run.',
+                        },
+                        anthropic: {
+                            status: 'disabled',
+                            enabled: false,
+                            model: null,
+                            requiresProvisioning: true,
+                            provisioningScope: 'tenant',
+                            managementRestPath: '/api/ai/providers/anthropic',
+                            managementMcpTool: 'list_ai_provider_configs',
+                            reason: 'tenant_provider_config_required',
+                            note: 'Anthropic draft generation is supported, but each tenant must configure its own API key and model before provider-backed draft jobs can run.',
+                        },
+                        gemini: {
+                            status: 'disabled',
+                            enabled: false,
+                            model: null,
+                            requiresProvisioning: true,
+                            provisioningScope: 'tenant',
+                            managementRestPath: '/api/ai/providers/gemini',
+                            managementMcpTool: 'list_ai_provider_configs',
+                            reason: 'tenant_provider_config_required',
+                            note: 'Gemini draft generation is supported, but each tenant must configure its own API key and model before provider-backed draft jobs can run.',
+                        },
+                    },
+                },
                 warnings: ['No domains are provisioned yet, so content writes are blocked until bootstrap completes.'],
             }),
         });
@@ -268,6 +369,14 @@ describe('buildDeploymentGuide', () => {
             status: 'disabled',
             enabled: false,
             reason: 'OPENAI_API_KEY not set',
+        }));
+        expect(guide.draftGeneration).toEqual(expect.objectContaining({
+            status: 'ready',
+            provisionedProviders: ['deterministic'],
+            enabledProviders: [],
+            provisionableProviders: ['openai', 'anthropic', 'gemini'],
+            pendingProviders: ['openai', 'anthropic', 'gemini'],
+            provisioningMode: 'tenant-scoped',
         }));
         expect(guide.steps).toEqual(expect.arrayContaining([
             expect.objectContaining({
@@ -290,6 +399,20 @@ describe('buildDeploymentGuide', () => {
                 notes: expect.arrayContaining([
                     'Semantic search is disabled until embeddings are configured.',
                     'Current reason: OPENAI_API_KEY not set.',
+                ]),
+            }),
+            expect.objectContaining({
+                id: 'check-draft-generation-provider-provisioning',
+                status: 'optional',
+                command: 'node dist/cli/index.js mcp call list_ai_provider_configs',
+                notes: expect.arrayContaining([
+                    'Deterministic draft generation is always available. External AI providers are tenant-managed and must be provisioned per domain before model-backed jobs can run.',
+                    'Provisioning mode: tenant-scoped.',
+                    'Supported external providers: openai, anthropic, gemini.',
+                    'Provisioned providers: deterministic.',
+                    'Pending tenant provisioning: openai, anthropic, gemini.',
+                    'Current reason: tenant_provider_config_required.',
+                    'Management path: /api/ai/providers/openai.',
                 ]),
             }),
         ]));
@@ -318,6 +441,7 @@ describe('buildDeploymentGuide', () => {
         expect(guide.bootstrap.status).toBe('ready');
         expect(guide.auth.status).toBe('ready');
         expect(guide.vectorRag.status).toBe('ready');
+        expect(guide.draftGeneration.status).toBe('ready');
         expect(guide.steps).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 id: 'resolve-bootstrap-blocker',
@@ -331,6 +455,10 @@ describe('buildDeploymentGuide', () => {
             expect.objectContaining({
                 id: 'check-semantic-search-posture',
                 status: 'completed',
+            }),
+            expect.objectContaining({
+                id: 'check-draft-generation-provider-provisioning',
+                status: 'optional',
             }),
         ]));
     });

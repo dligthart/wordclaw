@@ -91,6 +91,32 @@ describe('PolicyEngine Multi-Tenant Isolation', () => {
         expect(result.code).toBe('ALLOWED_ADMIN');
     });
 
+    it('denies AI provider management without admin-grade scope', async () => {
+        const context: OperationContext = {
+            principal: { id: 'user1', domainId: 2, scopes: ['content:write'], source: 'db' },
+            operation: 'ai_provider.write',
+            resource: { type: 'system' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('deny');
+        expect(result.code).toBe('ADMIN_REQUIRED');
+    });
+
+    it('denies workforce agent management without admin-grade scope', async () => {
+        const context: OperationContext = {
+            principal: { id: 'user1', domainId: 2, scopes: ['content:write'], source: 'db' },
+            operation: 'workforce.write',
+            resource: { type: 'system' },
+            environment: { protocol: 'rest', timestamp: new Date() }
+        };
+
+        const result = await PolicyEngine.evaluate(context);
+        expect(result.outcome).toBe('deny');
+        expect(result.code).toBe('ADMIN_REQUIRED');
+    });
+
     it('denies tenant onboarding without admin-grade scope', async () => {
         const context: OperationContext = {
             principal: { id: 'user1', domainId: 2, scopes: ['content:write'], source: 'db' },

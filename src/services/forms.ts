@@ -3,6 +3,11 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { contentItems, contentTypes, formDefinitions, workflowTransitions, workflows } from '../db/schema.js';
 import { validateContentDataAgainstSchema } from './content-schema.js';
+import {
+    type DraftGenerationConfig as FormDraftGenerationConfig,
+    type DraftGenerationProviderConfig,
+} from './draft-generation.js';
+import { getWorkforceAgentById } from './workforce-agent.js';
 import { WorkflowService } from './workflow.js';
 import { enqueueDraftGenerationJob, enqueueWebhookJob, type JobRecord } from './jobs.js';
 import { isSafeWebhookUrl } from './webhook.js';
@@ -27,15 +32,13 @@ export type ResolvedFormField = FormDefinitionField & {
     required: boolean;
     options?: FormFieldOption[];
 };
-export type FormDraftGenerationConfig = {
-    targetContentTypeId: number;
-    agentSoul: string;
-    defaultData: Record<string, unknown>;
-    postGenerationWorkflowTransitionId: number | null;
-};
 export type ResolvedFormDraftGenerationConfig = FormDraftGenerationConfig & {
     targetContentTypeName: string;
     targetContentTypeSlug: string;
+    workforceAgentId: number | null;
+    workforceAgentSlug: string | null;
+    workforceAgentName: string | null;
+    workforceAgentPurpose: string | null;
 };
 export type ResolvedFormDefinition = {
     id: number;
@@ -329,6 +332,61 @@ function normalizeOptionalString(value: unknown): string | null {
     return nonEmptyString(value) ? value.trim() : null;
 }
 
+function normalizeDraftGenerationProviderConfig(value: unknown): DraftGenerationProviderConfig {
+    if (value === undefined || value === null) {
+        return {
+            type: 'deterministic',
+        };
+    }
+
+    if (!isObject(value)) {
+        throw new FormServiceError(
+            'Invalid draft generation provider config',
+            'FORM_DRAFT_GENERATION_PROVIDER_INVALID',
+            'Provide draftGeneration.provider as an object when configured.',
+            400,
+        );
+    }
+
+    const type = normalizeOptionalString(value.type) ?? 'deterministic';
+    if (type === 'deterministic') {
+        return {
+            type: 'deterministic',
+        };
+    }
+
+    if (type === 'openai') {
+        return {
+            type: 'openai',
+            ...(normalizeOptionalString(value.model) ? { model: normalizeOptionalString(value.model) as string } : {}),
+            ...(normalizeOptionalString(value.instructions) ? { instructions: normalizeOptionalString(value.instructions) as string } : {}),
+        };
+    }
+
+    if (type === 'anthropic') {
+        return {
+            type: 'anthropic',
+            ...(normalizeOptionalString(value.model) ? { model: normalizeOptionalString(value.model) as string } : {}),
+            ...(normalizeOptionalString(value.instructions) ? { instructions: normalizeOptionalString(value.instructions) as string } : {}),
+        };
+    }
+
+    if (type === 'gemini') {
+        return {
+            type: 'gemini',
+            ...(normalizeOptionalString(value.model) ? { model: normalizeOptionalString(value.model) as string } : {}),
+            ...(normalizeOptionalString(value.instructions) ? { instructions: normalizeOptionalString(value.instructions) as string } : {}),
+        };
+    }
+
+    throw new FormServiceError(
+        'Unsupported draft generation provider',
+        'FORM_DRAFT_GENERATION_PROVIDER_UNSUPPORTED',
+        'Use draftGeneration.provider.type = deterministic, openai, anthropic, or gemini.',
+        400,
+    );
+}
+
 async function loadTargetContentType(domainId: number, contentTypeId: number) {
     const [contentType] = await db.select()
         .from(contentTypes)
@@ -531,7 +589,11 @@ async function normalizeInput(input: CreateFormDefinitionInput | UpdateFormDefin
     const rawDraftGeneration = input.draftGeneration === undefined
         ? existing?.draftGeneration
         : input.draftGeneration;
-    const draftGeneration = await normalizeDraftGenerationConfig(input.domainId, rawDraftGeneration);
+    const draftGeneration = await normalizeDraftGenerationConfig(
+        input.domainId,
+        rawDraftGeneration,
+        new Set(normalizedFields.map((field) => field.name)),
+    );
 
     return {
         name,
@@ -557,6 +619,7 @@ async function normalizeInput(input: CreateFormDefinitionInput | UpdateFormDefin
 async function normalizeDraftGenerationConfig(
     domainId: number,
     value: unknown,
+    sourceFieldNames: Set<string>,
 ): Promise<FormDraftGenerationConfig | null> {
     if (value === undefined || value === null) {
         return null;
@@ -585,17 +648,113 @@ async function normalizeDraftGenerationConfig(
         );
     }
 
-    const agentSoul = normalizeOptionalString(value.agentSoul);
-    if (!agentSoul) {
+    const workforceAgentId = value.workforceAgentId === undefined || value.workforceAgentId === null
+        ? null
+        : typeof value.workforceAgentId === 'number'
+            && Number.isInteger(value.workforceAgentId)
+            && value.workforceAgentId > 0
+            ? value.workforceAgentId
+            : null;
+    if (
+        value.workforceAgentId !== undefined
+        && value.workforceAgentId !== null
+        && workforceAgentId === null
+    ) {
         throw new FormServiceError(
-            'Draft generation agent soul is required',
-            'FORM_DRAFT_GENERATION_AGENT_SOUL_REQUIRED',
-            'Provide draftGeneration.agentSoul as a non-empty string.',
+            'Draft generation workforce agent is invalid',
+            'FORM_DRAFT_GENERATION_WORKFORCE_AGENT_INVALID',
+            'Provide draftGeneration.workforceAgentId as a positive integer or null.',
             400,
         );
     }
 
+    const workforceAgent = workforceAgentId
+        ? await getWorkforceAgentById(domainId, workforceAgentId)
+        : null;
+    if (workforceAgentId && (!workforceAgent || !workforceAgent.active)) {
+        throw new FormServiceError(
+            'Draft generation workforce agent not found',
+            'FORM_DRAFT_GENERATION_WORKFORCE_AGENT_NOT_FOUND',
+            `Use an active workforce agent for draftGeneration.workforceAgentId=${workforceAgentId} before saving the form.`,
+            409,
+        );
+    }
+
+    const agentSoul = normalizeOptionalString(value.agentSoul) ?? workforceAgent?.soul ?? null;
+    if (!agentSoul) {
+        throw new FormServiceError(
+            'Draft generation agent soul is required',
+            'FORM_DRAFT_GENERATION_AGENT_SOUL_REQUIRED',
+            'Provide draftGeneration.agentSoul as a non-empty string, or reference an active workforce agent with a configured SOUL.',
+            400,
+        );
+    }
+
+    const targetContentType = await loadTargetContentType(domainId, targetContentTypeId);
+    const { properties: targetProperties } = parseSchemaProperties(targetContentType.schema);
+    const fieldMapValue = value.fieldMap;
+    let fieldMap: Record<string, string> = {};
+    if (fieldMapValue !== undefined) {
+        if (!isObject(fieldMapValue)) {
+            throw new FormServiceError(
+                'Invalid draft generation field map',
+                'FORM_DRAFT_GENERATION_FIELD_MAP_INVALID',
+                'Provide draftGeneration.fieldMap as an object mapping form field names to target content field names.',
+                400,
+            );
+        }
+
+        const normalizedEntries = Object.entries(fieldMapValue).map(([sourceFieldName, targetFieldName]) => {
+            const normalizedSourceFieldName = sourceFieldName.trim();
+            const normalizedTargetFieldName = normalizeOptionalString(targetFieldName);
+
+            if (!normalizedSourceFieldName || !normalizedTargetFieldName) {
+                throw new FormServiceError(
+                    'Invalid draft generation field map entry',
+                    'FORM_DRAFT_GENERATION_FIELD_MAP_ENTRY_INVALID',
+                    'Each draftGeneration.fieldMap entry must use non-empty string source and target field names.',
+                    400,
+                );
+            }
+
+            if (!sourceFieldNames.has(normalizedSourceFieldName)) {
+                throw new FormServiceError(
+                    'Draft generation field map source is invalid',
+                    'FORM_DRAFT_GENERATION_FIELD_MAP_SOURCE_INVALID',
+                    `Map only from declared form fields. '${normalizedSourceFieldName}' is not part of this form definition.`,
+                    409,
+                );
+            }
+
+            if (!Object.hasOwn(targetProperties, normalizedTargetFieldName)) {
+                throw new FormServiceError(
+                    'Draft generation field map target is invalid',
+                    'FORM_DRAFT_GENERATION_FIELD_MAP_TARGET_INVALID',
+                    `Map only to top-level fields on the target content type. '${normalizedTargetFieldName}' does not exist there.`,
+                    409,
+                );
+            }
+
+            return [normalizedSourceFieldName, normalizedTargetFieldName] as const;
+        });
+
+        const targetFieldNames = normalizedEntries.map(([, targetFieldName]) => targetFieldName);
+        if (new Set(targetFieldNames).size !== targetFieldNames.length) {
+            throw new FormServiceError(
+                'Draft generation field map targets must be unique',
+                'FORM_DRAFT_GENERATION_FIELD_MAP_TARGET_DUPLICATE',
+                'Each target field can only be mapped once in draftGeneration.fieldMap.',
+                409,
+            );
+        }
+
+        fieldMap = Object.fromEntries(normalizedEntries);
+    }
+
     const defaultData = normalizeDefaultData(value.defaultData);
+    const provider = value.provider === undefined
+        ? workforceAgent?.provider ?? normalizeDraftGenerationProviderConfig(undefined)
+        : normalizeDraftGenerationProviderConfig(value.provider);
 
     const transitionValue = value.postGenerationWorkflowTransitionId;
     let postGenerationWorkflowTransitionId: number | null = null;
@@ -617,7 +776,6 @@ async function normalizeDraftGenerationConfig(
         postGenerationWorkflowTransitionId = transitionValue;
     }
 
-    await loadTargetContentType(domainId, targetContentTypeId);
     await validateWorkflowTransition(
         domainId,
         targetContentTypeId,
@@ -626,9 +784,12 @@ async function normalizeDraftGenerationConfig(
 
     return {
         targetContentTypeId,
+        workforceAgentId,
         agentSoul,
+        fieldMap,
         defaultData,
         postGenerationWorkflowTransitionId,
+        provider,
     };
 }
 
@@ -645,7 +806,15 @@ async function resolveDraftGenerationConfig(
         && value.targetContentTypeId > 0
         ? value.targetContentTypeId
         : null;
-    const agentSoul = normalizeOptionalString(value.agentSoul);
+    const workforceAgentId = typeof value.workforceAgentId === 'number'
+        && Number.isInteger(value.workforceAgentId)
+        && value.workforceAgentId > 0
+        ? value.workforceAgentId
+        : null;
+    const workforceAgent = workforceAgentId
+        ? await getWorkforceAgentById(domainId, workforceAgentId)
+        : null;
+    const agentSoul = workforceAgent?.soul ?? normalizeOptionalString(value.agentSoul);
     if (targetContentTypeId === null || !agentSoul) {
         return null;
     }
@@ -665,13 +834,31 @@ async function resolveDraftGenerationConfig(
         targetContentTypeId,
         targetContentTypeName: targetContentType?.name ?? '(missing)',
         targetContentTypeSlug: targetContentType?.slug ?? '(missing)',
+        workforceAgentId,
+        workforceAgentSlug: workforceAgent?.slug ?? null,
+        workforceAgentName: workforceAgent?.name ?? null,
+        workforceAgentPurpose: workforceAgent?.purpose ?? null,
         agentSoul,
+        fieldMap: isObject(value.fieldMap)
+            ? Object.fromEntries(
+                Object.entries(value.fieldMap).flatMap(([sourceFieldName, targetFieldName]) => {
+                    const normalizedSourceFieldName = sourceFieldName.trim();
+                    const normalizedTargetFieldName = normalizeOptionalString(targetFieldName);
+                    if (!normalizedSourceFieldName || !normalizedTargetFieldName) {
+                        return [];
+                    }
+
+                    return [[normalizedSourceFieldName, normalizedTargetFieldName]];
+                }),
+            )
+            : {},
         defaultData: isObject(value.defaultData) ? value.defaultData : {},
         postGenerationWorkflowTransitionId: typeof value.postGenerationWorkflowTransitionId === 'number'
             && Number.isInteger(value.postGenerationWorkflowTransitionId)
             && value.postGenerationWorkflowTransitionId > 0
             ? value.postGenerationWorkflowTransitionId
             : null,
+        provider: workforceAgent?.provider ?? normalizeDraftGenerationProviderConfig(value.provider),
     };
 }
 
@@ -908,6 +1095,20 @@ export async function submitFormDefinition(domainId: number, slug: string, input
 
     let draftGenerationJob: JobRecord | null = null;
     if (form.draftGeneration) {
+        const workforceAgent = form.draftGeneration.workforceAgentId
+            ? await getWorkforceAgentById(domainId, form.draftGeneration.workforceAgentId)
+            : null;
+        if (form.draftGeneration.workforceAgentId && (!workforceAgent || !workforceAgent.active)) {
+            throw new FormServiceError(
+                'Draft generation workforce agent is unavailable',
+                'FORM_DRAFT_GENERATION_WORKFORCE_AGENT_UNAVAILABLE',
+                `The referenced workforce agent ${form.draftGeneration.workforceAgentId} is missing or inactive. Update the form to use an active agent before accepting submissions.`,
+                409,
+            );
+        }
+
+        const draftProvider = workforceAgent?.provider ?? form.draftGeneration.provider;
+        const draftSoul = workforceAgent?.soul ?? form.draftGeneration.agentSoul;
         draftGenerationJob = await enqueueDraftGenerationJob({
             domainId,
             formId: form.id,
@@ -915,9 +1116,15 @@ export async function submitFormDefinition(domainId: number, slug: string, input
             intakeContentItemId: item.id,
             intakeData: mergedData,
             targetContentTypeId: form.draftGeneration.targetContentTypeId,
-            agentSoul: form.draftGeneration.agentSoul,
+            workforceAgentId: workforceAgent?.id ?? form.draftGeneration.workforceAgentId ?? null,
+            workforceAgentSlug: workforceAgent?.slug ?? form.draftGeneration.workforceAgentSlug ?? null,
+            workforceAgentName: workforceAgent?.name ?? form.draftGeneration.workforceAgentName ?? null,
+            workforceAgentPurpose: workforceAgent?.purpose ?? form.draftGeneration.workforceAgentPurpose ?? null,
+            agentSoul: draftSoul,
+            fieldMap: form.draftGeneration.fieldMap,
             defaultData: form.draftGeneration.defaultData,
             postGenerationWorkflowTransitionId: form.draftGeneration.postGenerationWorkflowTransitionId,
+            provider: draftProvider,
         });
     }
 

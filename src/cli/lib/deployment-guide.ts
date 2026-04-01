@@ -35,6 +35,15 @@ export type DeploymentGuide = {
         reason: string | null;
         note: string | null;
     };
+    draftGeneration: {
+        status: 'ready' | 'disabled';
+        provisionedProviders: string[];
+        enabledProviders: string[];
+        provisionableProviders: string[];
+        pendingProviders: string[];
+        provisioningMode: string | null;
+        note: string | null;
+    };
     warnings?: string[];
     steps: DeploymentGuideStep[];
 };
@@ -68,9 +77,22 @@ export function buildDeploymentGuide(options: {
     const bootstrapCheck = deploymentStatus?.checks.bootstrap ?? null;
     const authCheck = deploymentStatus?.checks.auth ?? null;
     const vectorRagCheck = deploymentStatus?.checks.vectorRag ?? null;
+    const draftGenerationCheck = deploymentStatus?.checks.draftGeneration ?? null;
     const bootstrapBlocked = (bootstrapCheck?.domainCount ?? 0) === 0;
     const hasWriteActor = actorCanWrite(currentActor);
     const writeBlocked = Boolean(authCheck?.writeRequiresCredential) && !hasWriteActor;
+    const externalDraftProviderIds = ['openai', 'anthropic', 'gemini'] as const;
+    const provisionableDraftProviders = draftGenerationCheck
+        ? [...externalDraftProviderIds]
+        : [];
+    const enabledDraftProviders = draftGenerationCheck
+        ? externalDraftProviderIds.filter((providerId) => draftGenerationCheck.providers[providerId].enabled)
+        : [];
+    const pendingDraftProviders = provisionableDraftProviders.filter((providerId) => !enabledDraftProviders.includes(providerId));
+    const firstPendingDraftProvider = pendingDraftProviders[0] ?? null;
+    const firstPendingDraftProviderStatus = firstPendingDraftProvider
+        ? draftGenerationCheck?.providers[firstPendingDraftProvider]
+        : null;
 
     return {
         taskId: 'discover-deployment',
@@ -96,6 +118,15 @@ export function buildDeploymentGuide(options: {
             enabled: vectorRagCheck?.enabled ?? false,
             reason: vectorRagCheck?.reason ?? null,
             note: vectorRagCheck?.note ?? null,
+        },
+        draftGeneration: {
+            status: draftGenerationCheck ? 'ready' : 'disabled',
+            provisionedProviders: draftGenerationCheck?.provisionedProviders ?? [],
+            enabledProviders: enabledDraftProviders,
+            provisionableProviders: provisionableDraftProviders,
+            pendingProviders: pendingDraftProviders,
+            provisioningMode: draftGenerationCheck?.provisioningMode ?? null,
+            note: draftGenerationCheck?.note ?? null,
         },
         warnings: deploymentStatus?.warnings,
         steps: [
@@ -178,6 +209,37 @@ export function buildDeploymentGuide(options: {
                         ...(vectorRagCheck.enabled ? [] : [`Current reason: ${vectorRagCheck.reason}.`]),
                     ]
                     : ['Vector RAG readiness is unavailable until deployment status can be read.'],
+            },
+            {
+                id: 'check-draft-generation-provider-provisioning',
+                title: 'Check draft-generation provider provisioning',
+                status: !draftGenerationCheck
+                    ? 'blocked'
+                    : enabledDraftProviders.length > 0
+                        ? 'completed'
+                        : 'optional',
+                command: `${baseCommand} mcp call list_ai_provider_configs`,
+                purpose: 'Confirm whether the active tenant has provisioned external AI providers such as OpenAI before provider-backed draft-generation jobs are enabled for that domain.',
+                notes: draftGenerationCheck
+                    ? [
+                        draftGenerationCheck.note,
+                        `Provisioning mode: ${draftGenerationCheck.provisioningMode}.`,
+                        `Supported external providers: ${provisionableDraftProviders.join(', ')}.`,
+                        `Provisioned providers: ${draftGenerationCheck.provisionedProviders.join(', ')}.`,
+                        ...(enabledDraftProviders.length > 0
+                            ? [`Enabled external providers: ${enabledDraftProviders.join(', ')}.`]
+                            : []),
+                        ...(pendingDraftProviders.length > 0
+                            ? [`Pending tenant provisioning: ${pendingDraftProviders.join(', ')}.`]
+                            : []),
+                        ...(firstPendingDraftProviderStatus
+                            ? [
+                                `Current reason: ${firstPendingDraftProviderStatus.reason}.`,
+                                `Management path: ${firstPendingDraftProviderStatus.managementRestPath}.`,
+                            ]
+                            : []),
+                    ]
+                    : ['Draft-generation provider readiness is unavailable until deployment status can be read.'],
             },
         ],
     };

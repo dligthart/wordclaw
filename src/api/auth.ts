@@ -110,7 +110,12 @@ function getApiKey(headers: IncomingHttpHeaders): string | null {
 function requiredScope(method: string, routePath: string): Scope {
     const upperMethod = method.toUpperCase();
 
-    if (routePath.startsWith('/api/auth/keys') || routePath.startsWith('/api/webhooks')) {
+    if (
+        routePath.startsWith('/api/auth/keys')
+        || routePath.startsWith('/api/webhooks')
+        || routePath.startsWith('/api/ai/providers')
+        || routePath.startsWith('/api/workforce/agents')
+    ) {
         return 'admin';
     }
 
