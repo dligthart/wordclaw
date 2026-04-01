@@ -1437,6 +1437,7 @@ async function handleForms(client: RestCliClient, args: ParsedArgs) {
         }
 
         const defaultData = await loadJsonFlag(args, 'default-data-json', 'default-data-file');
+        const draftGeneration = await loadJsonFlag(args, 'draft-generation-json', 'draft-generation-file');
         const response = await client.request({
             method: 'POST',
             path: '/forms',
@@ -1455,6 +1456,7 @@ async function handleForms(client: RestCliClient, args: ParsedArgs) {
                 webhookUrl: getStringFlag(args, 'webhook-url'),
                 webhookSecret: getStringFlag(args, 'webhook-secret'),
                 successMessage: getStringFlag(args, 'success-message'),
+                draftGeneration,
             }),
         });
         printResponse(args, response);
@@ -1469,6 +1471,7 @@ async function handleForms(client: RestCliClient, args: ParsedArgs) {
 
         const fields = await loadJsonFlag(args, 'fields-json', 'fields-file');
         const defaultData = await loadJsonFlag(args, 'default-data-json', 'default-data-file');
+        const draftGeneration = await loadJsonFlag(args, 'draft-generation-json', 'draft-generation-file');
         const body = omitUndefined({
             name: getStringFlag(args, 'name'),
             slug: getStringFlag(args, 'slug'),
@@ -1486,6 +1489,9 @@ async function handleForms(client: RestCliClient, args: ParsedArgs) {
             webhookUrl: getStringFlag(args, 'webhook-url'),
             webhookSecret: getStringFlag(args, 'webhook-secret'),
             successMessage: getStringFlag(args, 'success-message'),
+            draftGeneration: getStringFlag(args, 'draft-generation-json') === 'null'
+                ? null
+                : draftGeneration,
         });
         assertHasUpdateFields(body, 'forms update');
 

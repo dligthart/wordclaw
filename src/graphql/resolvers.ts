@@ -403,6 +403,7 @@ type CreateFormArgs = {
     webhookUrl?: string;
     webhookSecret?: string;
     successMessage?: string;
+    draftGeneration?: Record<string, unknown> | null;
 };
 type UpdateFormArgs = {
     id: IdValue;
@@ -420,15 +421,16 @@ type UpdateFormArgs = {
     webhookUrl?: string | null;
     webhookSecret?: string | null;
     successMessage?: string | null;
+    draftGeneration?: Record<string, unknown> | null;
 };
 type JobsArgs = {
     status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-    kind?: 'content_status_transition' | 'outbound_webhook';
+    kind?: 'content_status_transition' | 'outbound_webhook' | 'draft_generation';
     limit?: number;
     offset?: number;
 };
 type CreateJobArgs = {
-    kind: 'content_status_transition' | 'outbound_webhook';
+    kind: 'content_status_transition' | 'outbound_webhook' | 'draft_generation';
     payload: Record<string, unknown>;
     queue?: string;
     runAt?: string;
@@ -982,6 +984,7 @@ function serializeFormDefinition(form: ResolvedFormDefinition) {
         workflowTransitionId: form.workflowTransitionId,
         requirePayment: form.requirePayment,
         successMessage: form.successMessage,
+        draftGeneration: form.draftGeneration,
         fields: form.fields.map((field) => ({
             name: field.name,
             label: field.label ?? null,

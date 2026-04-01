@@ -559,6 +559,20 @@ const FormFieldResponseSchema = Type.Object({
         label: Type.Optional(Type.String()),
     }))),
 });
+const DraftGenerationConfigResponseSchema = Type.Object({
+    targetContentTypeId: Type.Number(),
+    targetContentTypeName: Type.String(),
+    targetContentTypeSlug: Type.String(),
+    agentSoul: Type.String(),
+    defaultData: Type.Object({}, { additionalProperties: true }),
+    postGenerationWorkflowTransitionId: Type.Union([Type.Number(), Type.Null()]),
+});
+const DraftGenerationConfigRequestSchema = Type.Object({
+    targetContentTypeId: Type.Number(),
+    agentSoul: Type.String(),
+    defaultData: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    postGenerationWorkflowTransitionId: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+});
 const FormDefinitionResponseSchema = Type.Object({
     id: Type.Number(),
     domainId: Type.Number(),
@@ -574,6 +588,7 @@ const FormDefinitionResponseSchema = Type.Object({
     workflowTransitionId: Type.Union([Type.Number(), Type.Null()]),
     requirePayment: Type.Boolean(),
     successMessage: Type.Union([Type.String(), Type.Null()]),
+    draftGeneration: Type.Union([DraftGenerationConfigResponseSchema, Type.Null()]),
     fields: Type.Array(FormFieldResponseSchema),
     defaultData: Type.Object({}, { additionalProperties: true }),
     createdAt: Type.String(),
@@ -6480,6 +6495,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 webhookUrl: Type.Optional(Type.String()),
                 webhookSecret: Type.Optional(Type.String()),
                 successMessage: Type.Optional(Type.String()),
+                draftGeneration: Type.Optional(Type.Union([DraftGenerationConfigRequestSchema, Type.Null()])),
             }),
             response: {
                 201: createAIResponse(FormDefinitionResponseSchema),
@@ -6571,6 +6587,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 webhookUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
                 webhookSecret: Type.Optional(Type.Union([Type.String(), Type.Null()])),
                 successMessage: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+                draftGeneration: Type.Optional(Type.Union([DraftGenerationConfigRequestSchema, Type.Null()])),
             }),
             response: {
                 200: createAIResponse(FormDefinitionResponseSchema),
@@ -6731,6 +6748,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                         contentItemId: Type.Number(),
                         status: Type.String(),
                         reviewTaskId: Type.Union([Type.Number(), Type.Null()]),
+                        draftGenerationJobId: Type.Union([Type.Number(), Type.Null()]),
                         successMessage: Type.Union([Type.String(), Type.Null()]),
                     }),
                 })),
@@ -6818,6 +6836,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                         contentItemId: submission.item.id,
                         status: submission.item.status,
                         reviewTaskId: submission.reviewTaskId,
+                        draftGenerationJobId: submission.draftGenerationJob?.id ?? null,
                         successMessage: submission.form.successMessage,
                     }
                 },
@@ -6825,6 +6844,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     `Submission stored as content item ${submission.item.id}`,
                     submission.reviewTaskId
                         ? ['GET /api/workflow/tasks']
+                        : submission.draftGenerationJob
+                            ? [`GET /api/jobs/${submission.draftGenerationJob.id}`]
                         : ['GET /api/public/forms/:slug'],
                     submission.reviewTaskId ? 'medium' : 'low',
                     form.requirePayment ? 1 : 0
@@ -6950,6 +6971,7 @@ export default async function apiRoutes(server: FastifyInstance) {
                 kind: Type.Union([
                     Type.Literal('content_status_transition'),
                     Type.Literal('outbound_webhook'),
+                    Type.Literal('draft_generation'),
                 ]),
                 payload: Type.Any(),
                 queue: Type.Optional(Type.String()),
@@ -6963,7 +6985,7 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
     }, async (request, reply) => {
         const body = request.body as {
-            kind: 'content_status_transition' | 'outbound_webhook';
+            kind: 'content_status_transition' | 'outbound_webhook' | 'draft_generation';
             payload: Record<string, unknown>;
             queue?: string;
             runAt?: string;

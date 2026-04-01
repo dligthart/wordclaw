@@ -4,9 +4,12 @@ import { and, asc, eq, lte, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { contentItems, contentItemVersions, contentTypes, jobs, webhooks, workflows } from '../db/schema.js';
+import { logAudit } from './audit.js';
+import { validateContentDataAgainstSchema } from './content-schema.js';
 import { EmbeddingService } from './embedding.js';
+import { WorkflowService } from './workflow.js';
 
-export type JobKind = 'content_status_transition' | 'outbound_webhook';
+export type JobKind = 'content_status_transition' | 'outbound_webhook' | 'draft_generation';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
 export type OutboundWebhookJobPayload = {
@@ -24,9 +27,21 @@ export type ContentStatusTransitionJobPayload = {
     targetStatus: string;
 };
 
+export type DraftGenerationJobPayload = {
+    formId: number;
+    formSlug: string;
+    intakeContentItemId: number;
+    intakeData: Record<string, unknown>;
+    targetContentTypeId: number;
+    agentSoul: string;
+    defaultData?: Record<string, unknown>;
+    postGenerationWorkflowTransitionId?: number | null;
+};
+
 export type JobPayloadMap = {
     outbound_webhook: OutboundWebhookJobPayload;
     content_status_transition: ContentStatusTransitionJobPayload;
+    draft_generation: DraftGenerationJobPayload;
 };
 
 export type CreateJobInput<K extends JobKind = JobKind> = {
@@ -48,7 +63,7 @@ export type ListJobsOptions = {
 export type JobRecord = typeof jobs.$inferSelect;
 
 const JOB_STATUS_VALUES: JobStatus[] = ['queued', 'running', 'succeeded', 'failed', 'cancelled'];
-const JOB_KIND_VALUES: JobKind[] = ['content_status_transition', 'outbound_webhook'];
+const JOB_KIND_VALUES: JobKind[] = ['content_status_transition', 'outbound_webhook', 'draft_generation'];
 
 function isObject(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -68,7 +83,15 @@ function normalizeJobQueue(queue: string | undefined, kind: JobKind): string {
         return queue.trim();
     }
 
-    return kind === 'outbound_webhook' ? 'webhooks' : 'content';
+    if (kind === 'outbound_webhook') {
+        return 'webhooks';
+    }
+
+    if (kind === 'draft_generation') {
+        return 'drafts';
+    }
+
+    return 'content';
 }
 
 function parseJobStatus(value: unknown): JobStatus {
@@ -129,9 +152,73 @@ function parseContentStatusTransitionPayload(payload: unknown): ContentStatusTra
     };
 }
 
+function parseDraftGenerationPayload(payload: unknown): DraftGenerationJobPayload {
+    if (
+        !isObject(payload)
+        || typeof payload.formId !== 'number'
+        || !Number.isInteger(payload.formId)
+        || payload.formId <= 0
+        || typeof payload.formSlug !== 'string'
+        || payload.formSlug.trim().length === 0
+        || typeof payload.intakeContentItemId !== 'number'
+        || !Number.isInteger(payload.intakeContentItemId)
+        || payload.intakeContentItemId <= 0
+        || !isObject(payload.intakeData)
+        || typeof payload.targetContentTypeId !== 'number'
+        || !Number.isInteger(payload.targetContentTypeId)
+        || payload.targetContentTypeId <= 0
+        || typeof payload.agentSoul !== 'string'
+        || payload.agentSoul.trim().length === 0
+    ) {
+        throw new Error('Draft generation jobs require formId, formSlug, intakeContentItemId, intakeData, targetContentTypeId, and agentSoul.');
+    }
+
+    const defaultData = payload.defaultData === undefined
+        ? {}
+        : isObject(payload.defaultData)
+            ? payload.defaultData as Record<string, unknown>
+            : null;
+    if (defaultData === null) {
+        throw new Error('Draft generation jobs require defaultData to be an object when provided.');
+    }
+
+    const postGenerationWorkflowTransitionId = payload.postGenerationWorkflowTransitionId === undefined
+        ? null
+        : payload.postGenerationWorkflowTransitionId === null
+            ? null
+            : typeof payload.postGenerationWorkflowTransitionId === 'number'
+                && Number.isInteger(payload.postGenerationWorkflowTransitionId)
+                && payload.postGenerationWorkflowTransitionId > 0
+                ? payload.postGenerationWorkflowTransitionId
+                : null;
+
+    if (
+        payload.postGenerationWorkflowTransitionId !== undefined
+        && payload.postGenerationWorkflowTransitionId !== null
+        && postGenerationWorkflowTransitionId === null
+    ) {
+        throw new Error('Draft generation jobs require postGenerationWorkflowTransitionId to be a positive integer or null.');
+    }
+
+    return {
+        formId: payload.formId,
+        formSlug: payload.formSlug.trim(),
+        intakeContentItemId: payload.intakeContentItemId,
+        intakeData: payload.intakeData as Record<string, unknown>,
+        targetContentTypeId: payload.targetContentTypeId,
+        agentSoul: payload.agentSoul.trim(),
+        defaultData,
+        postGenerationWorkflowTransitionId,
+    };
+}
+
 function parsePayload(kind: JobKind, payload: unknown): JobPayloadMap[JobKind] {
     if (kind === 'outbound_webhook') {
         return parseOutboundWebhookPayload(payload);
+    }
+
+    if (kind === 'draft_generation') {
+        return parseDraftGenerationPayload(payload);
     }
 
     return parseContentStatusTransitionPayload(payload);
@@ -261,12 +348,104 @@ async function runContentStatusTransitionJob(domainId: number, payload: ContentS
     };
 }
 
+function parseTopLevelSchemaProperties(schemaText: string): Set<string> {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(schemaText);
+    } catch {
+        throw new Error('Target content type schema is invalid JSON.');
+    }
+
+    if (
+        !isObject(parsed)
+        || parsed.type !== 'object'
+        || !isObject(parsed.properties)
+    ) {
+        throw new Error('Target content type schema must be a top-level object with properties for draft generation.');
+    }
+
+    return new Set(Object.keys(parsed.properties as Record<string, unknown>));
+}
+
+async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJobPayload) {
+    const [targetContentType] = await db.select()
+        .from(contentTypes)
+        .where(and(
+            eq(contentTypes.domainId, domainId),
+            eq(contentTypes.id, payload.targetContentTypeId),
+        ));
+
+    if (!targetContentType) {
+        throw new Error(`Target content type ${payload.targetContentTypeId} not found in domain ${domainId}.`);
+    }
+
+    const targetKeys = parseTopLevelSchemaProperties(targetContentType.schema);
+    const copiedInputData = Object.fromEntries(
+        Object.entries(payload.intakeData).filter(([key]) => targetKeys.has(key)),
+    );
+    const generatedData = {
+        ...(payload.defaultData ?? {}),
+        ...copiedInputData,
+    };
+
+    const serializedData = JSON.stringify(generatedData);
+    const validationFailure = await validateContentDataAgainstSchema(
+        targetContentType.schema,
+        serializedData,
+        domainId,
+    );
+    if (validationFailure) {
+        throw new Error(`${validationFailure.code}: ${validationFailure.remediation}`);
+    }
+
+    const [created] = await db.insert(contentItems).values({
+        domainId,
+        contentTypeId: payload.targetContentTypeId,
+        data: serializedData,
+        status: 'draft',
+    }).returning();
+
+    await logAudit(domainId, 'create', 'content_item', created.id, {
+        source: 'draft_generation_job',
+        formId: payload.formId,
+        formSlug: payload.formSlug,
+        intakeContentItemId: payload.intakeContentItemId,
+        targetContentTypeId: payload.targetContentTypeId,
+        agentSoul: payload.agentSoul,
+        strategy: 'schema_overlap_defaults_v1',
+    });
+
+    let reviewTaskId: number | null = null;
+    if (payload.postGenerationWorkflowTransitionId) {
+        const task = await WorkflowService.submitForReview({
+            domainId,
+            contentItemId: created.id,
+            workflowTransitionId: payload.postGenerationWorkflowTransitionId,
+        });
+        reviewTaskId = task.id;
+    }
+
+    return {
+        generatedContentItemId: created.id,
+        generatedStatus: created.status,
+        reviewTaskId,
+        intakeContentItemId: payload.intakeContentItemId,
+        targetContentTypeId: payload.targetContentTypeId,
+        agentSoul: payload.agentSoul,
+        strategy: 'schema_overlap_defaults_v1',
+    };
+}
+
 async function executeJob(row: JobRecord) {
     const kind = parseJobKind(row.kind);
     const payload = parsePayload(kind, row.payload);
 
     if (kind === 'outbound_webhook') {
         return runOutboundWebhookJob(payload as OutboundWebhookJobPayload);
+    }
+
+    if (kind === 'draft_generation') {
+        return runDraftGenerationJob(row.domainId, payload as DraftGenerationJobPayload);
     }
 
     return runContentStatusTransitionJob(row.domainId, payload as ContentStatusTransitionJobPayload);
@@ -329,6 +508,38 @@ export async function enqueueWebhookJob(input: {
         queue: 'webhooks',
         runAt: input.runAt,
         maxAttempts: input.maxAttempts ?? 4,
+    });
+}
+
+export async function enqueueDraftGenerationJob(input: {
+    domainId: number;
+    formId: number;
+    formSlug: string;
+    intakeContentItemId: number;
+    intakeData: Record<string, unknown>;
+    targetContentTypeId: number;
+    agentSoul: string;
+    defaultData?: Record<string, unknown>;
+    postGenerationWorkflowTransitionId?: number | null;
+    runAt?: Date;
+    maxAttempts?: number;
+}) {
+    return createJob({
+        domainId: input.domainId,
+        kind: 'draft_generation',
+        payload: {
+            formId: input.formId,
+            formSlug: input.formSlug,
+            intakeContentItemId: input.intakeContentItemId,
+            intakeData: input.intakeData,
+            targetContentTypeId: input.targetContentTypeId,
+            agentSoul: input.agentSoul,
+            defaultData: input.defaultData ?? {},
+            postGenerationWorkflowTransitionId: input.postGenerationWorkflowTransitionId ?? null,
+        },
+        queue: 'drafts',
+        runAt: input.runAt,
+        maxAttempts: input.maxAttempts ?? 3,
     });
 }
 

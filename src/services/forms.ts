@@ -4,7 +4,7 @@ import { db } from '../db/index.js';
 import { contentItems, contentTypes, formDefinitions, workflowTransitions, workflows } from '../db/schema.js';
 import { validateContentDataAgainstSchema } from './content-schema.js';
 import { WorkflowService } from './workflow.js';
-import { enqueueWebhookJob } from './jobs.js';
+import { enqueueDraftGenerationJob, enqueueWebhookJob, type JobRecord } from './jobs.js';
 import { isSafeWebhookUrl } from './webhook.js';
 
 export type FormFieldType = 'text' | 'textarea' | 'number' | 'checkbox' | 'select';
@@ -27,6 +27,16 @@ export type ResolvedFormField = FormDefinitionField & {
     required: boolean;
     options?: FormFieldOption[];
 };
+export type FormDraftGenerationConfig = {
+    targetContentTypeId: number;
+    agentSoul: string;
+    defaultData: Record<string, unknown>;
+    postGenerationWorkflowTransitionId: number | null;
+};
+export type ResolvedFormDraftGenerationConfig = FormDraftGenerationConfig & {
+    targetContentTypeName: string;
+    targetContentTypeSlug: string;
+};
 export type ResolvedFormDefinition = {
     id: number;
     domainId: number;
@@ -42,6 +52,7 @@ export type ResolvedFormDefinition = {
     workflowTransitionId: number | null;
     requirePayment: boolean;
     successMessage: string | null;
+    draftGeneration?: ResolvedFormDraftGenerationConfig | null;
     fields: ResolvedFormField[];
     defaultData: Record<string, unknown>;
     createdAt: Date;
@@ -63,6 +74,7 @@ type NormalizedFormInput = {
     webhookUrl: string | null;
     webhookSecret: string | null;
     successMessage: string | null;
+    draftGeneration: FormDraftGenerationConfig | null;
 };
 
 type CreateFormDefinitionInput = {
@@ -81,6 +93,7 @@ type CreateFormDefinitionInput = {
     webhookUrl?: string | null;
     webhookSecret?: string | null;
     successMessage?: string | null;
+    draftGeneration?: unknown | null;
 };
 
 type UpdateFormDefinitionInput = Partial<Omit<CreateFormDefinitionInput, 'domainId'>> & {
@@ -98,6 +111,12 @@ type SubmitFormInput = {
 };
 
 type JsonObject = Record<string, unknown>;
+type SubmitFormDefinitionResult = {
+    form: ResolvedFormDefinition;
+    item: typeof contentItems.$inferSelect;
+    reviewTaskId: number | null;
+    draftGenerationJob: JobRecord | null;
+};
 
 export class FormServiceError extends Error {
     code: string;
@@ -509,6 +528,11 @@ async function normalizeInput(input: CreateFormDefinitionInput | UpdateFormDefin
         );
     }
 
+    const rawDraftGeneration = input.draftGeneration === undefined
+        ? existing?.draftGeneration
+        : input.draftGeneration;
+    const draftGeneration = await normalizeDraftGenerationConfig(input.domainId, rawDraftGeneration);
+
     return {
         name,
         slug,
@@ -526,11 +550,134 @@ async function normalizeInput(input: CreateFormDefinitionInput | UpdateFormDefin
             ? normalizeOptionalString(existing?.webhookSecret)
             : normalizeOptionalString(input.webhookSecret),
         successMessage: normalizeOptionalString(input.successMessage) ?? normalizeOptionalString(existing?.successMessage),
+        draftGeneration,
+    };
+}
+
+async function normalizeDraftGenerationConfig(
+    domainId: number,
+    value: unknown,
+): Promise<FormDraftGenerationConfig | null> {
+    if (value === undefined || value === null) {
+        return null;
+    }
+
+    if (!isObject(value)) {
+        throw new FormServiceError(
+            'Invalid draft generation config',
+            'FORM_DRAFT_GENERATION_INVALID',
+            'draftGeneration must be an object when provided.',
+            400,
+        );
+    }
+
+    const targetContentTypeId = typeof value.targetContentTypeId === 'number'
+        && Number.isInteger(value.targetContentTypeId)
+        && value.targetContentTypeId > 0
+        ? value.targetContentTypeId
+        : null;
+    if (targetContentTypeId === null) {
+        throw new FormServiceError(
+            'Draft generation target content type is required',
+            'FORM_DRAFT_GENERATION_TARGET_CONTENT_TYPE_REQUIRED',
+            'Provide draftGeneration.targetContentTypeId as a positive integer.',
+            400,
+        );
+    }
+
+    const agentSoul = normalizeOptionalString(value.agentSoul);
+    if (!agentSoul) {
+        throw new FormServiceError(
+            'Draft generation agent soul is required',
+            'FORM_DRAFT_GENERATION_AGENT_SOUL_REQUIRED',
+            'Provide draftGeneration.agentSoul as a non-empty string.',
+            400,
+        );
+    }
+
+    const defaultData = normalizeDefaultData(value.defaultData);
+
+    const transitionValue = value.postGenerationWorkflowTransitionId;
+    let postGenerationWorkflowTransitionId: number | null = null;
+    if (transitionValue === null) {
+        postGenerationWorkflowTransitionId = null;
+    } else if (transitionValue !== undefined) {
+        if (
+            typeof transitionValue !== 'number'
+            || !Number.isInteger(transitionValue)
+            || transitionValue <= 0
+        ) {
+            throw new FormServiceError(
+                'Invalid draft generation workflow transition',
+                'FORM_DRAFT_GENERATION_WORKFLOW_TRANSITION_INVALID',
+                'Provide draftGeneration.postGenerationWorkflowTransitionId as a positive integer or null.',
+                400,
+            );
+        }
+        postGenerationWorkflowTransitionId = transitionValue;
+    }
+
+    await loadTargetContentType(domainId, targetContentTypeId);
+    await validateWorkflowTransition(
+        domainId,
+        targetContentTypeId,
+        postGenerationWorkflowTransitionId,
+    );
+
+    return {
+        targetContentTypeId,
+        agentSoul,
+        defaultData,
+        postGenerationWorkflowTransitionId,
+    };
+}
+
+async function resolveDraftGenerationConfig(
+    domainId: number,
+    value: unknown,
+): Promise<ResolvedFormDraftGenerationConfig | null> {
+    if (!isObject(value)) {
+        return null;
+    }
+
+    const targetContentTypeId = typeof value.targetContentTypeId === 'number'
+        && Number.isInteger(value.targetContentTypeId)
+        && value.targetContentTypeId > 0
+        ? value.targetContentTypeId
+        : null;
+    const agentSoul = normalizeOptionalString(value.agentSoul);
+    if (targetContentTypeId === null || !agentSoul) {
+        return null;
+    }
+
+    const [targetContentType] = await db.select({
+        id: contentTypes.id,
+        name: contentTypes.name,
+        slug: contentTypes.slug,
+    })
+        .from(contentTypes)
+        .where(and(
+            eq(contentTypes.domainId, domainId),
+            eq(contentTypes.id, targetContentTypeId),
+        ));
+
+    return {
+        targetContentTypeId,
+        targetContentTypeName: targetContentType?.name ?? '(missing)',
+        targetContentTypeSlug: targetContentType?.slug ?? '(missing)',
+        agentSoul,
+        defaultData: isObject(value.defaultData) ? value.defaultData : {},
+        postGenerationWorkflowTransitionId: typeof value.postGenerationWorkflowTransitionId === 'number'
+            && Number.isInteger(value.postGenerationWorkflowTransitionId)
+            && value.postGenerationWorkflowTransitionId > 0
+            ? value.postGenerationWorkflowTransitionId
+            : null,
     };
 }
 
 async function resolveFormDefinition(row: FormDefinitionRecord): Promise<ResolvedFormDefinition> {
     const contentType = await loadTargetContentType(row.domainId, row.contentTypeId);
+    const draftGeneration = await resolveDraftGenerationConfig(row.domainId, row.draftGeneration);
 
     return {
         id: row.id,
@@ -547,6 +694,7 @@ async function resolveFormDefinition(row: FormDefinitionRecord): Promise<Resolve
         workflowTransitionId: row.workflowTransitionId,
         requirePayment: row.requirePayment,
         successMessage: row.successMessage,
+        draftGeneration,
         fields: Array.isArray(row.fields) ? row.fields as ResolvedFormField[] : [],
         defaultData: isObject(row.defaultData) ? row.defaultData : {},
         createdAt: row.createdAt,
@@ -603,6 +751,7 @@ export async function createFormDefinition(input: CreateFormDefinitionInput) {
         webhookUrl: normalized.webhookUrl,
         webhookSecret: normalized.webhookSecret,
         successMessage: normalized.successMessage,
+        draftGeneration: normalized.draftGeneration,
     }).returning();
 
     return resolveFormDefinition(created);
@@ -642,6 +791,7 @@ export async function updateFormDefinition(id: number, input: UpdateFormDefiniti
             webhookUrl: normalized.webhookUrl,
             webhookSecret: normalized.webhookSecret,
             successMessage: normalized.successMessage,
+            draftGeneration: normalized.draftGeneration,
             updatedAt: new Date(),
         })
         .where(and(
@@ -664,7 +814,7 @@ export async function deleteFormDefinition(domainId: number, id: number) {
     return deleted ? resolveFormDefinition(deleted) : null;
 }
 
-export async function submitFormDefinition(domainId: number, slug: string, input: SubmitFormInput) {
+export async function submitFormDefinition(domainId: number, slug: string, input: SubmitFormInput): Promise<SubmitFormDefinitionResult> {
     const form = await getFormDefinitionBySlug(domainId, slug);
     if (!form) {
         throw new FormServiceError(
@@ -756,6 +906,21 @@ export async function submitFormDefinition(domainId: number, slug: string, input
         reviewTaskId = task.id;
     }
 
+    let draftGenerationJob: JobRecord | null = null;
+    if (form.draftGeneration) {
+        draftGenerationJob = await enqueueDraftGenerationJob({
+            domainId,
+            formId: form.id,
+            formSlug: form.slug,
+            intakeContentItemId: item.id,
+            intakeData: mergedData,
+            targetContentTypeId: form.draftGeneration.targetContentTypeId,
+            agentSoul: form.draftGeneration.agentSoul,
+            defaultData: form.draftGeneration.defaultData,
+            postGenerationWorkflowTransitionId: form.draftGeneration.postGenerationWorkflowTransitionId,
+        });
+    }
+
     if (internalConfig?.webhookUrl) {
         await enqueueWebhookJob({
             domainId,
@@ -775,6 +940,7 @@ export async function submitFormDefinition(domainId: number, slug: string, input
                     contentItemId: item.id,
                     status: item.status,
                     reviewTaskId,
+                    draftGenerationJobId: draftGenerationJob?.id ?? null,
                     data: mergedData,
                 },
                 request: {
@@ -790,5 +956,6 @@ export async function submitFormDefinition(domainId: number, slug: string, input
         form,
         item,
         reviewTaskId,
+        draftGenerationJob,
     };
 }

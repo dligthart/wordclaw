@@ -1411,7 +1411,13 @@ server.tool(
         requirePayment: z.boolean().optional().describe('Whether submissions require L402 payment using the target content type base price'),
         webhookUrl: z.string().optional().describe('Optional follow-up webhook URL'),
         webhookSecret: z.string().optional().describe('Optional webhook signing secret'),
-        successMessage: z.string().optional().describe('Optional public-facing success message')
+        successMessage: z.string().optional().describe('Optional public-facing success message'),
+        draftGeneration: z.object({
+            targetContentTypeId: z.number().describe('Target content type for generated drafts'),
+            agentSoul: z.string().describe('Lightweight SOUL/agent key for the draft pipeline'),
+            defaultData: z.record(z.string(), z.any()).optional().describe('Default output fields merged before copied intake fields'),
+            postGenerationWorkflowTransitionId: z.number().nullable().optional().describe('Optional workflow transition to submit the generated draft after creation'),
+        }).nullable().optional().describe('Optional draft-generation pipeline config'),
     },
     withMCPPolicy('content.write', () => ({ type: 'system' }), async (args, _extra, domainId) => {
         try {
@@ -1451,7 +1457,13 @@ server.tool(
         requirePayment: z.boolean().optional().describe('Whether submissions require L402 payment using the target content type base price'),
         webhookUrl: z.string().nullable().optional().describe('Optional follow-up webhook URL'),
         webhookSecret: z.string().nullable().optional().describe('Optional webhook signing secret'),
-        successMessage: z.string().nullable().optional().describe('Optional public-facing success message')
+        successMessage: z.string().nullable().optional().describe('Optional public-facing success message'),
+        draftGeneration: z.object({
+            targetContentTypeId: z.number().describe('Target content type for generated drafts'),
+            agentSoul: z.string().describe('Lightweight SOUL/agent key for the draft pipeline'),
+            defaultData: z.record(z.string(), z.any()).optional().describe('Default output fields merged before copied intake fields'),
+            postGenerationWorkflowTransitionId: z.number().nullable().optional().describe('Optional workflow transition to submit the generated draft after creation'),
+        }).nullable().optional().describe('Optional draft-generation pipeline config'),
     },
     withMCPPolicy('content.write', (args) => ({ type: 'system', id: args.id }), async ({ id, ...args }, _extra, domainId) => {
         try {
@@ -1525,6 +1537,7 @@ server.tool(
                 form: submitted.form,
                 item: submitted.item,
                 reviewTaskId: submitted.reviewTaskId,
+                draftGenerationJobId: submitted.draftGenerationJob?.id ?? null,
             });
         } catch (error) {
             if (error instanceof FormServiceError) {
@@ -1540,7 +1553,7 @@ server.tool(
     'List background jobs in the current domain',
     {
         status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']).optional().describe('Optional job status filter'),
-        kind: z.enum(['content_status_transition', 'outbound_webhook']).optional().describe('Optional job kind filter'),
+        kind: z.enum(['content_status_transition', 'outbound_webhook', 'draft_generation']).optional().describe('Optional job kind filter'),
         limit: z.number().optional().describe('Maximum rows to return'),
         offset: z.number().optional().describe('Offset into the job list')
     },
@@ -1570,7 +1583,7 @@ server.tool(
     'create_job',
     'Create a generic background job',
     {
-        kind: z.enum(['content_status_transition', 'outbound_webhook']).describe('Job kind'),
+        kind: z.enum(['content_status_transition', 'outbound_webhook', 'draft_generation']).describe('Job kind'),
         payload: z.record(z.string(), z.any()).describe('Job payload'),
         queue: z.string().optional().describe('Optional queue name'),
         runAt: z.string().optional().describe('Optional ISO-8601 scheduled time'),

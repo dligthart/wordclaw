@@ -135,6 +135,7 @@ export const schema = `
   enum JobKind {
     content_status_transition
     outbound_webhook
+    draft_generation
   }
 
   enum JobStatus {
@@ -312,6 +313,7 @@ export const schema = `
     workflowTransitionId: ID
     requirePayment: Boolean!
     successMessage: String
+    draftGeneration: JSON
     fields: [FormField!]!
     defaultData: JSON!
     createdAt: String
@@ -683,7 +685,8 @@ ${agentRunQueryDefs}
       requirePayment: Boolean = false,
       webhookUrl: String,
       webhookSecret: String,
-      successMessage: String
+      successMessage: String,
+      draftGeneration: JSON
     ): FormDefinition!
     """Update a reusable form definition."""
     updateForm(
@@ -701,7 +704,8 @@ ${agentRunQueryDefs}
       requirePayment: Boolean,
       webhookUrl: String,
       webhookSecret: String,
-      successMessage: String
+      successMessage: String,
+      draftGeneration: JSON
     ): FormDefinition!
     """Delete a reusable form definition."""
     deleteForm(id: ID!): DeleteResult!

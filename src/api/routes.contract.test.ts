@@ -43,6 +43,7 @@ import { AgentRunMetricsService } from '../services/agent-run-metrics.js';
 import { LicensingService } from '../services/licensing.js';
 import { agentRunWorker } from '../workers/agent-run.worker.js';
 import * as assetService from '../services/assets.js';
+import * as formsService from '../services/forms.js';
 import * as referenceUsageService from '../services/reference-usage.js';
 import { issuePublicWriteToken } from '../services/public-write.js';
 import { issuePreviewToken } from '../services/content-preview.js';
@@ -3942,6 +3943,113 @@ describe('API Route Contracts', () => {
                 }
             });
         } finally {
+            await app.close();
+        }
+    });
+
+    it('returns draft generation tracking metadata for configured form submissions', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        delete process.env.ALLOW_INSECURE_LOCAL_ADMIN;
+
+        const form = {
+            id: 5,
+            domainId: 1,
+            name: 'Proposal Request',
+            slug: 'proposal-request',
+            description: 'Inbound proposal request form',
+            contentTypeId: 12,
+            contentTypeName: 'Proposal Request',
+            contentTypeSlug: 'proposal-request',
+            active: true,
+            publicRead: true,
+            submissionStatus: 'draft',
+            workflowTransitionId: null,
+            requirePayment: false,
+            successMessage: 'Thanks',
+            draftGeneration: {
+                targetContentTypeId: 13,
+                targetContentTypeName: 'Proposal Draft',
+                targetContentTypeSlug: 'proposal-draft',
+                agentSoul: 'software-proposal-writer',
+                defaultData: {},
+                postGenerationWorkflowTransitionId: null,
+            },
+            fields: [
+                { name: 'company', type: 'text' as const, required: true, label: 'Company' },
+            ],
+            defaultData: {},
+            createdAt: new Date('2026-03-31T10:00:00.000Z'),
+            updatedAt: new Date('2026-03-31T10:00:00.000Z'),
+        };
+
+        const getFormSpy = vi.spyOn(formsService, 'getFormDefinitionBySlug').mockResolvedValue(form);
+        const submitSpy = vi.spyOn(formsService, 'submitFormDefinition').mockResolvedValue({
+            form,
+            item: {
+                id: 88,
+                domainId: 1,
+                contentTypeId: 12,
+                data: JSON.stringify({ company: 'Acme' }),
+                status: 'draft',
+                embeddingStatus: 'disabled',
+                embeddingChunks: 0,
+                embeddingUpdatedAt: null,
+                embeddingErrorCode: null,
+                version: 1,
+                createdAt: new Date('2026-03-31T10:01:00.000Z'),
+                updatedAt: new Date('2026-03-31T10:01:00.000Z'),
+            },
+            reviewTaskId: null,
+            draftGenerationJob: {
+                id: 21,
+                domainId: 1,
+                kind: 'draft_generation',
+                queue: 'drafts',
+                status: 'queued',
+                payload: {},
+                result: null,
+                runAt: new Date('2026-03-31T10:01:00.000Z'),
+                attempts: 0,
+                maxAttempts: 3,
+                lastError: null,
+                claimedAt: null,
+                startedAt: null,
+                completedAt: null,
+                createdAt: new Date('2026-03-31T10:01:00.000Z'),
+                updatedAt: new Date('2026-03-31T10:01:00.000Z'),
+            },
+        });
+
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/public/forms/proposal-request/submissions?domainId=1',
+                payload: {
+                    data: {
+                        company: 'Acme',
+                    },
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toMatchObject({
+                data: {
+                    submission: {
+                        contentItemId: 88,
+                        reviewTaskId: null,
+                        draftGenerationJobId: 21,
+                        successMessage: 'Thanks',
+                    },
+                },
+                meta: expect.objectContaining({
+                    availableActions: ['GET /api/jobs/21'],
+                }),
+            });
+        } finally {
+            getFormSpy.mockRestore();
+            submitSpy.mockRestore();
             await app.close();
         }
     });

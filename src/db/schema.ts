@@ -284,6 +284,7 @@ export const formDefinitions = pgTable('form_definitions', {
     webhookUrl: text('webhook_url'),
     webhookSecret: text('webhook_secret'),
     successMessage: text('success_message'),
+    draftGeneration: jsonb('draft_generation'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => {

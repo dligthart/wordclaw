@@ -96,7 +96,7 @@ describe('buildUsage', () => {
 
         expect(usage).toContain('WordClaw CLI: jobs');
         expect(usage).toContain('wordclaw jobs <subcommand> [options]');
-        expect(usage).toContain('jobs create --kind content_status_transition|outbound_webhook');
+        expect(usage).toContain('jobs create --kind content_status_transition|outbound_webhook|draft_generation');
         expect(usage).toContain('wordclaw jobs schedule-status --id 88 --status published --run-at 2026-04-01T09:00:00Z');
     });
 
