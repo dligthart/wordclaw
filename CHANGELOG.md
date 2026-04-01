@@ -1,3 +1,10 @@
+# [1.44.0](https://github.com/dligthart/wordclaw/compare/v1.43.0...v1.44.0) (2026-04-01)
+
+
+### Features
+
+* add tenant-scoped AI workforce providers ([62834f5](https://github.com/dligthart/wordclaw/commit/62834f53821e071b8f1ccf14df3649a494199177))
+
 # [1.43.0](https://github.com/dligthart/wordclaw/compare/v1.42.0...v1.43.0) (2026-04-01)
 
 
