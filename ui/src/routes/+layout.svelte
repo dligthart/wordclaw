@@ -20,6 +20,7 @@
         Folder,
         ArchiveBox,
         CircleStack,
+        CpuChip,
         Key,
         CheckCircle,
         CodeBracketSquare,
@@ -91,6 +92,12 @@
             href: "/ui/forms",
             icon: ClipboardDocumentList,
             match: (p: string) => p.includes("/forms"),
+        },
+        {
+            name: "Agents",
+            href: "/ui/agents",
+            icon: CpuChip,
+            match: (p: string) => p.includes("/agents"),
         },
         {
             name: "API Keys",
