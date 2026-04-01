@@ -662,6 +662,8 @@ const FormFieldResponseSchema = Type.Object({
         Type.Literal('number'),
         Type.Literal('checkbox'),
         Type.Literal('select'),
+        Type.Literal('asset'),
+        Type.Literal('asset-list'),
     ]),
     required: Type.Boolean(),
     placeholder: Type.Optional(Type.String()),

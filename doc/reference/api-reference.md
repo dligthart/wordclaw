@@ -46,6 +46,7 @@ The current REST content contract includes a few authoring-state primitives that
 - Reverse-reference usage graphs are available through `GET /api/content-items/:id/used-by` and `GET /api/assets/:id/used-by`.
 - Reusable forms are managed through `GET/POST /api/forms`, `GET/PUT/DELETE /api/forms/:id`, and the public submission surface at `GET /api/public/forms/:slug` plus `POST /api/public/forms/:slug/submissions`.
 - Form definitions can optionally attach `draftGeneration` config so a submission enqueues a background drafting job. Forms can still use a direct `agentSoul`, but the preferred shape is `draftGeneration.workforceAgentId`, which resolves a tenant-managed workforce agent with its own SOUL and provider/model defaults.
+- Form definitions can expose `asset` and `asset-list` fields when the underlying content schema uses WordClaw asset references. For now, draft-generation jobs forward image assets only. OpenAI, Anthropic, and Gemini runs inline supported images natively, while non-image assets stay outside the draft-generation prompt path.
 - External draft-generation provisioning is tenant-scoped. Configure it with `GET /api/ai/providers`, `GET /api/ai/providers/:provider`, `PUT /api/ai/providers/:provider`, or `DELETE /api/ai/providers/:provider`, where `:provider` is currently `openai`, `anthropic`, or `gemini`. The REST read surface returns masked secrets only.
 - Workforce agents are also tenant-scoped. Use `GET /api/workforce/agents`, `POST /api/workforce/agents`, `GET /api/workforce/agents/:id`, `PUT /api/workforce/agents/:id`, and `DELETE /api/workforce/agents/:id` to manage reusable agents with a stable slug, a purpose, a SOUL, and provider/model defaults.
 - Deployment discovery now reports draft-generation provisioning separately from semantic-search embeddings, and it explicitly marks external AI providers as tenant-managed rather than process-global.
@@ -396,6 +397,8 @@ The same shape is returned by `GET /api/assets/:id/used-by`.
 
 Forms turn bounded external intake into a first-class runtime contract instead of one-off public-write glue.
 
+If a form has `webhookUrl` configured, the runtime now emits `form.submitted`, `form.draft_generation.completed`, and terminal `form.draft_generation.failed` events over the existing outbound webhook job lane.
+
 **Create a form definition:**
 ```bash
 curl -X POST http://localhost:4000/api/forms \
@@ -407,7 +410,8 @@ curl -X POST http://localhost:4000/api/forms \
     "contentTypeId": 15,
     "fields": [
       { "name": "email", "type": "text", "required": true },
-      { "name": "message", "type": "textarea", "required": true }
+      { "name": "message", "type": "textarea", "required": true },
+      { "name": "attachments", "type": "asset-list" }
     ],
     "publicRead": true,
     "submissionStatus": "draft"
@@ -426,7 +430,8 @@ curl -X POST http://localhost:4000/api/forms \
     "submissionStatus": "draft",
     "fields": [
       { "name": "email", "type": "text", "required": true },
-      { "name": "message", "type": "textarea", "required": true }
+      { "name": "message", "type": "textarea", "required": true },
+      { "name": "attachments", "type": "asset-list", "required": false }
     ]
   }
 }

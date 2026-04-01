@@ -32,10 +32,55 @@
         name: string;
         label?: string | null;
         description?: string | null;
-        type: "text" | "textarea" | "number" | "checkbox" | "select";
+        type:
+            | "text"
+            | "textarea"
+            | "number"
+            | "checkbox"
+            | "select"
+            | "asset"
+            | "asset-list";
         required: boolean;
         placeholder?: string | null;
         options?: FormFieldOption[];
+    };
+
+    type DraftGenerationProvider =
+        | {
+            type: "deterministic";
+        }
+        | {
+            type: "openai" | "anthropic" | "gemini";
+            model?: string;
+            instructions?: string;
+        };
+
+    type WorkforceAgent = {
+        id: number;
+        domainId: number;
+        name: string;
+        slug: string;
+        purpose: string;
+        soul: string;
+        provider: DraftGenerationProvider;
+        active: boolean;
+        createdAt: string;
+        updatedAt: string;
+    };
+
+    type FormDraftGenerationConfig = {
+        targetContentTypeId: number;
+        targetContentTypeName: string;
+        targetContentTypeSlug: string;
+        workforceAgentId: number | null;
+        workforceAgentSlug: string | null;
+        workforceAgentName: string | null;
+        workforceAgentPurpose: string | null;
+        agentSoul: string;
+        fieldMap: Record<string, string>;
+        defaultData: Record<string, unknown>;
+        postGenerationWorkflowTransitionId: number | null;
+        provider: DraftGenerationProvider;
     };
 
     type FormDefinition = {
@@ -55,6 +100,7 @@
         successMessage: string | null;
         fields: FormField[];
         defaultData: Record<string, unknown>;
+        draftGeneration: FormDraftGenerationConfig | null;
         createdAt: string;
         updatedAt: string;
     };
@@ -112,6 +158,7 @@
 
     let forms = $state<FormDefinition[]>([]);
     let contentTypes = $state<ContentType[]>([]);
+    let workforceAgents = $state<WorkforceAgent[]>([]);
     let selectedFormId = $state<number | null>(null);
     let selectedForm = $derived(
         forms.find((form) => form.id === selectedFormId) ?? null,
@@ -120,10 +167,58 @@
     let editor = $state<FormEditorState>(emptyEditorState());
     let fieldsText = $state(EMPTY_FIELDS_JSON);
     let defaultDataText = $state("{}");
+    let draftGenerationEnabled = $state(false);
+    let draftTargetContentTypeId = $state("");
+    let draftWorkforceAgentId = $state("");
+    let draftAgentSoul = $state("");
+    let draftProviderType = $state<
+        "deterministic" | "openai" | "anthropic" | "gemini"
+    >("deterministic");
+    let draftProviderModel = $state("");
+    let draftProviderInstructions = $state("");
+    let draftFieldMapText = $state("{}");
+    let draftDefaultDataText = $state("{}");
+    let draftPostGenerationWorkflowTransitionId = $state("");
     let sampleSubmissionText = $state("{}");
     let publicContract = $state<PublicFormDefinition | null>(null);
     let publicContractError = $state<string | null>(null);
     let lastSubmission = $state<Record<string, unknown> | null>(null);
+    let selectedDraftWorkforceAgent = $derived.by(() => {
+        const id = Number.parseInt(draftWorkforceAgentId, 10);
+        if (!Number.isInteger(id) || id <= 0) {
+            return null;
+        }
+
+        return workforceAgents.find((agent) => agent.id === id) ?? null;
+    });
+
+    const configurableDraftProviders = [
+        {
+            type: "deterministic" as const,
+            label: "Deterministic",
+            description:
+                "No external model call. Only mapped and default data is used.",
+            placeholderModel: "",
+        },
+        {
+            type: "openai" as const,
+            label: "OpenAI",
+            description: "Responses API structured output with native image input.",
+            placeholderModel: "gpt-4o",
+        },
+        {
+            type: "anthropic" as const,
+            label: "Claude",
+            description: "Tool-schema output with native image content blocks.",
+            placeholderModel: "claude-sonnet-4-20250514",
+        },
+        {
+            type: "gemini" as const,
+            label: "Gemini",
+            description: "JSON-schema output with native inline image parts.",
+            placeholderModel: "gemini-2.5-flash",
+        },
+    ];
 
     let loading = $state(true);
     let loadingSelection = $state(false);
@@ -195,6 +290,19 @@
         ];
     }
 
+    function resetDraftGenerationEditor() {
+        draftGenerationEnabled = false;
+        draftTargetContentTypeId = "";
+        draftWorkforceAgentId = "";
+        draftAgentSoul = "";
+        draftProviderType = "deterministic";
+        draftProviderModel = "";
+        draftProviderInstructions = "";
+        draftFieldMapText = "{}";
+        draftDefaultDataText = "{}";
+        draftPostGenerationWorkflowTransitionId = "";
+    }
+
     function applyEditor(form: FormDefinition | null) {
         if (!form) {
             const fallbackContentTypeId = contentTypes[0]
@@ -206,6 +314,7 @@
             };
             fieldsText = EMPTY_FIELDS_JSON;
             defaultDataText = "{}";
+            resetDraftGenerationEditor();
             sampleSubmissionText = "{}";
             publicContract = null;
             publicContractError = null;
@@ -233,6 +342,42 @@
         };
         fieldsText = formatJson(form.fields, 2);
         defaultDataText = formatJson(form.defaultData, 2);
+        if (form.draftGeneration) {
+            draftGenerationEnabled = true;
+            draftTargetContentTypeId = String(
+                form.draftGeneration.targetContentTypeId,
+            );
+            draftWorkforceAgentId =
+                form.draftGeneration.workforceAgentId === null
+                    ? ""
+                    : String(form.draftGeneration.workforceAgentId);
+            draftAgentSoul =
+                form.draftGeneration.workforceAgentId === null
+                    ? form.draftGeneration.agentSoul
+                    : "";
+            draftProviderType = form.draftGeneration.provider.type;
+            draftProviderModel =
+                form.draftGeneration.provider.type === "deterministic"
+                    ? ""
+                    : form.draftGeneration.provider.model ?? "";
+            draftProviderInstructions =
+                form.draftGeneration.provider.type === "deterministic"
+                    ? ""
+                    : form.draftGeneration.provider.instructions ?? "";
+            draftFieldMapText = formatJson(form.draftGeneration.fieldMap, 2);
+            draftDefaultDataText = formatJson(
+                form.draftGeneration.defaultData,
+                2,
+            );
+            draftPostGenerationWorkflowTransitionId =
+                form.draftGeneration.postGenerationWorkflowTransitionId === null
+                    ? ""
+                    : String(
+                          form.draftGeneration.postGenerationWorkflowTransitionId,
+                      );
+        } else {
+            resetDraftGenerationEditor();
+        }
         sampleSubmissionText = formatJson(form.defaultData, 2);
         publicContract = null;
         publicContractError = null;
@@ -244,15 +389,20 @@
         error = null;
 
         try {
-            const [formsResponse, contentTypesResponse] = await Promise.all([
-                fetchApi("/forms"),
-                fetchApi("/content-types"),
-            ]);
+            const [formsResponse, contentTypesResponse, workforceResponse] =
+                await Promise.all([
+                    fetchApi("/forms"),
+                    fetchApi("/content-types"),
+                    fetchApi("/workforce/agents"),
+                ]);
 
             forms = (formsResponse.data as FormDefinition[]) ?? [];
             contentTypes = ((contentTypesResponse.data as ContentType[]) ?? []).sort(
                 (left, right) => left.name.localeCompare(right.name),
             );
+            workforceAgents = (
+                (workforceResponse.data as WorkforceAgent[]) ?? []
+            ).sort((left, right) => left.name.localeCompare(right.name));
 
             const nextId =
                 preferredFormId ??
@@ -307,6 +457,15 @@
         }
     }
 
+    function parseObjectJsonInput(value: string, label: string) {
+        const parsed = parseJsonInput(value, label);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            throw new Error(`${label} must be a JSON object.`);
+        }
+
+        return parsed as Record<string, unknown>;
+    }
+
     async function refreshPublicContract(slug = editor.slug) {
         const domainId = currentDomainId();
         if (!slug || !domainId) {
@@ -355,7 +514,82 @@
 
         try {
             const fields = parseJsonInput(fieldsText, "Fields");
-            const defaultData = parseJsonInput(defaultDataText, "Default data");
+            const defaultData = parseObjectJsonInput(
+                defaultDataText,
+                "Default data",
+            );
+            let draftGeneration: Record<string, unknown> | null = null;
+            if (draftGenerationEnabled) {
+                if (!draftTargetContentTypeId.trim()) {
+                    throw new Error(
+                        "Choose a target content type for draft generation.",
+                    );
+                }
+
+                const workforceAgentId = draftWorkforceAgentId.trim()
+                    ? Number.parseInt(draftWorkforceAgentId, 10)
+                    : null;
+                if (
+                    draftWorkforceAgentId.trim() &&
+                    (workforceAgentId === null ||
+                        !Number.isInteger(workforceAgentId) ||
+                        workforceAgentId <= 0)
+                ) {
+                    throw new Error(
+                        "Draft generation workforce agent must be a positive integer.",
+                    );
+                }
+
+                if (workforceAgentId === null && !draftAgentSoul.trim()) {
+                    throw new Error(
+                        "Provide a draft generation SOUL or choose a workforce agent.",
+                    );
+                }
+
+                const draftProvider =
+                    workforceAgentId !== null
+                        ? undefined
+                        : draftProviderType === "deterministic"
+                          ? { type: "deterministic" }
+                          : {
+                                type: draftProviderType,
+                                ...(draftProviderModel.trim()
+                                    ? { model: draftProviderModel.trim() }
+                                    : {}),
+                                ...(draftProviderInstructions.trim()
+                                    ? {
+                                          instructions:
+                                              draftProviderInstructions.trim(),
+                                      }
+                                    : {}),
+                            };
+
+                draftGeneration = {
+                    targetContentTypeId: Number.parseInt(
+                        draftTargetContentTypeId,
+                        10,
+                    ),
+                    ...(workforceAgentId !== null
+                        ? { workforceAgentId }
+                        : { agentSoul: draftAgentSoul.trim() }),
+                    fieldMap: parseObjectJsonInput(
+                        draftFieldMapText,
+                        "Draft generation field map",
+                    ),
+                    defaultData: parseObjectJsonInput(
+                        draftDefaultDataText,
+                        "Draft generation default data",
+                    ),
+                    postGenerationWorkflowTransitionId:
+                        draftPostGenerationWorkflowTransitionId.trim()
+                            ? Number.parseInt(
+                                  draftPostGenerationWorkflowTransitionId,
+                                  10,
+                              )
+                            : null,
+                    ...(draftProvider ? { provider: draftProvider } : {}),
+                };
+            }
             const body = {
                 name: editor.name.trim(),
                 slug: editor.slug.trim(),
@@ -373,6 +607,7 @@
                 webhookUrl: editor.webhookUrl.trim() || undefined,
                 webhookSecret: editor.webhookSecret.trim() || undefined,
                 successMessage: editor.successMessage.trim() || undefined,
+                draftGeneration,
             };
 
             const response = editor.id
@@ -808,6 +1043,166 @@
                             </span>
                             <Textarea bind:value={defaultDataText} rows={16} />
                         </label>
+                    </div>
+
+                    <div class="space-y-4 rounded-3xl border border-slate-200/80 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/40">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="space-y-1">
+                                <h3 class="text-base font-semibold text-slate-900 dark:text-white">
+                                    Draft generation
+                                </h3>
+                                <p class="max-w-3xl text-sm text-slate-500 dark:text-slate-400">
+                                    Route accepted submissions into a background draft job and
+                                    bind the form to a tenant workforce agent or a direct
+                                    provider/model override.
+                                </p>
+                            </div>
+                            <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                                <input
+                                    type="checkbox"
+                                    bind:checked={draftGenerationEnabled}
+                                />
+                                Enable draft generation
+                            </label>
+                        </div>
+
+                        {#if draftGenerationEnabled}
+                            <div class="grid gap-4 md:grid-cols-2">
+                                <label class="space-y-2">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                        Draft target content type
+                                    </span>
+                                    <Select bind:value={draftTargetContentTypeId}>
+                                        <option value="">Choose a content type</option>
+                                        {#each contentTypes as contentType}
+                                            <option value={String(contentType.id)}>
+                                                {contentType.name} ({contentType.slug})
+                                            </option>
+                                        {/each}
+                                    </Select>
+                                </label>
+
+                                <label class="space-y-2">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                        Workforce agent
+                                    </span>
+                                    <Select bind:value={draftWorkforceAgentId}>
+                                        <option value="">Manual SOUL / provider</option>
+                                        {#each workforceAgents.filter((agent) => agent.active) as agent}
+                                            <option value={String(agent.id)}>
+                                                {agent.name} ({agent.slug})
+                                            </option>
+                                        {/each}
+                                    </Select>
+                                </label>
+                            </div>
+
+                            {#if selectedDraftWorkforceAgent}
+                                <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+                                    <div class="font-medium">
+                                        {selectedDraftWorkforceAgent.name} will supply the SOUL and provider defaults.
+                                    </div>
+                                    <div class="mt-1 text-emerald-800/80 dark:text-emerald-200/80">
+                                        {selectedDraftWorkforceAgent.purpose}
+                                    </div>
+                                </div>
+                            {:else}
+                                <div class="grid gap-4 md:grid-cols-2">
+                                    <label class="space-y-2">
+                                        <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                            SOUL
+                                        </span>
+                                        <Input
+                                            bind:value={draftAgentSoul}
+                                            placeholder="software-proposal-writer"
+                                        />
+                                    </label>
+
+                                    <label class="space-y-2">
+                                        <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                            Provider
+                                        </span>
+                                        <Select bind:value={draftProviderType}>
+                                            {#each configurableDraftProviders as provider}
+                                                <option value={provider.type}>
+                                                    {provider.label}
+                                                </option>
+                                            {/each}
+                                        </Select>
+                                    </label>
+                                </div>
+
+                                <p class="text-xs text-slate-500 dark:text-slate-400">
+                                    {
+                                        configurableDraftProviders.find(
+                                            (provider) => provider.type === draftProviderType,
+                                        )?.description
+                                    }
+                                </p>
+
+                                {#if draftProviderType !== "deterministic"}
+                                    <div class="grid gap-4 md:grid-cols-2">
+                                        <label class="space-y-2">
+                                            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                                Model
+                                            </span>
+                                            <Input
+                                                bind:value={draftProviderModel}
+                                                placeholder={
+                                                    configurableDraftProviders.find(
+                                                        (provider) =>
+                                                            provider.type === draftProviderType,
+                                                    )?.placeholderModel ?? ""
+                                                }
+                                            />
+                                        </label>
+
+                                        <label class="space-y-2">
+                                            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                                Extra instructions
+                                            </span>
+                                            <Textarea
+                                                bind:value={draftProviderInstructions}
+                                                rows={3}
+                                                placeholder="Optional provider-specific drafting guidance."
+                                            />
+                                        </label>
+                                    </div>
+                                {/if}
+                            {/if}
+
+                            <div class="grid gap-4 md:grid-cols-2">
+                                <label class="space-y-2">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                        Post-generation workflow transition ID
+                                    </span>
+                                    <Input
+                                        bind:value={draftPostGenerationWorkflowTransitionId}
+                                        placeholder="Optional review transition after draft creation"
+                                    />
+                                </label>
+                                <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                    Asset and asset-list fields are supported here, but draft jobs
+                                    currently forward image assets only. Supported images are
+                                    inlined for provisioned OpenAI, Claude, and Gemini agents.
+                                </div>
+                            </div>
+
+                            <div class="grid gap-4 xl:grid-cols-2">
+                                <label class="space-y-2">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                        Draft field map JSON
+                                    </span>
+                                    <Textarea bind:value={draftFieldMapText} rows={10} />
+                                </label>
+                                <label class="space-y-2">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                        Draft default data JSON
+                                    </span>
+                                    <Textarea bind:value={draftDefaultDataText} rows={10} />
+                                </label>
+                            </div>
+                        {/if}
                     </div>
 
                     <div class="flex flex-wrap items-center gap-3">

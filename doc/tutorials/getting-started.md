@@ -296,9 +296,11 @@ For remote MCP clients, the same deployment guidance is also available in-band:
 
 ## Supervisor Web Interface
 
-WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, approvals, payments, L402 readiness, API keys, and audit review. Experimental pages remain available, but they stay hidden by default so the main operator workflow stays focused on supported control-plane surfaces.
+WordClaw includes a built-in Human Supervisor Web Interface built with SvelteKit for managing content models, approvals, payments, L402 readiness, API keys, tenant AI providers, workforce agents, and audit review. Experimental pages remain available, but they stay hidden by default so the main operator workflow stays focused on supported control-plane surfaces.
 
-The `API Keys` page is also the operator-facing tenant bootstrap surface. Use `Onboard Tenant` there to create a new domain, issue its first `admin` API key, reveal the secret once, and switch the supervisor's active domain selector to the newly created tenant.
+The `API Keys` page is also the operator-facing tenant bootstrap and agent-provisioning surface. Use `Onboard Tenant` there to create a new domain, issue its first `admin` API key, reveal the secret once, and switch the supervisor's active domain selector to the newly created tenant. The same page is where each tenant provisions its own OpenAI, Anthropic, or Gemini credentials and manages reusable workforce agents with a stable slug, purpose, SOUL, and provider/model defaults.
+
+The `Forms` page now covers the next layer up: operators can create reusable intake forms, bind them to a target content type, and turn on draft generation with either a workforce agent or a direct SOUL/provider override. The current multimodal boundary is intentionally narrow: image assets referenced by a form can be forwarded into provider-backed draft jobs, while non-image files stay outside the generation prompt path for now.
 
 Platform-scoped supervisors can move between tenants with the domain selector in the app shell. When they switch, the UI resets to the dashboard so the next workspace reload happens from a clean control-plane surface rather than replaying the current heavy page. Tenant-scoped supervisors stay pinned to their assigned domain and cannot switch across tenants.
 

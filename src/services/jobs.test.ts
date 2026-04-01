@@ -192,6 +192,17 @@ describe('jobs service', () => {
                         }),
                     }]),
                 }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 5,
+                        slug: 'proposal-request',
+                        name: 'Proposal Request',
+                        webhookUrl: 'https://example.com/forms',
+                        webhookSecret: 'form-secret',
+                    }]),
+                }),
             }));
 
         const updateCalls: Array<Record<string, unknown>> = [];
@@ -215,30 +226,49 @@ describe('jobs service', () => {
                 },
             }));
 
-        mocks.dbMock.insert.mockReturnValue({
-            values: vi.fn().mockReturnValue({
-                returning: vi.fn().mockResolvedValue([{
-                    id: 144,
-                    domainId: 1,
-                    contentTypeId: 13,
-                    data: JSON.stringify({
-                        title: 'Draft proposal',
-                        headline: 'Proposal for Acme',
-                        summary: 'Need a proposal',
-                        statusNote: 'Generated from intake',
-                    }),
-                    status: 'draft',
-                    version: 1,
-                    createdAt: new Date('2026-03-31T10:00:02.000Z'),
-                    updatedAt: new Date('2026-03-31T10:00:02.000Z'),
-                }]),
-            }),
-        });
+        const insertValues: Array<Record<string, unknown>> = [];
+        mocks.dbMock.insert
+            .mockImplementationOnce(() => ({
+                values: vi.fn().mockImplementation((values: Record<string, unknown>) => {
+                    insertValues.push(values);
+                    return {
+                        returning: vi.fn().mockResolvedValue([{
+                            id: 144,
+                            domainId: 1,
+                            contentTypeId: 13,
+                            data: JSON.stringify({
+                                title: 'Draft proposal',
+                                headline: 'Proposal for Acme',
+                                summary: 'Need a proposal',
+                                statusNote: 'Generated from intake',
+                            }),
+                            status: 'draft',
+                            version: 1,
+                            createdAt: new Date('2026-03-31T10:00:02.000Z'),
+                            updatedAt: new Date('2026-03-31T10:00:02.000Z'),
+                        }]),
+                    };
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                values: vi.fn().mockImplementation((values: Record<string, unknown>) => {
+                    insertValues.push(values);
+                    return {
+                        returning: vi.fn().mockResolvedValue([{
+                            id: 21,
+                            domainId: 1,
+                            kind: 'outbound_webhook',
+                            queue: 'webhooks',
+                            status: 'queued',
+                        }]),
+                    };
+                }),
+            }));
 
         const processed = await processPendingJobs(10);
 
         expect(processed).toBe(1);
-        expect(mocks.dbMock.insert).toHaveBeenCalled();
+        expect(mocks.dbMock.insert).toHaveBeenCalledTimes(2);
         expect(mocks.logAuditMock).toHaveBeenCalledWith(
             1,
             'create',
@@ -258,6 +288,30 @@ describe('jobs service', () => {
                 },
             }),
         );
+        expect(insertValues[1]).toEqual(expect.objectContaining({
+            kind: 'outbound_webhook',
+            queue: 'webhooks',
+            payload: expect.objectContaining({
+                url: 'https://example.com/forms',
+                secret: 'form-secret',
+                source: 'form',
+                body: expect.objectContaining({
+                    event: 'form.draft_generation.completed',
+                    form: {
+                        id: 5,
+                        slug: 'proposal-request',
+                        name: 'Proposal Request',
+                    },
+                    draftGeneration: expect.objectContaining({
+                        jobId: 8,
+                        status: 'completed',
+                        generatedContentItemId: 144,
+                        intakeContentItemId: 88,
+                        providerType: 'deterministic',
+                    }),
+                }),
+            }),
+        }));
         expect(updateCalls[1]).toEqual(expect.objectContaining({
             status: 'succeeded',
             result: expect.objectContaining({
@@ -273,6 +327,139 @@ describe('jobs service', () => {
                 },
             }),
             lastError: null,
+        }));
+    });
+
+    it('enqueues a terminal failure webhook when draft generation exhausts retries', async () => {
+        const queuedJob = {
+            id: 9,
+            domainId: 1,
+            kind: 'draft_generation',
+            queue: 'drafts',
+            status: 'queued',
+            payload: {
+                formId: 5,
+                formSlug: 'proposal-request',
+                intakeContentItemId: 88,
+                intakeData: {
+                    requirements: 'Need a proposal',
+                },
+                targetContentTypeId: 13,
+                agentSoul: 'software-proposal-writer',
+                provider: {
+                    type: 'deterministic',
+                },
+            },
+            result: null,
+            runAt: new Date('2026-03-31T10:00:00.000Z'),
+            attempts: 0,
+            maxAttempts: 1,
+            lastError: null,
+            claimedAt: null,
+            startedAt: null,
+            completedAt: null,
+            createdAt: new Date('2026-03-31T09:59:00.000Z'),
+            updatedAt: new Date('2026-03-31T09:59:00.000Z'),
+        };
+        const claimedJob = {
+            ...queuedJob,
+            status: 'running',
+            attempts: 1,
+            claimedAt: new Date('2026-03-31T10:00:01.000Z'),
+            startedAt: new Date('2026-03-31T10:00:01.000Z'),
+        };
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: () => ({
+                        orderBy: () => ({
+                            limit: vi.fn().mockResolvedValue([queuedJob]),
+                        }),
+                    }),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 5,
+                        slug: 'proposal-request',
+                        name: 'Proposal Request',
+                        webhookUrl: 'https://example.com/forms',
+                        webhookSecret: 'form-secret',
+                    }]),
+                }),
+            }));
+
+        const updateCalls: Array<Record<string, unknown>> = [];
+        mocks.dbMock.update
+            .mockImplementationOnce(() => ({
+                set: (values: Record<string, unknown>) => {
+                    updateCalls.push(values);
+                    return {
+                        where: () => ({
+                            returning: vi.fn().mockResolvedValue([claimedJob]),
+                        }),
+                    };
+                },
+            }))
+            .mockImplementationOnce(() => ({
+                set: (values: Record<string, unknown>) => {
+                    updateCalls.push(values);
+                    return {
+                        where: vi.fn().mockResolvedValue(undefined),
+                    };
+                },
+            }));
+
+        const insertValues: Array<Record<string, unknown>> = [];
+        mocks.dbMock.insert.mockImplementationOnce(() => ({
+            values: vi.fn().mockImplementation((values: Record<string, unknown>) => {
+                insertValues.push(values);
+                return {
+                    returning: vi.fn().mockResolvedValue([{
+                        id: 22,
+                        domainId: 1,
+                        kind: 'outbound_webhook',
+                        queue: 'webhooks',
+                        status: 'queued',
+                    }]),
+                };
+            }),
+        }));
+
+        const processed = await processPendingJobs(10);
+
+        expect(processed).toBe(1);
+        expect(mocks.dbMock.insert).toHaveBeenCalledTimes(1);
+        expect(insertValues[0]).toEqual(expect.objectContaining({
+            kind: 'outbound_webhook',
+            queue: 'webhooks',
+            payload: expect.objectContaining({
+                url: 'https://example.com/forms',
+                secret: 'form-secret',
+                source: 'form',
+                body: expect.objectContaining({
+                    event: 'form.draft_generation.failed',
+                    draftGeneration: expect.objectContaining({
+                        jobId: 9,
+                        status: 'failed',
+                        intakeContentItemId: 88,
+                        targetContentTypeId: 13,
+                        providerType: 'deterministic',
+                        error: 'Target content type 13 not found in domain 1.',
+                    }),
+                }),
+            }),
+        }));
+        expect(updateCalls[1]).toEqual(expect.objectContaining({
+            status: 'failed',
+            lastError: 'Target content type 13 not found in domain 1.',
         }));
     });
 });

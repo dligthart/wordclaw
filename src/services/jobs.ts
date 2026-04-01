@@ -3,11 +3,14 @@ import crypto from 'node:crypto';
 import { and, asc, eq, lte, sql } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
-import { contentItems, contentItemVersions, contentTypes, jobs, webhooks, workflows } from '../db/schema.js';
+import { contentItems, contentItemVersions, contentTypes, formDefinitions, jobs, webhooks, workflows } from '../db/schema.js';
 import { logAudit } from './audit.js';
 import { getAiProviderSecretConfig } from './ai-provider-config.js';
+import { getAsset, readAssetContent } from './assets.js';
 import { validateContentDataAgainstSchema } from './content-schema.js';
 import {
+    type DraftGenerationAttachment,
+    type DraftGenerationAssetReference,
     generateDraftData,
     type DraftGenerationProviderConfig,
     type DraftGenerationProviderProvisioning,
@@ -39,6 +42,7 @@ export type DraftGenerationJobPayload = {
     formSlug: string;
     intakeContentItemId: number;
     intakeData: Record<string, unknown>;
+    intakeAssetReferences?: DraftGenerationAssetReference[];
     targetContentTypeId: number;
     workforceAgentId?: number | null;
     workforceAgentSlug?: string | null;
@@ -49,6 +53,31 @@ export type DraftGenerationJobPayload = {
     defaultData?: Record<string, unknown>;
     provider?: DraftGenerationProviderConfig;
     postGenerationWorkflowTransitionId?: number | null;
+};
+
+type DraftGenerationNotificationResult = {
+    generatedContentItemId: number;
+    generatedStatus: string;
+    reviewTaskId: number | null;
+    intakeContentItemId: number;
+    targetContentTypeId: number;
+    workforceAgentId: number | null;
+    workforceAgentSlug: string | null;
+    workforceAgentName: string | null;
+    agentSoul: string;
+    fieldMap: Record<string, string>;
+    attachments: Array<{
+        assetId: number;
+        path: string;
+        mimeType: string;
+        originalFilename: string;
+    }>;
+    provider: {
+        type: string;
+        model: string | null;
+        responseId: string | null;
+    };
+    strategy: string;
 };
 
 export type JobPayloadMap = {
@@ -77,6 +106,8 @@ export type JobRecord = typeof jobs.$inferSelect;
 
 const JOB_STATUS_VALUES: JobStatus[] = ['queued', 'running', 'succeeded', 'failed', 'cancelled'];
 const JOB_KIND_VALUES: JobKind[] = ['content_status_transition', 'outbound_webhook', 'draft_generation'];
+const INLINE_IMAGE_ATTACHMENT_LIMIT = 4;
+const INLINE_IMAGE_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
 
 function isObject(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -235,6 +266,31 @@ function parseDraftGenerationPayload(payload: unknown): DraftGenerationJobPayloa
         throw new Error('Draft generation jobs require unique target field names in fieldMap.');
     }
 
+    const intakeAssetReferences = payload.intakeAssetReferences === undefined
+        ? []
+        : Array.isArray(payload.intakeAssetReferences)
+            ? payload.intakeAssetReferences.map((entry) => {
+                if (
+                    !isObject(entry)
+                    || typeof entry.assetId !== 'number'
+                    || !Number.isInteger(entry.assetId)
+                    || entry.assetId <= 0
+                    || typeof entry.path !== 'string'
+                    || entry.path.trim().length === 0
+                ) {
+                    throw new Error('Draft generation jobs require intakeAssetReferences to be an array of { assetId, path } objects.');
+                }
+
+                return {
+                    assetId: entry.assetId,
+                    path: entry.path.trim(),
+                };
+            })
+            : null;
+    if (intakeAssetReferences === null) {
+        throw new Error('Draft generation jobs require intakeAssetReferences to be an array when provided.');
+    }
+
     const providerValue = payload.provider;
     let provider: DraftGenerationProviderConfig = {
         type: 'deterministic',
@@ -310,6 +366,7 @@ function parseDraftGenerationPayload(payload: unknown): DraftGenerationJobPayloa
         formSlug: payload.formSlug.trim(),
         intakeContentItemId: payload.intakeContentItemId,
         intakeData: payload.intakeData as Record<string, unknown>,
+        intakeAssetReferences,
         targetContentTypeId: payload.targetContentTypeId,
         workforceAgentId,
         workforceAgentSlug: typeof payload.workforceAgentSlug === 'string' && payload.workforceAgentSlug.trim().length > 0
@@ -339,6 +396,84 @@ function parsePayload(kind: JobKind, payload: unknown): JobPayloadMap[JobKind] {
     }
 
     return parseContentStatusTransitionPayload(payload);
+}
+
+function isImageMimeType(mimeType: string): boolean {
+    return mimeType.startsWith('image/');
+}
+
+function supportsInlineImageProvider(providerType: DraftGenerationProviderConfig['type']): boolean {
+    return providerType === 'openai' || providerType === 'anthropic' || providerType === 'gemini';
+}
+
+async function resolveDraftGenerationAttachments(
+    domainId: number,
+    provider: DraftGenerationProviderConfig,
+    references: DraftGenerationAssetReference[],
+): Promise<DraftGenerationAttachment[]> {
+    if (references.length === 0) {
+        return [];
+    }
+
+    let remainingInlineImages = supportsInlineImageProvider(provider.type)
+        ? INLINE_IMAGE_ATTACHMENT_LIMIT
+        : 0;
+
+    const attachments: DraftGenerationAttachment[] = [];
+
+    for (const reference of references) {
+        const asset = await getAsset(reference.assetId, domainId);
+        if (!asset) {
+            throw new Error(`Referenced intake asset ${reference.assetId} is no longer available in domain ${domainId}.`);
+        }
+
+        if (!isImageMimeType(asset.mimeType)) {
+            continue;
+        }
+
+        let inlineImageDataUrl: string | null = null;
+        if (
+            supportsInlineImageProvider(provider.type)
+            && remainingInlineImages > 0
+            && isImageMimeType(asset.mimeType)
+            && asset.sizeBytes <= INLINE_IMAGE_ATTACHMENT_MAX_BYTES
+        ) {
+            try {
+                const bytes = await readAssetContent(asset);
+                const base64Data = bytes.toString('base64');
+                inlineImageDataUrl = `data:${asset.mimeType};base64,${base64Data}`;
+                remainingInlineImages -= 1;
+                attachments.push({
+                    assetId: asset.id,
+                    path: reference.path,
+                    filename: asset.filename,
+                    originalFilename: asset.originalFilename,
+                    mimeType: asset.mimeType,
+                    sizeBytes: asset.sizeBytes,
+                    accessMode: asset.accessMode as DraftGenerationAttachment['accessMode'],
+                    inlineImageDataUrl,
+                    inlineImageBase64: base64Data,
+                });
+                continue;
+            } catch {
+                inlineImageDataUrl = null;
+            }
+        }
+
+        attachments.push({
+            assetId: asset.id,
+            path: reference.path,
+            filename: asset.filename,
+            originalFilename: asset.originalFilename,
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+            accessMode: asset.accessMode as DraftGenerationAttachment['accessMode'],
+            inlineImageDataUrl,
+            inlineImageBase64: null,
+        });
+    }
+
+    return attachments;
 }
 
 async function runOutboundWebhookJob(payload: OutboundWebhookJobPayload) {
@@ -518,6 +653,11 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
             }
             : null;
     }
+    const attachments = await resolveDraftGenerationAttachments(
+        domainId,
+        provider,
+        payload.intakeAssetReferences ?? [],
+    );
 
     const generation = await generateDraftData({
         domainId,
@@ -525,6 +665,7 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
         formSlug: payload.formSlug,
         intakeContentItemId: payload.intakeContentItemId,
         intakeData: payload.intakeData,
+        attachments,
         targetContentType: {
             id: targetContentType.id,
             name: targetContentType.name,
@@ -567,6 +708,12 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
         workforceAgentName: workforceAgent?.name ?? null,
         agentSoul: payload.agentSoul,
         fieldMap: explicitFieldMap,
+        attachments: attachments.map((attachment) => ({
+            assetId: attachment.assetId,
+            path: attachment.path,
+            mimeType: attachment.mimeType,
+            originalFilename: attachment.originalFilename,
+        })),
         provider: generation.provider,
         strategy: generation.strategy,
     });
@@ -592,9 +739,106 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
         workforceAgentName: workforceAgent?.name ?? null,
         agentSoul: payload.agentSoul,
         fieldMap: explicitFieldMap,
+        attachments: attachments.map((attachment) => ({
+            assetId: attachment.assetId,
+            path: attachment.path,
+            mimeType: attachment.mimeType,
+            originalFilename: attachment.originalFilename,
+        })),
         provider: generation.provider,
         strategy: generation.strategy,
     };
+}
+
+async function loadDraftGenerationWebhookTarget(domainId: number, formId: number) {
+    const [target] = await db.select({
+        id: formDefinitions.id,
+        slug: formDefinitions.slug,
+        name: formDefinitions.name,
+        webhookUrl: formDefinitions.webhookUrl,
+        webhookSecret: formDefinitions.webhookSecret,
+    })
+        .from(formDefinitions)
+        .where(and(
+            eq(formDefinitions.domainId, domainId),
+            eq(formDefinitions.id, formId),
+        ));
+
+    if (!target?.webhookUrl) {
+        return null;
+    }
+
+    return {
+        id: target.id,
+        slug: target.slug,
+        name: target.name,
+        webhookUrl: target.webhookUrl,
+        webhookSecret: target.webhookSecret ?? null,
+    };
+}
+
+async function enqueueDraftGenerationNotificationWebhook(input: {
+    domainId: number;
+    jobId: number;
+    attempts: number;
+    maxAttempts: number;
+    payload: DraftGenerationJobPayload;
+    result?: DraftGenerationNotificationResult;
+    error?: string;
+}) {
+    const target = await loadDraftGenerationWebhookTarget(input.domainId, input.payload.formId);
+    if (!target) {
+        return null;
+    }
+
+    const event = input.result
+        ? 'form.draft_generation.completed'
+        : 'form.draft_generation.failed';
+    const configuredProviderModel = input.payload.provider && 'model' in input.payload.provider
+        ? input.payload.provider.model ?? null
+        : null;
+
+    return enqueueWebhookJob({
+        domainId: input.domainId,
+        url: target.webhookUrl,
+        secret: target.webhookSecret,
+        source: 'form',
+        body: {
+            event,
+            form: {
+                id: target.id,
+                slug: target.slug,
+                name: target.name,
+            },
+            draftGeneration: {
+                jobId: input.jobId,
+                status: input.result ? 'completed' : 'failed',
+                attempts: input.attempts,
+                maxAttempts: input.maxAttempts,
+                intakeContentItemId: input.payload.intakeContentItemId,
+                targetContentTypeId: input.payload.targetContentTypeId,
+                workforceAgentId: input.payload.workforceAgentId ?? null,
+                workforceAgentSlug: input.payload.workforceAgentSlug ?? null,
+                workforceAgentName: input.payload.workforceAgentName ?? null,
+                agentSoul: input.payload.agentSoul,
+                providerType: input.result?.provider.type ?? input.payload.provider?.type ?? 'deterministic',
+                providerModel: input.result?.provider.model ?? configuredProviderModel,
+                ...(input.result
+                    ? {
+                        generatedContentItemId: input.result.generatedContentItemId,
+                        generatedStatus: input.result.generatedStatus,
+                        reviewTaskId: input.result.reviewTaskId,
+                        fieldMap: input.result.fieldMap,
+                        attachments: input.result.attachments,
+                        provider: input.result.provider,
+                        strategy: input.result.strategy,
+                    }
+                    : {
+                        error: input.error ?? 'Draft generation failed.',
+                    }),
+            },
+        },
+    });
 }
 
 async function executeJob(row: JobRecord) {
@@ -678,6 +922,7 @@ export async function enqueueDraftGenerationJob(input: {
     formSlug: string;
     intakeContentItemId: number;
     intakeData: Record<string, unknown>;
+    intakeAssetReferences?: DraftGenerationAssetReference[];
     targetContentTypeId: number;
     workforceAgentId?: number | null;
     workforceAgentSlug?: string | null;
@@ -699,6 +944,7 @@ export async function enqueueDraftGenerationJob(input: {
             formSlug: input.formSlug,
             intakeContentItemId: input.intakeContentItemId,
             intakeData: input.intakeData,
+            intakeAssetReferences: input.intakeAssetReferences ?? [],
             targetContentTypeId: input.targetContentTypeId,
             workforceAgentId: input.workforceAgentId ?? null,
             workforceAgentSlug: input.workforceAgentSlug ?? null,
@@ -848,6 +1094,20 @@ export async function processPendingJobs(maxJobsPerSweep = 25): Promise<number> 
                     updatedAt: new Date(),
                 })
                 .where(eq(jobs.id, claimed.id));
+
+            if (parseJobKind(claimed.kind) === 'draft_generation') {
+                const payload = parseDraftGenerationPayload(claimed.payload);
+                await enqueueDraftGenerationNotificationWebhook({
+                    domainId: claimed.domainId,
+                    jobId: claimed.id,
+                    attempts: claimed.attempts,
+                    maxAttempts: claimed.maxAttempts,
+                    payload,
+                    result: result as DraftGenerationNotificationResult,
+                }).catch((notificationError) => {
+                    console.error('Failed to enqueue draft generation completion webhook', notificationError);
+                });
+            }
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             const shouldRetry = claimed.attempts < claimed.maxAttempts;
@@ -861,6 +1121,20 @@ export async function processPendingJobs(maxJobsPerSweep = 25): Promise<number> 
                     updatedAt: new Date(),
                 })
                 .where(eq(jobs.id, claimed.id));
+
+            if (!shouldRetry && parseJobKind(claimed.kind) === 'draft_generation') {
+                const payload = parseDraftGenerationPayload(claimed.payload);
+                await enqueueDraftGenerationNotificationWebhook({
+                    domainId: claimed.domainId,
+                    jobId: claimed.id,
+                    attempts: claimed.attempts,
+                    maxAttempts: claimed.maxAttempts,
+                    payload,
+                    error: message,
+                }).catch((notificationError) => {
+                    console.error('Failed to enqueue draft generation failure webhook', notificationError);
+                });
+            }
         }
     }
 

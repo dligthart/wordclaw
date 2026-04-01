@@ -14,7 +14,7 @@ This index now distinguishes between the active product direction and older non-
 - [RFC-0029: Agent Provisioning and Runtime Self-Description (implemented)](/rfc/implemented/0029-agent-provisioning-and-runtime-self-description)
 - [RFC-0030: Safe Domain Deletion and Decommissioning (proposed)](/rfc/proposed/0030-safe-domain-deletion-and-decommissioning)
 - [RFC-0031: Reserving `/` for a Customizable Public Front Door (proposed)](/rfc/proposed/0031-customizable-public-front-door)
-- [RFC-0032: Multimodal Agent Intake and Draft Generation Pipelines (proposed)](/rfc/proposed/0032-multimodal-agent-intake-and-draft-generation)
+- [RFC-0032: Multimodal Agent Intake and Draft Generation Pipelines (partially implemented)](/rfc/proposed/0032-multimodal-agent-intake-and-draft-generation)
 
 ## Historical / Optional / Incubating
 

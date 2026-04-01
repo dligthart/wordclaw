@@ -67,6 +67,23 @@ export type DraftGenerationWorkforceAgentReference = {
     purpose: string;
 };
 
+export type DraftGenerationAssetReference = {
+    assetId: number;
+    path: string;
+};
+
+export type DraftGenerationAttachment = {
+    assetId: number;
+    path: string;
+    filename: string;
+    originalFilename: string;
+    mimeType: string;
+    sizeBytes: number;
+    accessMode: 'public' | 'signed' | 'entitled';
+    inlineImageDataUrl?: string | null;
+    inlineImageBase64?: string | null;
+};
+
 export type DraftGenerationInput = {
     domainId: number;
     formId: number;
@@ -80,6 +97,7 @@ export type DraftGenerationInput = {
     provider: DraftGenerationProviderConfig;
     providerProvisioning?: DraftGenerationProviderProvisioning | null;
     workforceAgent?: DraftGenerationWorkforceAgentReference | null;
+    attachments?: DraftGenerationAttachment[];
 };
 
 export type DraftGenerationResult = {
@@ -278,7 +296,47 @@ function buildOpenAiInputText(input: DraftGenerationInput, deterministicBaseline
         '',
         'Explicit field mapping:',
         JSON.stringify(input.fieldMap, null, 2),
+        '',
+        'Referenced image attachments:',
+        buildAttachmentManifestText(input.attachments ?? []),
     ].join('\n');
+}
+
+function buildAttachmentManifestText(attachments: DraftGenerationAttachment[]): string {
+    const imageAttachments = attachments.filter((attachment) =>
+        Boolean(normalizeInlineImageMimeType(attachment.mimeType)),
+    );
+
+    if (imageAttachments.length === 0) {
+        return 'No supported image attachments were referenced in the intake payload.';
+    }
+
+    return imageAttachments.map((attachment, index) => {
+        const delivery = attachment.inlineImageDataUrl
+            ? 'inline image attached'
+            : 'metadata only';
+
+        return [
+            `${index + 1}. assetId=${attachment.assetId}`,
+            `path=${attachment.path}`,
+            `filename=${attachment.originalFilename}`,
+            `mimeType=${attachment.mimeType}`,
+            `sizeBytes=${attachment.sizeBytes}`,
+            `accessMode=${attachment.accessMode}`,
+            `delivery=${delivery}`,
+        ].join(', ');
+    }).join('\n');
+}
+
+function normalizeInlineImageMimeType(mimeType: string): string | null {
+    const normalized = mimeType.trim().toLowerCase();
+    if (normalized === 'image/jpg') {
+        return 'image/jpeg';
+    }
+
+    return ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(normalized)
+        ? normalized
+        : null;
 }
 
 function buildUnifiedPromptText(input: DraftGenerationInput, deterministicBaseline: Record<string, unknown>): string {
@@ -287,6 +345,83 @@ function buildUnifiedPromptText(input: DraftGenerationInput, deterministicBaseli
         '',
         buildOpenAiInputText(input, deterministicBaseline),
     ].join('\n');
+}
+
+function buildOpenAiInputContent(input: DraftGenerationInput, deterministicBaseline: Record<string, unknown>) {
+    const content: Array<
+        { type: 'input_text'; text: string }
+        | { type: 'input_image'; image_url: string; detail: 'auto' }
+    > = [{
+        type: 'input_text',
+        text: buildOpenAiInputText(input, deterministicBaseline),
+    }];
+
+    for (const attachment of input.attachments ?? []) {
+        if (normalizeOptionalString(attachment.inlineImageDataUrl)) {
+            content.push({
+                type: 'input_image',
+                image_url: attachment.inlineImageDataUrl as string,
+                detail: 'auto',
+            });
+        }
+    }
+
+    return content;
+}
+
+function buildAnthropicInputContent(input: DraftGenerationInput, deterministicBaseline: Record<string, unknown>) {
+    const content: Array<
+        { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+        | { type: 'text'; text: string }
+    > = [];
+
+    for (const attachment of input.attachments ?? []) {
+        const mediaType = normalizeInlineImageMimeType(attachment.mimeType);
+        const inlineImageBase64 = normalizeOptionalString(attachment.inlineImageBase64);
+        if (mediaType && inlineImageBase64) {
+            content.push({
+                type: 'image',
+                source: {
+                    type: 'base64',
+                    media_type: mediaType,
+                    data: inlineImageBase64,
+                },
+            });
+        }
+    }
+
+    content.push({
+        type: 'text',
+        text: buildOpenAiInputText(input, deterministicBaseline),
+    });
+
+    return content;
+}
+
+function buildGeminiParts(input: DraftGenerationInput, deterministicBaseline: Record<string, unknown>) {
+    const parts: Array<
+        { inlineData: { mimeType: string; data: string } }
+        | { text: string }
+    > = [];
+
+    for (const attachment of input.attachments ?? []) {
+        const mimeType = normalizeInlineImageMimeType(attachment.mimeType);
+        const inlineImageBase64 = normalizeOptionalString(attachment.inlineImageBase64);
+        if (mimeType && inlineImageBase64) {
+            parts.push({
+                inlineData: {
+                    mimeType,
+                    data: inlineImageBase64,
+                },
+            });
+        }
+    }
+
+    parts.push({
+        text: buildUnifiedPromptText(input, deterministicBaseline),
+    });
+
+    return parts;
 }
 
 async function parseJsonTextResult(
@@ -389,10 +524,7 @@ async function generateDraftDataWithOpenAI(
         instructions: buildOpenAiInstructions(input),
         input: [{
             role: 'user',
-            content: [{
-                type: 'input_text',
-                text: buildOpenAiInputText(input, deterministicBaseline),
-            }],
+            content: buildOpenAiInputContent(input, deterministicBaseline),
         }],
         text: {
             format: {
@@ -462,7 +594,7 @@ async function generateDraftDataWithAnthropic(
             system: buildOpenAiInstructions(input),
             messages: [{
                 role: 'user',
-                content: buildOpenAiInputText(input, deterministicBaseline),
+                content: buildAnthropicInputContent(input, deterministicBaseline),
             }],
             tools: [{
                 name: 'submit_draft',
@@ -546,9 +678,7 @@ async function generateDraftDataWithGemini(
             body: JSON.stringify({
                 contents: [{
                     role: 'user',
-                    parts: [{
-                        text: buildUnifiedPromptText(input, deterministicBaseline),
-                    }],
+                    parts: buildGeminiParts(input, deterministicBaseline),
                 }],
                 generationConfig: {
                     responseMimeType: 'application/json',

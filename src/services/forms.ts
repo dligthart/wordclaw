@@ -2,7 +2,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { db } from '../db/index.js';
 import { contentItems, contentTypes, formDefinitions, workflowTransitions, workflows } from '../db/schema.js';
-import { validateContentDataAgainstSchema } from './content-schema.js';
+import { extractAssetReferencesFromContent, validateContentDataAgainstSchema } from './content-schema.js';
 import {
     type DraftGenerationConfig as FormDraftGenerationConfig,
     type DraftGenerationProviderConfig,
@@ -12,7 +12,7 @@ import { WorkflowService } from './workflow.js';
 import { enqueueDraftGenerationJob, enqueueWebhookJob, type JobRecord } from './jobs.js';
 import { isSafeWebhookUrl } from './webhook.js';
 
-export type FormFieldType = 'text' | 'textarea' | 'number' | 'checkbox' | 'select';
+export type FormFieldType = 'text' | 'textarea' | 'number' | 'checkbox' | 'select' | 'asset' | 'asset-list';
 export type FormFieldOption = {
     label?: string;
     value: string;
@@ -152,7 +152,19 @@ function nonEmptyString(value: unknown): value is string {
 }
 
 function normalizeFieldType(propertySchema: JsonObject): FormFieldType | null {
-    if (propertySchema['x-wordclaw-localized'] === true || propertySchema['x-wordclaw-field-kind'] !== undefined) {
+    if (propertySchema['x-wordclaw-localized'] === true) {
+        return null;
+    }
+
+    if (propertySchema['x-wordclaw-field-kind'] === 'asset') {
+        return 'asset';
+    }
+
+    if (propertySchema['x-wordclaw-field-kind'] === 'asset-list') {
+        return 'asset-list';
+    }
+
+    if (propertySchema['x-wordclaw-field-kind'] !== undefined) {
         return null;
     }
 
@@ -240,11 +252,11 @@ function parseFields(value: unknown): FormDefinitionField[] {
             );
         }
 
-        if (entry.type !== undefined && !['text', 'textarea', 'number', 'checkbox', 'select'].includes(String(entry.type))) {
+        if (entry.type !== undefined && !['text', 'textarea', 'number', 'checkbox', 'select', 'asset', 'asset-list'].includes(String(entry.type))) {
             throw new FormServiceError(
                 'Invalid form field type',
                 'FORM_FIELD_TYPE_INVALID',
-                `fields[${index}].type must be one of text, textarea, number, checkbox, or select.`,
+                `fields[${index}].type must be one of text, textarea, number, checkbox, select, asset, or asset-list.`,
                 400,
             );
         }
@@ -296,7 +308,7 @@ function parseSchemaProperties(schemaText: string): {
         throw new FormServiceError(
             'Target content type schema is not form-compatible',
             'FORM_CONTENT_SCHEMA_UNSUPPORTED',
-            'Target content type schema must be a top-level object with top-level scalar properties.',
+            'Target content type schema must be a top-level object with top-level form-compatible properties.',
             409,
         );
     }
@@ -504,7 +516,7 @@ async function normalizeInput(input: CreateFormDefinitionInput | UpdateFormDefin
             throw new FormServiceError(
                 'Form field is not a supported scalar field',
                 'FORM_FIELD_UNSUPPORTED',
-                `Field '${field.name}' must be a top-level string, number, boolean, or enum-backed select field.`,
+                `Field '${field.name}' must be a top-level string, number, boolean, enum-backed select, asset, or asset-list field.`,
                 409,
             );
         }
@@ -1075,6 +1087,7 @@ export async function submitFormDefinition(domainId: number, slug: string, input
             validationFailure.context,
         );
     }
+    const intakeAssetReferences = extractAssetReferencesFromContent(targetContentType.schema, serializedData);
 
     const [item] = await db.insert(contentItems).values({
         domainId,
@@ -1115,6 +1128,7 @@ export async function submitFormDefinition(domainId: number, slug: string, input
             formSlug: form.slug,
             intakeContentItemId: item.id,
             intakeData: mergedData,
+            intakeAssetReferences,
             targetContentTypeId: form.draftGeneration.targetContentTypeId,
             workforceAgentId: workforceAgent?.id ?? form.draftGeneration.workforceAgentId ?? null,
             workforceAgentSlug: workforceAgent?.slug ?? form.draftGeneration.workforceAgentSlug ?? null,

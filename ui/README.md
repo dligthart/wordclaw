@@ -11,7 +11,8 @@ The default supported supervisor workflow covers:
 - content browser
 - schema manager
 - approval queue
-- API keys
+- forms
+- API keys and tenant agent provisioning
 
 Experimental pages such as Agent Sandbox, Payments, and L402 Readiness remain available for exploration or module operations, but they are outside the default product path.
 
@@ -70,6 +71,13 @@ In production, set `SETUP_TOKEN` and pass it as `x-setup-token` for that one-tim
 After the first platform supervisor exists, create additional platform or tenant-scoped supervisors with `POST /api/supervisors`. Platform supervisors can also remove other supervisor accounts with `DELETE /api/supervisors/:id`; the runtime blocks self-delete and protects the last remaining platform-scoped supervisor. Tenant-scoped supervisors are pinned to their assigned domain in the UI and cannot switch into other tenants by changing the `x-wordclaw-domain` header.
 
 Platform-scoped supervisors can switch domains from the header selector. The shell resets them onto the dashboard on every switch so the next tenant workspace loads from a clean surface instead of replaying whichever heavy page was open before.
+
+Tenant-scoped AI provisioning lives in two places today:
+
+- `/ui/keys` for external provider credentials and reusable workforce agents
+- `/ui/forms` for binding a public or authenticated intake form to a draft-generation target, field map, workflow hand-off, and either a workforce agent or direct SOUL/provider override
+
+The current multimodal boundary is intentionally narrow: form-driven draft generation forwards image assets only. OpenAI, Claude, and Gemini can all receive supported images natively, but non-image files are not yet part of the generation prompt path.
 
 Existing supervisors can rotate their own password through `PUT /api/supervisors/me/password`.
 

@@ -43,7 +43,7 @@ describe('forms service', () => {
         mocks.isSafeWebhookUrlMock.mockImplementation(async () => true);
     });
 
-    it('rejects unsupported non-scalar form fields', async () => {
+    it('rejects unsupported relation form fields', async () => {
         mocks.dbMock.select.mockImplementation(() => ({
             from: () => ({
                 where: vi.fn().mockResolvedValue([{
@@ -55,13 +55,12 @@ describe('forms service', () => {
                     schema: JSON.stringify({
                         type: 'object',
                         properties: {
-                            attachment: {
+                            relatedEntry: {
                                 type: 'object',
-                                'x-wordclaw-field-kind': 'asset',
+                                'x-wordclaw-field-kind': 'content-ref',
                                 properties: {
-                                    assetId: { type: 'integer' }
-                                },
-                                required: ['assetId']
+                                    contentItemId: { type: 'integer' }
+                                }
                             }
                         }
                     })
@@ -74,10 +73,113 @@ describe('forms service', () => {
             name: 'Lead Form',
             slug: 'lead-form',
             contentTypeId: 12,
-            fields: [{ name: 'attachment' }],
+            fields: [{ name: 'relatedEntry' }],
         })).rejects.toMatchObject({
             code: 'FORM_FIELD_UNSUPPORTED',
         });
+    });
+
+    it('accepts asset-backed form fields', async () => {
+        const assetSchema = JSON.stringify({
+            type: 'object',
+            properties: {
+                title: { type: 'string' },
+                attachment: {
+                    type: 'object',
+                    'x-wordclaw-field-kind': 'asset',
+                    properties: {
+                        assetId: { type: 'integer' }
+                    },
+                    required: ['assetId']
+                },
+                gallery: {
+                    type: 'array',
+                    'x-wordclaw-field-kind': 'asset-list',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            assetId: { type: 'integer' }
+                        },
+                        required: ['assetId']
+                    }
+                }
+            },
+            required: ['title'],
+        });
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 12,
+                        domainId: 1,
+                        name: 'Lead',
+                        slug: 'lead',
+                        basePrice: 0,
+                        schema: assetSchema,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 12,
+                        domainId: 1,
+                        name: 'Lead',
+                        slug: 'lead',
+                        basePrice: 0,
+                        schema: assetSchema,
+                    }]),
+                }),
+            }));
+
+        mocks.dbMock.insert.mockReturnValue({
+            values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 5,
+                    domainId: 1,
+                    name: 'Lead Form',
+                    slug: 'lead-form',
+                    description: null,
+                    contentTypeId: 12,
+                    fields: [
+                        { name: 'title', type: 'text', required: true, label: 'Title' },
+                        { name: 'attachment', type: 'asset', required: false, label: 'Attachment' },
+                        { name: 'gallery', type: 'asset-list', required: false, label: 'Gallery' },
+                    ],
+                    defaultData: {},
+                    active: true,
+                    publicRead: true,
+                    submissionStatus: 'draft',
+                    workflowTransitionId: null,
+                    requirePayment: false,
+                    webhookUrl: null,
+                    webhookSecret: null,
+                    successMessage: null,
+                    draftGeneration: null,
+                    createdAt: new Date('2026-04-01T10:00:00.000Z'),
+                    updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+                }]),
+            }),
+        });
+
+        const created = await createFormDefinition({
+            domainId: 1,
+            name: 'Lead Form',
+            slug: 'lead-form',
+            contentTypeId: 12,
+            fields: [
+                { name: 'title', label: 'Title' },
+                { name: 'attachment', label: 'Attachment', type: 'asset' },
+                { name: 'gallery', label: 'Gallery', type: 'asset-list' },
+            ],
+        });
+
+        expect(created.fields).toEqual(expect.arrayContaining([
+            expect.objectContaining({ name: 'title', type: 'text', required: true }),
+            expect.objectContaining({ name: 'attachment', type: 'asset', required: false }),
+            expect.objectContaining({ name: 'gallery', type: 'asset-list', required: false }),
+        ]));
     });
 
     it('rejects draft generation field maps that reference unknown form fields', async () => {
@@ -189,6 +291,7 @@ describe('forms service', () => {
             fields: [
                 { name: 'company', type: 'text', required: true, label: 'Company' },
                 { name: 'requirements', type: 'textarea', required: true, label: 'Requirements' },
+                { name: 'attachment', type: 'asset', required: false, label: 'Attachment' },
             ],
             defaultData: {},
             active: true,
@@ -230,6 +333,14 @@ describe('forms service', () => {
                 properties: {
                     company: { type: 'string' },
                     requirements: { type: 'string' },
+                    attachment: {
+                        type: 'object',
+                        'x-wordclaw-field-kind': 'asset',
+                        properties: {
+                            assetId: { type: 'integer' },
+                        },
+                        required: ['assetId'],
+                    },
                 },
                 required: ['company', 'requirements'],
             }),
@@ -265,6 +376,11 @@ describe('forms service', () => {
                 from: () => ({
                     where: vi.fn().mockResolvedValue([{ webhookUrl: null, webhookSecret: null }]),
                 }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{ id: 7 }]),
+                }),
             }));
 
         mocks.dbMock.insert.mockReturnValue({
@@ -276,6 +392,9 @@ describe('forms service', () => {
                     data: JSON.stringify({
                         company: 'Acme',
                         requirements: 'Need a proposal',
+                        attachment: {
+                            assetId: 7,
+                        },
                     }),
                     status: 'draft',
                     version: 1,
@@ -295,6 +414,9 @@ describe('forms service', () => {
             data: {
                 company: 'Acme',
                 requirements: 'Need a proposal',
+                attachment: {
+                    assetId: 7,
+                },
             },
             request: {},
         });
@@ -307,7 +429,16 @@ describe('forms service', () => {
             intakeData: {
                 company: 'Acme',
                 requirements: 'Need a proposal',
+                attachment: {
+                    assetId: 7,
+                },
             },
+            intakeAssetReferences: [
+                {
+                    assetId: 7,
+                    path: '/attachment',
+                },
+            ],
             targetContentTypeId: 13,
             workforceAgentId: null,
             workforceAgentSlug: null,

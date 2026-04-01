@@ -1,19 +1,24 @@
 # RFC 0032: Multimodal Agent Intake and Draft Generation Pipelines
 
 **Author:** Codex
-**Status:** Proposed
+**Status:** Partially Implemented
 **Date:** 2026-03-31
-**Updated:** 2026-03-31
+**Updated:** 2026-04-01
 **Tracking Issue:** #183
 
 ## 0. Current Status
 
-As of 2026-03-31, RFC 0032 is proposed and not yet implemented as a first-class end-to-end product lane.
+As of 2026-04-01, RFC 0032 is partially implemented on `main`, but it is not finished as a broad intake-to-agent product lane.
 
 Current runtime context:
 
 - forms, public write lanes, assets, jobs, workflows, and webhook follow-up already ship on `main`
-- the missing piece is the thin composition layer that routes an intake record into a background drafting job for a specific agent profile or SOUL
+- forms can now enqueue `draft_generation` jobs directly, and those jobs can target tenant-scoped workforce agents or direct SOUL/provider config
+- tenant-scoped AI provider provisioning now exists for `openai`, `anthropic`, and `gemini`
+- tenant-scoped workforce agents now exist with stable ids/slugs, purpose, SOUL, and provider/model defaults
+- the supervisor UI now exposes provider/workforce provisioning in `/ui/keys` and draft-generation form wiring in `/ui/forms`
+- draft-generation completion and terminal failure callbacks now reuse the existing form webhook lane
+- multimodal intake is intentionally image-only for now: referenced image assets can be forwarded natively into OpenAI, Anthropic, and Gemini requests, while non-image files are still out of scope
 - the implementation direction remains intentionally conservative: reuse the current runtime instead of introducing a large new subsystem
 
 ## 1. Summary

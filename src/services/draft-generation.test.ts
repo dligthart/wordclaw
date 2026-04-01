@@ -74,6 +74,33 @@ function buildInput(overrides: Partial<DraftGenerationInput> = {}): DraftGenerat
     };
 }
 
+function buildInlineAttachments() {
+    return [
+        {
+            assetId: 7,
+            path: '/attachment',
+            filename: 'asset-7.png',
+            originalFilename: 'brief.png',
+            mimeType: 'image/png',
+            sizeBytes: 2048,
+            accessMode: 'signed' as const,
+            inlineImageDataUrl: 'data:image/png;base64,AAA=',
+            inlineImageBase64: 'AAA=',
+        },
+        {
+            assetId: 8,
+            path: '/supportingDoc',
+            filename: 'asset-8.pdf',
+            originalFilename: 'spec.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 4096,
+            accessMode: 'entitled' as const,
+            inlineImageDataUrl: null,
+            inlineImageBase64: null,
+        },
+    ];
+}
+
 describe('draft generation service', () => {
     beforeEach(() => {
         mocks.responsesCreateMock.mockReset();
@@ -132,6 +159,38 @@ describe('draft generation service', () => {
         });
     });
 
+    it('passes inline image attachments to OpenAI when available', async () => {
+        mocks.responsesCreateMock.mockResolvedValue({
+            id: 'resp_attachments',
+            output_text: JSON.stringify({
+                summary: 'Generated from image attachment',
+            }),
+        });
+
+        await generateDraftData(buildInput({
+            attachments: buildInlineAttachments(),
+        }));
+
+        expect(mocks.responsesCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+            input: [{
+                role: 'user',
+                content: [
+                    expect.objectContaining({
+                        type: 'input_text',
+                        text: expect.stringContaining('Referenced image attachments:'),
+                    }),
+                    expect.objectContaining({
+                        type: 'input_image',
+                        image_url: 'data:image/png;base64,AAA=',
+                        detail: 'auto',
+                    }),
+                ],
+            }],
+        }));
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain('brief.png');
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).not.toContain('spec.pdf');
+    });
+
     it('uses Anthropic tool-schema output when the provider is configured', async () => {
         const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
             JSON.stringify({
@@ -164,6 +223,7 @@ describe('draft generation service', () => {
                 apiKey: 'anthropic-secret',
                 defaultModel: 'claude-sonnet-4-20250514',
             },
+            attachments: buildInlineAttachments(),
         }));
 
         expect(fetchMock).toHaveBeenCalledWith(
@@ -178,6 +238,21 @@ describe('draft generation service', () => {
         );
         const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
         expect(requestBody.model).toBe('claude-sonnet-4-20250514');
+        expect(requestBody.messages[0].content).toEqual([
+            {
+                type: 'image',
+                source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: 'AAA=',
+                },
+            },
+            expect.objectContaining({
+                type: 'text',
+                text: expect.stringContaining('Referenced image attachments:'),
+            }),
+        ]);
+        expect(requestBody.messages[0].content[1].text).not.toContain('spec.pdf');
         expect(requestBody.tool_choice).toEqual({
             type: 'tool',
             name: 'submit_draft',
@@ -246,6 +321,7 @@ describe('draft generation service', () => {
                 apiKey: 'gemini-secret',
                 defaultModel: null,
             },
+            attachments: buildInlineAttachments(),
         }));
 
         expect(fetchMock).toHaveBeenCalledWith(
@@ -258,6 +334,18 @@ describe('draft generation service', () => {
             }),
         );
         const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+        expect(requestBody.contents[0].parts).toEqual([
+            {
+                inlineData: {
+                    mimeType: 'image/png',
+                    data: 'AAA=',
+                },
+            },
+            expect.objectContaining({
+                text: expect.stringContaining('Referenced image attachments:'),
+            }),
+        ]);
+        expect(requestBody.contents[0].parts[1].text).not.toContain('spec.pdf');
         expect(requestBody.generationConfig).toEqual(expect.objectContaining({
             responseMimeType: 'application/json',
             responseJsonSchema: {

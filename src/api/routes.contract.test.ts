@@ -3871,7 +3871,8 @@ describe('API Route Contracts', () => {
             },
             fields: [
                 { name: 'email', type: 'text', required: true, label: 'Email' },
-                { name: 'message', type: 'text', required: false, label: 'Message' }
+                { name: 'message', type: 'text', required: false, label: 'Message' },
+                { name: 'attachments', type: 'asset-list', required: false, label: 'Attachments' },
             ],
             defaultData: {},
             createdAt: new Date('2026-03-29T10:00:00.000Z'),
@@ -3889,7 +3890,8 @@ describe('API Route Contracts', () => {
                     contentTypeId: 12,
                     fields: [
                         { name: 'email', label: 'Email' },
-                        { name: 'message', label: 'Message' }
+                        { name: 'message', label: 'Message' },
+                        { name: 'attachments', label: 'Attachments', type: 'asset-list' },
                     ],
                     successMessage: 'Thanks',
                     draftGeneration: {
@@ -3945,7 +3947,8 @@ describe('API Route Contracts', () => {
                     },
                     fields: expect.arrayContaining([
                         expect.objectContaining({ name: 'email', required: true }),
-                        expect.objectContaining({ name: 'message', required: false })
+                        expect.objectContaining({ name: 'message', required: false }),
+                        expect.objectContaining({ name: 'attachments', type: 'asset-list', required: false }),
                     ])
                 }
             });
