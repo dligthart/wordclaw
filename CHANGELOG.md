@@ -1,3 +1,10 @@
+# [1.46.0](https://github.com/dligthart/wordclaw/compare/v1.45.2...v1.46.0) (2026-04-01)
+
+
+### Features
+
+* add authenticated runtime build metadata ([4c78345](https://github.com/dligthart/wordclaw/commit/4c783452da6eb11b9f0f362685e1682ed59d031b))
+
 ## [1.45.2](https://github.com/dligthart/wordclaw/compare/v1.45.1...v1.45.2) (2026-04-01)
 
 
