@@ -1,3 +1,10 @@
+## [1.45.2](https://github.com/dligthart/wordclaw/compare/v1.45.1...v1.45.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* degrade keys when registry endpoints fail ([fc7bc6d](https://github.com/dligthart/wordclaw/commit/fc7bc6d946e42d08a364ff45a57f9eee47c08ebd))
+
 ## [1.45.1](https://github.com/dligthart/wordclaw/compare/v1.45.0...v1.45.1) (2026-04-01)
 
 
