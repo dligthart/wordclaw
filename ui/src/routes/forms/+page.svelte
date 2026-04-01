@@ -159,6 +159,7 @@
     let forms = $state<FormDefinition[]>([]);
     let contentTypes = $state<ContentType[]>([]);
     let workforceAgents = $state<WorkforceAgent[]>([]);
+    let workforceAgentsError = $state<string | null>(null);
     let selectedFormId = $state<number | null>(null);
     let selectedForm = $derived(
         forms.find((form) => form.id === selectedFormId) ?? null,
@@ -351,10 +352,7 @@
                 form.draftGeneration.workforceAgentId === null
                     ? ""
                     : String(form.draftGeneration.workforceAgentId);
-            draftAgentSoul =
-                form.draftGeneration.workforceAgentId === null
-                    ? form.draftGeneration.agentSoul
-                    : "";
+            draftAgentSoul = form.draftGeneration.agentSoul;
             draftProviderType = form.draftGeneration.provider.type;
             draftProviderModel =
                 form.draftGeneration.provider.type === "deterministic"
@@ -389,20 +387,31 @@
         error = null;
 
         try {
-            const [formsResponse, contentTypesResponse, workforceResponse] =
+            const [formsResponse, contentTypesResponse] =
                 await Promise.all([
                     fetchApi("/forms"),
                     fetchApi("/content-types"),
-                    fetchApi("/workforce/agents"),
                 ]);
 
             forms = (formsResponse.data as FormDefinition[]) ?? [];
             contentTypes = ((contentTypesResponse.data as ContentType[]) ?? []).sort(
                 (left, right) => left.name.localeCompare(right.name),
             );
-            workforceAgents = (
-                (workforceResponse.data as WorkforceAgent[]) ?? []
-            ).sort((left, right) => left.name.localeCompare(right.name));
+            try {
+                const workforceResponse = await fetchApi("/workforce/agents");
+                workforceAgents = (
+                    (workforceResponse.data as WorkforceAgent[]) ?? []
+                ).sort((left, right) => left.name.localeCompare(right.name));
+                workforceAgentsError = null;
+            } catch (workforceError) {
+                workforceAgents = [];
+                workforceAgentsError =
+                    workforceError instanceof ApiError
+                        ? workforceError.remediation ??
+                          workforceError.message ??
+                          "Tenant workforce registry unavailable."
+                        : "Tenant workforce registry unavailable.";
+            }
 
             const nextId =
                 preferredFormId ??
@@ -1088,6 +1097,12 @@
                                     </span>
                                     <Select bind:value={draftWorkforceAgentId}>
                                         <option value="">Manual SOUL / provider</option>
+                                        {#if draftWorkforceAgentId &&
+                                            !selectedDraftWorkforceAgent}
+                                            <option value={draftWorkforceAgentId}>
+                                                Unavailable workforce agent ({draftWorkforceAgentId})
+                                            </option>
+                                        {/if}
                                         {#each workforceAgents.filter((agent) => agent.active) as agent}
                                             <option value={String(agent.id)}>
                                                 {agent.name} ({agent.slug})
@@ -1096,6 +1111,14 @@
                                     </Select>
                                 </label>
                             </div>
+
+                            {#if workforceAgentsError}
+                                <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                                    Workforce agents are unavailable right now. You can still save
+                                    the form with a manual SOUL/provider config. Details:
+                                    {workforceAgentsError}
+                                </div>
+                            {/if}
 
                             {#if selectedDraftWorkforceAgent}
                                 <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">

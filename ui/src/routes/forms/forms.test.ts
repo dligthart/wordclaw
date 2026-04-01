@@ -355,4 +355,49 @@ describe("Forms Page", () => {
             ),
         ).toBeTruthy();
     });
+
+    it("keeps the forms workspace usable when workforce agents fail to load", async () => {
+        vi.mocked(fetchApi).mockImplementation(async (endpoint) => {
+            if (endpoint === "/forms") {
+                return { data: [] };
+            }
+
+            if (endpoint === "/content-types") {
+                return {
+                    data: [
+                        {
+                            id: 12,
+                            name: "Proposal Request",
+                            slug: "proposal-request",
+                            kind: "collection",
+                        },
+                    ],
+                };
+            }
+
+            if (endpoint === "/workforce/agents") {
+                throw new Error(
+                    'Failed query: select "id" from "workforce_agents"',
+                );
+            }
+
+            throw new Error(`Unexpected request: ${endpoint}`);
+        });
+
+        render(FormsPage);
+
+        await screen.findByText("No forms are configured for this domain yet.");
+        expect(
+            screen.queryByText("Forms workspace unavailable"),
+        ).toBeNull();
+
+        await fireEvent.click(screen.getByLabelText("Enable draft generation"));
+
+        expect(
+            await screen.findByText(
+                /Workforce agents are unavailable right now\./,
+            ),
+        ).toBeTruthy();
+        expect(screen.getByLabelText("SOUL")).toBeTruthy();
+    });
 });
