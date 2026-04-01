@@ -116,11 +116,15 @@ Notes:
 | --- | --- | --- |
 | `ENABLE_DOCS` | `false` in production, `true` otherwise | Enables the Swagger UI at `/documentation` |
 | `ENABLE_GRAPHIQL` | `false` in production, `true` otherwise | Enables GraphiQL |
+| `WORDCLAW_BUILD_VERSION` | unset | Optional authenticated override for the runtime version exposed by `GET /api/runtime` |
+| `WORDCLAW_BUILD_COMMIT_SHA` | unset | Optional authenticated commit SHA exposed by `GET /api/runtime` |
+| `WORDCLAW_BUILD_TIME` | unset | Optional authenticated build timestamp exposed by `GET /api/runtime` |
 
 Notes:
 
 - Production deployments return `404` for `/documentation` unless `ENABLE_DOCS=true`.
 - The published GHCR image includes built supervisor UI assets at `/ui`. Source-checkout API runs still require `npm --prefix ui run build` when you want the Fastify process to serve the UI directly.
+- `GET /api/runtime` is authenticated on purpose. Use it when operators need to confirm the exact live build without adding version metadata to the public discovery manifest.
 
 ## Experimental Modules
 

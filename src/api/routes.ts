@@ -104,6 +104,7 @@ import {
 } from '../services/actor-identity.js';
 import { buildCapabilityManifest } from '../services/capability-manifest.js';
 import { getDeploymentStatusSnapshot } from '../services/deployment-status.js';
+import { getRuntimeBuildInfo } from '../services/runtime-build.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import { issuePublicWriteToken, verifyPublicWriteToken } from '../services/public-write.js';
 import { issuePreviewToken, verifyPreviewToken } from '../services/content-preview.js';
@@ -586,6 +587,11 @@ const CurrentActorResponseSchema = Type.Object({
     scopes: Type.Array(Type.String()),
     assignmentRefs: Type.Array(Type.String()),
     profile: Type.Union([CurrentActorProfileSchema, Type.Null()])
+});
+const RuntimeBuildInfoSchema = Type.Object({
+    version: Type.String(),
+    commitSha: Type.Union([Type.String(), Type.Null()]),
+    buildTime: Type.Union([Type.String(), Type.Null()]),
 });
 const OnboardTenantResponseSchema = Type.Object({
     bootstrap: Type.Boolean(),
@@ -2785,6 +2791,30 @@ export default async function apiRoutes(server: FastifyInstance) {
 
     server.get('/identity', currentActorRouteOptions, currentActorHandler);
     server.get('/whoami', currentActorRouteOptions, currentActorHandler);
+    server.get('/runtime', {
+        schema: {
+            response: {
+                200: createAIResponse(RuntimeBuildInfoSchema),
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+            }
+        }
+    }, async (request) => {
+        const principal = (request as { authPrincipal?: ActorPrincipal }).authPrincipal;
+        if (!principal) {
+            throw new Error('AUTH_PRINCIPAL_UNAVAILABLE');
+        }
+
+        return {
+            data: getRuntimeBuildInfo(),
+            meta: buildMeta(
+                'Inspect the authenticated runtime build metadata without exposing it through the public discovery manifest.',
+                ['GET /api/runtime'],
+                'low',
+                1,
+            )
+        };
+    });
 
     server.get('/workspace-context', {
         schema: {

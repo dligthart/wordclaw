@@ -118,6 +118,9 @@ const originalAssetStorageProvider = process.env.ASSET_STORAGE_PROVIDER;
 const originalAssetSignedTtl = process.env.ASSET_SIGNED_TTL_SECONDS;
 const originalPublicWriteSecret = process.env.PUBLIC_WRITE_SECRET;
 const originalPublicWriteTtl = process.env.PUBLIC_WRITE_TTL_SECONDS;
+const originalWordClawBuildVersion = process.env.WORDCLAW_BUILD_VERSION;
+const originalWordClawBuildCommitSha = process.env.WORDCLAW_BUILD_COMMIT_SHA;
+const originalWordClawBuildTime = process.env.WORDCLAW_BUILD_TIME;
 
 function restoreAuthEnv() {
     if (originalAuthRequired === undefined) {
@@ -178,6 +181,24 @@ function restoreAuthEnv() {
         delete process.env.PUBLIC_WRITE_TTL_SECONDS;
     } else {
         process.env.PUBLIC_WRITE_TTL_SECONDS = originalPublicWriteTtl;
+    }
+
+    if (originalWordClawBuildVersion === undefined) {
+        delete process.env.WORDCLAW_BUILD_VERSION;
+    } else {
+        process.env.WORDCLAW_BUILD_VERSION = originalWordClawBuildVersion;
+    }
+
+    if (originalWordClawBuildCommitSha === undefined) {
+        delete process.env.WORDCLAW_BUILD_COMMIT_SHA;
+    } else {
+        process.env.WORDCLAW_BUILD_COMMIT_SHA = originalWordClawBuildCommitSha;
+    }
+
+    if (originalWordClawBuildTime === undefined) {
+        delete process.env.WORDCLAW_BUILD_TIME;
+    } else {
+        process.env.WORDCLAW_BUILD_TIME = originalWordClawBuildTime;
     }
 }
 
@@ -1804,6 +1825,42 @@ describe('API Route Contracts', () => {
                     hostname: 'default.local'
                 }
             }));
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('returns authenticated runtime build metadata at /api/runtime', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.API_KEYS = 'remote-admin=admin';
+        process.env.WORDCLAW_BUILD_VERSION = '1.45.2-live';
+        process.env.WORDCLAW_BUILD_COMMIT_SHA = 'abcdef1234567890';
+        process.env.WORDCLAW_BUILD_TIME = '2026-04-01T12:34:56.000Z';
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/runtime',
+                headers: {
+                    'x-api-key': 'remote-admin',
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    version: string;
+                    commitSha: string | null;
+                    buildTime: string | null;
+                };
+            };
+
+            expect(body.data).toEqual({
+                version: '1.45.2-live',
+                commitSha: 'abcdef1234567890',
+                buildTime: '2026-04-01T12:34:56.000Z',
+            });
         } finally {
             await app.close();
         }
