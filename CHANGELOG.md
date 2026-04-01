@@ -1,3 +1,10 @@
+# [1.43.0](https://github.com/dligthart/wordclaw/compare/v1.42.0...v1.43.0) (2026-04-01)
+
+
+### Features
+
+* add forms draft generation jobs ([c8e828d](https://github.com/dligthart/wordclaw/commit/c8e828ddd70cb299b4c10fe152e32485b15c1062))
+
 # [1.42.0](https://github.com/dligthart/wordclaw/compare/v1.41.0...v1.42.0) (2026-03-31)
 
 
