@@ -1,0 +1,34 @@
+{
+  "name": "Proposal Draft OpenAI Live 20260401t192152z",
+  "slug": "proposal-draft-openai-live-20260401t192152z",
+  "description": "OpenAI-backed proposal draft target for live feature testing.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "brief": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "proposalOutline": {
+        "type": "string"
+      },
+      "company": {
+        "type": "string"
+      },
+      "requestedTimeline": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "title",
+      "brief",
+      "summary",
+      "proposalOutline"
+    ]
+  }
+}

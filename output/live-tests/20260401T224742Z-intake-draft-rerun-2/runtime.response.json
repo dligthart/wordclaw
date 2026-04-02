@@ -1,0 +1,15 @@
+{
+  "data": {
+    "version": "1.47.2",
+    "commitSha": null,
+    "buildTime": null
+  },
+  "meta": {
+    "availableActions": [
+      "GET /api/runtime"
+    ],
+    "actionPriority": "low",
+    "recommendedNextAction": "Inspect the authenticated runtime build metadata without exposing it through the public discovery manifest.",
+    "cost": 1
+  }
+}

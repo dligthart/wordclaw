@@ -1,0 +1,10 @@
+{
+  "name": "Proposal Writer Live Test",
+  "slug": "proposal-writer-live-20260401",
+  "purpose": "Draft software development proposals from intake forms.",
+  "soul": "software-development-proposal-writer",
+  "provider": {
+    "type": "deterministic"
+  },
+  "active": true
+}

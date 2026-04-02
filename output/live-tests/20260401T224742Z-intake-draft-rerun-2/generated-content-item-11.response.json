@@ -1,0 +1,39 @@
+{
+  "data": {
+    "id": 11,
+    "contentTypeId": 10,
+    "data": "{\"title\":\"Software development proposal draft\",\"brief\":\"Draft a concise software development proposal for a tenant-scoped AI content platform with supervisor UI, public intake forms, and provider-backed draft generation.\",\"summary\":\"This proposal outlines a development plan for an AI-driven content platform tailored for individual tenants, featuring a supervisor interface for oversight, public intake forms for user submissions, and integrated provider-backed AI draft generation. The solution aims to streamline content creation workflows within a 6-week delivery timeline and a budget between EUR 20,000 and 35,000.\",\"proposalOutline\":\"1. Project Initialization and Requirements Refinement: Confirm scope and tenant-specific configurations.\\n2. Architecture Design: Develop multi-tenant AI content platform architecture ensuring data isolation and scalability.\\n3. Supervisor UI Development: Build an intuitive interface for supervisors to manage tenant content and workflows.\\n4. Public Intake Forms Implementation: Create customizable forms to capture user input securely.\\n5. Provider-Backed Draft Generation Integration: Integrate AI draft generation services to assist content creation.\\n6. Testing and Quality Assurance: Conduct thorough functional and performance testing.\\n7. Deployment and Documentation: Deploy the platform and provide comprehensive user and administrator documentation.\\n8. Support and Iteration: Offer post-launch support and plan for incremental improvements.\",\"company\":\"Lightheart Holding\",\"requestedTimeline\":\"6 weeks\"}",
+    "status": "draft",
+    "version": 1,
+    "createdAt": "2026-04-01T22:48:11.576Z",
+    "updatedAt": "2026-04-01T22:48:11.576Z",
+    "embeddingStatus": "disabled",
+    "embeddingChunks": 0,
+    "embeddingUpdatedAt": null,
+    "embeddingErrorCode": null,
+    "publicationState": "draft",
+    "workingCopyVersion": 1,
+    "publishedVersion": null,
+    "embeddingReadiness": {
+      "enabled": false,
+      "state": "disabled",
+      "searchable": false,
+      "model": null,
+      "targetVersion": null,
+      "indexedChunkCount": 0,
+      "expectedChunkCount": 0,
+      "inFlight": false,
+      "queueDepth": 0,
+      "note": "Semantic indexing is disabled because OPENAI_API_KEY is not configured."
+    }
+  },
+  "meta": {
+    "availableActions": [
+      "PUT /api/content-items/:id",
+      "DELETE /api/content-items/:id"
+    ],
+    "actionPriority": "medium",
+    "recommendedNextAction": "Update or publish this item",
+    "cost": 1
+  }
+}

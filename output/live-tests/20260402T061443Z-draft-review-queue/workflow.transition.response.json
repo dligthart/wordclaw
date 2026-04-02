@@ -1,0 +1,14 @@
+{
+  "data": {
+    "id": 1,
+    "workflowId": 1,
+    "fromState": "draft",
+    "toState": "in_review"
+  },
+  "meta": {
+    "availableActions": [],
+    "actionPriority": "low",
+    "recommendedNextAction": "Workflow transition mapped",
+    "cost": 1
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "Proposal Request live-20260401224742",
+  "slug": "proposal-request-live-20260401224742",
+  "description": "OpenAI-backed proposal request intake type for live feature testing after the schema normalization fix.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "company": {
+        "type": "string"
+      },
+      "requirements": {
+        "type": "string"
+      },
+      "requestedTimeline": {
+        "type": "string"
+      },
+      "budget": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "company",
+      "requirements"
+    ]
+  }
+}

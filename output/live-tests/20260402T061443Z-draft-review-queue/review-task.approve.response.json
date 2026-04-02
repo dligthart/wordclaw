@@ -1,0 +1,20 @@
+{
+  "data": {
+    "id": 1,
+    "contentItemId": 13,
+    "workflowTransitionId": 1,
+    "status": "approved",
+    "assignee": null,
+    "assigneeActorId": null,
+    "assigneeActorType": null,
+    "assigneeActorSource": null,
+    "createdAt": "2026-04-02T06:14:55.291Z",
+    "updatedAt": "2026-04-02T06:14:59.396Z"
+  },
+  "meta": {
+    "availableActions": [],
+    "actionPriority": "low",
+    "recommendedNextAction": "Task approved",
+    "cost": 1
+  }
+}

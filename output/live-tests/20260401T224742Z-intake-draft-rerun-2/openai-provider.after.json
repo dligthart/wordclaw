@@ -1,0 +1,22 @@
+{
+  "data": {
+    "id": 1,
+    "domainId": 7,
+    "provider": "openai",
+    "configured": true,
+    "maskedApiKey": "sk-s...kXEA",
+    "defaultModel": "gpt-4.1-mini",
+    "settings": {},
+    "createdAt": "2026-04-01T19:20:16.483Z",
+    "updatedAt": "2026-04-01T22:47:44.776Z"
+  },
+  "meta": {
+    "availableActions": [
+      "PUT /api/ai/providers/openai",
+      "DELETE /api/ai/providers/openai"
+    ],
+    "actionPriority": "low",
+    "recommendedNextAction": "Update or remove this tenant-scoped AI provider credential.",
+    "cost": 1
+  }
+}

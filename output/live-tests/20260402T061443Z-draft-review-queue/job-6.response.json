@@ -1,0 +1,81 @@
+{
+  "data": {
+    "id": 6,
+    "domainId": 7,
+    "kind": "draft_generation",
+    "queue": "drafts",
+    "status": "succeeded",
+    "payload": {
+      "formId": 5,
+      "fieldMap": {
+        "company": "company",
+        "requirements": "brief",
+        "requestedTimeline": "requestedTimeline"
+      },
+      "formSlug": "proposal-intake-live-20260401224742",
+      "provider": {
+        "type": "openai",
+        "model": "gpt-4.1-mini",
+        "instructions": "Write a concise but concrete software development proposal. Include a short summary and a practical proposal outline grounded in the intake requirements."
+      },
+      "agentSoul": "software-development-proposal-writer",
+      "intakeData": {
+        "budget": "EUR 15,000 to 20,000",
+        "company": "Lightheart Holding",
+        "requirements": "Create a reviewed proposal draft and send it into the supervisor approval queue.",
+        "requestedTimeline": "4 weeks"
+      },
+      "defaultData": {
+        "title": "Software development proposal draft"
+      },
+      "workforceAgentId": 2,
+      "workforceAgentName": "Proposal Writer live-20260401224742",
+      "workforceAgentSlug": "proposal-writer-live-20260401224742",
+      "intakeContentItemId": 12,
+      "targetContentTypeId": 10,
+      "intakeAssetReferences": [],
+      "workforceAgentPurpose": "Draft software development proposals from public intake submissions.",
+      "postGenerationWorkflowTransitionId": 1
+    },
+    "runAt": "2026-04-02T06:14:43.881Z",
+    "attempts": 1,
+    "maxAttempts": 3,
+    "lastError": null,
+    "claimedAt": "2026-04-02T06:14:50.718Z",
+    "startedAt": "2026-04-02T06:14:50.718Z",
+    "completedAt": "2026-04-02T06:14:55.293Z",
+    "createdAt": "2026-04-02T06:14:43.883Z",
+    "updatedAt": "2026-04-02T06:14:55.293Z",
+    "result": {
+      "fieldMap": {
+        "company": "company",
+        "requirements": "brief",
+        "requestedTimeline": "requestedTimeline"
+      },
+      "provider": {
+        "type": "openai",
+        "model": "gpt-4.1-mini",
+        "responseId": "resp_0e63e7809d80328d0169ce095b3b20819991630a0f593b399f"
+      },
+      "strategy": "openai_structured_outputs_v1",
+      "agentSoul": "software-development-proposal-writer",
+      "attachments": [],
+      "reviewTaskId": 1,
+      "generatedStatus": "draft",
+      "workforceAgentId": 2,
+      "workforceAgentName": "Proposal Writer live-20260401224742",
+      "workforceAgentSlug": "proposal-writer-live-20260401224742",
+      "intakeContentItemId": 12,
+      "targetContentTypeId": 10,
+      "generatedContentItemId": 13
+    }
+  },
+  "meta": {
+    "availableActions": [
+      "DELETE /api/jobs/6"
+    ],
+    "actionPriority": "low",
+    "recommendedNextAction": "Cancel queued job 6 if it is no longer needed",
+    "cost": 0
+  }
+}

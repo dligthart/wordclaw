@@ -1,0 +1,80 @@
+{
+  "data": {
+    "id": 5,
+    "domainId": 7,
+    "name": "Proposal Intake live-20260401224742",
+    "slug": "proposal-intake-live-20260401224742",
+    "description": "Public intake form used to validate OpenAI-backed draft generation live after the schema normalization fix.",
+    "contentTypeId": 11,
+    "contentTypeName": "Proposal Request live-20260401224742",
+    "contentTypeSlug": "proposal-request-live-20260401224742",
+    "active": true,
+    "publicRead": true,
+    "submissionStatus": "draft",
+    "workflowTransitionId": null,
+    "requirePayment": false,
+    "successMessage": "Thanks, your proposal request was queued.",
+    "draftGeneration": {
+      "targetContentTypeId": 10,
+      "targetContentTypeName": "Proposal Draft live-20260401224742",
+      "targetContentTypeSlug": "proposal-draft-live-20260401224742",
+      "workforceAgentId": 2,
+      "workforceAgentSlug": "proposal-writer-live-20260401224742",
+      "workforceAgentName": "Proposal Writer live-20260401224742",
+      "workforceAgentPurpose": "Draft software development proposals from public intake submissions.",
+      "agentSoul": "software-development-proposal-writer",
+      "fieldMap": {
+        "company": "company",
+        "requirements": "brief",
+        "requestedTimeline": "requestedTimeline"
+      },
+      "defaultData": {
+        "title": "Software development proposal draft"
+      },
+      "provider": {
+        "type": "openai",
+        "model": "gpt-4.1-mini",
+        "instructions": "Write a concise but concrete software development proposal. Include a short summary and a practical proposal outline grounded in the intake requirements."
+      },
+      "postGenerationWorkflowTransitionId": null
+    },
+    "fields": [
+      {
+        "name": "company",
+        "type": "text",
+        "required": true,
+        "label": "Company"
+      },
+      {
+        "name": "requirements",
+        "type": "text",
+        "required": true,
+        "label": "Requirements"
+      },
+      {
+        "name": "requestedTimeline",
+        "type": "text",
+        "required": false,
+        "label": "Timeline"
+      },
+      {
+        "name": "budget",
+        "type": "text",
+        "required": false,
+        "label": "Budget"
+      }
+    ],
+    "defaultData": {},
+    "createdAt": "2026-04-01T22:47:45.607Z",
+    "updatedAt": "2026-04-01T22:47:45.607Z"
+  },
+  "meta": {
+    "availableActions": [
+      "PUT /api/forms/5",
+      "DELETE /api/forms/5"
+    ],
+    "actionPriority": "low",
+    "recommendedNextAction": "Update or delete form 'proposal-intake-live-20260401224742'",
+    "cost": 0
+  }
+}

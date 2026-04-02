@@ -1,0 +1,34 @@
+{
+  "name": "Proposal Draft live-20260401224742",
+  "slug": "proposal-draft-live-20260401224742",
+  "description": "OpenAI-backed proposal draft target for live feature testing after the schema normalization fix.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "brief": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "proposalOutline": {
+        "type": "string"
+      },
+      "company": {
+        "type": "string"
+      },
+      "requestedTimeline": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "title",
+      "brief",
+      "summary",
+      "proposalOutline"
+    ]
+  }
+}

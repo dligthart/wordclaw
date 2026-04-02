@@ -1,0 +1,26 @@
+{
+  "name": "Proposal Request OpenAI Live 20260401t192152z",
+  "slug": "proposal-request-openai-live-20260401t192152z",
+  "description": "OpenAI-backed proposal request intake type for live feature testing.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "company": {
+        "type": "string"
+      },
+      "requirements": {
+        "type": "string"
+      },
+      "requestedTimeline": {
+        "type": "string"
+      },
+      "budget": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "company",
+      "requirements"
+    ]
+  }
+}

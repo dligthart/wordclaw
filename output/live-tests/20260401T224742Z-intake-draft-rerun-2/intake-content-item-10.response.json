@@ -1,0 +1,39 @@
+{
+  "data": {
+    "id": 10,
+    "contentTypeId": 11,
+    "data": "{\"company\":\"Lightheart Holding\",\"requirements\":\"Draft a concise software development proposal for a tenant-scoped AI content platform with supervisor UI, public intake forms, and provider-backed draft generation.\",\"requestedTimeline\":\"6 weeks\",\"budget\":\"EUR 20,000 to 35,000\"}",
+    "status": "draft",
+    "version": 1,
+    "createdAt": "2026-04-01T22:47:45.927Z",
+    "updatedAt": "2026-04-01T22:47:45.927Z",
+    "embeddingStatus": "disabled",
+    "embeddingChunks": 0,
+    "embeddingUpdatedAt": null,
+    "embeddingErrorCode": null,
+    "publicationState": "draft",
+    "workingCopyVersion": 1,
+    "publishedVersion": null,
+    "embeddingReadiness": {
+      "enabled": false,
+      "state": "disabled",
+      "searchable": false,
+      "model": null,
+      "targetVersion": null,
+      "indexedChunkCount": 0,
+      "expectedChunkCount": 0,
+      "inFlight": false,
+      "queueDepth": 0,
+      "note": "Semantic indexing is disabled because OPENAI_API_KEY is not configured."
+    }
+  },
+  "meta": {
+    "availableActions": [
+      "PUT /api/content-items/:id",
+      "DELETE /api/content-items/:id"
+    ],
+    "actionPriority": "medium",
+    "recommendedNextAction": "Update or publish this item",
+    "cost": 1
+  }
+}

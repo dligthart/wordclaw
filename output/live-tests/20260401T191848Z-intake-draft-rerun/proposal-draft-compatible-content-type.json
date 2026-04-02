@@ -1,0 +1,37 @@
+{
+  "name": "Proposal Draft OpenAI Compatible Live 20260401t192530z",
+  "slug": "proposal-draft-openai-compatible-live-20260401t192530z",
+  "description": "OpenAI-backed proposal draft target using an OpenAI-compatible JSON schema subset.",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "brief": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "proposalOutline": {
+        "type": "string"
+      },
+      "company": {
+        "type": "string"
+      },
+      "requestedTimeline": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "title",
+      "brief",
+      "summary",
+      "proposalOutline",
+      "company",
+      "requestedTimeline"
+    ]
+  }
+}

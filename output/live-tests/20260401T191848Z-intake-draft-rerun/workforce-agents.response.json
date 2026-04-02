@@ -1,0 +1,1 @@
+{"data":[],"meta":{"availableActions":["POST /api/workforce/agents","GET /api/workforce/agents/:id","PUT /api/workforce/agents/:id","DELETE /api/workforce/agents/:id"],"actionPriority":"low","recommendedNextAction":"Inspect the tenant workforce registry used by form-driven draft-generation jobs.","cost":1}}

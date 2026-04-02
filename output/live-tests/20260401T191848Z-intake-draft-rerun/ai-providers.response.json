@@ -1,0 +1,1 @@
+{"data":[],"meta":{"availableActions":["GET /api/ai/providers/:provider","PUT /api/ai/providers/:provider","DELETE /api/ai/providers/:provider"],"actionPriority":"low","recommendedNextAction":"Inspect tenant-scoped AI provider credentials for provider-backed draft generation.","cost":1}}

@@ -1,0 +1,23 @@
+{
+  "data": {
+    "id": 10,
+    "name": "Proposal Draft live-20260401224742",
+    "slug": "proposal-draft-live-20260401224742",
+    "kind": "collection",
+    "schema": "{\"type\":\"object\",\"properties\":{\"title\":{\"type\":\"string\"},\"brief\":{\"type\":\"string\"},\"summary\":{\"type\":\"string\"},\"proposalOutline\":{\"type\":\"string\"},\"company\":{\"type\":\"string\"},\"requestedTimeline\":{\"type\":\"string\"}},\"required\":[\"title\",\"brief\",\"summary\",\"proposalOutline\"]}",
+    "description": "OpenAI-backed proposal draft target for live feature testing after the schema normalization fix.",
+    "schemaManifest": null,
+    "basePrice": 0,
+    "createdAt": "2026-04-01T22:47:45.355Z",
+    "updatedAt": "2026-04-01T22:47:45.355Z"
+  },
+  "meta": {
+    "availableActions": [
+      "GET /api/content-types",
+      "POST /api/content-items"
+    ],
+    "actionPriority": "medium",
+    "recommendedNextAction": "Create content items for type 'Proposal Draft live-20260401224742'",
+    "cost": 1
+  }
+}

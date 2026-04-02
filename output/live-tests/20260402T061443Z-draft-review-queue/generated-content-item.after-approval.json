@@ -1,0 +1,39 @@
+{
+  "data": {
+    "id": 13,
+    "contentTypeId": 10,
+    "data": "{\"title\":\"Software development proposal draft\",\"brief\":\"Create a reviewed proposal draft and send it into the supervisor approval queue.\",\"summary\":\"This proposal outlines the development of a software solution tailored for Lightheart Holding, aimed at producing a thoroughly reviewed draft ready for supervisory approval within a four-week timeframe and a budget of EUR 15,000 to 20,000.\",\"proposalOutline\":\"1. Requirements Analysis: Detailed understanding of Lightheart Holding's needs and expectations. 2. Proposal Drafting: Develop the initial software proposal draft based on gathered requirements. 3. Review and Refinement: Conduct internal reviews, incorporate feedback, and refine the draft to meet quality standards. 4. Supervisor Review Preparation: Format and finalize the proposal draft for supervisory assessment. 5. Submission: Send the completed draft into the supervisor approval queue within the requested 4-week timeline.\",\"company\":\"Lightheart Holding\",\"requestedTimeline\":\"4 weeks\"}",
+    "status": "in_review",
+    "version": 1,
+    "createdAt": "2026-04-02T06:14:55.277Z",
+    "updatedAt": "2026-04-02T06:14:55.277Z",
+    "embeddingStatus": "disabled",
+    "embeddingChunks": 0,
+    "embeddingUpdatedAt": "2026-04-02T06:14:59.427Z",
+    "embeddingErrorCode": null,
+    "publicationState": "draft",
+    "workingCopyVersion": 1,
+    "publishedVersion": null,
+    "embeddingReadiness": {
+      "enabled": false,
+      "state": "disabled",
+      "searchable": false,
+      "model": null,
+      "targetVersion": null,
+      "indexedChunkCount": 0,
+      "expectedChunkCount": 0,
+      "inFlight": false,
+      "queueDepth": 0,
+      "note": "Semantic indexing is disabled because OPENAI_API_KEY is not configured."
+    }
+  },
+  "meta": {
+    "availableActions": [
+      "PUT /api/content-items/:id",
+      "DELETE /api/content-items/:id"
+    ],
+    "actionPriority": "medium",
+    "recommendedNextAction": "Update or publish this item",
+    "cost": 1
+  }
+}

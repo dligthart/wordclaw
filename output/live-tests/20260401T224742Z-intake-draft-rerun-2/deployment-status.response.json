@@ -1,0 +1,281 @@
+{
+  "data": {
+    "generatedAt": "2026-04-01T22:47:44.244Z",
+    "overallStatus": "ready",
+    "checks": {
+      "database": {
+        "status": "ready",
+        "note": "Database connectivity check succeeded."
+      },
+      "restApi": {
+        "status": "ready",
+        "basePath": "/api",
+        "note": "REST API is reachable on the main HTTP server."
+      },
+      "bootstrap": {
+        "status": "ready",
+        "domainCount": 4,
+        "contentWritesRequireDomain": true,
+        "supportsInBandDomainCreation": true,
+        "restCreateDomainPath": "/api/domains",
+        "mcpCreateDomainTool": "create_domain",
+        "recommendedGuideTask": "bootstrap-workspace",
+        "nextAction": "Bootstrap prerequisites are satisfied for content writes.",
+        "note": "At least one domain is provisioned for content writes."
+      },
+      "auth": {
+        "status": "ready",
+        "authRequired": true,
+        "writeRequiresCredential": true,
+        "insecureLocalAdminEnabled": false,
+        "recommendedActorProfile": "api-key",
+        "recommendedScopes": [
+          "content:write"
+        ],
+        "note": "Authenticated writes require an API key or supervisor session with the appropriate scope set."
+      },
+      "vectorRag": {
+        "status": "disabled",
+        "enabled": false,
+        "model": null,
+        "restPath": "/api/search/semantic",
+        "mcpTool": "search_semantic_knowledge",
+        "requiredEnvironmentVariables": [
+          "OPENAI_API_KEY"
+        ],
+        "reason": "OPENAI_API_KEY not set",
+        "note": "Semantic search is disabled until OPENAI_API_KEY is configured."
+      },
+      "draftGeneration": {
+        "status": "ready",
+        "defaultProvider": "deterministic",
+        "supportedProviders": [
+          "deterministic",
+          "openai",
+          "anthropic",
+          "gemini"
+        ],
+        "provisionedProviders": [
+          "deterministic"
+        ],
+        "provisioningMode": "tenant-scoped",
+        "note": "Deterministic draft generation is always available. External AI providers are tenant-managed and must be provisioned per domain before model-backed jobs can run.",
+        "providers": {
+          "deterministic": {
+            "status": "ready",
+            "enabled": true,
+            "requiresProvisioning": false,
+            "note": "Deterministic draft generation is always available and does not depend on an external AI provider."
+          },
+          "openai": {
+            "status": "disabled",
+            "enabled": false,
+            "model": null,
+            "requiresProvisioning": true,
+            "provisioningScope": "tenant",
+            "managementRestPath": "/api/ai/providers/openai",
+            "managementMcpTool": "list_ai_provider_configs",
+            "reason": "tenant_provider_config_required",
+            "note": "OpenAI draft generation is supported, but each tenant must configure its own API key before provider-backed draft jobs can run."
+          },
+          "anthropic": {
+            "status": "disabled",
+            "enabled": false,
+            "model": null,
+            "requiresProvisioning": true,
+            "provisioningScope": "tenant",
+            "managementRestPath": "/api/ai/providers/anthropic",
+            "managementMcpTool": "list_ai_provider_configs",
+            "reason": "tenant_provider_config_required",
+            "note": "Anthropic-backed draft generation is supported, but each tenant must configure its own API key and choose a model through provider provisioning or workforce-agent defaults."
+          },
+          "gemini": {
+            "status": "disabled",
+            "enabled": false,
+            "model": null,
+            "requiresProvisioning": true,
+            "provisioningScope": "tenant",
+            "managementRestPath": "/api/ai/providers/gemini",
+            "managementMcpTool": "list_ai_provider_configs",
+            "reason": "tenant_provider_config_required",
+            "note": "Gemini-backed draft generation is supported, but each tenant must configure its own API key and choose a model through provider provisioning or workforce-agent defaults."
+          }
+        }
+      },
+      "embeddings": {
+        "status": "disabled",
+        "enabled": false,
+        "model": null,
+        "queueDepth": 0,
+        "inFlightSyncCount": 0,
+        "pendingItemCount": 0,
+        "dailyBudget": 2000,
+        "dailyBudgetRemaining": 2000,
+        "maxRequestsPerMinute": 30,
+        "lastSyncCompletedAt": null,
+        "lastSyncErrorMessage": null,
+        "lastSyncErroredAt": null,
+        "reason": "OPENAI_API_KEY not set",
+        "note": "Embeddings are disabled because OPENAI_API_KEY is not configured."
+      },
+      "ui": {
+        "status": "ready",
+        "servedFromApi": true,
+        "routePrefix": "/ui/",
+        "buildPath": "/app/ui/build/index.html",
+        "devCommand": "npm run dev:all",
+        "devUrl": "http://localhost:5173/ui/",
+        "note": "Built supervisor UI assets are present and are served from the API process at /ui/. Use npm run dev:all when you want live-reload local development instead."
+      },
+      "contentRuntime": {
+        "status": "ready",
+        "fieldAwareQueries": {
+          "supported": true,
+          "restPath": "/api/content-items",
+          "mcpTool": "get_content_items",
+          "graphqlField": "contentItems",
+          "requiresContentTypeId": true
+        },
+        "projections": {
+          "supported": true,
+          "restPath": "/api/content-items/projections",
+          "mcpTool": "project_content_items",
+          "graphqlField": "contentItemProjection",
+          "metrics": [
+            "count",
+            "sum",
+            "avg",
+            "min",
+            "max"
+          ],
+          "requiresContentTypeId": true
+        },
+        "publicWriteLane": {
+          "supported": true,
+          "issueTokenPath": "/api/content-types/:id/public-write-tokens",
+          "createPath": "/api/public/content-types/:id/items",
+          "updatePath": "/api/public/content-items/:id",
+          "tokenHeader": "x-public-write-token",
+          "requiresSchemaPolicy": true
+        },
+        "lifecycle": {
+          "supported": true,
+          "triggerMode": "lazy-on-touch",
+          "schemaExtension": "x-wordclaw-lifecycle",
+          "includeArchivedFlag": "includeArchived",
+          "defaultArchiveStatus": "archived"
+        },
+        "note": "Content runtime supports schema-aware field queries, grouped projections, bounded public write lanes, and lazy archival for TTL-managed session content."
+      },
+      "mcp": {
+        "status": "ready",
+        "endpoint": "/mcp",
+        "transports": [
+          "stdio",
+          "streamable-http"
+        ],
+        "attachable": true,
+        "reactive": {
+          "supported": true,
+          "transport": "streamable-http",
+          "subscriptionTool": "subscribe_events",
+          "notificationMethod": "notifications/wordclaw/event",
+          "supportedTopicCount": 23,
+          "supportedRecipeCount": 5,
+          "supportedFilterFields": [
+            "entityType",
+            "entityId",
+            "action",
+            "contentTypeId",
+            "status",
+            "decision",
+            "actorId",
+            "actorType",
+            "workflowTransitionId",
+            "reviewTaskId"
+          ]
+        },
+        "note": "MCP supports both local stdio and remote streamable HTTP, including session-backed reactive subscriptions."
+      },
+      "agentRuns": {
+        "status": "disabled",
+        "enabled": false,
+        "workerStarted": false,
+        "sweepInProgress": false,
+        "lastSweepCompletedAt": null,
+        "lastErrorMessage": null,
+        "note": "Autonomous run orchestration is disabled in this deployment."
+      },
+      "backgroundJobs": {
+        "status": "ready",
+        "enabled": true,
+        "workerStarted": true,
+        "sweepInProgress": false,
+        "lastSweepCompletedAt": "2026-04-01T22:47:34.813Z",
+        "lastErrorMessage": null,
+        "note": "Background jobs worker is enabled and healthy."
+      },
+      "assetStorage": {
+        "status": "ready",
+        "enabled": true,
+        "configuredProvider": "local",
+        "effectiveProvider": "local",
+        "fallbackApplied": false,
+        "supportedProviders": [
+          "local",
+          "s3"
+        ],
+        "restUploadModes": [
+          "json-base64",
+          "multipart-form-data"
+        ],
+        "mcpUploadModes": [
+          "inline-base64"
+        ],
+        "directProviderUpload": {
+          "enabled": false,
+          "issuePath": "/api/assets/direct-upload",
+          "completePath": "/api/assets/direct-upload/complete",
+          "method": "PUT",
+          "providers": [
+            "s3"
+          ]
+        },
+        "deliveryModes": [
+          "public",
+          "signed",
+          "entitled"
+        ],
+        "signedAccess": {
+          "enabled": true,
+          "defaultTtlSeconds": 300,
+          "issuePath": "/api/assets/:id/access",
+          "issueTool": "issue_asset_access"
+        },
+        "entitlementDelivery": {
+          "enabled": true,
+          "offersPath": "/api/assets/:id/offers",
+          "contentPath": "/api/assets/:id/content"
+        },
+        "derivatives": {
+          "supported": true,
+          "listPath": "/api/assets/:id/derivatives",
+          "listTool": "list_asset_derivatives",
+          "sourceField": "sourceAssetId",
+          "variantKeyField": "variantKey",
+          "transformSpecField": "transformSpec"
+        },
+        "note": "Asset storage is enabled with the \"local\" provider."
+      }
+    },
+    "warnings": []
+  },
+  "meta": {
+    "availableActions": [
+      "GET /api/deployment-status"
+    ],
+    "actionPriority": "low",
+    "recommendedNextAction": "Use the live deployment status to confirm the instance is healthy enough for agent actions.",
+    "cost": 1
+  }
+}

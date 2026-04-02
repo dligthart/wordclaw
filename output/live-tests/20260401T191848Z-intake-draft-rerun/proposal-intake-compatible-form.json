@@ -1,0 +1,43 @@
+{
+  "name": "Proposal Intake OpenAI Compatible Live 20260401t192530z",
+  "slug": "proposal-intake-openai-compatible-live-20260401t192530z",
+  "description": "Public intake form used to validate OpenAI-backed draft generation live with an OpenAI-compatible schema.",
+  "contentTypeId": 7,
+  "fields": [
+    {
+      "name": "company",
+      "label": "Company"
+    },
+    {
+      "name": "requirements",
+      "label": "Requirements"
+    },
+    {
+      "name": "requestedTimeline",
+      "label": "Timeline",
+      "required": true
+    },
+    {
+      "name": "budget",
+      "label": "Budget",
+      "required": false
+    }
+  ],
+  "active": true,
+  "publicRead": true,
+  "submissionStatus": "draft",
+  "requirePayment": false,
+  "successMessage": "Thanks, your proposal request was queued.",
+  "draftGeneration": {
+    "targetContentTypeId": 9,
+    "workforceAgentId": 1,
+    "fieldMap": {
+      "company": "company",
+      "requirements": "brief",
+      "requestedTimeline": "requestedTimeline"
+    },
+    "defaultData": {
+      "title": "Software development proposal draft"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Proposal Writer live-20260401224742",
+  "slug": "proposal-writer-live-20260401224742",
+  "purpose": "Draft software development proposals from public intake submissions.",
+  "soul": "software-development-proposal-writer",
+  "provider": {
+    "type": "openai",
+    "model": "gpt-4.1-mini",
+    "instructions": "Write a concise but concrete software development proposal. Include a short summary and a practical proposal outline grounded in the intake requirements."
+  },
+  "active": true
+}

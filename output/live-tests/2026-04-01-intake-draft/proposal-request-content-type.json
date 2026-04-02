@@ -1,0 +1,15 @@
+{
+  "name": "Proposal Request Live Test 2026-04-01",
+  "slug": "proposal-request-live-20260401",
+  "description": "Live feature test intake content type for proposal requests.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "company": { "type": "string" },
+      "requirements": { "type": "string" },
+      "requestedTimeline": { "type": "string" },
+      "budget": { "type": "string" }
+    },
+    "required": ["company", "requirements"]
+  }
+}

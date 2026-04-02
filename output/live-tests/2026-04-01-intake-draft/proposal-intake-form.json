@@ -1,0 +1,47 @@
+{
+  "name": "Proposal Intake Live Test 2026-04-01",
+  "slug": "proposal-intake-live-20260401",
+  "description": "Public intake form used to validate live draft generation.",
+  "contentTypeId": 5,
+  "fields": [
+    {
+      "name": "company",
+      "label": "Company"
+    },
+    {
+      "name": "requirements",
+      "label": "Requirements"
+    },
+    {
+      "name": "requestedTimeline",
+      "label": "Timeline",
+      "required": false
+    },
+    {
+      "name": "budget",
+      "label": "Budget",
+      "required": false
+    }
+  ],
+  "active": true,
+  "publicRead": true,
+  "submissionStatus": "draft",
+  "requirePayment": false,
+  "successMessage": "Thanks, your proposal request was queued.",
+  "draftGeneration": {
+    "targetContentTypeId": 4,
+    "agentSoul": "software-development-proposal-writer",
+    "provider": {
+      "type": "deterministic"
+    },
+    "fieldMap": {
+      "requirements": "brief",
+      "requestedTimeline": "requestedTimeline",
+      "company": "company"
+    },
+    "defaultData": {
+      "title": "Live test proposal draft",
+      "summary": "Deterministic live-test summary generated from intake mapping."
+    }
+  }
+}

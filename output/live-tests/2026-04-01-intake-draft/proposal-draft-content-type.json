@@ -1,0 +1,16 @@
+{
+  "name": "Proposal Draft Live Test 2026-04-01",
+  "slug": "proposal-draft-live-20260401",
+  "description": "Live feature test target content type for draft generation.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "title": { "type": "string" },
+      "brief": { "type": "string" },
+      "summary": { "type": "string" },
+      "company": { "type": "string" },
+      "requestedTimeline": { "type": "string" }
+    },
+    "required": ["title", "brief", "summary"]
+  }
+}

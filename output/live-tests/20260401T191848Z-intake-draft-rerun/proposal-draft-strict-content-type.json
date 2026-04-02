@@ -1,0 +1,35 @@
+{
+  "name": "Proposal Draft OpenAI Strict Live 20260401t192410z",
+  "slug": "proposal-draft-openai-strict-live-20260401t192410z",
+  "description": "OpenAI-backed proposal draft target with strict schema for live feature testing.",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": {
+        "type": "string"
+      },
+      "brief": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "proposalOutline": {
+        "type": "string"
+      },
+      "company": {
+        "type": "string"
+      },
+      "requestedTimeline": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "title",
+      "brief",
+      "summary",
+      "proposalOutline"
+    ]
+  }
+}
