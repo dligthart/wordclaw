@@ -10,6 +10,19 @@ import {
     formDefinitions,
 } from '../db/schema.js';
 import { eq, and, desc, sql } from 'drizzle-orm';
+import { getAiProviderSecretConfig } from './ai-provider-config.js';
+import { getAsset, readAssetContent } from './assets.js';
+import { validateContentDataAgainstSchema } from './content-schema.js';
+import { updateContentItem } from './content-item.service.js';
+import {
+    DraftGenerationError,
+    generateDraftData,
+    type DraftGenerationAssetReference,
+    type DraftGenerationAttachment,
+    type DraftGenerationProviderConfig,
+    type DraftGenerationProviderProvisioning,
+    type DraftGenerationWorkforceAgentReference,
+} from './draft-generation.js';
 import { EmbeddingService } from './embedding.js';
 import { logAudit } from './audit.js';
 import { enqueueWebhookJob } from './jobs.js';
@@ -27,6 +40,92 @@ export interface WorkflowTransitionContext {
     workflowTransitionId: number;
     assignee?: string;
     authPrincipal?: PrincipalLike & { scopes: Set<string>, domainId: number };
+}
+
+type AuthenticatedWorkflowPrincipal = PrincipalLike & {
+    scopes: Set<string>;
+    domainId: number;
+};
+
+type ReviewTaskRow = typeof reviewTasks.$inferSelect;
+
+type DraftGenerationReviewContext = {
+    form: {
+        id: number;
+        slug: string;
+        name: string;
+        webhookUrl: string | null;
+        webhookSecret: string | null;
+    };
+    job: {
+        id: number;
+        intakeContentItemId: number;
+        intakeAssetReferences: DraftGenerationAssetReference[];
+        targetContentTypeId: number;
+        workforceAgentId: number | null;
+        workforceAgentSlug: string | null;
+        workforceAgentName: string | null;
+        workforceAgentPurpose: string | null;
+        agentSoul: string;
+        fieldMap: Record<string, string>;
+        defaultData: Record<string, unknown>;
+        provider: DraftGenerationProviderConfig;
+        providerType: string;
+        providerModel: string | null;
+        strategy: string | null;
+    };
+    submission: {
+        contentItemId: number;
+        status: string;
+        data: Record<string, unknown>;
+    };
+    generated: {
+        contentItemId: number;
+        status: string;
+        version: number;
+        data: Record<string, unknown>;
+    };
+};
+
+type DraftGenerationReviewWebhookContext = DraftGenerationReviewContext & {
+    form: {
+        id: number;
+        slug: string;
+        name: string;
+        webhookUrl: string;
+        webhookSecret: string | null;
+    };
+};
+
+export type ReviewTaskRevisionResult = {
+    taskId: number;
+    contentItemId: number;
+    contentStatus: string;
+    contentVersion: number;
+    revisedAt: Date;
+    strategy: string;
+    provider: {
+        type: DraftGenerationProviderConfig['type'];
+        model: string | null;
+        responseId: string | null;
+    };
+};
+
+const INLINE_IMAGE_ATTACHMENT_LIMIT = 4;
+const INLINE_IMAGE_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
+
+class WorkflowServiceError extends Error {
+    code: string;
+    remediation: string;
+    statusCode: number;
+
+    constructor(message: string, code: string, remediation: string, statusCode = 400) {
+        super(message);
+        this.name = 'WorkflowServiceError';
+        this.code = code;
+        this.remediation = remediation;
+        this.statusCode = statusCode;
+    }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -60,42 +159,191 @@ function parseObjectData(value: unknown): Record<string, unknown> | null {
     }
 }
 
-type DraftGenerationReviewWebhookContext = {
-    form: {
-        id: number;
-        slug: string;
-        name: string;
-        webhookUrl: string;
-        webhookSecret: string | null;
-    };
-    job: {
-        id: number;
-        intakeContentItemId: number;
-        targetContentTypeId: number;
-        workforceAgentId: number | null;
-        workforceAgentSlug: string | null;
-        workforceAgentName: string | null;
-        agentSoul: string;
-        providerType: string;
-        providerModel: string | null;
-        strategy: string | null;
-    };
-    submission: {
-        contentItemId: number;
-        status: string;
-        data: Record<string, unknown>;
-    };
-    generated: {
-        contentItemId: number;
-        status: string;
-        data: Record<string, unknown>;
-    };
-};
+function parseDraftGenerationFieldMap(value: unknown): Record<string, string> {
+    if (!isObject(value)) {
+        return {};
+    }
 
-async function loadDraftGenerationReviewWebhookContext(
+    return Object.fromEntries(
+        Object.entries(value).flatMap(([sourceFieldName, targetFieldName]) => {
+            const normalizedSourceFieldName = sourceFieldName.trim();
+            const normalizedTargetFieldName = normalizeOptionalString(targetFieldName);
+            if (!normalizedSourceFieldName || !normalizedTargetFieldName) {
+                return [];
+            }
+
+            return [[normalizedSourceFieldName, normalizedTargetFieldName]];
+        }),
+    );
+}
+
+function parseDraftGenerationDefaultData(value: unknown): Record<string, unknown> {
+    return isObject(value) ? value : {};
+}
+
+function parseDraftGenerationAssetReferences(value: unknown): DraftGenerationAssetReference[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.flatMap((entry) => {
+        if (!isObject(entry)) {
+            return [];
+        }
+
+        const assetId = readPositiveInteger(entry.assetId);
+        const path = normalizeOptionalString(entry.path);
+        if (!assetId || !path) {
+            return [];
+        }
+
+        return [{ assetId, path }];
+    });
+}
+
+function normalizeDraftGenerationProviderConfig(value: unknown): DraftGenerationProviderConfig {
+    if (!isObject(value)) {
+        return { type: 'deterministic' };
+    }
+
+    const providerType = normalizeOptionalString(value.type) ?? 'deterministic';
+    const model = normalizeOptionalString(value.model);
+    const instructions = normalizeOptionalString(value.instructions);
+
+    if (providerType === 'openai' || providerType === 'anthropic' || providerType === 'gemini') {
+        return {
+            type: providerType,
+            ...(model ? { model } : {}),
+            ...(instructions ? { instructions } : {}),
+        };
+    }
+
+    return { type: 'deterministic' };
+}
+
+function isImageMimeType(mimeType: string): boolean {
+    return mimeType.startsWith('image/');
+}
+
+function supportsInlineImageProvider(providerType: DraftGenerationProviderConfig['type']): boolean {
+    return providerType === 'openai' || providerType === 'anthropic' || providerType === 'gemini';
+}
+
+async function resolveDraftGenerationProviderProvisioning(
+    domainId: number,
+    provider: DraftGenerationProviderConfig,
+): Promise<DraftGenerationProviderProvisioning | null> {
+    if (provider.type === 'deterministic') {
+        return {
+            type: 'deterministic',
+        };
+    }
+
+    const configuredProvider = await getAiProviderSecretConfig(domainId, provider.type);
+    if (!configuredProvider) {
+        return null;
+    }
+
+    if (provider.type === 'openai') {
+        return {
+            type: 'openai',
+            apiKey: configuredProvider.apiKey,
+            defaultModel: configuredProvider.defaultModel,
+        };
+    }
+
+    if (provider.type === 'anthropic') {
+        return {
+            type: 'anthropic',
+            apiKey: configuredProvider.apiKey,
+            defaultModel: configuredProvider.defaultModel,
+        };
+    }
+
+    return {
+        type: 'gemini',
+        apiKey: configuredProvider.apiKey,
+        defaultModel: configuredProvider.defaultModel,
+    };
+}
+
+async function resolveDraftGenerationAttachments(
+    domainId: number,
+    provider: DraftGenerationProviderConfig,
+    references: DraftGenerationAssetReference[],
+): Promise<DraftGenerationAttachment[]> {
+    if (references.length === 0) {
+        return [];
+    }
+
+    let remainingInlineImages = supportsInlineImageProvider(provider.type)
+        ? INLINE_IMAGE_ATTACHMENT_LIMIT
+        : 0;
+    const attachments: DraftGenerationAttachment[] = [];
+
+    for (const reference of references) {
+        const asset = await getAsset(reference.assetId, domainId);
+        if (!asset) {
+            throw new WorkflowServiceError(
+                `Referenced intake asset ${reference.assetId} is no longer available in domain ${domainId}.`,
+                'REVIEW_TASK_AI_REVISION_ASSET_NOT_FOUND',
+                'Remove the stale asset reference from the intake submission or restore the asset before retrying.',
+                409,
+            );
+        }
+
+        if (!isImageMimeType(asset.mimeType)) {
+            continue;
+        }
+
+        let inlineImageDataUrl: string | null = null;
+        if (
+            supportsInlineImageProvider(provider.type)
+            && remainingInlineImages > 0
+            && asset.sizeBytes <= INLINE_IMAGE_ATTACHMENT_MAX_BYTES
+        ) {
+            try {
+                const bytes = await readAssetContent(asset);
+                const base64Data = bytes.toString('base64');
+                inlineImageDataUrl = `data:${asset.mimeType};base64,${base64Data}`;
+                remainingInlineImages -= 1;
+                attachments.push({
+                    assetId: asset.id,
+                    path: reference.path,
+                    filename: asset.filename,
+                    originalFilename: asset.originalFilename,
+                    mimeType: asset.mimeType,
+                    sizeBytes: asset.sizeBytes,
+                    accessMode: asset.accessMode as DraftGenerationAttachment['accessMode'],
+                    inlineImageDataUrl,
+                    inlineImageBase64: base64Data,
+                });
+                continue;
+            } catch {
+                inlineImageDataUrl = null;
+            }
+        }
+
+        attachments.push({
+            assetId: asset.id,
+            path: reference.path,
+            filename: asset.filename,
+            originalFilename: asset.originalFilename,
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+            accessMode: asset.accessMode as DraftGenerationAttachment['accessMode'],
+            inlineImageDataUrl,
+            inlineImageBase64: null,
+        });
+    }
+
+    return attachments;
+}
+
+async function loadDraftGenerationReviewContext(
     domainId: number,
     generatedContentItemId: number,
-): Promise<DraftGenerationReviewWebhookContext | null> {
+): Promise<DraftGenerationReviewContext | null> {
     const [jobRow] = await db.select()
         .from(jobs)
         .where(and(
@@ -133,8 +381,7 @@ async function loadDraftGenerationReviewWebhookContext(
             eq(formDefinitions.id, formId),
         ));
 
-    const webhookUrl = normalizeOptionalString(form?.webhookUrl);
-    if (!form || !webhookUrl) {
+    if (!form) {
         return null;
     }
 
@@ -152,6 +399,7 @@ async function loadDraftGenerationReviewWebhookContext(
     const [generatedItem] = await db.select({
         id: contentItems.id,
         status: contentItems.status,
+        version: contentItems.version,
         data: contentItems.data,
     })
         .from(contentItems)
@@ -169,17 +417,22 @@ async function loadDraftGenerationReviewWebhookContext(
             id: form.id,
             slug: form.slug,
             name: form.name,
-            webhookUrl,
+            webhookUrl: normalizeOptionalString(form.webhookUrl),
             webhookSecret: normalizeOptionalString(form.webhookSecret),
         },
         job: {
             id: jobRow.id,
             intakeContentItemId,
+            intakeAssetReferences: parseDraftGenerationAssetReferences(payload.intakeAssetReferences),
             targetContentTypeId,
             workforceAgentId: readPositiveInteger(payload.workforceAgentId),
             workforceAgentSlug: normalizeOptionalString(payload.workforceAgentSlug),
             workforceAgentName: normalizeOptionalString(payload.workforceAgentName),
+            workforceAgentPurpose: normalizeOptionalString(payload.workforceAgentPurpose),
             agentSoul,
+            fieldMap: parseDraftGenerationFieldMap(payload.fieldMap),
+            defaultData: parseDraftGenerationDefaultData(payload.defaultData),
+            provider: normalizeDraftGenerationProviderConfig(payload.provider),
             providerType: normalizeOptionalString((isObject(result.provider) ? result.provider.type : null))
                 ?? normalizeOptionalString((isObject(payload.provider) ? payload.provider.type : null))
                 ?? 'deterministic',
@@ -195,9 +448,64 @@ async function loadDraftGenerationReviewWebhookContext(
         generated: {
             contentItemId: generatedItem.id,
             status: generatedItem.status,
+            version: generatedItem.version,
             data: parseObjectData(generatedItem.data) ?? {},
         },
     };
+}
+
+async function loadDraftGenerationReviewWebhookContext(
+    domainId: number,
+    generatedContentItemId: number,
+): Promise<DraftGenerationReviewWebhookContext | null> {
+    const context = await loadDraftGenerationReviewContext(domainId, generatedContentItemId);
+    const webhookUrl = normalizeOptionalString(context?.form.webhookUrl);
+    if (!context || !webhookUrl) {
+        return null;
+    }
+
+    return {
+        ...context,
+        form: {
+            ...context.form,
+            webhookUrl,
+        },
+    };
+}
+
+async function authorizePendingReviewTask(
+    domainId: number,
+    taskId: number,
+    authPrincipal: AuthenticatedWorkflowPrincipal,
+): Promise<ReviewTaskRow> {
+    const results = await db.select()
+        .from(reviewTasks)
+        .where(and(eq(reviewTasks.id, taskId), eq(reviewTasks.domainId, domainId)));
+    const task = results[0];
+
+    if (!task || task.status !== 'pending') {
+        throw new WorkflowServiceError(
+            'Review task is no longer pending or could not be found.',
+            'INVALID_REVIEW_TASK_STATE_OR_NOT_FOUND',
+            'Refresh the approval queue and choose a task that is still pending review.',
+            409,
+        );
+    }
+
+    const isAdmin = authPrincipal.scopes.has('admin');
+    const assignmentRefs = buildActorAssignmentRefs(authPrincipal);
+    const isAssignee = task.assignee ? assignmentRefs.includes(task.assignee) : false;
+
+    if (!isAdmin && !isAssignee) {
+        throw new WorkflowServiceError(
+            'Must be an assignee or admin to operate on this review task.',
+            'UNAUTHORIZED_REVIEW_DECISION',
+            'Sign in as the assigned reviewer or an administrator before retrying.',
+            403,
+        );
+    }
+
+    return task;
 }
 
 export class WorkflowService {
@@ -341,29 +649,9 @@ export class WorkflowService {
         domainId: number,
         taskId: number,
         decision: 'approved' | 'rejected',
-        authPrincipal: PrincipalLike & {
-            scopes: Set<string>;
-            domainId: number;
-        },
+        authPrincipal: AuthenticatedWorkflowPrincipal,
     ) {
-        const results = await db.select()
-            .from(reviewTasks)
-            .where(and(eq(reviewTasks.id, taskId), eq(reviewTasks.domainId, domainId)));
-
-        // Ensure the task matches the required domain context
-        const task = results[0];
-
-        if (!task || task.status !== 'pending') {
-            throw new Error('INVALID_REVIEW_TASK_STATE_OR_NOT_FOUND');
-        }
-
-        const isAdmin = authPrincipal.scopes.has('admin');
-        const assignmentRefs = buildActorAssignmentRefs(authPrincipal);
-        const isAssignee = task.assignee ? assignmentRefs.includes(task.assignee) : false;
-
-        if (!isAdmin && !isAssignee) {
-            throw new Error('UNAUTHORIZED_REVIEW_DECISION: Must be an assignee or admin to decide.');
-        }
+        const task = await authorizePendingReviewTask(domainId, taskId, authPrincipal);
 
         const [updatedTask] = await db.update(reviewTasks)
             .set({
@@ -467,6 +755,164 @@ export class WorkflowService {
         }
 
         return updatedTask;
+    }
+
+    static async reviseReviewTask(
+        domainId: number,
+        taskId: number,
+        prompt: string,
+        authPrincipal: AuthenticatedWorkflowPrincipal,
+    ): Promise<ReviewTaskRevisionResult> {
+        const normalizedPrompt = normalizeOptionalString(prompt);
+        if (!normalizedPrompt) {
+            throw new WorkflowServiceError(
+                'Agent revision prompt is required.',
+                'REVIEW_TASK_REVISION_PROMPT_REQUIRED',
+                'Describe what should change in the draft, then retry the revision request.',
+                400,
+            );
+        }
+
+        const task = await authorizePendingReviewTask(domainId, taskId, authPrincipal);
+        const revisionContext = await loadDraftGenerationReviewContext(domainId, task.contentItemId);
+        if (!revisionContext) {
+            throw new WorkflowServiceError(
+                'This review task is not backed by form draft generation.',
+                'REVIEW_TASK_AI_REVISION_UNAVAILABLE',
+                'Use manual editing for non-generated drafts, or resubmit the content through a draft-generation form.',
+                409,
+            );
+        }
+
+        if (revisionContext.job.provider.type === 'deterministic') {
+            throw new WorkflowServiceError(
+                'This draft uses deterministic generation and cannot accept revision prompts.',
+                'REVIEW_TASK_AI_REVISION_PROVIDER_UNSUPPORTED',
+                'Configure an AI provider for the workforce agent or form before requesting agent revisions.',
+                409,
+            );
+        }
+
+        const [targetContentType] = await db.select()
+            .from(contentTypes)
+            .where(and(
+                eq(contentTypes.domainId, domainId),
+                eq(contentTypes.id, revisionContext.job.targetContentTypeId),
+            ));
+
+        if (!targetContentType) {
+            throw new WorkflowServiceError(
+                `Target content type ${revisionContext.job.targetContentTypeId} not found in domain ${domainId}.`,
+                'REVIEW_TASK_AI_REVISION_TARGET_CONTENT_TYPE_NOT_FOUND',
+                'Restore the target content type or update the form draft-generation configuration before retrying.',
+                409,
+            );
+        }
+
+        const workforceAgent: DraftGenerationWorkforceAgentReference | null = revisionContext.job.workforceAgentId
+            ? {
+                id: revisionContext.job.workforceAgentId,
+                slug: revisionContext.job.workforceAgentSlug ?? `agent-${revisionContext.job.workforceAgentId}`,
+                name: revisionContext.job.workforceAgentName ?? `Agent ${revisionContext.job.workforceAgentId}`,
+                purpose: revisionContext.job.workforceAgentPurpose ?? 'Tenant-defined drafting agent',
+            }
+            : null;
+        const providerProvisioning = await resolveDraftGenerationProviderProvisioning(
+            domainId,
+            revisionContext.job.provider,
+        );
+        const attachments = await resolveDraftGenerationAttachments(
+            domainId,
+            revisionContext.job.provider,
+            revisionContext.job.intakeAssetReferences,
+        );
+
+        const generation = await generateDraftData({
+            domainId,
+            formId: revisionContext.form.id,
+            formSlug: revisionContext.form.slug,
+            intakeContentItemId: revisionContext.job.intakeContentItemId,
+            intakeData: revisionContext.submission.data,
+            currentDraftData: revisionContext.generated.data,
+            revisionPrompt: normalizedPrompt,
+            attachments,
+            targetContentType: {
+                id: targetContentType.id,
+                name: targetContentType.name,
+                slug: targetContentType.slug,
+                schema: targetContentType.schema,
+            },
+            agentSoul: revisionContext.job.agentSoul,
+            fieldMap: revisionContext.job.fieldMap,
+            defaultData: revisionContext.job.defaultData,
+            provider: revisionContext.job.provider,
+            providerProvisioning,
+            workforceAgent,
+        });
+
+        const serializedData = JSON.stringify(generation.data);
+        const validationFailure = await validateContentDataAgainstSchema(
+            targetContentType.schema,
+            serializedData,
+            domainId,
+        );
+        if (validationFailure) {
+            throw new DraftGenerationError(
+                validationFailure.code,
+                validationFailure.remediation,
+                409,
+            );
+        }
+
+        const updated = await updateContentItem(task.contentItemId, domainId, {
+            data: serializedData,
+            status: revisionContext.generated.status,
+        });
+        if (!updated) {
+            throw new WorkflowServiceError(
+                `Content item ${task.contentItemId} no longer exists in domain ${domainId}.`,
+                'REVIEW_TASK_AI_REVISION_CONTENT_ITEM_NOT_FOUND',
+                'Refresh the approval queue and reopen the draft before retrying.',
+                404,
+            );
+        }
+
+        await this.addComment(
+            domainId,
+            task.contentItemId,
+            authPrincipal,
+            `AI revision requested: ${normalizedPrompt}`,
+        );
+
+        await logAudit(
+            domainId,
+            'update',
+            'content_item',
+            updated.id,
+            {
+                source: 'workflow_review_ai_revision',
+                reviewTaskId: task.id,
+                contentItemId: updated.id,
+                previousContentVersion: revisionContext.generated.version,
+                contentVersion: updated.version,
+                revisionPrompt: normalizedPrompt,
+                provider: generation.provider,
+                strategy: generation.strategy,
+                workforceAgentId: revisionContext.job.workforceAgentId,
+                workforceAgentSlug: revisionContext.job.workforceAgentSlug,
+            },
+            toAuditActor(authPrincipal),
+        );
+
+        return {
+            taskId: task.id,
+            contentItemId: updated.id,
+            contentStatus: updated.status,
+            contentVersion: updated.version,
+            revisedAt: updated.updatedAt,
+            strategy: generation.strategy,
+            provider: generation.provider,
+        };
     }
 
     static async listComments(domainId: number, contentItemId: number) {

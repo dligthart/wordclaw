@@ -181,6 +181,34 @@ describe('draft generation service', () => {
         });
     });
 
+    it('includes supervisor revision context when regenerating an existing draft', async () => {
+        mocks.responsesCreateMock.mockResolvedValue({
+            id: 'resp_revision',
+            output_text: JSON.stringify({
+                title: 'Updated proposal title',
+                summary: 'Updated summary',
+            }),
+        });
+
+        await generateDraftData(buildInput({
+            currentDraftData: {
+                title: 'Current proposal title',
+                summary: 'Current summary',
+            },
+            revisionPrompt: 'Make the summary more specific about delivery risks.',
+        }));
+
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'Supervisor revision request: Make the summary more specific about delivery risks.',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain(
+            'Current draft to revise:',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain(
+            '"Current proposal title"',
+        );
+    });
+
     it('translates optional fields into OpenAI-compatible strict schema and prunes null placeholders', async () => {
         mocks.responsesCreateMock.mockResolvedValue({
             id: 'resp_optional',

@@ -90,6 +90,8 @@ export type DraftGenerationInput = {
     formSlug: string;
     intakeContentItemId: number;
     intakeData: Record<string, unknown>;
+    currentDraftData?: Record<string, unknown> | null;
+    revisionPrompt?: string | null;
     targetContentType: DraftGenerationTargetContentType;
     agentSoul: string;
     fieldMap: Record<string, string>;
@@ -441,6 +443,14 @@ function getProviderInstructions(input: DraftGenerationInput): string | null {
     return normalizeOptionalString(input.provider.instructions);
 }
 
+function getRevisionPrompt(input: DraftGenerationInput): string | null {
+    return normalizeOptionalString(input.revisionPrompt);
+}
+
+function getCurrentDraftData(input: DraftGenerationInput): Record<string, unknown> | null {
+    return isObject(input.currentDraftData) ? input.currentDraftData : null;
+}
+
 function buildOpenAiInstructions(input: DraftGenerationInput): string {
     const baseInstructions = [
         'You are WordClaw\'s governed draft generation worker.',
@@ -458,6 +468,13 @@ function buildOpenAiInstructions(input: DraftGenerationInput): string {
         'Preserve baseline values unless the schema requires adding other compatible fields around them.',
     ];
 
+    const revisionPrompt = getRevisionPrompt(input);
+    if (revisionPrompt) {
+        baseInstructions.push('A human supervisor has asked you to revise an existing draft that is still pending review.');
+        baseInstructions.push(`Supervisor revision request: ${revisionPrompt}`);
+        baseInstructions.push('Use the current draft as editable context, keep supported facts grounded in the intake payload, and revise only what is needed to satisfy the request.');
+    }
+
     const extraInstructions = getProviderInstructions(input);
 
     if (extraInstructions) {
@@ -468,6 +485,9 @@ function buildOpenAiInstructions(input: DraftGenerationInput): string {
 }
 
 function buildOpenAiInputText(input: DraftGenerationInput, deterministicBaseline: Record<string, unknown>): string {
+    const currentDraftData = getCurrentDraftData(input);
+    const revisionPrompt = getRevisionPrompt(input);
+
     return [
         'Create governed draft content for this intake submission.',
         '',
@@ -491,6 +511,20 @@ function buildOpenAiInputText(input: DraftGenerationInput, deterministicBaseline
         '',
         'Intake payload:',
         JSON.stringify(input.intakeData, null, 2),
+        ...(revisionPrompt
+            ? [
+                '',
+                'Supervisor revision request:',
+                revisionPrompt,
+            ]
+            : []),
+        ...(currentDraftData
+            ? [
+                '',
+                'Current draft to revise:',
+                JSON.stringify(currentDraftData, null, 2),
+            ]
+            : []),
         '',
         'Explicit field mapping:',
         JSON.stringify(input.fieldMap, null, 2),

@@ -10,6 +10,12 @@ const mocks = vi.hoisted(() => ({
     enqueueWebhookJobMock: vi.fn(),
     syncItemEmbeddingsMock: vi.fn(),
     deleteItemEmbeddingsMock: vi.fn(),
+    getAiProviderSecretConfigMock: vi.fn(),
+    getAssetMock: vi.fn(),
+    readAssetContentMock: vi.fn(),
+    validateContentDataAgainstSchemaMock: vi.fn(),
+    updateContentItemMock: vi.fn(),
+    generateDraftDataMock: vi.fn(),
 }));
 
 vi.mock('../db/index.js', () => ({
@@ -31,6 +37,38 @@ vi.mock('./embedding.js', () => ({
     },
 }));
 
+vi.mock('./ai-provider-config.js', () => ({
+    getAiProviderSecretConfig: mocks.getAiProviderSecretConfigMock,
+}));
+
+vi.mock('./assets.js', () => ({
+    getAsset: mocks.getAssetMock,
+    readAssetContent: mocks.readAssetContentMock,
+}));
+
+vi.mock('./content-schema.js', () => ({
+    validateContentDataAgainstSchema: mocks.validateContentDataAgainstSchemaMock,
+}));
+
+vi.mock('./content-item.service.js', () => ({
+    updateContentItem: mocks.updateContentItemMock,
+}));
+
+vi.mock('./draft-generation.js', () => ({
+    DraftGenerationError: class extends Error {
+        code: string;
+        statusCode: number;
+
+        constructor(code: string, message: string, statusCode = 500) {
+            super(message);
+            this.name = 'DraftGenerationError';
+            this.code = code;
+            this.statusCode = statusCode;
+        }
+    },
+    generateDraftData: mocks.generateDraftDataMock,
+}));
+
 import { WorkflowService } from './workflow.js';
 
 describe('workflow service', () => {
@@ -42,8 +80,15 @@ describe('workflow service', () => {
         mocks.enqueueWebhookJobMock.mockReset();
         mocks.syncItemEmbeddingsMock.mockReset();
         mocks.deleteItemEmbeddingsMock.mockReset();
+        mocks.getAiProviderSecretConfigMock.mockReset();
+        mocks.getAssetMock.mockReset();
+        mocks.readAssetContentMock.mockReset();
+        mocks.validateContentDataAgainstSchemaMock.mockReset();
+        mocks.updateContentItemMock.mockReset();
+        mocks.generateDraftDataMock.mockReset();
         mocks.syncItemEmbeddingsMock.mockResolvedValue(undefined);
         mocks.deleteItemEmbeddingsMock.mockResolvedValue(undefined);
+        mocks.validateContentDataAgainstSchemaMock.mockResolvedValue(null);
     });
 
     it('enqueues a form webhook when an approved review task belongs to a generated draft', async () => {
@@ -252,5 +297,253 @@ describe('workflow service', () => {
                 },
             },
         }));
+    });
+
+    it('revises a generated draft in place and keeps the review task pending', async () => {
+        const pendingTask = {
+            id: 55,
+            domainId: 7,
+            contentItemId: 18,
+            workflowTransitionId: 91,
+            status: 'pending',
+            assignee: null,
+            assigneeActorId: null,
+            assigneeActorType: null,
+            assigneeActorSource: null,
+            createdAt: new Date('2026-04-02T10:00:00.000Z'),
+            updatedAt: new Date('2026-04-02T10:00:00.000Z'),
+        };
+        const draftGenerationJob = {
+            id: 9,
+            domainId: 7,
+            kind: 'draft_generation',
+            queue: 'drafts',
+            status: 'succeeded',
+            payload: {
+                formId: 6,
+                formSlug: 'proposal-intake',
+                intakeContentItemId: 17,
+                intakeData: {
+                    company: 'Acme',
+                },
+                intakeAssetReferences: [],
+                targetContentTypeId: 10,
+                workforceAgentId: 2,
+                workforceAgentSlug: 'proposal-writer',
+                workforceAgentName: 'Proposal Writer',
+                workforceAgentPurpose: 'Draft software implementation proposals.',
+                agentSoul: 'software-development-proposal-writer',
+                fieldMap: {
+                    requirements: 'brief',
+                },
+                defaultData: {
+                    title: 'Draft proposal',
+                },
+                provider: {
+                    type: 'openai',
+                    model: 'gpt-4.1-mini',
+                    instructions: 'Keep the proposal concise.',
+                },
+            },
+            result: {
+                generatedContentItemId: 18,
+                provider: {
+                    type: 'openai',
+                    model: 'gpt-4.1-mini',
+                    responseId: 'resp_prev',
+                },
+                strategy: 'openai_structured_outputs_v1',
+            },
+            runAt: new Date('2026-04-02T10:00:00.000Z'),
+            attempts: 1,
+            maxAttempts: 3,
+            lastError: null,
+            claimedAt: new Date('2026-04-02T10:01:00.000Z'),
+            startedAt: new Date('2026-04-02T10:01:00.000Z'),
+            completedAt: new Date('2026-04-02T10:02:00.000Z'),
+            createdAt: new Date('2026-04-02T10:00:00.000Z'),
+            updatedAt: new Date('2026-04-02T10:02:00.000Z'),
+        };
+        const updatedContentItem = {
+            id: 18,
+            domainId: 7,
+            contentTypeId: 10,
+            data: JSON.stringify({
+                title: 'Draft proposal',
+                brief: 'Need clearer rollout detail',
+                summary: 'Updated summary',
+            }),
+            status: 'in_review',
+            version: 4,
+            createdAt: new Date('2026-04-02T10:00:00.000Z'),
+            updatedAt: new Date('2026-04-02T10:06:00.000Z'),
+        };
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([pendingTask]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: () => ({
+                        orderBy: () => ({
+                            limit: vi.fn().mockResolvedValue([draftGenerationJob]),
+                        }),
+                    }),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 6,
+                        slug: 'proposal-intake',
+                        name: 'Proposal Intake',
+                        webhookUrl: null,
+                        webhookSecret: null,
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 17,
+                        status: 'draft',
+                        data: JSON.stringify({
+                            requirements: 'Need clearer rollout detail',
+                        }),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 18,
+                        status: 'in_review',
+                        version: 3,
+                        data: JSON.stringify({
+                            title: 'Draft proposal',
+                            summary: 'Original summary',
+                        }),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 10,
+                        domainId: 7,
+                        name: 'Proposal Draft',
+                        slug: 'proposal-draft',
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                title: { type: 'string' },
+                                brief: { type: 'string' },
+                                summary: { type: 'string' },
+                            },
+                            required: ['title', 'brief', 'summary'],
+                        }),
+                    }]),
+                }),
+            }));
+
+        mocks.dbMock.insert.mockImplementationOnce(() => ({
+            values: () => ({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 1,
+                    contentItemId: 18,
+                    comment: 'AI revision requested: Tighten the delivery plan and make assumptions explicit.',
+                }]),
+            }),
+        }));
+
+        mocks.getAiProviderSecretConfigMock.mockResolvedValue({
+            provider: 'openai',
+            apiKey: 'tenant-openai-key',
+            defaultModel: 'gpt-4.1-mini',
+            maskedApiKey: '***',
+            createdAt: '2026-04-02T10:00:00.000Z',
+            updatedAt: '2026-04-02T10:00:00.000Z',
+        });
+        mocks.generateDraftDataMock.mockResolvedValue({
+            data: {
+                title: 'Draft proposal',
+                brief: 'Need clearer rollout detail',
+                summary: 'Updated summary',
+            },
+            strategy: 'openai_structured_outputs_v1',
+            provider: {
+                type: 'openai',
+                model: 'gpt-4.1-mini',
+                responseId: 'resp_new',
+            },
+        });
+        mocks.updateContentItemMock.mockResolvedValue(updatedContentItem);
+
+        const authPrincipal = {
+            actorId: 'supervisor:1',
+            actorType: 'supervisor' as const,
+            actorSource: 'db' as const,
+            source: 'db' as const,
+            domainId: 7,
+            scopes: new Set(['admin']),
+        };
+
+        const result = await WorkflowService.reviseReviewTask(
+            7,
+            55,
+            'Tighten the delivery plan and make assumptions explicit.',
+            authPrincipal,
+        );
+
+        expect(mocks.generateDraftDataMock).toHaveBeenCalledWith(expect.objectContaining({
+            revisionPrompt: 'Tighten the delivery plan and make assumptions explicit.',
+            currentDraftData: {
+                title: 'Draft proposal',
+                summary: 'Original summary',
+            },
+            provider: {
+                type: 'openai',
+                model: 'gpt-4.1-mini',
+                instructions: 'Keep the proposal concise.',
+            },
+        }));
+        expect(mocks.updateContentItemMock).toHaveBeenCalledWith(18, 7, {
+            data: JSON.stringify({
+                title: 'Draft proposal',
+                brief: 'Need clearer rollout detail',
+                summary: 'Updated summary',
+            }),
+            status: 'in_review',
+        });
+        expect(mocks.logAuditMock).toHaveBeenCalledWith(
+            7,
+            'update',
+            'content_item',
+            18,
+            expect.objectContaining({
+                source: 'workflow_review_ai_revision',
+                contentItemId: 18,
+                previousContentVersion: 3,
+                contentVersion: 4,
+                revisionPrompt: 'Tighten the delivery plan and make assumptions explicit.',
+            }),
+            expect.any(Object),
+        );
+        expect(result).toEqual({
+            taskId: 55,
+            contentItemId: 18,
+            contentStatus: 'in_review',
+            contentVersion: 4,
+            revisedAt: new Date('2026-04-02T10:06:00.000Z'),
+            strategy: 'openai_structured_outputs_v1',
+            provider: {
+                type: 'openai',
+                model: 'gpt-4.1-mini',
+                responseId: 'resp_new',
+            },
+        });
     });
 });

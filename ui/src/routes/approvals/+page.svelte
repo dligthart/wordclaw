@@ -75,7 +75,9 @@
 
     let selectedTask = $state<ReviewTaskPayload | null>(null);
     let processingItem = $state<number | null>(null);
+    let revisingItem = $state<number | null>(null);
     let decisionReason = $state("");
+    let revisionPrompt = $state("");
     let selectedTaskQueueIndex = $derived.by(() => {
         const selectedTaskId = selectedTask?.task.id;
         if (selectedTaskId === undefined) {
@@ -305,9 +307,57 @@
         });
     }
 
+    async function reviseTask(payload: ReviewTaskPayload) {
+        if (!revisionPrompt.trim()) {
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Revision prompt required",
+                message:
+                    "Describe what the agent should change before requesting a revision.",
+            });
+            return;
+        }
+
+        revisingItem = payload.task.id;
+        try {
+            const response = await fetchApi(`/review-tasks/${payload.task.id}/revise`, {
+                method: "POST",
+                body: JSON.stringify({
+                    prompt: revisionPrompt.trim(),
+                }),
+            });
+            const result = response.data as {
+                contentItemId: number;
+                contentVersion: number;
+            };
+
+            revisionPrompt = "";
+            await loadData();
+
+            feedbackStore.pushToast({
+                severity: "success",
+                title: "Draft revised",
+                message: `The agent updated item #${result.contentItemId} to version ${result.contentVersion}. The task remains in the approval queue.`,
+            });
+        } catch (err: any) {
+            const isApiError = err instanceof ApiError;
+            feedbackStore.pushToast({
+                severity: "error",
+                title: "Revision failed",
+                message:
+                    err.message || "Failed to request an agent revision.",
+                code: isApiError ? err.code : undefined,
+                remediation: isApiError ? err.remediation : undefined,
+            });
+        } finally {
+            revisingItem = null;
+        }
+    }
+
     function viewTask(payload: ReviewTaskPayload) {
         selectedTask = payload;
         decisionReason = "";
+        revisionPrompt = "";
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -650,16 +700,37 @@
                                     onclick={() =>
                                         processTask(selectedTask!, "rejected")}
                                     disabled={processingItem ===
-                                        selectedTask.task.id}
+                                            selectedTask.task.id ||
+                                        revisingItem === selectedTask.task.id}
                                     variant="outline"
                                 >
                                     Reject
                                 </Button>
                                 <Button
+                                    onclick={() => reviseTask(selectedTask!)}
+                                    disabled={revisingItem ===
+                                            selectedTask.task.id ||
+                                        processingItem ===
+                                            selectedTask.task.id ||
+                                        !revisionPrompt.trim()}
+                                    variant="outline"
+                                >
+                                    {#if revisingItem === selectedTask.task.id}
+                                        <LoadingSpinner size="sm" />
+                                    {:else}
+                                        <Icon
+                                            src={ArrowPath}
+                                            class="w-4 h-4"
+                                        />
+                                    {/if}
+                                    Revise With Agent
+                                </Button>
+                                <Button
                                     onclick={() =>
                                         processTask(selectedTask!, "approved")}
                                     disabled={processingItem ===
-                                        selectedTask.task.id}
+                                            selectedTask.task.id ||
+                                        revisingItem === selectedTask.task.id}
                                     variant="success"
                                 >
                                     {#if processingItem === selectedTask.task.id}
@@ -718,6 +789,32 @@
                                                     )}
                                                 </Badge>
                                             </dd>
+                                        </div>
+                                        <div class="sm:col-span-2">
+                                            <label
+                                                for="revision-prompt"
+                                                class="block text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 mb-1"
+                                            >
+                                                Agent Revision Prompt
+                                            </label>
+                                            <Textarea
+                                                id="revision-prompt"
+                                                bind:value={revisionPrompt}
+                                                placeholder="Tell the agent what to adjust before approval, for example: tighten the executive summary, clarify timeline risks, and make pricing assumptions explicit."
+                                                rows={3}
+                                                class="w-full text-sm"
+                                                disabled={revisingItem ===
+                                                    selectedTask.task.id}
+                                            />
+                                            <p
+                                                class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400"
+                                            >
+                                                This re-runs the agent against
+                                                the same draft item, keeps the
+                                                review task pending, and versions
+                                                the content instead of creating a
+                                                second item.
+                                            </p>
                                         </div>
                                         <div class="sm:col-span-2">
                                             <label

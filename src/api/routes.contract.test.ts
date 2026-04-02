@@ -4372,6 +4372,62 @@ describe('API Route Contracts', () => {
         }
     });
 
+    it('revises a pending review task through the approval queue route', async () => {
+        const app = await buildServer();
+        const reviseReviewTaskSpy = vi.spyOn(WorkflowService, 'reviseReviewTask').mockResolvedValue({
+            taskId: 44,
+            contentItemId: 501,
+            contentStatus: 'in_review',
+            contentVersion: 3,
+            revisedAt: new Date('2026-04-02T11:00:00.000Z'),
+            strategy: 'openai_structured_outputs_v1',
+            provider: {
+                type: 'openai',
+                model: 'gpt-4.1-mini',
+                responseId: 'resp_123',
+            },
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/review-tasks/44/revise',
+                payload: {
+                    prompt: 'Tighten the summary and clarify the delivery assumptions.',
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toMatchObject({
+                data: {
+                    taskId: 44,
+                    contentItemId: 501,
+                    contentStatus: 'in_review',
+                    contentVersion: 3,
+                    revisedAt: '2026-04-02T11:00:00.000Z',
+                    strategy: 'openai_structured_outputs_v1',
+                    provider: {
+                        type: 'openai',
+                        model: 'gpt-4.1-mini',
+                        responseId: 'resp_123',
+                    },
+                },
+                meta: expect.objectContaining({
+                    availableActions: ['GET /api/content-items/501'],
+                }),
+            });
+            expect(reviseReviewTaskSpy).toHaveBeenCalledWith(
+                1,
+                44,
+                'Tighten the summary and clarify the delivery assumptions.',
+                expect.anything(),
+            );
+        } finally {
+            reviseReviewTaskSpy.mockRestore();
+            await app.close();
+        }
+    });
+
     it('schedules content status changes through the background jobs route', async () => {
         const app = await buildServer();
 

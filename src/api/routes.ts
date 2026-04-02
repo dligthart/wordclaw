@@ -11392,6 +11392,51 @@ export default async function apiRoutes(server: FastifyInstance) {
         });
     });
 
+    server.post('/review-tasks/:id/revise', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                prompt: Type.String({ minLength: 1 })
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    taskId: Type.Number(),
+                    contentItemId: Type.Number(),
+                    contentStatus: Type.String(),
+                    contentVersion: Type.Number(),
+                    revisedAt: Type.String(),
+                    strategy: Type.String(),
+                    provider: Type.Object({
+                        type: Type.String(),
+                        model: Type.Union([Type.String(), Type.Null()]),
+                        responseId: Type.Union([Type.String(), Type.Null()]),
+                    }),
+                }))
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const payload = request.body as { prompt: string };
+        const authPrincipal = (request as any).authPrincipal;
+
+        const result = await WorkflowService.reviseReviewTask(
+            getDomainId(request),
+            id,
+            payload.prompt,
+            authPrincipal,
+        );
+
+        return reply.status(200).send({
+            data: {
+                ...result,
+                revisedAt: result.revisedAt.toISOString(),
+            },
+            meta: buildMeta('Draft revised through approval queue', [`GET /api/content-items/${result.contentItemId}`], 'medium', 1),
+        });
+    });
+
     server.get('/content-items/:id/comments', {
         schema: {
             params: Type.Object({
