@@ -1,3 +1,10 @@
+# [1.50.0](https://github.com/dligthart/wordclaw/compare/v1.49.0...v1.50.0) (2026-04-02)
+
+
+### Features
+
+* add proposal portal demo ([d440ee7](https://github.com/dligthart/wordclaw/commit/d440ee7dfe90904b8e075ddeea791f850326cf10))
+
 # [1.49.0](https://github.com/dligthart/wordclaw/compare/v1.48.0...v1.49.0) (2026-04-02)
 
 
