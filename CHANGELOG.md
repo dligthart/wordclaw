@@ -1,3 +1,10 @@
+## [1.50.2](https://github.com/dligthart/wordclaw/compare/v1.50.1...v1.50.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* clarify and honor agent revisions ([748739d](https://github.com/dligthart/wordclaw/commit/748739d278c9727f9a2e2368e6199fa4db61b0fc))
+
 ## [1.50.1](https://github.com/dligthart/wordclaw/compare/v1.50.0...v1.50.1) (2026-04-02)
 
 
