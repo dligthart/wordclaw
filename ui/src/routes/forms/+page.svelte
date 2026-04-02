@@ -785,7 +785,7 @@
             <LoadingSpinner size="lg" />
         </div>
     {:else}
-        <div class="grid gap-6 xl:grid-cols-[1.05fr_1.3fr]">
+        <div class="grid gap-6 2xl:grid-cols-[0.9fr_1.4fr]">
             <div class="space-y-6">
                 <Surface class="space-y-4">
                     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -943,7 +943,7 @@
                         </div>
                     </div>
 
-                    <div class="grid gap-4 md:grid-cols-2">
+                    <div class="grid gap-3 xl:grid-cols-2">
                         <label class="space-y-2">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                 Name
@@ -969,7 +969,7 @@
                         />
                     </label>
 
-                    <div class="grid gap-4 md:grid-cols-2">
+                    <div class="grid gap-3 xl:grid-cols-2">
                         <label class="space-y-2">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                 Target content type
@@ -994,7 +994,7 @@
                         </label>
                     </div>
 
-                    <div class="grid gap-4 md:grid-cols-2">
+                    <div class="grid gap-3 xl:grid-cols-2">
                         <label class="space-y-2">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                 Workflow transition ID
@@ -1015,7 +1015,7 @@
                         </label>
                     </div>
 
-                    <div class="grid gap-4 md:grid-cols-2">
+                    <div class="grid gap-3 xl:grid-cols-2">
                         <label class="space-y-2">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                 Follow-up webhook URL
@@ -1036,7 +1036,7 @@
                         </label>
                     </div>
 
-                    <div class="grid gap-3 md:grid-cols-3">
+                    <div class="grid gap-3 lg:grid-cols-3">
                         <label class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">
                             <input type="checkbox" bind:checked={editor.active} />
                             Accept submissions
@@ -1093,7 +1093,7 @@
                         <div class="space-y-4 px-5 pb-5">
 
                         {#if draftGenerationEnabled}
-                            <div class="grid gap-4 md:grid-cols-2">
+                            <div class="grid gap-3 xl:grid-cols-2">
                                 <label class="space-y-2">
                                     <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                         Draft target content type
@@ -1147,7 +1147,7 @@
                                     </div>
                                 </div>
                             {:else}
-                                <div class="grid gap-4 md:grid-cols-2">
+                                <div class="grid gap-3 xl:grid-cols-2">
                                     <label class="space-y-2">
                                         <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                             SOUL
@@ -1181,7 +1181,7 @@
                                 </p>
 
                                 {#if draftProviderType !== "deterministic"}
-                                    <div class="grid gap-4 md:grid-cols-2">
+                                    <div class="grid gap-3 xl:grid-cols-2">
                                         <label class="space-y-2">
                                             <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                                 Model
