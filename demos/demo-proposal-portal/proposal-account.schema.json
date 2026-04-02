@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "fullName": { "type": "string" },
+    "email": { "type": "string" },
+    "companyName": { "type": "string" },
+    "passwordHash": { "type": "string" },
+    "createdAt": { "type": "string" }
+  },
+  "required": ["fullName", "email", "companyName", "passwordHash", "createdAt"]
+}

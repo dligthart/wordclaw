@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "accountName": { "type": "string" },
+    "accountEmail": { "type": "string" },
+    "companyName": { "type": "string" },
+    "projectName": { "type": "string" },
+    "requestedOutcome": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "currentSituation": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "keyRequirements": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "constraints": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "budgetRange": { "type": "string" },
+    "targetTimeline": { "type": "string" }
+  },
+  "required": [
+    "accountName",
+    "accountEmail",
+    "companyName",
+    "projectName",
+    "requestedOutcome",
+    "currentSituation",
+    "keyRequirements",
+    "budgetRange",
+    "targetTimeline"
+  ]
+}

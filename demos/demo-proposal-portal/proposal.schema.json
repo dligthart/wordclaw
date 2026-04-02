@@ -1,0 +1,57 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "accountName": { "type": "string" },
+    "accountEmail": { "type": "string" },
+    "companyName": { "type": "string" },
+    "projectName": { "type": "string" },
+    "title": { "type": "string" },
+    "executiveSummary": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "currentSituation": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "scopeSummary": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "recommendedApproach": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "deliveryPlan": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "timeline": { "type": "string" },
+    "budgetRange": { "type": "string" },
+    "assumptions": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    },
+    "nextSteps": {
+      "type": "string",
+      "x-wordclaw-ui": { "widget": "textarea" }
+    }
+  },
+  "required": [
+    "accountName",
+    "accountEmail",
+    "companyName",
+    "projectName",
+    "title",
+    "executiveSummary",
+    "currentSituation",
+    "scopeSummary",
+    "recommendedApproach",
+    "deliveryPlan",
+    "timeline",
+    "budgetRange",
+    "assumptions",
+    "nextSteps"
+  ]
+}

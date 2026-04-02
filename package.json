@@ -15,6 +15,8 @@
     "start": "node dist/index.js",
     "mcp:start": "tsx src/mcp/index.ts",
     "demo:seed-blog": "tsx scripts/seed-blog.ts",
+    "demo:seed-proposal-portal": "tsx scripts/seed-proposal-portal.ts",
+    "demo:proposal-portal": "tsx demos/demo-proposal-portal/server.ts",
     "verify:api": "tsx scripts/verification/verify-api.ts",
     "verify:audit": "tsx scripts/verification/verify-audit.ts",
     "verify:dry-run": "tsx scripts/verification/verify-dry-run.ts",
