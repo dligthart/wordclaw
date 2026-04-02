@@ -1279,11 +1279,31 @@
         ].join("\n");
     }
 
+    function buildRollbackExplanation(
+        currentItem: ContentItem,
+        targetVersion: ContentVersion | null,
+    ): string[] {
+        if (!targetVersion) {
+            return ["Historical snapshot unavailable."];
+        }
+
+        return [
+            `Current live version: v${currentItem.version} (${formatStatusLabel(currentItem.status)})`,
+            `Snapshot to restore: v${targetVersion.version} (${formatStatusLabel(targetVersion.status)}) from ${formatDateTime(targetVersion.createdAt)}`,
+            `Result after restore: the item becomes new current version v${currentItem.version + 1} using the payload and status from snapshot v${targetVersion.version}.`,
+            `Current v${currentItem.version} is preserved in version history before the restore is applied.`,
+        ];
+    }
+
     async function rollbackToVersion(version: number) {
         if (!selectedItem) return;
 
         const targetVersion =
             versions.find((candidate) => candidate.version === version) ?? null;
+        const rollbackExplanation = buildRollbackExplanation(
+            selectedItem,
+            targetVersion,
+        );
         const diffSummary = targetVersion
             ? formatDiffSummary(
                   buildDiffEntries(
@@ -1296,14 +1316,16 @@
             : "Historical snapshot unavailable.";
 
         feedbackStore.openConfirm({
-            title: "Rollback Content",
+            title: "Restore Historical Snapshot",
             message: [
-                `Rollback "${resolveItemLabel(selectedItem)}" from version ${selectedItem.version} to version ${version}?`,
+                `Restore snapshot v${version} for "${resolveItemLabel(selectedItem)}"?`,
+                "",
+                ...rollbackExplanation,
                 "",
                 "Supervisor summary:",
                 diffSummary,
             ].join("\n"),
-            confirmLabel: "Rollback",
+            confirmLabel: "Restore snapshot",
             confirmIntent: "danger",
             onConfirm: async () => {
                 rollingBack = true;
@@ -1332,8 +1354,8 @@
 
                     feedbackStore.pushToast({
                         severity: "success",
-                        title: "Rollback Applied",
-                        message: `Successfully rolled back to version ${version}`,
+                        title: "Snapshot restored",
+                        message: `Current item restored from snapshot v${version}. The previous live version was preserved in history.`,
                     });
                 } catch (err: any) {
                     const isApiError = err instanceof ApiError;
@@ -2294,18 +2316,98 @@
                                 <div
                                     class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-200"
                                 >
-                                    Comparing current version v{selectedItem.version}
-                                    with v{selectedDiffVersion.version}. {selectedDiffEntries.length}
-                                    field-level difference(s).
+                                    <span class="font-semibold">
+                                        Rollback preview:
+                                    </span>
+                                    restoring snapshot v{selectedDiffVersion.version}
+                                    creates new current version v{selectedItem.version + 1}.
+                                    Current v{selectedItem.version} stays in history.
+                                </div>
+                                <div class="grid gap-3 md:grid-cols-3">
+                                    <div
+                                        class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700"
+                                    >
+                                        <p
+                                            class="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Current live item
+                                        </p>
+                                        <p
+                                            class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50"
+                                        >
+                                            v{selectedItem.version}
+                                        </p>
+                                        <p
+                                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                        >
+                                            {formatStatusLabel(selectedItem.status)} · {formatDateTime(
+                                                selectedItem.updatedAt,
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div
+                                        class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700"
+                                    >
+                                        <p
+                                            class="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Snapshot to restore
+                                        </p>
+                                        <p
+                                            class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50"
+                                        >
+                                            v{selectedDiffVersion.version}
+                                        </p>
+                                        <p
+                                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                        >
+                                            {formatStatusLabel(
+                                                selectedDiffVersion.status,
+                                            )} · {formatDateTime(
+                                                selectedDiffVersion.createdAt,
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div
+                                        class="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700"
+                                    >
+                                        <p
+                                            class="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >
+                                            Result after restore
+                                        </p>
+                                        <p
+                                            class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50"
+                                        >
+                                            v{selectedItem.version + 1}
+                                        </p>
+                                        <p
+                                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                        >
+                                            Payload and status will match snapshot
+                                            v{selectedDiffVersion.version}.
+                                        </p>
+                                    </div>
                                 </div>
                                 {#if selectedDiffEntries.length === 0}
                                     <p
                                         class="text-sm italic text-slate-500 dark:text-slate-400"
                                     >
-                                        No payload changes detected between
-                                        these versions.
+                                        Snapshot v{selectedDiffVersion.version}
+                                        matches the current payload and status.
+                                        Restoring it would still create new
+                                        current version v{selectedItem.version +
+                                            1} and preserve the current version
+                                        in history.
                                     </p>
                                 {:else}
+                                    <p
+                                        class="text-sm text-slate-500 dark:text-slate-400"
+                                    >
+                                        {selectedDiffEntries.length} field-level
+                                        difference(s) will change if you restore
+                                        snapshot v{selectedDiffVersion.version}.
+                                    </p>
                                     <div
                                         class="max-h-64 space-y-2 overflow-y-auto pr-1"
                                     >
@@ -2342,7 +2444,7 @@
                                                         <p
                                                             class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
                                                         >
-                                                            Current
+                                                            Current live item
                                                         </p>
                                                         <p
                                                             class="mt-1 break-words font-mono text-slate-700 dark:text-slate-200"
@@ -2356,7 +2458,7 @@
                                                         <p
                                                             class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
                                                         >
-                                                            Selected
+                                                            Snapshot to restore
                                                         </p>
                                                         <p
                                                             class="mt-1 break-words font-mono text-slate-700 dark:text-slate-200"
@@ -2380,7 +2482,7 @@
                                             )}
                                         disabled={rollingBack}
                                     >
-                                        Roll back to v{selectedDiffVersion.version}
+                                        Restore snapshot v{selectedDiffVersion.version}
                                     </Button>
                                 </div>
                             </div>
@@ -2526,7 +2628,7 @@
                                                         )}
                                                     disabled={rollingBack}
                                                 >
-                                                    Roll back
+                                                    Restore snapshot
                                                 </Button>
                                             </div>
                                         </div>
@@ -2538,8 +2640,10 @@
                                         <p
                                             class="mt-2 text-xs text-slate-500 dark:text-slate-400"
                                         >
-                                            {versionDiff.length} change(s) from the
-                                            current item
+                                            Restoring this snapshot creates new
+                                            current version v{selectedItem.version +
+                                                1}. {versionDiff.length} change(s)
+                                            from the current item.
                                         </p>
                                     </div>
                                 {/each}

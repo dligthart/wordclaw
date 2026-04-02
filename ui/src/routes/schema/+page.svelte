@@ -850,27 +850,26 @@
 </svelte:head>
 
 <div class="h-full flex flex-col">
-    <div class="mb-6 flex justify-between items-end">
+    <div class="mb-4 flex items-center justify-between gap-4">
         <div>
             <h2
-                class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
+                class="text-xl font-semibold tracking-tight text-gray-900 dark:text-white"
             >
                 Schema Manager
             </h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Govern the data shapes that content agents produce, including
-                manifest-first starter patterns for resumable agent workflows.
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Govern data shapes and manifest-first starter patterns for agent workflows.
             </p>
         </div>
-        <Button onclick={startCreate} disabled={isCreating}>
-            <Icon src={Plus} class="w-5 h-5" />
+        <Button onclick={startCreate} disabled={isCreating} size="sm">
+            <Icon src={Plus} class="w-4 h-4" />
             New Content Model
         </Button>
     </div>
 
-    <div class="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
+    <div class="flex-1 grid gap-4 overflow-hidden md:grid-cols-[14rem_minmax(0,1fr)]">
         <!-- Types List Sidebar -->
-        <Surface class="w-full md:w-1/4 flex flex-col overflow-hidden p-0">
+        <Surface class="flex flex-col overflow-hidden p-0">
             <div
                 class="border-b border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30"
             >
@@ -926,7 +925,7 @@
         </Surface>
 
         <!-- Schema Editor area -->
-        <div class="flex-1 flex flex-col gap-6 overflow-hidden">
+        <div class="flex flex-col gap-4 overflow-hidden min-h-0">
             {#if !selectedType && !isCreating}
                 <Surface
                     class="flex-1 flex flex-col items-center justify-center p-12 text-center text-sm italic text-slate-400 dark:text-slate-500"
@@ -940,10 +939,10 @@
             {:else}
                 <Surface class="flex-1 flex flex-col overflow-hidden p-0">
                     <div
-                        class="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-6 py-4 dark:border-slate-700 dark:bg-slate-900/30"
+                        class="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30"
                     >
                         <h3
-                            class="text-lg font-semibold text-gray-900 dark:text-white"
+                            class="text-base font-semibold text-gray-900 dark:text-white"
                         >
                             {isCreating
                                 ? "Create New Model"
@@ -970,38 +969,40 @@
                     </div>
 
                     <div
-                        class="flex-1 overflow-y-auto p-6 flex flex-col md:flex-row gap-6"
+                        class="flex-1 overflow-y-auto p-4 flex flex-col md:flex-row gap-4"
                     >
                         <!-- Form / Schema Code -->
-                        <div class="w-full md:w-1/2 flex flex-col gap-4">
-                            <div>
-                                <label
-                                    for="name"
-                                    class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
-                                    >Name</label
-                                >
-                                <Input
-                                    id="name"
-                                    type="text"
-                                    bind:value={editingName}
-                                    disabled={!isEditing}
-                                    placeholder="e.g. Blog Post"
-                                />
-                            </div>
-                            <div>
-                                <label
-                                    for="slug"
-                                    class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
-                                    >Slug</label
-                                >
-                                <Input
-                                    id="slug"
-                                    type="text"
-                                    bind:value={editingSlug}
-                                    disabled={!isCreating}
-                                    class="disabled:bg-slate-100 dark:disabled:bg-slate-900/50"
-                                    placeholder="e.g. blog-post"
-                                />
+                        <div class="w-full md:w-1/2 flex flex-col gap-3">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label
+                                        for="name"
+                                        class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >Name</label
+                                    >
+                                    <Input
+                                        id="name"
+                                        type="text"
+                                        bind:value={editingName}
+                                        disabled={!isEditing}
+                                        placeholder="e.g. Blog Post"
+                                    />
+                                </div>
+                                <div>
+                                    <label
+                                        for="slug"
+                                        class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                        >Slug</label
+                                    >
+                                    <Input
+                                        id="slug"
+                                        type="text"
+                                        bind:value={editingSlug}
+                                        disabled={!isCreating}
+                                        class="disabled:bg-slate-100 dark:disabled:bg-slate-900/50"
+                                        placeholder="e.g. blog-post"
+                                    />
+                                </div>
                             </div>
                             <div>
                                 <label
@@ -1018,10 +1019,10 @@
                                     <option value="manifest">Field Manifest</option>
                                 </Select>
                                 <p
-                                    class="mt-1 text-[0.7rem] text-slate-500 dark:text-slate-400"
+                                    class="mt-0.5 text-[0.65rem] text-slate-500 dark:text-slate-400"
                                 >
                                     {editingSourceMode === "manifest"
-                                        ? "Manifest mode compiles editor-friendly fields into canonical JSON Schema on the server."
+                                        ? "Manifest mode compiles fields into canonical JSON Schema on the server."
                                         : "Schema mode edits the canonical JSON Schema directly and clears any stored manifest on save."}
                                 </p>
                             </div>
@@ -1116,7 +1117,7 @@
                                     </div>
                                 </Surface>
                             {/if}
-                            <div class="flex gap-4">
+                            <div class="flex gap-3">
                                 <div class="flex-1">
                                     <label
                                         for="desc"
@@ -1147,7 +1148,7 @@
                                         title="Minimum Lightning payment required to create items of this type"
                                     />
                                     <p
-                                        class="text-[0.65rem] text-gray-500 mt-1 dark:text-gray-400"
+                                        class="text-[0.6rem] text-gray-500 mt-0.5 dark:text-gray-400"
                                     >
                                         Leave empty to disable L402.
                                     </p>
@@ -1168,10 +1169,10 @@
                                     >
                                 </label>
                                 <p
-                                    class="mb-2 text-[0.72rem] text-slate-500 dark:text-slate-400"
+                                    class="mb-1.5 text-[0.65rem] text-slate-500 dark:text-slate-400"
                                 >
                                     {editingSourceMode === "manifest"
-                                        ? "Use field types like text, textarea, select, group, array, asset, content-ref, and block-set."
+                                        ? "Use field types: text, textarea, select, group, array, asset, content-ref, block-set."
                                         : "Use canonical JSON Schema plus the existing WordClaw schema extensions."}
                                 </p>
                                 {#if editingSourceMode === "manifest"}
@@ -1179,7 +1180,7 @@
                                         id="schema-manifest"
                                         bind:value={editingSchemaManifestStr}
                                         disabled={!isEditing}
-                                        class="h-64 flex-1 resize-none border-slate-700 bg-slate-950 p-4 font-mono text-xs text-green-400 shadow-inner dark:text-green-300"
+                                        class="min-h-[14rem] flex-1 resize-none border-slate-700 bg-slate-950 p-3 font-mono text-xs text-green-400 shadow-inner dark:text-green-300"
                                         spellcheck="false"
                                     ></Textarea>
                                 {:else}
@@ -1187,7 +1188,7 @@
                                         id="schema"
                                         bind:value={editingSchemaStr}
                                         disabled={!isEditing}
-                                        class="h-64 flex-1 resize-none border-slate-700 bg-slate-950 p-4 font-mono text-xs text-green-400 shadow-inner dark:text-green-300"
+                                        class="min-h-[14rem] flex-1 resize-none border-slate-700 bg-slate-950 p-3 font-mono text-xs text-green-400 shadow-inner dark:text-green-300"
                                         spellcheck="false"
                                     ></Textarea>
                                 {/if}
@@ -1204,7 +1205,7 @@
                         {#if editingSourceMode === "manifest"}
                             <Surface
                                 tone="muted"
-                                class="w-full md:w-1/2 flex flex-col gap-4"
+                                class="w-full md:w-1/2 flex flex-col gap-3"
                             >
                                 <div
                                     class="flex items-start justify-between gap-3"
