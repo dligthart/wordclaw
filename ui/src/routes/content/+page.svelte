@@ -1534,20 +1534,20 @@
 </svelte:head>
 
 <div class="flex h-full flex-col">
-    <div class="mb-6 flex items-start justify-between gap-4 flex-wrap">
+    <div class="mb-4 flex items-center justify-between gap-4 flex-wrap">
         <div>
             <h2
-                class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
+                class="text-xl font-semibold tracking-tight text-slate-900 dark:text-white"
             >
                 Content Browser
             </h2>
-            <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-                Browse content by schema first, then narrow within that model
-                and inspect individual items.
+            <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                Schema-first content inspection and browsing.
             </p>
         </div>
         <Button
             variant="outline"
+            size="sm"
             onclick={() => {
                 const selectedTypeId = selectedType?.id;
                 if (selectedTypeId) {
@@ -1575,103 +1575,72 @@
     {/if}
 
     {#snippet SchemaLanding()}
-        <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-            <Surface class="p-8 lg:p-10">
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+            <Surface class="p-5 lg:p-6">
                 <p
-                    class="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400"
+                    class="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400"
                 >
                     Schema-first browser
                 </p>
                 <h3
-                    class="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+                    class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50"
                 >
-                    Start by choosing a content schema
+                    Choose a content schema
                 </h3>
                 <p
-                    class="mt-4 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300"
+                    class="mt-2 max-w-2xl text-sm leading-5 text-slate-600 dark:text-slate-300"
                 >
-                    The browser is organized around schema first, item second.
-                    Select the model you want to inspect, then review only the
-                    content created from that schema.
+                    Select a model to inspect, then drill into individual items.
                 </p>
 
-                <div class="mt-6 flex flex-wrap items-center gap-3">
+                <div class="mt-3 flex flex-wrap items-center gap-2">
                     <Button type="button" onclick={openModelFilterModal}>
                         Choose schema
                     </Button>
                     <Button
                         type="button"
                         variant="outline"
+                        size="sm"
                         onclick={() => void loadContentTypes()}
                     >
-                        Refresh schemas
+                        <Icon src={ArrowPath} class="h-4 w-4" />
+                        Refresh
                     </Button>
                 </div>
 
-                <div class="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <Surface tone="subtle" class="p-4">
-                        <p
-                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                        >
-                            Total schemas
-                        </p>
-                        <p
-                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
-                        >
-                            {schemaOverview.totalSchemas}
-                        </p>
-                    </Surface>
-                    <Surface tone="subtle" class="p-4">
-                        <p
-                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                        >
-                            With content
-                        </p>
-                        <p
-                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
-                        >
-                            {schemaOverview.schemasWithContent}
-                        </p>
-                    </Surface>
-                    <Surface tone="subtle" class="p-4">
-                        <p
-                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                        >
-                            Total items
-                        </p>
-                        <p
-                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
-                        >
-                            {schemaOverview.totalItems}
-                        </p>
-                    </Surface>
-                    <Surface tone="subtle" class="p-4">
-                        <p
-                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                        >
-                            Paid schemas
-                        </p>
-                        <p
-                            class="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-50"
-                        >
-                            {schemaOverview.paidSchemas}
-                        </p>
-                    </Surface>
+                <div
+                    class="mt-3 flex flex-wrap gap-5 border-t border-slate-200 pt-3 dark:border-slate-700"
+                >
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-lg font-semibold text-slate-900 dark:text-slate-50">{schemaOverview.totalSchemas}</span>
+                        <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">schemas</span>
+                    </div>
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-lg font-semibold text-slate-900 dark:text-slate-50">{schemaOverview.schemasWithContent}</span>
+                        <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">with content</span>
+                    </div>
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-lg font-semibold text-slate-900 dark:text-slate-50">{schemaOverview.totalItems}</span>
+                        <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">items</span>
+                    </div>
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-lg font-semibold text-slate-900 dark:text-slate-50">{schemaOverview.paidSchemas}</span>
+                        <span class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">paid</span>
+                    </div>
                 </div>
             </Surface>
 
             <Surface class="overflow-hidden p-0">
                 <div
-                    class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30"
+                    class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30"
                 >
                     <p
                         class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
                     >
                         Recently active schemas
                     </p>
-                    <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        Jump into the models with the most recent content
-                        activity.
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Jump into models with recent activity.
                     </p>
                 </div>
 
@@ -1742,10 +1711,10 @@
         {#if selectedType}
             {@const previewLines = resolveSchemaPreviewLines(selectedType)}
             <Surface
-                class="flex flex-col overflow-hidden p-0 min-[1500px]:h-full"
+                class="flex flex-col overflow-hidden p-0 min-[1400px]:h-full"
             >
                 <div
-                    class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/30"
+                    class="border-b border-slate-200/80 bg-slate-50/80 px-3 py-3 dark:border-slate-700 dark:bg-slate-900/30"
                 >
                     <p
                         class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
@@ -1764,9 +1733,9 @@
                     </p>
                 </div>
 
-                <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <div class="flex-1 overflow-y-auto p-3 space-y-3">
                     <p
-                        class="text-sm leading-6 text-slate-600 dark:text-slate-300"
+                        class="text-xs leading-5 text-slate-600 dark:text-slate-300"
                     >
                         {selectedType.description ||
                             "Structured content model for supervised AI and operator workflows."}
@@ -1813,42 +1782,26 @@
                         </div>
                     {/if}
 
-                    <div class="grid gap-3">
-                        <Surface tone="subtle" class="p-4">
-                            <p
-                                class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                            >
-                                Activity
-                            </p>
-                            <p
-                                class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50"
-                            >
-                                {selectedType.stats?.lastItemUpdatedAt
-                                    ? formatRelativeDate(
-                                          selectedType.stats.lastItemUpdatedAt,
-                                      )
-                                    : "No items yet"}
-                            </p>
-                        </Surface>
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Activity</span>
+                        <span class="text-xs font-semibold text-slate-900 dark:text-slate-50">
+                            {selectedType.stats?.lastItemUpdatedAt
+                                ? formatRelativeDate(
+                                      selectedType.stats.lastItemUpdatedAt,
+                                  )
+                                : "No items yet"}
+                        </span>
                     </div>
 
-                    <Surface tone="subtle" class="p-4">
-                        <div class="flex items-center justify-between gap-3">
-                            <p
-                                class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                            >
-                                Structure
-                            </p>
-                            <span
-                                class="text-[0.72rem] text-slate-500 dark:text-slate-400"
-                            >
-                                {resolveSchemaSummary(selectedType)}
-                            </span>
-                        </div>
-                        <div class="mt-3 space-y-1.5">
+                    <details class="rounded-xl border border-slate-200/80 dark:border-slate-700" open>
+                        <summary class="cursor-pointer px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 select-none flex items-center justify-between gap-2">
+                            <span>Structure</span>
+                            <span class="text-[0.65rem] normal-case tracking-normal font-normal">{resolveSchemaSummary(selectedType)}</span>
+                        </summary>
+                        <div class="px-3 pb-3 space-y-1">
                             {#each previewLines as line}
                                 <div
-                                    class="flex items-center gap-1.5 text-[0.72rem]"
+                                    class="flex items-center gap-1.5 text-[0.68rem]"
                                     style={`padding-left: ${line.depth * 0.75}rem`}
                                 >
                                     <span
@@ -1865,7 +1818,7 @@
                                     {#if line.typeLabel}
                                         <Badge
                                             variant="muted"
-                                            class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide"
+                                            class="px-1 py-0 text-[0.5rem] uppercase tracking-wide"
                                         >
                                             {line.typeLabel}
                                         </Badge>
@@ -1873,7 +1826,7 @@
                                     {#if line.required}
                                         <Badge
                                             variant="info"
-                                            class="px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wide"
+                                            class="px-1 py-0 text-[0.5rem] uppercase tracking-wide"
                                         >
                                             req
                                         </Badge>
@@ -1881,16 +1834,14 @@
                                 </div>
                             {/each}
                         </div>
-                    </Surface>
+                    </details>
 
                     {#if selectedTypeStatusSummary.length > 0}
-                        <Surface tone="subtle" class="p-4">
-                            <p
-                                class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                            >
+                        <details class="rounded-xl border border-slate-200/80 dark:border-slate-700">
+                            <summary class="cursor-pointer px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 select-none">
                                 Status mix
-                            </p>
-                            <div class="mt-3 flex flex-wrap gap-1.5">
+                            </summary>
+                            <div class="px-3 pb-2 flex flex-wrap gap-1.5">
                                 {#each selectedTypeStatusSummary as summary}
                                     <Badge variant="muted">
                                         {formatStatusLabel(summary.status)}
@@ -1898,7 +1849,7 @@
                                     </Badge>
                                 {/each}
                             </div>
-                        </Surface>
+                        </details>
                     {/if}
                 </div>
             </Surface>
@@ -2018,7 +1969,7 @@
         {:else}
             <div class="flex h-full flex-col overflow-hidden">
                 <div
-                    class="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/30"
+                    class="border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30"
                 >
                     <div class="flex items-start justify-between gap-4">
                         <div class="min-w-0">
@@ -2032,7 +1983,7 @@
                                     <Icon src={ChevronLeft} class="h-5 w-5" />
                                 </button>
                                 <h3
-                                    class="truncate text-lg font-semibold text-slate-900 dark:text-slate-50"
+                                    class="truncate text-base font-semibold text-slate-900 dark:text-slate-50"
                                 >
                                     {resolveItemLabel(selectedItem)}
                                 </h3>
@@ -2059,7 +2010,7 @@
                                 {resolveItemSummary(selectedItem)}
                             </p>
                             <div
-                                class="mt-3 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400"
+                                class="mt-1.5 flex flex-wrap items-center gap-2 text-[0.68rem] text-slate-500 dark:text-slate-400"
                             >
                                 <span class="font-mono">#{selectedItem.id}</span
                                 >
@@ -2084,86 +2035,27 @@
                     </div>
                 </div>
 
-                <div class="flex-1 overflow-y-auto p-5 space-y-4">
-                    <Surface tone="muted" class="p-4">
-                        <p
-                            class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                        >
-                            Overview
-                        </p>
-                        <dl class="mt-3 grid gap-3 text-sm">
+                <div class="flex-1 overflow-y-auto p-4 space-y-3">
+                    <div class="rounded-xl border border-slate-200/80 px-3 py-2.5 dark:border-slate-700">
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                             <div>
-                                <dt
-                                    class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                                >
-                                    Primary label
-                                </dt>
-                                <dd
-                                    class="mt-1 text-slate-900 dark:text-slate-50"
-                                >
-                                    {resolveItemLabel(selectedItem)}
-                                </dd>
+                                <span class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</span>
+                                <p class="mt-0.5 text-slate-900 dark:text-slate-50">{formatStatusLabel(selectedItem.status)}</p>
                             </div>
                             <div>
-                                <dt
-                                    class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                                >
-                                    Summary
-                                </dt>
-                                <dd
-                                    class="mt-1 text-slate-700 dark:text-slate-300"
-                                >
-                                    {resolveItemSummary(selectedItem)}
-                                </dd>
+                                <span class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Version</span>
+                                <p class="mt-0.5 text-slate-900 dark:text-slate-50">v{selectedItem.version}</p>
                             </div>
-                            <div
-                                class="grid grid-cols-2 gap-3 text-xs text-slate-500 dark:text-slate-400"
-                            >
-                                <div>
-                                    <dt class="font-semibold uppercase">
-                                        Status
-                                    </dt>
-                                    <dd
-                                        class="mt-1 text-sm text-slate-900 dark:text-slate-50"
-                                    >
-                                        {formatStatusLabel(selectedItem.status)}
-                                    </dd>
-                                </div>
-                                <div>
-                                    <dt class="font-semibold uppercase">
-                                        Version
-                                    </dt>
-                                    <dd
-                                        class="mt-1 text-sm text-slate-900 dark:text-slate-50"
-                                    >
-                                        v{selectedItem.version}
-                                    </dd>
-                                </div>
-                                <div>
-                                    <dt class="font-semibold uppercase">
-                                        Published
-                                    </dt>
-                                    <dd
-                                        class="mt-1 text-sm text-slate-900 dark:text-slate-50"
-                                    >
-                                        {selectedItem.publishedVersion === null
-                                            ? "Not published"
-                                            : `v${selectedItem.publishedVersion}`}
-                                    </dd>
-                                </div>
-                                <div>
-                                    <dt class="font-semibold uppercase">
-                                        Working copy
-                                    </dt>
-                                    <dd
-                                        class="mt-1 text-sm text-slate-900 dark:text-slate-50"
-                                    >
-                                        v{selectedItem.workingCopyVersion}
-                                    </dd>
-                                </div>
+                            <div>
+                                <span class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Published</span>
+                                <p class="mt-0.5 text-slate-900 dark:text-slate-50">{selectedItem.publishedVersion === null ? "—" : `v${selectedItem.publishedVersion}`}</p>
                             </div>
-                        </dl>
-                    </Surface>
+                            <div>
+                                <span class="font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Working</span>
+                                <p class="mt-0.5 text-slate-900 dark:text-slate-50">v{selectedItem.workingCopyVersion}</p>
+                            </div>
+                        </div>
+                    </div>
 
                     <Surface tone="subtle" class="p-4">
                         <div
@@ -2663,16 +2555,16 @@
         {@render SchemaLanding()}
     {:else}
         <div
-            class="grid flex-1 gap-6 overflow-hidden min-[1500px]:grid-cols-[15rem_minmax(0,1fr)] min-[1850px]:grid-cols-[15rem_minmax(0,1fr)_24rem]"
+            class="grid flex-1 gap-4 overflow-hidden min-[1400px]:grid-cols-[14rem_minmax(0,1fr)] min-[1700px]:grid-cols-[14rem_minmax(0,1fr)_26rem]"
         >
-            <aside class="hidden min-h-0 min-[1500px]:block">
+            <aside class="hidden min-h-0 min-[1400px]:block">
                 <div class="h-full">
                     {@render CurrentSchemaRail()}
                 </div>
             </aside>
 
             <section class="min-h-0 min-w-0 flex flex-col gap-4">
-                <div class="min-[1500px]:hidden">
+                <div class="min-[1400px]:hidden">
                     {@render CurrentSchemaSummary()}
                 </div>
 
