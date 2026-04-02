@@ -52,82 +52,42 @@
         notice?: string;
     };
 
+    type NavGroup = {
+        label: string;
+        items: NavItem[];
+    };
+
     type DomainRefreshEventDetail = {
         selectDomainId?: string;
     };
 
     const coreNavItems: NavItem[] = [
+        { name: "Dashboard", href: "/ui", icon: Home, match: (p: string) => p === "/ui" || p === "/ui/" },
+        { name: "Audit Logs", href: "/ui/audit-logs", icon: ClipboardDocumentList, match: (p: string) => p.includes("/audit-logs") },
+        { name: "Content Browser", href: "/ui/content", icon: Folder, match: (p: string) => p.includes("/content") },
+        { name: "Assets", href: "/ui/assets", icon: ArchiveBox, match: (p: string) => p.includes("/assets") },
+        { name: "Schema Manager", href: "/ui/schema", icon: CircleStack, match: (p: string) => p.includes("/schema") },
+        { name: "Forms", href: "/ui/forms", icon: ClipboardDocumentList, match: (p: string) => p.includes("/forms") },
+        { name: "Agents", href: "/ui/agents", icon: CpuChip, match: (p: string) => p.includes("/agents") },
+        { name: "API Keys", href: "/ui/keys", icon: Key, match: (p: string) => p.includes("/keys") },
+        { name: "Approval Queue", href: "/ui/approvals", icon: CheckCircle, match: (p: string) => p.includes("/approvals") },
+        { name: "Jobs", href: "/ui/jobs", icon: CircleStack, match: (p: string) => p.includes("/jobs") },
+        { name: "Payments", href: "/ui/payments", icon: CreditCard, match: (p: string) => p.includes("/payments") },
+        { name: "L402 Readiness", href: "/ui/l402-readiness", icon: CheckBadge, match: (p: string) => p.includes("/l402-readiness") },
+    ];
+
+    const navGroups: NavGroup[] = [
         {
-            name: "Dashboard",
-            href: "/ui",
-            icon: Home,
-            match: (p: string) => p === "/ui" || p === "/ui/",
+            label: "Overview",
+            items: coreNavItems.filter((i) => ["/ui", "/ui/audit-logs"].some((h) => i.href === h)),
         },
         {
-            name: "Audit Logs",
-            href: "/ui/audit-logs",
-            icon: ClipboardDocumentList,
-            match: (p: string) => p.includes("/audit-logs"),
+            label: "Content",
+            items: coreNavItems.filter((i) => ["/ui/content", "/ui/assets", "/ui/schema", "/ui/forms"].includes(i.href)),
         },
         {
-            name: "Content Browser",
-            href: "/ui/content",
-            icon: Folder,
-            match: (p: string) => p.includes("/content"),
-        },
-        {
-            name: "Assets",
-            href: "/ui/assets",
-            icon: ArchiveBox,
-            match: (p: string) => p.includes("/assets"),
-        },
-        {
-            name: "Schema Manager",
-            href: "/ui/schema",
-            icon: CircleStack,
-            match: (p: string) => p.includes("/schema"),
-        },
-        {
-            name: "Forms",
-            href: "/ui/forms",
-            icon: ClipboardDocumentList,
-            match: (p: string) => p.includes("/forms"),
-        },
-        {
-            name: "Agents",
-            href: "/ui/agents",
-            icon: CpuChip,
-            match: (p: string) => p.includes("/agents"),
-        },
-        {
-            name: "API Keys",
-            href: "/ui/keys",
-            icon: Key,
-            match: (p: string) => p.includes("/keys"),
-        },
-        {
-            name: "Approval Queue",
-            href: "/ui/approvals",
-            icon: CheckCircle,
-            match: (p: string) => p.includes("/approvals"),
-        },
-        {
-            name: "Jobs",
-            href: "/ui/jobs",
-            icon: CircleStack,
-            match: (p: string) => p.includes("/jobs"),
-        },
-        {
-            name: "Payments",
-            href: "/ui/payments",
-            icon: CreditCard,
-            match: (p: string) => p.includes("/payments"),
-        },
-        {
-            name: "L402 Readiness",
-            href: "/ui/l402-readiness",
-            icon: CheckBadge,
-            match: (p: string) => p.includes("/l402-readiness"),
+            label: "Operations",
+            items: coreNavItems.filter((i) => ["/ui/agents", "/ui/keys", "/ui/approvals", "/ui/jobs", "/ui/payments", "/ui/l402-readiness"].includes(i.href)),
         },
     ];
 
@@ -396,86 +356,70 @@
             </div>
 
             <div
-                class="wc-shell-scroll flex flex-1 flex-col overflow-y-auto px-3 py-4"
+                class="wc-shell-scroll flex flex-1 flex-col overflow-y-auto px-3 py-3"
             >
-                <div class="flex-1 space-y-5">
-                    <section>
-                        {#if !isSidebarCollapsed}
-                            <p
-                                class="px-2 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400"
-                            >
-                                Core Control Plane
-                            </p>
-                        {/if}
-                        <nav
-                            class={`space-y-1 ${isSidebarCollapsed ? "" : "mt-2.5"}`}
-                        >
-                            {#each coreNavItems as item}
-                                {@const isActive = item.match(currentPath)}
-                                <a
-                                    href={item.href}
-                                    class={`group flex items-center rounded-xl text-sm font-medium transition-colors ${isSidebarCollapsed ? "mx-auto h-11 w-11 justify-center" : "gap-3 px-3 py-2.5"} ${navLinkClass(isActive)}`}
-                                    onclick={handleNavClick}
-                                    title={item.name}
-                                    aria-label={item.name}
+                <div class="flex-1 space-y-3">
+                    {#each navGroups as group, groupIdx}
+                        <section class={groupIdx > 0 && !isSidebarCollapsed ? "border-t border-slate-200/60 pt-3 dark:border-slate-800/60" : ""}>
+                            {#if !isSidebarCollapsed}
+                                <p
+                                    class="px-2 pb-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500"
                                 >
-                                    <Icon
-                                        src={item.icon}
-                                        class={`shrink-0 ${isSidebarCollapsed ? "h-5 w-5" : "h-[1.05rem] w-[1.05rem]"} ${navIconClass(isActive)}`}
-                                    />
-                                    {#if !isSidebarCollapsed}
-                                        <span class="truncate">{item.name}</span
-                                        >
-                                    {/if}
-                                </a>
-                            {/each}
-                        </nav>
-                    </section>
+                                    {group.label}
+                                </p>
+                            {:else if groupIdx > 0}
+                                <div class="mx-auto mb-2 h-px w-6 bg-slate-200 dark:bg-slate-800"></div>
+                            {/if}
+                            <nav class="space-y-0.5">
+                                {#each group.items as item}
+                                    {@const isActive = item.match(currentPath)}
+                                    <a
+                                        href={item.href}
+                                        class={`group flex items-center rounded-xl text-sm font-medium transition-colors ${isSidebarCollapsed ? "mx-auto h-10 w-10 justify-center" : "gap-3 px-3 py-2"} ${navLinkClass(isActive)}`}
+                                        onclick={handleNavClick}
+                                        title={item.name}
+                                        aria-label={item.name}
+                                    >
+                                        <Icon
+                                            src={item.icon}
+                                            class={`shrink-0 ${isSidebarCollapsed ? "h-5 w-5" : "h-[1.05rem] w-[1.05rem]"} ${navIconClass(isActive)}`}
+                                        />
+                                        {#if !isSidebarCollapsed}
+                                            <span class="truncate">{item.name}</span>
+                                        {/if}
+                                    </a>
+                                {/each}
+                            </nav>
+                        </section>
+                    {/each}
 
                     <div class="mt-auto">
                         {#if shouldShowExperimentalNav}
                             <section
-                                class={`${isSidebarCollapsed ? "border-t border-slate-200 pt-4 dark:border-slate-800" : "rounded-2xl border border-amber-200/70 bg-amber-50/60 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20"}`}
+                                class={`${isSidebarCollapsed ? "border-t border-slate-200 pt-3 dark:border-slate-800" : "border-t border-amber-200/50 pt-3 dark:border-amber-900/30"}`}
                             >
                                 {#if !isSidebarCollapsed}
-                                    <div
-                                        class="flex items-center justify-between gap-3"
-                                    >
-                                        <p
-                                            class="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-amber-700 dark:text-amber-300"
-                                        >
-                                            Experimental
+                                    <div class="flex items-center justify-between gap-2 px-2 pb-1.5">
+                                        <p class="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-amber-600 dark:text-amber-400">
+                                            Lab
                                         </p>
                                         {#if !activeExperimentalItem}
                                             <button
                                                 type="button"
-                                                class="text-xs font-medium text-slate-500 transition-colors hover:text-amber-700 dark:text-slate-400 dark:hover:text-amber-300"
-                                                onclick={() =>
-                                                    setExperimentalVisibility(
-                                                        false,
-                                                    )}
+                                                class="text-[0.62rem] font-medium text-slate-400 transition-colors hover:text-amber-700 dark:text-slate-500 dark:hover:text-amber-300"
+                                                onclick={() => setExperimentalVisibility(false)}
                                             >
                                                 Hide
                                             </button>
                                         {/if}
                                     </div>
-                                    <p
-                                        class="mt-2.5 text-sm leading-6 text-slate-600 dark:text-slate-400"
-                                    >
-                                        These pages remain available for
-                                        exploration, but they sit outside the
-                                        default supported workflow.
-                                    </p>
                                 {/if}
-                                <nav
-                                    class={`${isSidebarCollapsed ? "space-y-1" : "mt-3 space-y-1"}`}
-                                >
+                                <nav class="space-y-0.5">
                                     {#each experimentalNavItems as item}
-                                        {@const isActive =
-                                            item.match(currentPath)}
+                                        {@const isActive = item.match(currentPath)}
                                         <a
                                             href={item.href}
-                                            class={`group flex items-center rounded-xl text-sm font-medium transition-colors ${isSidebarCollapsed ? "mx-auto h-11 w-11 justify-center" : "gap-3 px-3 py-2.5"} ${navLinkClass(isActive)}`}
+                                            class={`group flex items-center rounded-xl text-sm font-medium transition-colors ${isSidebarCollapsed ? "mx-auto h-10 w-10 justify-center" : "gap-3 px-3 py-2"} ${navLinkClass(isActive)}`}
                                             onclick={handleNavClick}
                                             title={item.name}
                                             aria-label={item.name}
@@ -485,66 +429,39 @@
                                                 class={`shrink-0 ${isSidebarCollapsed ? "h-5 w-5" : "h-[1.05rem] w-[1.05rem]"} ${navIconClass(isActive, true)}`}
                                             />
                                             {#if !isSidebarCollapsed}
-                                                <span class="truncate"
-                                                    >{item.name}</span
-                                                >
+                                                <span class="truncate">{item.name}</span>
                                             {/if}
                                         </a>
                                     {/each}
                                 </nav>
                             </section>
                         {:else if !isSidebarCollapsed}
-                            <section
-                                class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900/45"
+                            <button
+                                type="button"
+                                class="flex w-full items-center gap-2 border-t border-slate-200/60 px-2 pt-3 text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-slate-400 transition-colors hover:text-slate-600 dark:border-slate-800/60 dark:text-slate-500 dark:hover:text-slate-300"
+                                onclick={() => setExperimentalVisibility(true)}
                             >
-                                <p
-                                    class="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400"
-                                >
-                                    Experimental Hidden
-                                </p>
-                                <p
-                                    class="mt-2.5 text-sm leading-6 text-slate-500 dark:text-slate-400"
-                                >
-                                    Incubator pages are hidden by default so
-                                    navigation stays focused on supported
-                                    workflows.
-                                </p>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    class="mt-4 w-full justify-center"
-                                    onclick={() =>
-                                        setExperimentalVisibility(true)}
-                                >
-                                    Show experimental pages
-                                </Button>
-                            </section>
+                                <svg class="h-3 w-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M10 4v12"></path>
+                                    <path d="M4 10h12"></path>
+                                </svg>
+                                Show lab
+                            </button>
                         {:else}
-                            <section
-                                class="border-t border-slate-200 pt-4 dark:border-slate-800"
-                            >
+                            <div class="border-t border-slate-200 pt-3 dark:border-slate-800">
                                 <button
                                     type="button"
-                                    class="mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900/70 dark:hover:text-white"
-                                    onclick={() =>
-                                        setExperimentalVisibility(true)}
-                                    title="Show experimental pages"
-                                    aria-label="Show experimental pages"
+                                    class="mx-auto flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-500 dark:hover:bg-slate-900/70 dark:hover:text-white"
+                                    onclick={() => setExperimentalVisibility(true)}
+                                    title="Show lab pages"
+                                    aria-label="Show lab pages"
                                 >
-                                    <svg
-                                        class="h-5 w-5"
-                                        viewBox="0 0 20 20"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="1.8"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                    >
+                                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M10 4v12"></path>
                                         <path d="M4 10h12"></path>
                                     </svg>
                                 </button>
-                            </section>
+                            </div>
                         {/if}
                     </div>
                 </div>
