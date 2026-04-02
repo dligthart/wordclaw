@@ -1,6 +1,6 @@
 <script lang="ts">
     import { fetchApi, ApiError } from "$lib/api";
-    import { onMount } from "svelte";
+    import { onMount, tick } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { deepParseJson, formatJson } from "$lib/utils";
     import { openDeferredTab } from "$lib/deferred-tab";
@@ -2264,7 +2264,7 @@
                         </div>
                     </Surface>
 
-                    <Surface tone="subtle" class="p-4">
+                    <Surface id="compare-version-section" tone="subtle" class="p-4">
                         <div
                             class="flex items-start justify-between gap-3 flex-wrap"
                         >
@@ -2614,6 +2614,9 @@
                                                     onclick={() => {
                                                         selectedVersionForDiff =
                                                             version.version;
+                                                        tick().then(() => {
+                                                            document.getElementById('compare-version-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                        });
                                                     }}
                                                 >
                                                     Compare
