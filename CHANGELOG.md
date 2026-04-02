@@ -1,3 +1,10 @@
+## [1.50.1](https://github.com/dligthart/wordclaw/compare/v1.50.0...v1.50.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* serve supervisor ui assets correctly ([fb40c51](https://github.com/dligthart/wordclaw/commit/fb40c51fd76eac6497e7be9577aefda2b873000e))
+
 # [1.50.0](https://github.com/dligthart/wordclaw/compare/v1.49.0...v1.50.0) (2026-04-02)
 
 
