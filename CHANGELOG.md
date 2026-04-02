@@ -1,3 +1,10 @@
+## [1.50.4](https://github.com/dligthart/wordclaw/compare/v1.50.3...v1.50.4) (2026-04-02)
+
+
+### Bug Fixes
+
+* compare button now scrolls to diff view in content inspector ([861284d](https://github.com/dligthart/wordclaw/commit/861284d9b9e66923e1611b7550e2e8dbb1b6bce9))
+
 ## [1.50.3](https://github.com/dligthart/wordclaw/compare/v1.50.2...v1.50.3) (2026-04-02)
 
 
