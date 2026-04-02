@@ -1,5 +1,6 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
 import cors from '@fastify/cors';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
@@ -55,6 +56,33 @@ function parseCorsAllowedOrigins(raw: string | undefined): string[] {
                 .filter(Boolean)
         )
     );
+}
+
+function resolveUiBuildAssetPath(
+    uiBuildRoot: string,
+    rawPath: string,
+): string | null {
+    const relativePath = rawPath.replace(/^\/ui\//, '');
+    if (!relativePath || relativePath.endsWith('/')) {
+        return null;
+    }
+
+    const decodedPath = decodeURIComponent(relativePath);
+    const normalizedPath = path.posix.normalize(decodedPath).replace(/^(\.\.(\/|\\|$))+/, '');
+    if (!normalizedPath || normalizedPath.startsWith('..')) {
+        return null;
+    }
+
+    const absolutePath = path.join(uiBuildRoot, normalizedPath);
+    if (!absolutePath.startsWith(path.resolve(uiBuildRoot))) {
+        return null;
+    }
+
+    try {
+        return fs.statSync(absolutePath).isFile() ? normalizedPath : null;
+    } catch {
+        return null;
+    }
 }
 
 function addRequestContextToErrorPayload(payload: unknown, requestId: string): unknown {
@@ -521,13 +549,21 @@ export async function buildServer(): Promise<FastifyInstance> {
     server.register(l402ReadinessRoutes, { prefix: '/api/supervisors/l402-readiness' });
 
     // Serve SvelteKit UI
+    const uiBuildRoot = path.join(__dirname, '../ui/build');
+
     server.register(fastifyStatic, {
-        root: path.join(__dirname, '../ui/build'),
+        root: uiBuildRoot,
         prefix: '/ui/',
         wildcard: false
     });
 
     server.get('/ui/*', (request, reply) => {
+        const requestPath = (request.raw.url ?? '/ui/').split('?')[0] ?? '/ui/';
+        const assetPath = resolveUiBuildAssetPath(uiBuildRoot, requestPath);
+        if (assetPath) {
+            return reply.sendFile(assetPath);
+        }
+
         return reply.sendFile('index.html');
     });
 

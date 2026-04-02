@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { buildServer } from './server.js';
 
@@ -253,6 +255,50 @@ describe('buildServer', () => {
 
             expect(requests.slice(0, 4).every((response) => response.statusCode === 200)).toBe(true);
             expect(requests[4].statusCode).toBe(429);
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('serves built supervisor assets instead of falling back to index.html', async () => {
+        process.env.NODE_ENV = 'development';
+
+        const assetDir = path.join(process.cwd(), 'ui/build/_app/test-assets');
+        const assetPath = path.join(assetDir, 'server-test.js');
+        fs.mkdirSync(assetDir, { recursive: true });
+        fs.writeFileSync(assetPath, 'console.log("server test asset");\n', 'utf8');
+
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/ui/_app/test-assets/server-test.js',
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.headers['content-type']).toContain('application/javascript');
+            expect(response.body).toContain('server test asset');
+        } finally {
+            await app.close();
+            fs.rmSync(assetPath, { force: true });
+        }
+    });
+
+    it('falls back to index.html for supervisor app routes', async () => {
+        process.env.NODE_ENV = 'development';
+
+        const app = await buildServer();
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/ui/approvals',
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.headers['content-type']).toContain('text/html');
+            expect(response.body).toContain('<!doctype html>');
         } finally {
             await app.close();
         }
