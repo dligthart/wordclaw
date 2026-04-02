@@ -1,3 +1,10 @@
+# [1.49.0](https://github.com/dligthart/wordclaw/compare/v1.48.0...v1.49.0) (2026-04-02)
+
+
+### Features
+
+* add agent-guided approval revisions ([a8a29cf](https://github.com/dligthart/wordclaw/commit/a8a29cfd5c0f6732b42b37079cb028805fd07950))
+
 # [1.48.0](https://github.com/dligthart/wordclaw/compare/v1.47.2...v1.48.0) (2026-04-02)
 
 
