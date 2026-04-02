@@ -1,3 +1,10 @@
+# [1.48.0](https://github.com/dligthart/wordclaw/compare/v1.47.2...v1.48.0) (2026-04-02)
+
+
+### Features
+
+* refine draft generation discovery and review flow ([627c203](https://github.com/dligthart/wordclaw/commit/627c203c5bd0ed4cd9059dddd8267bf430899687))
+
 ## [1.47.2](https://github.com/dligthart/wordclaw/compare/v1.47.1...v1.47.2) (2026-04-01)
 
 
