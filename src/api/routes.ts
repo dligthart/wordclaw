@@ -393,12 +393,36 @@ const CapabilityVectorRagSchema = Type.Object({
     mcpTool: Type.String(),
     note: Type.String()
 });
+const DraftGenerationProviderManagementSchema = Type.Object({
+    restPaths: Type.Array(Type.String()),
+    mcpTools: Type.Array(Type.String()),
+    note: Type.String(),
+});
+const DraftGenerationWorkforceRegistrySchema = Type.Object({
+    supported: Type.Boolean(),
+    restPaths: Type.Array(Type.String()),
+    mcpTools: Type.Array(Type.String()),
+    formField: Type.String(),
+    note: Type.String(),
+});
+const DraftGenerationReviewWorkflowSchema = Type.Object({
+    supported: Type.Boolean(),
+    queueHandoffRequiresTransition: Type.Boolean(),
+    formField: Type.String(),
+    decisionWebhookEvents: Type.Array(Type.String()),
+    note: Type.String(),
+});
 const CapabilityDraftGenerationSchema = Type.Object({
     defaultProvider: Type.String(),
     supportedProviders: Type.Array(Type.String()),
     provisionedProviders: Type.Array(Type.String()),
     provisioningMode: Type.String(),
+    supportedInputModalities: Type.Array(Type.String()),
+    supportedAssetKinds: Type.Array(Type.String()),
     note: Type.String(),
+    providerManagement: DraftGenerationProviderManagementSchema,
+    workforceRegistry: DraftGenerationWorkforceRegistrySchema,
+    reviewWorkflow: DraftGenerationReviewWorkflowSchema,
     providers: Type.Object({
         deterministic: Type.Object({
             enabled: Type.Boolean(),
@@ -480,7 +504,12 @@ const DeploymentDraftGenerationCheckSchema = Type.Object({
     supportedProviders: Type.Array(Type.String()),
     provisionedProviders: Type.Array(Type.String()),
     provisioningMode: Type.String(),
+    supportedInputModalities: Type.Array(Type.String()),
+    supportedAssetKinds: Type.Array(Type.String()),
     note: Type.String(),
+    providerManagement: DraftGenerationProviderManagementSchema,
+    workforceRegistry: DraftGenerationWorkforceRegistrySchema,
+    reviewWorkflow: DraftGenerationReviewWorkflowSchema,
     providers: Type.Object({
         deterministic: Type.Object({
             status: Type.String(),

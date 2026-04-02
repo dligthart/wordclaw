@@ -1063,7 +1063,9 @@
                                 <p class="max-w-3xl text-sm text-slate-500 dark:text-slate-400">
                                     Route accepted submissions into a background draft job and
                                     bind the form to a tenant workforce agent or a direct
-                                    provider/model override.
+                                    provider/model override. Set a post-generation workflow
+                                    transition if the generated draft should enter the approval
+                                    queue.
                                 </p>
                             </div>
                             <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
@@ -1205,6 +1207,12 @@
                                     />
                                 </label>
                                 <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                    Leave the transition blank to keep generated items as plain
+                                    drafts. Set it to a valid review transition when generated
+                                    drafts should appear in the approval queue and later emit
+                                    review-approved or review-rejected form webhook follow-ups.
+                                </div>
+                                <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400 md:col-span-2">
                                     Asset and asset-list fields are supported here, but draft jobs
                                     currently forward image assets only. Supported images are
                                     inlined for provisioned OpenAI, Claude, and Gemini agents.

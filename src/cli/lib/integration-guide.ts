@@ -20,6 +20,30 @@ type WebhookLike = {
     createdAt: string;
 };
 
+type AiProviderLike = {
+    id: number;
+    provider: 'openai' | 'anthropic' | 'gemini';
+    configured: boolean;
+    maskedApiKey: string;
+    defaultModel: string | null;
+    createdAt: string;
+    updatedAt: string;
+};
+
+type WorkforceAgentLike = {
+    id: number;
+    name: string;
+    slug: string;
+    purpose: string;
+    provider: {
+        type: string;
+        model?: string;
+    };
+    active: boolean;
+    createdAt: string;
+    updatedAt: string;
+};
+
 export type IntegrationGuideStep = {
     id: string;
     title: string;
@@ -66,6 +90,31 @@ export type IntegrationGuide = {
             active: boolean;
         }>;
     };
+    aiProviders: {
+        accessible: boolean;
+        total: number;
+        configuredProviders: string[];
+        recentProviders: Array<{
+            id: number;
+            provider: string;
+            maskedApiKey: string;
+            defaultModel: string | null;
+        }>;
+    };
+    workforceAgents: {
+        accessible: boolean;
+        total: number;
+        active: number;
+        inactive: number;
+        recentAgents: Array<{
+            id: number;
+            name: string;
+            slug: string;
+            providerType: string;
+            model: string | null;
+            active: boolean;
+        }>;
+    };
     warnings?: string[];
     steps: IntegrationGuideStep[];
 };
@@ -88,6 +137,8 @@ export function buildIntegrationGuide(options: {
     currentActor?: CurrentActorSnapshot | null;
     apiKeys?: ApiKeyLike[] | null;
     webhooks?: WebhookLike[] | null;
+    aiProviders?: AiProviderLike[] | null;
+    workforceAgents?: WorkforceAgentLike[] | null;
     baseCommand?: string;
 }): IntegrationGuide {
     const baseCommand = options.baseCommand ?? 'node dist/cli/index.js';
@@ -131,6 +182,8 @@ export function buildIntegrationGuide(options: {
                 : 'ready';
     const apiKeys = options.apiKeys ?? null;
     const webhooks = options.webhooks ?? null;
+    const aiProviders = options.aiProviders ?? null;
+    const workforceAgents = options.workforceAgents ?? null;
     const canMutate = actorReadinessStatus !== 'blocked';
 
     return {
@@ -170,6 +223,31 @@ export function buildIntegrationGuide(options: {
                 active: hook.active,
             })),
         },
+        aiProviders: {
+            accessible: Array.isArray(aiProviders),
+            total: aiProviders?.length ?? 0,
+            configuredProviders: (aiProviders ?? []).map((config) => config.provider),
+            recentProviders: (aiProviders ?? []).slice(0, 3).map((config) => ({
+                id: config.id,
+                provider: config.provider,
+                maskedApiKey: config.maskedApiKey,
+                defaultModel: config.defaultModel,
+            })),
+        },
+        workforceAgents: {
+            accessible: Array.isArray(workforceAgents),
+            total: workforceAgents?.length ?? 0,
+            active: workforceAgents?.filter((agent) => agent.active).length ?? 0,
+            inactive: workforceAgents?.filter((agent) => !agent.active).length ?? 0,
+            recentAgents: (workforceAgents ?? []).slice(0, 3).map((agent) => ({
+                id: agent.id,
+                name: agent.name,
+                slug: agent.slug,
+                providerType: agent.provider.type,
+                model: typeof agent.provider.model === 'string' ? agent.provider.model : null,
+                active: agent.active,
+            })),
+        },
         steps: [
             {
                 id: 'inspect-api-keys',
@@ -190,6 +268,48 @@ export function buildIntegrationGuide(options: {
                 command: `${baseCommand} rest request POST /auth/keys --body-json '{\"name\":\"Integration Key\",\"scopes\":[\"content:read\",\"content:write\"]}'`,
                 purpose: 'Provision a new API key for an external agent or integration.',
                 notes: ['Adjust scopes if the integration only needs read access or audit access.'],
+            },
+            {
+                id: 'inspect-ai-providers',
+                title: 'Inspect tenant AI providers',
+                status: Array.isArray(aiProviders) ? 'completed' : 'blocked',
+                command: `${baseCommand} rest request GET /ai/providers`,
+                purpose: 'Review which tenant-scoped OpenAI, Anthropic, or Gemini credentials are already configured for provider-backed draft generation.',
+                notes: Array.isArray(aiProviders)
+                    ? [
+                        aiProviders.length > 0
+                            ? `Configured providers: ${aiProviders.map((config) => config.provider).join(', ')}.`
+                            : 'No external AI providers are configured for this tenant yet.',
+                    ]
+                    : ['AI provider inventory is unavailable until an authenticated actor with integration access is configured.'],
+            },
+            {
+                id: 'configure-ai-provider',
+                title: 'Configure a tenant AI provider',
+                status: canMutate ? 'ready' : 'blocked',
+                command: `${baseCommand} rest request PUT /ai/providers/openai --body-json '{\"apiKey\":\"replace-me\",\"defaultModel\":\"gpt-4.1\"}'`,
+                purpose: 'Store a tenant-scoped external AI credential for provider-backed draft-generation jobs.',
+                notes: ['Replace the provider segment and model to provision Anthropic or Gemini instead of OpenAI.'],
+            },
+            {
+                id: 'inspect-workforce-agents',
+                title: 'Inspect workforce agents',
+                status: Array.isArray(workforceAgents) ? 'completed' : 'blocked',
+                command: `${baseCommand} rest request GET /workforce/agents`,
+                purpose: 'Review reusable tenant-managed SOUL profiles and provider/model defaults before wiring forms or jobs.',
+                notes: Array.isArray(workforceAgents)
+                    ? [
+                        `${workforceAgents.filter((agent) => agent.active).length} active workforce agent(s), ${workforceAgents.filter((agent) => !agent.active).length} inactive.`,
+                    ]
+                    : ['Workforce registry inventory is unavailable until an authenticated actor with integration access is configured.'],
+            },
+            {
+                id: 'create-workforce-agent',
+                title: 'Create a workforce agent',
+                status: canMutate ? 'ready' : 'blocked',
+                command: `${baseCommand} rest request POST /workforce/agents --body-json '{\"name\":\"Proposal Writer\",\"slug\":\"proposal-writer\",\"purpose\":\"Draft software proposals from submitted briefs\",\"soul\":\"Write clear, commercially realistic software proposals.\",\"provider\":{\"type\":\"openai\",\"model\":\"gpt-4.1\"}}'`,
+                purpose: 'Provision a reusable workforce agent with a bounded SOUL and provider/model defaults for forms and background jobs.',
+                notes: ['Reference the resulting agent by id from form draft-generation config via workforceAgentId.'],
             },
             {
                 id: 'rotate-stale-key',

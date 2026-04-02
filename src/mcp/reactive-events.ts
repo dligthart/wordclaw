@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { ActorPrincipal } from '../services/actor-identity.js';
+import { hasAdministrativeScope, type ActorPrincipal } from '../services/actor-identity.js';
 import type { AuditEventPayload } from '../services/event-bus.js';
 
 export const WORDCLAW_EVENT_NOTIFICATION_METHOD = 'notifications/wordclaw/event';
@@ -26,6 +26,20 @@ const WEBHOOK_REACTIVE_EVENT_TOPICS = [
     'webhook.delete',
 ] as const;
 
+const AI_PROVIDER_CONFIG_REACTIVE_EVENT_TOPICS = [
+    'ai_provider_config.*',
+    'ai_provider_config.create',
+    'ai_provider_config.update',
+    'ai_provider_config.delete',
+] as const;
+
+const WORKFORCE_AGENT_REACTIVE_EVENT_TOPICS = [
+    'workforce_agent.*',
+    'workforce_agent.create',
+    'workforce_agent.update',
+    'workforce_agent.delete',
+] as const;
+
 export const SUPPORTED_REACTIVE_EVENT_TOPICS = [
     '*',
     'audit.*',
@@ -41,6 +55,8 @@ export const SUPPORTED_REACTIVE_EVENT_TOPICS = [
     ...CONTENT_TYPE_REACTIVE_EVENT_TOPICS,
     ...API_KEY_REACTIVE_EVENT_TOPICS,
     ...WEBHOOK_REACTIVE_EVENT_TOPICS,
+    ...AI_PROVIDER_CONFIG_REACTIVE_EVENT_TOPICS,
+    ...WORKFORCE_AGENT_REACTIVE_EVENT_TOPICS,
 ] as const;
 
 export type ReactiveEventTopic = typeof SUPPORTED_REACTIVE_EVENT_TOPICS[number];
@@ -96,7 +112,7 @@ export const SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES = [
     {
         id: 'integration-admin',
         title: 'Integration administration',
-        description: 'Watch API key and webhook changes for outbound integration setup.',
+        description: 'Watch API keys, outbound webhooks, tenant AI providers, and workforce-agent registry changes for integration setup.',
         topics: [
             'api_key.create',
             'api_key.update',
@@ -104,8 +120,14 @@ export const SUPPORTED_REACTIVE_SUBSCRIPTION_RECIPES = [
             'webhook.create',
             'webhook.update',
             'webhook.delete',
+            'ai_provider_config.create',
+            'ai_provider_config.update',
+            'ai_provider_config.delete',
+            'workforce_agent.create',
+            'workforce_agent.update',
+            'workforce_agent.delete',
         ],
-        requiredScopes: ['admin'],
+        requiredScopes: ['admin', 'tenant:admin'],
     },
 ] as const;
 
@@ -263,8 +285,13 @@ export function canSubscribeToReactiveTopic(principal: ActorPrincipal, topic: st
         return hasScope(principal, 'content:read') || hasScope(principal, 'content:write');
     }
 
-    if (matchesTopicFamily(topic, 'api_key') || matchesTopicFamily(topic, 'webhook')) {
-        return principal.scopes.has('admin');
+    if (
+        matchesTopicFamily(topic, 'api_key')
+        || matchesTopicFamily(topic, 'webhook')
+        || matchesTopicFamily(topic, 'ai_provider_config')
+        || matchesTopicFamily(topic, 'workforce_agent')
+    ) {
+        return hasAdministrativeScope(principal);
     }
 
     return false;
@@ -280,7 +307,9 @@ export function deriveReactiveTopics(event: AuditEventPayload): string[] {
     if (event.entityType === 'content_item'
         || event.entityType === 'content_type'
         || event.entityType === 'api_key'
-        || event.entityType === 'webhook') {
+        || event.entityType === 'webhook'
+        || event.entityType === 'ai_provider_config'
+        || event.entityType === 'workforce_agent') {
         topics.add(`${event.entityType}.*`);
     }
 

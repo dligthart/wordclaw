@@ -165,6 +165,13 @@ For `author-content`, `review-workflow`, `manage-integrations`, and `verify-prov
 - `available=false` and `subscribe=null` mean the current actor is missing the scopes required for the recommended stream
 - `author-content` returns `reactiveRecommendation=null` until a concrete `contentTypeId` is known, because the schema-design bootstrap path has nothing specific to subscribe to yet
 
+For `manage-integrations`, the live guide now covers four operator surfaces together:
+
+- WordClaw API keys
+- outbound webhooks
+- tenant-scoped AI provider credentials
+- tenant-managed workforce agents
+
 ## Starting the Local MCP Server
 
 ```bash
@@ -221,16 +228,20 @@ Reactive event delivery currently ships as an MCP session feature on the remote 
   - `content_type.create`, `content_type.update`, `content_type.delete`
   - `api_key.create`, `api_key.update`, `api_key.delete`
   - `webhook.create`, `webhook.update`, `webhook.delete`
+  - `ai_provider_config.create`, `ai_provider_config.update`, `ai_provider_config.delete`
+  - `workforce_agent.create`, `workforce_agent.update`, `workforce_agent.delete`
   - `content_item.*`
   - `content_type.*`
   - `api_key.*`
   - `webhook.*`
+  - `ai_provider_config.*`
+  - `workforce_agent.*`
   - `audit.*`
 
 Scope expectations for those families are intentionally conservative:
 
 - `content_item.*`, `workflow.review.*`, and `content_type.*` require `content:read`, `content:write`, or `admin`
-- `api_key.*` and `webhook.*` require `admin`
+- `api_key.*`, `webhook.*`, `ai_provider_config.*`, and `workforce_agent.*` require `admin` or `tenant:admin`
 - `*` remains admin-only
 
 Use `recipeId` when you want a higher-level workflow subscription without enumerating every raw topic yourself. You can still combine a recipe with explicit `topics` and optional filters in the same `subscribe_events` call.
@@ -462,7 +473,7 @@ Reactive guidance today is attached to these `guide_task` flows:
 
 - `author-content` returns schema-design guidance when `contentTypeId` is omitted, and recommends the `content-lifecycle` recipe once `contentTypeId` is known
 - `review-workflow` recommends the `review-decisions` recipe and narrows to `reviewTaskId` when provided
-- `manage-integrations` recommends the `integration-admin` recipe for API key and webhook changes
+- `manage-integrations` recommends the `integration-admin` recipe for API keys, webhook registrations, tenant AI provider provisioning, and workforce-agent registry changes
 - `verify-provenance` recommends either a scoped recipe (`content-lifecycle`, `schema-governance`, `integration-admin`) or a filtered `audit.*` subscription for actor-centric provenance checks
 
 Static discovery surfaces now expose the same idea one layer earlier:

@@ -243,6 +243,7 @@ Important transport note:
 - `mcp inspect` now also includes the deployment manifest, deployment status, current actor snapshot, and workspace context when the MCP server exposes `system://capabilities`, `system://deployment-status`, `system://current-actor`, and `system://workspace-context`
 - `capabilities status` now reports both `checks.embeddings` for semantic-index freshness and `checks.ui` for whether the supervisor is being served from `/ui/` or still needs `npm run dev:all`
 - `mcp call guide_task ...` returns live, actor-aware guidance from MCP for deployment discovery, workspace bootstrap, workspace targeting, authoring, review, integrations, provenance checks, and paid-content flows
+- `integrations guide` and `guide_task("manage-integrations")` now cover tenant AI provider provisioning and workforce-agent inventory in addition to API keys and webhooks
 - `domains create ...` gives the CLI a first-class first-domain bootstrap path without dropping to raw REST
 - `mcp call create_domain ...` bootstraps the first domain in-band and also supports admin-managed additional domains
 - `mcp openai-tools` exports the current MCP tool inventory as OpenAI-compatible `type: "function"` tools so external agents can reuse the live contract without hand-mapping each tool

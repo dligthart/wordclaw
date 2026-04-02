@@ -283,7 +283,8 @@ Then operate with:
 - `delete_webhook`
 
 Use `subscribe_events { "recipeId": "integration-admin" }` when you need to
-watch API key and webhook changes.
+watch API keys, outbound webhooks, tenant AI provider provisioning, and
+workforce-agent changes.
 
 ### Verify Provenance
 

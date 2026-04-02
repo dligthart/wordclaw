@@ -483,14 +483,14 @@ export function buildCapabilityManifest() {
             },
             {
                 id: 'manage-integrations',
-                goal: 'Provision agent credentials and outbound webhooks for external integrations.',
+                goal: 'Provision WordClaw credentials, tenant AI providers, workforce agents, and outbound webhooks for external integrations and agentic workflows.',
                 preferredSurface: 'mcp',
                 fallbackSurface: 'rest',
                 recommendedAuth: 'api-key-or-supervisor',
                 preferredActorProfile: 'api-key',
                 supportedActorProfiles: ['api-key', 'env-key', 'supervisor-session', 'mcp-local'],
                 recommendedApiKeyScopes: ['admin'],
-                requiredModules: ['api-keys-webhooks'],
+                requiredModules: ['api-keys-webhooks', 'form-runtime', 'background-jobs'],
                 dryRunRecommended: false,
                 steps: [
                     {
@@ -498,6 +498,20 @@ export function buildCapabilityManifest() {
                         surface: 'mcp',
                         operation: 'create_api_key',
                         purpose: 'Provision a scoped credential for an external agent or integration.',
+                    },
+                    {
+                        title: 'Configure a tenant AI provider',
+                        surface: 'mcp',
+                        operation: 'configure_ai_provider',
+                        purpose: 'Store the tenant-scoped OpenAI, Anthropic, or Gemini credential used by provider-backed draft-generation jobs.',
+                        optional: true,
+                    },
+                    {
+                        title: 'Create a workforce agent',
+                        surface: 'mcp',
+                        operation: 'create_workforce_agent',
+                        purpose: 'Provision a reusable SOUL plus provider/model defaults that forms and jobs can reference by id.',
+                        optional: true,
                     },
                     {
                         title: 'Register webhook delivery',
@@ -509,13 +523,13 @@ export function buildCapabilityManifest() {
                     {
                         title: 'Inspect or rotate integration state',
                         surface: 'mcp',
-                        operation: 'list_api_keys, revoke_api_key, list_webhooks, update_webhook',
-                        purpose: 'Manage lifecycle and rotation for integration surfaces.',
+                        operation: 'list_api_keys, revoke_api_key, list_webhooks, update_webhook, list_ai_provider_configs, list_workforce_agents, update_workforce_agent, delete_workforce_agent',
+                        purpose: 'Manage lifecycle and rotation for integration credentials, provider provisioning, and workforce registry entries.',
                         optional: true,
                     },
                 ],
                 reactiveFollowUp: {
-                    purpose: 'Observe API key and webhook mutations while provisioning, rotating, or auditing integration surfaces.',
+                    purpose: 'Observe API key, webhook, AI provider, and workforce-agent mutations while provisioning or auditing integration surfaces.',
                     recipeId: integrationAdminRecipe?.id ?? null,
                     topics: integrationAdminRecipe?.topics ?? [],
                     recommendedFilters: [],
@@ -525,7 +539,7 @@ export function buildCapabilityManifest() {
                             recipeId: 'integration-admin',
                         },
                     },
-                    note: 'This follow-up requires admin-grade scopes; guide_task manage-integrations will suppress it for weaker actors.',
+                    note: 'This follow-up requires tenant-admin or admin-grade scopes; guide_task manage-integrations will suppress it for weaker actors.',
                 },
             },
             {
@@ -734,6 +748,41 @@ export function buildCapabilityManifest() {
             supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
             provisionedProviders: ['deterministic'],
             provisioningMode: 'tenant-scoped',
+            supportedInputModalities: ['text', 'image'],
+            supportedAssetKinds: ['image'],
+            providerManagement: {
+                restPaths: ['/api/ai/providers', '/api/ai/providers/:provider'],
+                mcpTools: [
+                    'list_ai_provider_configs',
+                    'get_ai_provider_config',
+                    'configure_ai_provider',
+                    'delete_ai_provider_config',
+                ],
+                note: 'External AI providers are provisioned per tenant. Store provider credentials through these routes or MCP tools before using model-backed draft jobs.',
+            },
+            workforceRegistry: {
+                supported: true,
+                restPaths: ['/api/workforce/agents', '/api/workforce/agents/:id'],
+                mcpTools: [
+                    'list_workforce_agents',
+                    'get_workforce_agent',
+                    'create_workforce_agent',
+                    'update_workforce_agent',
+                    'delete_workforce_agent',
+                ],
+                formField: 'workforceAgentId',
+                note: 'Tenants can provision reusable workforce agents with a bounded SOUL plus provider/model defaults, then reference them from forms.',
+            },
+            reviewWorkflow: {
+                supported: true,
+                queueHandoffRequiresTransition: true,
+                formField: 'postGenerationWorkflowTransitionId',
+                decisionWebhookEvents: [
+                    'form.draft_generation.review.approved',
+                    'form.draft_generation.review.rejected',
+                ],
+                note: 'Generated drafts enter the approval queue only when the form configures draftGeneration.postGenerationWorkflowTransitionId. Review outcomes are delivered through the existing form webhook lane.',
+            },
             providers: {
                 deterministic: {
                     enabled: true,
@@ -773,7 +822,7 @@ export function buildCapabilityManifest() {
                     note: 'Gemini-backed draft generation is supported, but each tenant must configure its own API key and choose a model through provider provisioning or workforce-agent defaults.',
                 },
             },
-            note: 'Deterministic draft generation is always available. External AI providers are tenant-managed and must be provisioned per domain before model-backed jobs can run.',
+            note: 'Deterministic draft generation is always available. External AI providers and workforce agents are tenant-managed, images are the only supported multimodal asset input, and approval-queue handoff requires postGenerationWorkflowTransitionId on the form.',
         },
         toolEquivalence: [
             {
@@ -972,7 +1021,7 @@ export function buildCapabilityManifest() {
                 workflowIntegration: true,
                 paymentIntegration: true,
                 backgroundFollowUps: true,
-                note: 'Forms are first-class bounded intake definitions that validate into content items, can auto-submit into review, can challenge with L402 when enabled, and can trigger job-backed follow-up webhooks.',
+                note: 'Forms are first-class bounded intake definitions that validate into content items, can drive tenant-scoped draft generation with text and image inputs, can hand generated drafts into review when postGenerationWorkflowTransitionId is configured, can challenge with L402 when enabled, and can trigger job-backed follow-up webhooks.',
             },
             fieldAwareQueries: {
                 supported: true,

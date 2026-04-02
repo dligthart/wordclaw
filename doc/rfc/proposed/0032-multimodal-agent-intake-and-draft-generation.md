@@ -16,7 +16,7 @@ Current runtime context:
 - forms can now enqueue `draft_generation` jobs directly, and those jobs can target tenant-scoped workforce agents or direct SOUL/provider config
 - tenant-scoped AI provider provisioning now exists for `openai`, `anthropic`, and `gemini`
 - tenant-scoped workforce agents now exist with stable ids/slugs, purpose, SOUL, and provider/model defaults
-- the supervisor UI now exposes provider/workforce provisioning in `/ui/keys` and draft-generation form wiring in `/ui/forms`
+- the supervisor UI now exposes provider/workforce provisioning in `/ui/agents` and draft-generation form wiring in `/ui/forms`
 - draft-generation completion and terminal failure callbacks now reuse the existing form webhook lane
 - multimodal intake is intentionally image-only for now: referenced image assets can be forwarded natively into OpenAI, Anthropic, and Gemini requests, while non-image files are still out of scope
 - the implementation direction remains intentionally conservative: reuse the current runtime instead of introducing a large new subsystem

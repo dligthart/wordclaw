@@ -127,6 +127,60 @@ export const capabilityMatrix: Capability[] = [
         mcp: { tool: 'submit_form' }
     },
     {
+        id: 'list_ai_provider_configs',
+        description: 'List tenant-scoped AI provider credentials used by provider-backed draft generation',
+        rest: { method: 'GET', path: '/ai/providers' },
+        mcp: { tool: 'list_ai_provider_configs' }
+    },
+    {
+        id: 'get_ai_provider_config',
+        description: 'Inspect one tenant-scoped AI provider credential',
+        rest: { method: 'GET', path: '/ai/providers/:provider' },
+        mcp: { tool: 'get_ai_provider_config' }
+    },
+    {
+        id: 'configure_ai_provider',
+        description: 'Create or update a tenant-scoped AI provider credential',
+        rest: { method: 'PUT', path: '/ai/providers/:provider' },
+        mcp: { tool: 'configure_ai_provider' }
+    },
+    {
+        id: 'delete_ai_provider_config',
+        description: 'Delete a tenant-scoped AI provider credential',
+        rest: { method: 'DELETE', path: '/ai/providers/:provider' },
+        mcp: { tool: 'delete_ai_provider_config' }
+    },
+    {
+        id: 'list_workforce_agents',
+        description: 'List tenant-managed workforce agents',
+        rest: { method: 'GET', path: '/workforce/agents' },
+        mcp: { tool: 'list_workforce_agents' }
+    },
+    {
+        id: 'get_workforce_agent',
+        description: 'Inspect one tenant-managed workforce agent',
+        rest: { method: 'GET', path: '/workforce/agents/:id' },
+        mcp: { tool: 'get_workforce_agent' }
+    },
+    {
+        id: 'create_workforce_agent',
+        description: 'Create a tenant-managed workforce agent',
+        rest: { method: 'POST', path: '/workforce/agents' },
+        mcp: { tool: 'create_workforce_agent' }
+    },
+    {
+        id: 'update_workforce_agent',
+        description: 'Update a tenant-managed workforce agent',
+        rest: { method: 'PUT', path: '/workforce/agents/:id' },
+        mcp: { tool: 'update_workforce_agent' }
+    },
+    {
+        id: 'delete_workforce_agent',
+        description: 'Delete a tenant-managed workforce agent',
+        rest: { method: 'DELETE', path: '/workforce/agents/:id' },
+        mcp: { tool: 'delete_workforce_agent' }
+    },
+    {
         id: 'create_asset',
         description: 'Upload an asset',
         rest: { method: 'POST', path: '/assets' },

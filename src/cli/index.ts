@@ -863,8 +863,32 @@ async function handleIntegrations(client: RestCliClient, args: ParsedArgs) {
         active: boolean;
         createdAt: string;
     };
+    type IntegrationGuideAiProvider = {
+        id: number;
+        provider: 'openai' | 'anthropic' | 'gemini';
+        configured: boolean;
+        maskedApiKey: string;
+        defaultModel: string | null;
+        createdAt: string;
+        updatedAt: string;
+    };
+    type IntegrationGuideWorkforceAgent = {
+        id: number;
+        name: string;
+        slug: string;
+        purpose: string;
+        provider: {
+            type: string;
+            model?: string;
+        };
+        active: boolean;
+        createdAt: string;
+        updatedAt: string;
+    };
     let apiKeys: IntegrationGuideApiKey[] | null = null;
     let webhooks: IntegrationGuideWebhook[] | null = null;
+    let aiProviders: IntegrationGuideAiProvider[] | null = null;
+    let workforceAgents: IntegrationGuideWorkforceAgent[] | null = null;
 
     try {
         const response = await client.request({
@@ -898,10 +922,44 @@ async function handleIntegrations(client: RestCliClient, args: ParsedArgs) {
         }
     }
 
+    try {
+        const response = await client.request({
+            method: 'GET',
+            path: '/ai/providers',
+        });
+        const body = requireJsonMap(response.body, 'Integrations guide AI provider response');
+        aiProviders = Array.isArray(body.data) ? body.data as IntegrationGuideAiProvider[] : [];
+    } catch (error) {
+        const code = extractErrorCode(error);
+        if (isMissingActorErrorCode(code)) {
+            warnings.push('AI provider inventory is unavailable until an authenticated actor with integration access is configured.');
+        } else {
+            throw error;
+        }
+    }
+
+    try {
+        const response = await client.request({
+            method: 'GET',
+            path: '/workforce/agents',
+        });
+        const body = requireJsonMap(response.body, 'Integrations guide workforce-agent response');
+        workforceAgents = Array.isArray(body.data) ? body.data as IntegrationGuideWorkforceAgent[] : [];
+    } catch (error) {
+        const code = extractErrorCode(error);
+        if (isMissingActorErrorCode(code)) {
+            warnings.push('Workforce registry inventory is unavailable until an authenticated actor with integration access is configured.');
+        } else {
+            throw error;
+        }
+    }
+
     const guide = buildIntegrationGuide({
         currentActor: actorResult.currentActor,
         apiKeys,
         webhooks,
+        aiProviders,
+        workforceAgents,
     });
     if (warnings.length > 0) {
         guide.warnings = warnings;

@@ -125,7 +125,7 @@ describe('buildCapabilityManifest', () => {
                 }),
                 expect.objectContaining({
                     id: 'integration-admin',
-                    requiredScopes: ['admin'],
+                    requiredScopes: ['admin', 'tenant:admin'],
                 }),
             ]),
         }));
@@ -169,6 +169,58 @@ describe('buildCapabilityManifest', () => {
             mcpTool: 'search_semantic_knowledge',
             note: 'Semantic search is disabled until OPENAI_API_KEY is configured.',
         });
+        expect(manifest.draftGeneration).toEqual(expect.objectContaining({
+            defaultProvider: 'deterministic',
+            supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
+            provisionedProviders: ['deterministic'],
+            provisioningMode: 'tenant-scoped',
+            supportedInputModalities: ['text', 'image'],
+            supportedAssetKinds: ['image'],
+            providerManagement: expect.objectContaining({
+                restPaths: ['/api/ai/providers', '/api/ai/providers/:provider'],
+                mcpTools: [
+                    'list_ai_provider_configs',
+                    'get_ai_provider_config',
+                    'configure_ai_provider',
+                    'delete_ai_provider_config',
+                ],
+            }),
+            workforceRegistry: expect.objectContaining({
+                supported: true,
+                restPaths: ['/api/workforce/agents', '/api/workforce/agents/:id'],
+                mcpTools: [
+                    'list_workforce_agents',
+                    'get_workforce_agent',
+                    'create_workforce_agent',
+                    'update_workforce_agent',
+                    'delete_workforce_agent',
+                ],
+                formField: 'workforceAgentId',
+            }),
+            reviewWorkflow: expect.objectContaining({
+                supported: true,
+                queueHandoffRequiresTransition: true,
+                formField: 'postGenerationWorkflowTransitionId',
+                decisionWebhookEvents: [
+                    'form.draft_generation.review.approved',
+                    'form.draft_generation.review.rejected',
+                ],
+            }),
+            providers: expect.objectContaining({
+                deterministic: expect.objectContaining({
+                    enabled: true,
+                    requiresProvisioning: false,
+                }),
+                openai: expect.objectContaining({
+                    enabled: false,
+                    requiresProvisioning: true,
+                    provisioningScope: 'tenant',
+                    managementRestPath: '/api/ai/providers/openai',
+                    managementMcpTool: 'list_ai_provider_configs',
+                    reason: 'tenant_provider_config_required',
+                }),
+            }),
+        }));
         expect(manifest.toolEquivalence).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 intent: 'inspect-deployment',
@@ -476,9 +528,15 @@ describe('buildCapabilityManifest', () => {
                 }),
                 expect.objectContaining({
                     id: 'manage-integrations',
+                    requiredModules: ['api-keys-webhooks', 'form-runtime', 'background-jobs'],
                     reactiveFollowUp: expect.objectContaining({
                         recipeId: 'integration-admin',
-                        topics: expect.arrayContaining(['api_key.create', 'webhook.create']),
+                        topics: expect.arrayContaining([
+                            'api_key.create',
+                            'webhook.create',
+                            'ai_provider_config.create',
+                            'workforce_agent.create',
+                        ]),
                     }),
                 }),
                 expect.objectContaining({
@@ -505,6 +563,12 @@ describe('buildCapabilityManifest', () => {
         ).toBe(true);
         expect(
             manifest.capabilities.some((capability) => capability.id === 'project_content_items'),
+        ).toBe(true);
+        expect(
+            manifest.capabilities.some((capability) => capability.id === 'configure_ai_provider'),
+        ).toBe(true);
+        expect(
+            manifest.capabilities.some((capability) => capability.id === 'create_workforce_agent'),
         ).toBe(true);
     });
 

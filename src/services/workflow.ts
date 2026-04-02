@@ -5,11 +5,14 @@ import {
     reviewTasks,
     reviewComments,
     contentItems,
-    contentTypes
+    contentTypes,
+    jobs,
+    formDefinitions,
 } from '../db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { EmbeddingService } from './embedding.js';
 import { logAudit } from './audit.js';
+import { enqueueWebhookJob } from './jobs.js';
 import {
     buildActorAssignmentRefs,
     resolveActorIdentity,
@@ -24,6 +27,177 @@ export interface WorkflowTransitionContext {
     workflowTransitionId: number;
     assignee?: string;
     authPrincipal?: PrincipalLike & { scopes: Set<string>, domainId: number };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readPositiveInteger(value: unknown): number | null {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0
+        ? value
+        : null;
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function parseObjectData(value: unknown): Record<string, unknown> | null {
+    if (isObject(value)) {
+        return value;
+    }
+
+    if (typeof value !== 'string' || value.trim().length === 0) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(value);
+        return isObject(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+type DraftGenerationReviewWebhookContext = {
+    form: {
+        id: number;
+        slug: string;
+        name: string;
+        webhookUrl: string;
+        webhookSecret: string | null;
+    };
+    job: {
+        id: number;
+        intakeContentItemId: number;
+        targetContentTypeId: number;
+        workforceAgentId: number | null;
+        workforceAgentSlug: string | null;
+        workforceAgentName: string | null;
+        agentSoul: string;
+        providerType: string;
+        providerModel: string | null;
+        strategy: string | null;
+    };
+    submission: {
+        contentItemId: number;
+        status: string;
+        data: Record<string, unknown>;
+    };
+    generated: {
+        contentItemId: number;
+        status: string;
+        data: Record<string, unknown>;
+    };
+};
+
+async function loadDraftGenerationReviewWebhookContext(
+    domainId: number,
+    generatedContentItemId: number,
+): Promise<DraftGenerationReviewWebhookContext | null> {
+    const [jobRow] = await db.select()
+        .from(jobs)
+        .where(and(
+            eq(jobs.domainId, domainId),
+            eq(jobs.kind, 'draft_generation'),
+            sql<boolean>`(((${jobs.result})::jsonb ->> 'generatedContentItemId')::integer) = ${generatedContentItemId}`,
+        ))
+        .orderBy(desc(jobs.completedAt), desc(jobs.id))
+        .limit(1);
+
+    if (!jobRow || !isObject(jobRow.payload)) {
+        return null;
+    }
+
+    const payload = jobRow.payload;
+    const result = isObject(jobRow.result) ? jobRow.result : {};
+    const formId = readPositiveInteger(payload.formId);
+    const intakeContentItemId = readPositiveInteger(payload.intakeContentItemId);
+    const targetContentTypeId = readPositiveInteger(payload.targetContentTypeId);
+    const agentSoul = normalizeOptionalString(payload.agentSoul);
+    if (!formId || !intakeContentItemId || !targetContentTypeId || !agentSoul) {
+        return null;
+    }
+
+    const [form] = await db.select({
+        id: formDefinitions.id,
+        slug: formDefinitions.slug,
+        name: formDefinitions.name,
+        webhookUrl: formDefinitions.webhookUrl,
+        webhookSecret: formDefinitions.webhookSecret,
+    })
+        .from(formDefinitions)
+        .where(and(
+            eq(formDefinitions.domainId, domainId),
+            eq(formDefinitions.id, formId),
+        ));
+
+    const webhookUrl = normalizeOptionalString(form?.webhookUrl);
+    if (!form || !webhookUrl) {
+        return null;
+    }
+
+    const [submissionItem] = await db.select({
+        id: contentItems.id,
+        status: contentItems.status,
+        data: contentItems.data,
+    })
+        .from(contentItems)
+        .where(and(
+            eq(contentItems.domainId, domainId),
+            eq(contentItems.id, intakeContentItemId),
+        ));
+
+    const [generatedItem] = await db.select({
+        id: contentItems.id,
+        status: contentItems.status,
+        data: contentItems.data,
+    })
+        .from(contentItems)
+        .where(and(
+            eq(contentItems.domainId, domainId),
+            eq(contentItems.id, generatedContentItemId),
+        ));
+
+    if (!submissionItem || !generatedItem) {
+        return null;
+    }
+
+    return {
+        form: {
+            id: form.id,
+            slug: form.slug,
+            name: form.name,
+            webhookUrl,
+            webhookSecret: normalizeOptionalString(form.webhookSecret),
+        },
+        job: {
+            id: jobRow.id,
+            intakeContentItemId,
+            targetContentTypeId,
+            workforceAgentId: readPositiveInteger(payload.workforceAgentId),
+            workforceAgentSlug: normalizeOptionalString(payload.workforceAgentSlug),
+            workforceAgentName: normalizeOptionalString(payload.workforceAgentName),
+            agentSoul,
+            providerType: normalizeOptionalString((isObject(result.provider) ? result.provider.type : null))
+                ?? normalizeOptionalString((isObject(payload.provider) ? payload.provider.type : null))
+                ?? 'deterministic',
+            providerModel: normalizeOptionalString((isObject(result.provider) ? result.provider.model : null))
+                ?? normalizeOptionalString((isObject(payload.provider) ? payload.provider.model : null)),
+            strategy: normalizeOptionalString(result.strategy),
+        },
+        submission: {
+            contentItemId: submissionItem.id,
+            status: submissionItem.status,
+            data: parseObjectData(submissionItem.data) ?? {},
+        },
+        generated: {
+            contentItemId: generatedItem.id,
+            status: generatedItem.status,
+            data: parseObjectData(generatedItem.data) ?? {},
+        },
+    };
 }
 
 export class WorkflowService {
@@ -199,6 +373,8 @@ export class WorkflowService {
             .where(and(eq(reviewTasks.id, taskId), eq(reviewTasks.domainId, domainId)))
             .returning();
 
+        let notificationContext: DraftGenerationReviewWebhookContext | null = null;
+
         if (decision === 'approved') {
             // Find the ultimate target state
             const tResults = await db.select()
@@ -235,6 +411,58 @@ export class WorkflowService {
                     },
                     toAuditActor(authPrincipal),
                 );
+            }
+        }
+
+        notificationContext = await loadDraftGenerationReviewWebhookContext(domainId, task.contentItemId);
+        if (notificationContext) {
+            try {
+                await enqueueWebhookJob({
+                    domainId,
+                    url: notificationContext.form.webhookUrl,
+                    secret: notificationContext.form.webhookSecret,
+                    source: 'form',
+                    body: {
+                        event: `form.draft_generation.review.${decision}`,
+                        form: {
+                            id: notificationContext.form.id,
+                            slug: notificationContext.form.slug,
+                            name: notificationContext.form.name,
+                        },
+                        submission: {
+                            contentItemId: notificationContext.submission.contentItemId,
+                            status: notificationContext.submission.status,
+                            data: notificationContext.submission.data,
+                        },
+                        draftGeneration: {
+                            jobId: notificationContext.job.id,
+                            intakeContentItemId: notificationContext.job.intakeContentItemId,
+                            targetContentTypeId: notificationContext.job.targetContentTypeId,
+                            workforceAgentId: notificationContext.job.workforceAgentId,
+                            workforceAgentSlug: notificationContext.job.workforceAgentSlug,
+                            workforceAgentName: notificationContext.job.workforceAgentName,
+                            agentSoul: notificationContext.job.agentSoul,
+                            providerType: notificationContext.job.providerType,
+                            providerModel: notificationContext.job.providerModel,
+                            strategy: notificationContext.job.strategy,
+                            generatedContentItemId: notificationContext.generated.contentItemId,
+                            generatedStatus: notificationContext.generated.status,
+                        },
+                        review: {
+                            taskId: updatedTask.id,
+                            decision,
+                            workflowTransitionId: updatedTask.workflowTransitionId,
+                            decidedAt: updatedTask.updatedAt.toISOString(),
+                        },
+                        generated: {
+                            contentItemId: notificationContext.generated.contentItemId,
+                            status: notificationContext.generated.status,
+                            data: notificationContext.generated.data,
+                        },
+                    },
+                });
+            } catch (error) {
+                console.error('Failed to enqueue form draft review webhook', error);
             }
         }
 

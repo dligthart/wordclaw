@@ -310,6 +310,24 @@ describe('API Route Contracts', () => {
                         supportedProviders: string[];
                         provisionedProviders: string[];
                         provisioningMode?: string;
+                        supportedInputModalities?: string[];
+                        supportedAssetKinds?: string[];
+                        providerManagement?: {
+                            restPaths: string[];
+                            mcpTools: string[];
+                        };
+                        workforceRegistry?: {
+                            supported: boolean;
+                            restPaths: string[];
+                            mcpTools: string[];
+                            formField: string;
+                        };
+                        reviewWorkflow?: {
+                            supported: boolean;
+                            queueHandoffRequiresTransition: boolean;
+                            formField: string;
+                            decisionWebhookEvents: string[];
+                        };
                         providers: {
                             deterministic: {
                                 enabled: boolean;
@@ -472,7 +490,7 @@ describe('API Route Contracts', () => {
                     }),
                     expect.objectContaining({
                         id: 'integration-admin',
-                        requiredScopes: ['admin'],
+                        requiredScopes: ['admin', 'tenant:admin'],
                     }),
                 ]),
             }));
@@ -483,6 +501,8 @@ describe('API Route Contracts', () => {
                     'content_type.*',
                     'api_key.create',
                     'webhook.update',
+                    'ai_provider_config.create',
+                    'workforce_agent.update',
                 ]),
             );
             expect(body.data.protocolSurfaces.mcp.reactive.supportedFilterFields).toEqual(
@@ -517,6 +537,38 @@ describe('API Route Contracts', () => {
                 supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
                 provisionedProviders: ['deterministic'],
                 provisioningMode: 'tenant-scoped',
+                supportedInputModalities: ['text', 'image'],
+                supportedAssetKinds: ['image'],
+                providerManagement: expect.objectContaining({
+                    restPaths: ['/api/ai/providers', '/api/ai/providers/:provider'],
+                    mcpTools: [
+                        'list_ai_provider_configs',
+                        'get_ai_provider_config',
+                        'configure_ai_provider',
+                        'delete_ai_provider_config',
+                    ],
+                }),
+                workforceRegistry: expect.objectContaining({
+                    supported: true,
+                    restPaths: ['/api/workforce/agents', '/api/workforce/agents/:id'],
+                    mcpTools: [
+                        'list_workforce_agents',
+                        'get_workforce_agent',
+                        'create_workforce_agent',
+                        'update_workforce_agent',
+                        'delete_workforce_agent',
+                    ],
+                    formField: 'workforceAgentId',
+                }),
+                reviewWorkflow: expect.objectContaining({
+                    supported: true,
+                    queueHandoffRequiresTransition: true,
+                    formField: 'postGenerationWorkflowTransitionId',
+                    decisionWebhookEvents: [
+                        'form.draft_generation.review.approved',
+                        'form.draft_generation.review.rejected',
+                    ],
+                }),
                 providers: expect.objectContaining({
                     deterministic: expect.objectContaining({
                         enabled: true,
@@ -789,6 +841,24 @@ describe('API Route Contracts', () => {
                             supportedProviders: string[];
                             provisionedProviders: string[];
                             provisioningMode?: string;
+                            supportedInputModalities?: string[];
+                            supportedAssetKinds?: string[];
+                            providerManagement?: {
+                                restPaths: string[];
+                                mcpTools: string[];
+                            };
+                            workforceRegistry?: {
+                                supported: boolean;
+                                restPaths: string[];
+                                mcpTools: string[];
+                                formField: string;
+                            };
+                            reviewWorkflow?: {
+                                supported: boolean;
+                                queueHandoffRequiresTransition: boolean;
+                                formField: string;
+                                decisionWebhookEvents: string[];
+                            };
                             providers: {
                                 deterministic: {
                                     status: string;
@@ -943,6 +1013,38 @@ describe('API Route Contracts', () => {
                 supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
                 provisionedProviders: ['deterministic'],
                 provisioningMode: 'tenant-scoped',
+                supportedInputModalities: ['text', 'image'],
+                supportedAssetKinds: ['image'],
+                providerManagement: expect.objectContaining({
+                    restPaths: ['/api/ai/providers', '/api/ai/providers/:provider'],
+                    mcpTools: [
+                        'list_ai_provider_configs',
+                        'get_ai_provider_config',
+                        'configure_ai_provider',
+                        'delete_ai_provider_config',
+                    ],
+                }),
+                workforceRegistry: expect.objectContaining({
+                    supported: true,
+                    restPaths: ['/api/workforce/agents', '/api/workforce/agents/:id'],
+                    mcpTools: [
+                        'list_workforce_agents',
+                        'get_workforce_agent',
+                        'create_workforce_agent',
+                        'update_workforce_agent',
+                        'delete_workforce_agent',
+                    ],
+                    formField: 'workforceAgentId',
+                }),
+                reviewWorkflow: expect.objectContaining({
+                    supported: true,
+                    queueHandoffRequiresTransition: true,
+                    formField: 'postGenerationWorkflowTransitionId',
+                    decisionWebhookEvents: [
+                        'form.draft_generation.review.approved',
+                        'form.draft_generation.review.rejected',
+                    ],
+                }),
                 providers: expect.objectContaining({
                     deterministic: expect.objectContaining({
                         status: 'ready',

@@ -47,6 +47,32 @@ describe('buildIntegrationGuide', () => {
                     createdAt: '2026-03-11T10:00:00.000Z',
                 },
             ],
+            aiProviders: [
+                {
+                    id: 41,
+                    provider: 'openai',
+                    configured: true,
+                    maskedApiKey: 'sk-...1234',
+                    defaultModel: 'gpt-4.1',
+                    createdAt: '2026-03-11T10:00:00.000Z',
+                    updatedAt: '2026-03-11T10:05:00.000Z',
+                },
+            ],
+            workforceAgents: [
+                {
+                    id: 51,
+                    name: 'Proposal Writer',
+                    slug: 'proposal-writer',
+                    purpose: 'Draft software proposals',
+                    provider: {
+                        type: 'openai',
+                        model: 'gpt-4.1',
+                    },
+                    active: true,
+                    createdAt: '2026-03-11T10:00:00.000Z',
+                    updatedAt: '2026-03-11T10:05:00.000Z',
+                },
+            ],
         });
 
         expect(guide.actorReadiness).toEqual(expect.objectContaining({
@@ -66,10 +92,29 @@ describe('buildIntegrationGuide', () => {
             active: 1,
             inactive: 0,
         }));
+        expect(guide.aiProviders).toEqual(expect.objectContaining({
+            accessible: true,
+            total: 1,
+            configuredProviders: ['openai'],
+        }));
+        expect(guide.workforceAgents).toEqual(expect.objectContaining({
+            accessible: true,
+            total: 1,
+            active: 1,
+            inactive: 0,
+        }));
         expect(guide.steps).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     id: 'create-api-key',
+                    status: 'ready',
+                }),
+                expect.objectContaining({
+                    id: 'configure-ai-provider',
+                    status: 'ready',
+                }),
+                expect.objectContaining({
+                    id: 'create-workforce-agent',
                     status: 'ready',
                 }),
                 expect.objectContaining({
@@ -95,6 +140,8 @@ describe('buildIntegrationGuide', () => {
         }));
         expect(guide.apiKeys.accessible).toBe(false);
         expect(guide.webhooks.accessible).toBe(false);
+        expect(guide.aiProviders.accessible).toBe(false);
+        expect(guide.workforceAgents.accessible).toBe(false);
         expect(guide.steps.find((step) => step.id === 'create-webhook')).toEqual(
             expect.objectContaining({
                 status: 'blocked',
@@ -115,6 +162,8 @@ describe('buildIntegrationGuide', () => {
             },
             apiKeys: [],
             webhooks: [],
+            aiProviders: [],
+            workforceAgents: [],
         });
 
         expect(guide.actorReadiness).toEqual(expect.objectContaining({

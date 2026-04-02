@@ -63,7 +63,42 @@ describe('buildBootstrapWorkspaceGuide', () => {
                         supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
                         provisionedProviders: ['deterministic'],
                         provisioningMode: 'tenant-scoped',
+                        supportedInputModalities: ['text', 'image'],
+                        supportedAssetKinds: ['image'],
                         note: 'Deterministic draft generation is always available. External AI providers are tenant-managed and must be provisioned per domain before model-backed jobs can run.',
+                        providerManagement: {
+                            restPaths: ['/api/ai/providers', '/api/ai/providers/:provider'],
+                            mcpTools: [
+                                'list_ai_provider_configs',
+                                'get_ai_provider_config',
+                                'configure_ai_provider',
+                                'delete_ai_provider_config',
+                            ],
+                            note: 'Tenant-scoped provider provisioning is available.',
+                        },
+                        workforceRegistry: {
+                            supported: true,
+                            restPaths: ['/api/workforce/agents', '/api/workforce/agents/:id'],
+                            mcpTools: [
+                                'list_workforce_agents',
+                                'get_workforce_agent',
+                                'create_workforce_agent',
+                                'update_workforce_agent',
+                                'delete_workforce_agent',
+                            ],
+                            formField: 'workforceAgentId',
+                            note: 'Tenant-scoped workforce agents are available.',
+                        },
+                        reviewWorkflow: {
+                            supported: true,
+                            queueHandoffRequiresTransition: true,
+                            formField: 'postGenerationWorkflowTransitionId',
+                            decisionWebhookEvents: [
+                                'form.draft_generation.review.approved',
+                                'form.draft_generation.review.rejected',
+                            ],
+                            note: 'Generated drafts enter review only when the form is configured with a review transition.',
+                        },
                         providers: {
                             deterministic: {
                                 status: 'ready',
@@ -327,7 +362,42 @@ describe('buildBootstrapWorkspaceGuide', () => {
                         supportedProviders: ['deterministic', 'openai', 'anthropic', 'gemini'],
                         provisionedProviders: ['deterministic'],
                         provisioningMode: 'tenant-scoped',
+                        supportedInputModalities: ['text', 'image'],
+                        supportedAssetKinds: ['image'],
                         note: 'Deterministic draft generation is always available. External AI providers are tenant-managed and must be provisioned per domain before model-backed jobs can run.',
+                        providerManagement: {
+                            restPaths: ['/api/ai/providers', '/api/ai/providers/:provider'],
+                            mcpTools: [
+                                'list_ai_provider_configs',
+                                'get_ai_provider_config',
+                                'configure_ai_provider',
+                                'delete_ai_provider_config',
+                            ],
+                            note: 'Tenant-scoped provider provisioning is available.',
+                        },
+                        workforceRegistry: {
+                            supported: true,
+                            restPaths: ['/api/workforce/agents', '/api/workforce/agents/:id'],
+                            mcpTools: [
+                                'list_workforce_agents',
+                                'get_workforce_agent',
+                                'create_workforce_agent',
+                                'update_workforce_agent',
+                                'delete_workforce_agent',
+                            ],
+                            formField: 'workforceAgentId',
+                            note: 'Tenant-scoped workforce agents are available.',
+                        },
+                        reviewWorkflow: {
+                            supported: true,
+                            queueHandoffRequiresTransition: true,
+                            formField: 'postGenerationWorkflowTransitionId',
+                            decisionWebhookEvents: [
+                                'form.draft_generation.review.approved',
+                                'form.draft_generation.review.rejected',
+                            ],
+                            note: 'Generated drafts enter review only when the form is configured with a review transition.',
+                        },
                         providers: {
                             deterministic: {
                                 status: 'ready',

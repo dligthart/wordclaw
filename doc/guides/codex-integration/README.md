@@ -101,7 +101,7 @@ and maps them into these task playbooks:
 | **Workflow Review** | Pending-task inspection -> comment -> approve or reject |
 | **Asset Management** | Metadata discovery first, then REST delivery or upload flow |
 | **L402 Paid Content** | MCP discovery, then REST offer -> purchase -> confirm -> entitlement read |
-| **Manage Integrations** | API key and webhook lifecycle operations |
+| **Manage Integrations** | API keys, outbound webhooks, tenant AI providers, and workforce-agent lifecycle operations |
 | **Verify Provenance** | Actor- and entity-scoped audit inspection and follow-up monitoring |
 
 ## Use Case Test: Low-Memory Resume Across Sessions

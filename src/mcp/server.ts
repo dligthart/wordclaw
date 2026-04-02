@@ -4606,11 +4606,15 @@ server.tool(
         if (taskId === 'manage-integrations') {
             let apiKeys: ReturnType<typeof serializeApiKeyForGuide>[] | null = null;
             let webhooks: ReturnType<typeof serializeWebhookForGuide>[] | null = null;
+            let aiProviders: Awaited<ReturnType<typeof listAiProviderConfigs>> | null = null;
+            let workforceAgents: Awaited<ReturnType<typeof listWorkforceAgents>> | null = null;
             const warnings: string[] = [];
 
             if (canManageIntegrations(currentActor)) {
                 apiKeys = (await listApiKeys(domainId)).map(serializeApiKeyForGuide);
                 webhooks = (await listWebhooks(domainId)).map(serializeWebhookForGuide);
+                aiProviders = await listAiProviderConfigs(domainId);
+                workforceAgents = await listWorkforceAgents(domainId);
             } else {
                 warnings.push('Integration inventory is unavailable until the current actor has admin or tenant:admin scope.');
             }
@@ -4619,6 +4623,16 @@ server.tool(
                 currentActor,
                 apiKeys,
                 webhooks,
+                aiProviders: aiProviders?.map((config) => ({
+                    ...config,
+                    createdAt: toIsoString(config.createdAt) ?? new Date(0).toISOString(),
+                    updatedAt: toIsoString(config.updatedAt) ?? new Date(0).toISOString(),
+                })) ?? null,
+                workforceAgents: workforceAgents?.map((agent) => ({
+                    ...agent,
+                    createdAt: toIsoString(agent.createdAt) ?? new Date(0).toISOString(),
+                    updatedAt: toIsoString(agent.updatedAt) ?? new Date(0).toISOString(),
+                })) ?? null,
             });
             if (warnings.length > 0) {
                 guide.warnings = [...(guide.warnings ?? []), ...warnings];

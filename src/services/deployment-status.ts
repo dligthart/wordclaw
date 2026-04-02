@@ -83,7 +83,28 @@ export type DeploymentStatusSnapshot = {
             supportedProviders: string[];
             provisionedProviders: string[];
             provisioningMode: string;
+            supportedInputModalities: string[];
+            supportedAssetKinds: string[];
             note: string;
+            providerManagement: {
+                restPaths: string[];
+                mcpTools: string[];
+                note: string;
+            };
+            workforceRegistry: {
+                supported: boolean;
+                restPaths: string[];
+                mcpTools: string[];
+                formField: string;
+                note: string;
+            };
+            reviewWorkflow: {
+                supported: boolean;
+                queueHandoffRequiresTransition: boolean;
+                formField: string;
+                decisionWebhookEvents: string[];
+                note: string;
+            };
             providers: {
                 deterministic: {
                     status: DeploymentCheckLevel;
@@ -446,7 +467,28 @@ export async function getDeploymentStatusSnapshot(): Promise<DeploymentStatusSna
         supportedProviders: [...manifest.draftGeneration.supportedProviders],
         provisionedProviders: [...manifest.draftGeneration.provisionedProviders],
         provisioningMode: manifest.draftGeneration.provisioningMode,
+        supportedInputModalities: [...manifest.draftGeneration.supportedInputModalities],
+        supportedAssetKinds: [...manifest.draftGeneration.supportedAssetKinds],
         note: manifest.draftGeneration.note,
+        providerManagement: {
+            restPaths: [...manifest.draftGeneration.providerManagement.restPaths],
+            mcpTools: [...manifest.draftGeneration.providerManagement.mcpTools],
+            note: manifest.draftGeneration.providerManagement.note,
+        },
+        workforceRegistry: {
+            supported: manifest.draftGeneration.workforceRegistry.supported,
+            restPaths: [...manifest.draftGeneration.workforceRegistry.restPaths],
+            mcpTools: [...manifest.draftGeneration.workforceRegistry.mcpTools],
+            formField: manifest.draftGeneration.workforceRegistry.formField,
+            note: manifest.draftGeneration.workforceRegistry.note,
+        },
+        reviewWorkflow: {
+            supported: manifest.draftGeneration.reviewWorkflow.supported,
+            queueHandoffRequiresTransition: manifest.draftGeneration.reviewWorkflow.queueHandoffRequiresTransition,
+            formField: manifest.draftGeneration.reviewWorkflow.formField,
+            decisionWebhookEvents: [...manifest.draftGeneration.reviewWorkflow.decisionWebhookEvents],
+            note: manifest.draftGeneration.reviewWorkflow.note,
+        },
         providers: {
             deterministic: {
                 status: 'ready',

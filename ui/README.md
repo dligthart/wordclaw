@@ -12,7 +12,8 @@ The default supported supervisor workflow covers:
 - schema manager
 - approval queue
 - forms
-- API keys and tenant agent provisioning
+- API keys
+- tenant AI provider and workforce provisioning
 
 Experimental pages such as Agent Sandbox, Payments, and L402 Readiness remain available for exploration or module operations, but they are outside the default product path.
 
@@ -74,10 +75,14 @@ Platform-scoped supervisors can switch domains from the header selector. The she
 
 Tenant-scoped AI provisioning lives in two places today:
 
-- `/ui/keys` for external provider credentials and reusable workforce agents
+- `/ui/agents` for external provider credentials and reusable workforce agents
 - `/ui/forms` for binding a public or authenticated intake form to a draft-generation target, field map, workflow hand-off, and either a workforce agent or direct SOUL/provider override
 
+If a generated draft should enter the approval queue, the form must set `postGenerationWorkflowTransitionId`. Without that transition, the runtime still creates the draft, but it remains a plain draft and no review task is created.
+
 The current multimodal boundary is intentionally narrow: form-driven draft generation forwards image assets only. OpenAI, Claude, and Gemini can all receive supported images natively, but non-image files are not yet part of the generation prompt path.
+
+See `doc/guides/form-driven-draft-generation.md` for the full operator workflow.
 
 Existing supervisors can rotate their own password through `PUT /api/supervisors/me/password`.
 

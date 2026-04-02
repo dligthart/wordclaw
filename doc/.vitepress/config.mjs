@@ -34,6 +34,7 @@ export default withMermaid(defineConfig({
                     { text: 'Docker Deployment', link: '/guides/docker-deployment' },
                     { text: 'Demos', link: '/guides/demos' },
                     { text: 'Fly Deployment', link: '/guides/fly-deployment' },
+                    { text: 'Form-Driven Draft Generation', link: '/guides/form-driven-draft-generation' },
                     { text: 'LangGraph MCP Starter', link: '/guides/langgraph-mcp-starter' },
                     { text: 'MCP Integration', link: '/guides/mcp-integration' },
                     { text: 'Native Vector RAG', link: '/guides/native-vector-rag' },
