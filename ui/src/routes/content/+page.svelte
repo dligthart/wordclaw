@@ -2555,7 +2555,7 @@
         {@render SchemaLanding()}
     {:else}
         <div
-            class="grid flex-1 gap-4 overflow-hidden min-[1400px]:grid-cols-[14rem_minmax(0,1fr)] min-[1700px]:grid-cols-[14rem_minmax(0,1fr)_26rem]"
+            class={`grid flex-1 gap-4 overflow-hidden min-[1400px]:grid-cols-[14rem_minmax(0,1fr)] ${selectedItem ? 'min-[1700px]:grid-cols-[14rem_minmax(0,1fr)_26rem]' : ''}`}
         >
             <aside class="hidden min-h-0 min-[1400px]:block">
                 <div class="h-full">

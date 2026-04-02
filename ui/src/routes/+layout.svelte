@@ -672,7 +672,7 @@
 
             <main class="min-h-[calc(100vh-4rem)]">
                 <div
-                    class="wc-page-scroll mx-auto max-w-[76rem] px-5 py-7 sm:px-7 lg:px-10"
+                    class="wc-page-scroll mx-auto max-w-[96rem] px-5 py-6 sm:px-7 lg:px-10"
                 >
                     {@render children()}
                 </div>
