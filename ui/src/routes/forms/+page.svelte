@@ -910,19 +910,37 @@
 
             <div class="space-y-6">
                 <Surface class="space-y-5">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">
+                    <!-- Sticky save bar -->
+                    <div class="sticky top-0 z-10 -mx-5 -mt-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-5 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-950/95">
+                        <div class="flex items-center gap-3">
+                            <h2 class="text-base font-semibold text-slate-900 dark:text-white">
                                 {editor.id ? "Edit form" : "Create form"}
                             </h2>
-                            <p class="text-sm text-slate-500 dark:text-slate-400">
-                                Define the target content type, field contract, workflow hand-off,
-                                and public behavior.
-                            </p>
+                            {#if loadingSelection}
+                                <LoadingSpinner size="sm" />
+                            {/if}
                         </div>
-                        {#if loadingSelection}
-                            <LoadingSpinner size="sm" />
-                        {/if}
+                        <div class="flex flex-wrap items-center gap-2">
+                            <Button disabled={saving} onclick={() => void saveForm()} size="sm">
+                                {#if saving}
+                                    <LoadingSpinner size="sm" />
+                                {:else}
+                                    <Icon src={ArrowPath} class="h-3.5 w-3.5" />
+                                {/if}
+                                {editor.id ? "Save" : "Create"}
+                            </Button>
+                            <Button variant="outline" size="sm" onclick={startNewForm}>
+                                Reset
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={!selectedForm || deleting}
+                                onclick={confirmDeleteSelected}
+                            >
+                                <Icon src={Trash} class="h-3.5 w-3.5" />
+                            </Button>
+                        </div>
                     </div>
 
                     <div class="grid gap-4 md:grid-cols-2">
@@ -1039,43 +1057,40 @@
                         </label>
                     </div>
 
-                    <div class="grid gap-4 xl:grid-cols-2">
-                        <label class="space-y-2">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                                Fields JSON
-                            </span>
-                            <Textarea bind:value={fieldsText} rows={16} />
-                        </label>
-                        <label class="space-y-2">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                                Default data JSON
-                            </span>
-                            <Textarea bind:value={defaultDataText} rows={16} />
-                        </label>
-                    </div>
+                    <details class="rounded-2xl border border-slate-200 dark:border-slate-700">
+                        <summary class="cursor-pointer px-4 py-2.5 text-sm font-semibold text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white select-none">
+                            Data Contracts
+                            <span class="ml-1 text-xs font-normal text-slate-400">Fields JSON + Default data</span>
+                        </summary>
+                        <div class="grid gap-4 px-4 pb-4 xl:grid-cols-2">
+                            <label class="space-y-2">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    Fields JSON
+                                </span>
+                                <Textarea bind:value={fieldsText} rows={6} />
+                            </label>
+                            <label class="space-y-2">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    Default data JSON
+                                </span>
+                                <Textarea bind:value={defaultDataText} rows={6} />
+                            </label>
+                        </div>
+                    </details>
 
-                    <div class="space-y-4 rounded-3xl border border-slate-200/80 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/40">
-                        <div class="flex flex-wrap items-start justify-between gap-3">
-                            <div class="space-y-1">
-                                <h3 class="text-base font-semibold text-slate-900 dark:text-white">
-                                    Draft generation
-                                </h3>
-                                <p class="max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-                                    Route accepted submissions into a background draft job and
-                                    bind the form to a tenant workforce agent or a direct
-                                    provider/model override. Set a post-generation workflow
-                                    transition if the generated draft should enter the approval
-                                    queue.
-                                </p>
-                            </div>
-                            <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                    <details class="rounded-2xl border border-slate-200/80 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-900/40" open={draftGenerationEnabled}>
+                        <summary class="cursor-pointer px-5 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white select-none flex items-center justify-between gap-3">
+                            <span>Draft Generation <span class="text-xs font-normal text-slate-400">Route submissions to AI agents</span></span>
+                            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+                            <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" onclick={(e) => e.stopPropagation()}>
                                 <input
                                     type="checkbox"
                                     bind:checked={draftGenerationEnabled}
                                 />
-                                Enable draft generation
+                                Enabled
                             </label>
-                        </div>
+                        </summary>
+                        <div class="space-y-4 px-5 pb-5">
 
                         {#if draftGenerationEnabled}
                             <div class="grid gap-4 md:grid-cols-2">
@@ -1196,111 +1211,75 @@
                                 {/if}
                             {/if}
 
-                            <div class="grid gap-4 md:grid-cols-2">
-                                <label class="space-y-2">
-                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                                        Post-generation workflow transition ID
-                                    </span>
-                                    <Input
-                                        bind:value={draftPostGenerationWorkflowTransitionId}
-                                        placeholder="Optional review transition after draft creation"
-                                    />
-                                </label>
-                                <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Leave the transition blank to keep generated items as plain
-                                    drafts. Set it to a valid review transition when generated
-                                    drafts should appear in the approval queue and later emit
-                                    review-approved or review-rejected form webhook follow-ups.
-                                </div>
-                                <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400 md:col-span-2">
-                                    Asset and asset-list fields are supported here, but draft jobs
-                                    currently forward image assets only. Supported images are
-                                    inlined for provisioned OpenAI, Claude, and Gemini agents.
-                                </div>
-                            </div>
+                            <label class="space-y-2">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    Post-generation workflow transition ID
+                                </span>
+                                <Input
+                                    bind:value={draftPostGenerationWorkflowTransitionId}
+                                    placeholder="Optional — blank keeps items as plain drafts"
+                                />
+                                <p class="text-xs text-slate-400 dark:text-slate-500">Set to a review transition to route drafts to the approval queue. Asset fields forward images only.</p>
+                            </label>
 
                             <div class="grid gap-4 xl:grid-cols-2">
                                 <label class="space-y-2">
                                     <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                         Draft field map JSON
                                     </span>
-                                    <Textarea bind:value={draftFieldMapText} rows={10} />
+                                    <Textarea bind:value={draftFieldMapText} rows={5} />
                                 </label>
                                 <label class="space-y-2">
                                     <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                         Draft default data JSON
                                     </span>
-                                    <Textarea bind:value={draftDefaultDataText} rows={10} />
+                                    <Textarea bind:value={draftDefaultDataText} rows={5} />
                                 </label>
                             </div>
                         {/if}
-                    </div>
+                        </div>
+                    </details>
 
-                    <div class="flex flex-wrap items-center gap-3">
-                        <Button disabled={saving} onclick={() => void saveForm()}>
-                            {#if saving}
-                                <LoadingSpinner size="sm" />
-                            {:else}
-                                <Icon src={ArrowPath} class="h-4 w-4" />
+                    <details class="rounded-2xl border border-slate-200 dark:border-slate-700">
+                        <summary class="cursor-pointer px-4 py-2.5 text-sm font-semibold text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white select-none">
+                            Sample Submission
+                            <span class="ml-1 text-xs font-normal text-slate-400">Test the public endpoint</span>
+                        </summary>
+                        <div class="space-y-4 px-4 pb-4">
+                            <label class="space-y-2">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    Submission data JSON
+                                </span>
+                                <Textarea bind:value={sampleSubmissionText} rows={5} />
+                            </label>
+
+                            <div class="flex flex-wrap items-center gap-3">
+                                <Button
+                                    disabled={submittingSample || !editor.slug.trim()}
+                                    size="sm"
+                                    onclick={() => void submitSample()}
+                                >
+                                    {#if submittingSample}
+                                        <LoadingSpinner size="sm" />
+                                    {:else}
+                                        <Icon src={PaperAirplane} class="h-3.5 w-3.5" />
+                                    {/if}
+                                    Submit sample
+                                </Button>
+                                <Badge variant="info">
+                                    Domain {currentDomainId() ?? "not selected"}
+                                </Badge>
+                            </div>
+
+                            {#if lastSubmission}
+                                <JsonCodeBlock
+                                    value={lastSubmission}
+                                    label="Last sample submission"
+                                    copyable={true}
+                                />
                             {/if}
-                            {editor.id ? "Save changes" : "Create form"}
-                        </Button>
-                        <Button variant="outline" onclick={startNewForm}>
-                            Reset editor
-                        </Button>
-                        <Button
-                            variant="destructive"
-                            disabled={!selectedForm || deleting}
-                            onclick={confirmDeleteSelected}
-                        >
-                            <Icon src={Trash} class="h-4 w-4" />
-                            Delete form
-                        </Button>
-                    </div>
-                </Surface>
-
-                <Surface tone="muted" class="space-y-5">
-                    <div>
-                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">
-                            Sample submission
-                        </h2>
-                        <p class="text-sm text-slate-500 dark:text-slate-400">
-                            Send a payload through the public submission endpoint for the
-                            current domain and inspect the stored response.
-                        </p>
-                    </div>
-
-                    <label class="space-y-2">
-                        <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                            Submission data JSON
-                        </span>
-                        <Textarea bind:value={sampleSubmissionText} rows={10} />
-                    </label>
-
-                    <div class="flex flex-wrap items-center gap-3">
-                        <Button
-                            disabled={submittingSample || !editor.slug.trim()}
-                            onclick={() => void submitSample()}
-                        >
-                            {#if submittingSample}
-                                <LoadingSpinner size="sm" />
-                            {:else}
-                                <Icon src={PaperAirplane} class="h-4 w-4" />
-                            {/if}
-                            Submit sample
-                        </Button>
-                        <Badge variant="info">
-                            Domain {currentDomainId() ?? "not selected"}
-                        </Badge>
-                    </div>
-
-                    {#if lastSubmission}
-                        <JsonCodeBlock
-                            value={lastSubmission}
-                            label="Last sample submission"
-                            copyable={true}
-                        />
-                    {/if}
+                        </div>
+                    </details>
                 </Surface>
             </div>
         </div>
