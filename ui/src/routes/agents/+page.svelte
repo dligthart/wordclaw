@@ -700,248 +700,182 @@
             <LoadingSpinner size="lg" />
         </Surface>
     {:else}
-        <div class="grid gap-4 lg:grid-cols-3">
-            <Surface tone="subtle" class="p-4">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Configured providers
-                </p>
-                <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-                    {configuredProviderCount}
-                </p>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    External model credentials stored for the active tenant.
-                </p>
-            </Surface>
-            <Surface tone="subtle" class="p-4">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Workforce agents
-                </p>
-                <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-                    {workforceAgentCount}
-                </p>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Reusable tenant agents with stable ids, purpose, and SOUL.
-                </p>
-            </Surface>
-            <Surface tone="subtle" class="p-4">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Active workforce
-                </p>
-                <p class="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-                    {activeWorkforceAgentCount}
-                </p>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Agents currently available to form-driven jobs and workflows.
-                </p>
-            </Surface>
-        </div>
-
-        <Surface class="mt-4 p-5">
-            <div class="flex items-start justify-between gap-4 flex-wrap">
+        <!-- ── AI Providers — compact table ── -->
+        <Surface class="p-5">
+            <div class="flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    <h3 class="text-base font-semibold text-slate-900 dark:text-white">
                         AI Providers
-                    </p>
-                    <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
-                        Tenant-scoped model credentials
                     </h3>
-                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        Provider-backed draft-generation jobs resolve credentials from the active tenant instead of a global server key.
+                    <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                        Tenant-scoped model credentials for draft-generation jobs.
                     </p>
                 </div>
+                <Badge variant="outline">{configuredProviderCount} of {configurableProviders.length} configured</Badge>
             </div>
 
-            <div class="mt-5 grid gap-4 xl:grid-cols-3">
-                {#each configurableProviders as provider}
-                    <div class="rounded-3xl border border-slate-200 bg-slate-50/70 p-5 dark:border-slate-700 dark:bg-slate-900/30">
-                        <div class="flex items-start justify-between gap-4 flex-wrap">
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    <h4 class="text-base font-semibold text-slate-900 dark:text-white">{provider.label}</h4>
-                                    <Badge variant={getProviderConfig(provider.type) ? "info" : "outline"}>
-                                        {getProviderConfig(provider.type) ? "Configured" : "Not configured"}
+            <div class="mt-4 overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-slate-200 dark:border-slate-700">
+                            <th class="pb-2 pr-4 text-left text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Provider</th>
+                            <th class="pb-2 pr-4 text-left text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Status</th>
+                            <th class="pb-2 pr-4 text-left text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Model</th>
+                            <th class="pb-2 pr-4 text-left text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Key</th>
+                            <th class="pb-2 pr-4 text-left text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Updated</th>
+                            <th class="pb-2 text-right text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each configurableProviders as provider}
+                            {@const config = getProviderConfig(provider.type)}
+                            <tr class="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                                <td class="py-3 pr-4">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium text-slate-900 dark:text-white">{provider.label}</span>
+                                        <button
+                                            onclick={(e) => {
+                                                const el = e.currentTarget;
+                                                const tip = el.querySelector('.provider-tip');
+                                                if (tip) tip.classList.toggle('hidden');
+                                            }}
+                                            class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-[0.6rem] font-semibold text-slate-500 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-400 dark:hover:bg-slate-600 relative"
+                                            title={provider.draftGenerationHint}
+                                        >
+                                            i
+                                            <span class="provider-tip hidden absolute left-6 top-0 z-10 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-mono text-slate-700 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                                                {provider.draftGenerationHint}
+                                            </span>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td class="py-3 pr-4">
+                                    <Badge variant={config ? "info" : "outline"}>
+                                        {config ? "Configured" : "—"}
                                     </Badge>
-                                </div>
-                                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                                    {provider.description}
-                                </p>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <Button variant="outline" size="sm" onclick={() => openProviderModal(provider.type)}>
-                                    {getProviderConfig(provider.type) ? `Update ${provider.label}` : `Configure ${provider.label}`}
-                                </Button>
-                                {#if getProviderConfig(provider.type)}
-                                    <Button variant="destructive" size="sm" onclick={() => deleteProvider(provider.type)}>
-                                        <Icon src={Trash} class="h-4 w-4" />
-                                        Delete
-                                    </Button>
-                                {/if}
-                            </div>
-                        </div>
-
-                        <div class="mt-4 grid gap-4 md:grid-cols-3">
-                            <div>
-                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                    Stored key
-                                </p>
-                                <p class="mt-2 font-mono text-sm text-slate-800 dark:text-slate-200">
-                                    {getProviderConfig(provider.type)?.maskedApiKey ?? "Not configured"}
-                                </p>
-                            </div>
-                            <div>
-                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                    Default model
-                                </p>
-                                <p class="mt-2 text-sm text-slate-800 dark:text-slate-200">
-                                    {getProviderConfig(provider.type)?.defaultModel ?? "Provider or worker fallback"}
-                                </p>
-                            </div>
-                            <div>
-                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                    Last updated
-                                </p>
-                                <p class="mt-2 text-sm text-slate-800 dark:text-slate-200">
-                                    {getProviderConfig(provider.type)
-                                        ? formatDate(getProviderConfig(provider.type)?.updatedAt ?? null)
-                                        : "Never"}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/50">
-                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                Form / agent reference
-                            </p>
-                            <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                                <code class="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.72rem] text-slate-800 dark:bg-slate-800 dark:text-slate-200">
-                                    {provider.draftGenerationHint}
-                                </code>
-                            </p>
-                        </div>
-                    </div>
-                {/each}
+                                </td>
+                                <td class="py-3 pr-4 text-slate-700 dark:text-slate-300">
+                                    {config?.defaultModel ?? "—"}
+                                </td>
+                                <td class="py-3 pr-4 font-mono text-xs text-slate-500 dark:text-slate-400">
+                                    {config?.maskedApiKey ?? "—"}
+                                </td>
+                                <td class="py-3 pr-4 text-slate-500 dark:text-slate-400 text-xs">
+                                    {config ? formatDate(config.updatedAt) : "—"}
+                                </td>
+                                <td class="py-3 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <Button variant="outline" size="sm" onclick={() => openProviderModal(provider.type)}>
+                                            {config ? "Update" : "Configure"}
+                                        </Button>
+                                        {#if config}
+                                            <Button variant="destructive" size="sm" onclick={() => deleteProvider(provider.type)}>
+                                                <Icon src={Trash} class="h-3.5 w-3.5" />
+                                            </Button>
+                                        {/if}
+                                    </div>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
             </div>
 
             {#if providerConfigsError}
-                <div class="mt-5 rounded-3xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                    Provider provisioning is unavailable right now. Provider-backed draft-generation setup is temporarily limited. Details: {providerConfigsError}
+                <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                    Provider provisioning is unavailable. Details: {providerConfigsError}
                 </div>
             {/if}
         </Surface>
 
+        <!-- ── Workforce Agents — compact list with collapsible SOUL ── -->
         <Surface class="mt-4 p-5">
-            <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div class="flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    <h3 class="text-base font-semibold text-slate-900 dark:text-white">
                         Workforce Agents
-                    </p>
-                    <h3 class="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
-                        Tenant-managed SOUL profiles
                     </h3>
-                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        Each agent owns a stable id or slug, a bounded purpose, a SOUL, and provider/model defaults that forms can reference through the API.
+                    <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                        Reusable SOUL profiles that forms reference by slug.
+                        <Badge variant="outline" class="ml-1">{workforceAgentCount} total</Badge>
+                        <Badge variant="muted" class="ml-1">{activeWorkforceAgentCount} active</Badge>
                     </p>
-                    <div class="mt-3 flex flex-wrap gap-2">
-                        <Badge variant="outline">{workforceAgentCount} total</Badge>
-                        <Badge variant="muted">{activeWorkforceAgentCount} active</Badge>
-                    </div>
                 </div>
                 <Button variant="outline" onclick={() => openWorkforceModal()}>
-                    <Icon src={Plus} class="w-5 h-5" />
+                    <Icon src={Plus} class="w-4 h-4" />
                     Add Agent
                 </Button>
             </div>
 
             {#if workforceAgents.length === 0}
-                <div class="mt-5 rounded-3xl border border-dashed border-slate-300 bg-slate-50/70 p-6 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-400">
-                    No workforce agents yet. Create one to define a reusable tenant agent profile with a specific SOUL and provider/model defaults.
+                <div class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-5 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-400">
+                    No workforce agents yet. Create one to define a reusable agent profile.
                 </div>
             {:else}
-                <div class="mt-5 grid gap-4">
+                <div class="mt-4 space-y-3">
                     {#each workforceAgents as agent}
-                        <div class="rounded-3xl border border-slate-200 bg-slate-50/70 p-5 dark:border-slate-700 dark:bg-slate-900/30">
-                            <div class="flex items-start justify-between gap-4 flex-wrap">
-                                <div>
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        <h4 class="text-base font-semibold text-slate-900 dark:text-white">{agent.name}</h4>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-900/30">
+                            <!-- Agent header row -->
+                            <div class="flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <h4 class="text-sm font-semibold text-slate-900 dark:text-white">{agent.name}</h4>
                                         <Badge variant={agent.active ? "info" : "outline"}>
                                             {agent.active ? "Active" : "Inactive"}
                                         </Badge>
+                                        {#if agent.provider.type !== "deterministic" && !getProviderConfig(agent.provider.type)}
+                                            <Badge variant="outline">Needs credential</Badge>
+                                        {/if}
                                     </div>
-                                    <p class="mt-2 font-mono text-xs text-slate-500 dark:text-slate-400">
-                                        {agent.slug} · #{agent.id}
-                                    </p>
+                                    <span class="hidden sm:inline font-mono text-xs text-slate-400 dark:text-slate-500">
+                                        {agent.slug}
+                                    </span>
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <Button variant="outline" size="sm" onclick={() => openWorkforceModal(agent)}>
-                                        Edit
-                                    </Button>
-                                    <Button variant="destructive" size="sm" onclick={() => deleteWorkforceAgent(agent)}>
-                                        <Icon src={Trash} class="h-4 w-4" />
-                                        Delete
-                                    </Button>
-                                </div>
-                            </div>
-
-                            <p class="mt-4 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                                {agent.purpose}
-                            </p>
-
-                            <div class="mt-4 grid gap-4 md:grid-cols-3">
-                                <div>
-                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                        Provider / Model
-                                    </p>
-                                    <p class="mt-2 text-sm text-slate-800 dark:text-slate-200">
-                                        {describeWorkforceProvider(agent.provider)}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                        Updated
-                                    </p>
-                                    <p class="mt-2 text-sm text-slate-800 dark:text-slate-200">
-                                        {formatDate(agent.updatedAt)}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                        Provisioning
-                                    </p>
-                                    <p class="mt-2 text-sm text-slate-800 dark:text-slate-200">
-                                        {agent.provider.type !== "deterministic" && !getProviderConfig(agent.provider.type)
-                                            ? "Needs provider credential"
-                                            : "Ready"}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/50">
-                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                    SOUL
-                                </p>
-                                <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-300">
-                                    {agent.soul}
-                                </p>
-                                {#if agent.provider.type !== "deterministic" && agent.provider.instructions}
-                                    <div class="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
-                                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                                            Provider Instructions
-                                        </p>
-                                        <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">
-                                            {agent.provider.instructions}
-                                        </p>
+                                <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                                    <span class="hidden md:inline">{describeWorkforceProvider(agent.provider)}</span>
+                                    <span class="hidden lg:inline">· {formatDate(agent.updatedAt)}</span>
+                                    <div class="flex items-center gap-1.5">
+                                        <Button variant="outline" size="sm" onclick={() => openWorkforceModal(agent)}>
+                                            Edit
+                                        </Button>
+                                        <Button variant="destructive" size="sm" onclick={() => deleteWorkforceAgent(agent)}>
+                                            <Icon src={Trash} class="h-3.5 w-3.5" />
+                                        </Button>
                                     </div>
-                                {/if}
+                                </div>
                             </div>
+
+                            <!-- Purpose (always visible, compact) -->
+                            <div class="border-t border-slate-200 px-4 py-2 dark:border-slate-700">
+                                <p class="text-sm text-slate-600 dark:text-slate-300 leading-snug">{agent.purpose}</p>
+                            </div>
+
+                            <!-- Collapsible SOUL + instructions -->
+                            <details class="border-t border-slate-200 dark:border-slate-700">
+                                <summary class="cursor-pointer px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300 select-none">
+                                    SOUL & Instructions
+                                </summary>
+                                <div class="px-4 pb-3">
+                                    <div class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/50">
+                                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">SOUL</p>
+                                        <p class="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-300">{agent.soul}</p>
+                                        {#if agent.provider.type !== "deterministic" && agent.provider.instructions}
+                                            <div class="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+                                                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Provider Instructions</p>
+                                                <p class="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{agent.provider.instructions}</p>
+                                            </div>
+                                        {/if}
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     {/each}
                 </div>
             {/if}
 
             {#if workforceAgentsError}
-                <div class="mt-5 rounded-3xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                    Workforce agents are unavailable right now. Forms can still use direct provider overrides, but reusable SOUL profiles cannot be managed until the workforce registry is back. Details: {workforceAgentsError}
+                <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                    Workforce agents are unavailable. Details: {workforceAgentsError}
                 </div>
             {/if}
         </Surface>

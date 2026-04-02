@@ -871,13 +871,15 @@
                         Select an item from the queue to review and approve.
                     </div>
                 {:else}
+                    <!-- Sticky action bar: always visible at top -->
                     <div
-                        class="border-b border-slate-200/80 bg-slate-50/85 px-6 py-5 dark:border-slate-700 dark:bg-slate-900/30"
+                        class="sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm px-5 py-4 dark:border-slate-700 dark:bg-slate-900/95"
                     >
+                        <!-- Row 1: Title + action buttons -->
                         <div
-                            class="flex items-start justify-between gap-4 flex-wrap"
+                            class="flex items-start justify-between gap-3 flex-wrap"
                         >
-                            <div class="min-w-0">
+                            <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2 flex-wrap">
                                     <button
                                         class="md:hidden mr-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
@@ -886,27 +888,34 @@
                                     >
                                         <Icon
                                             src={ChevronLeft}
-                                            class="w-6 h-6"
+                                            class="w-5 h-5"
                                         />
                                     </button>
-                                    <p
-                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400"
+                                    <h3
+                                        class="truncate text-lg font-semibold tracking-tight text-gray-900 dark:text-white"
                                     >
-                                        Reviewing item #{selectedTask
-                                            .contentItem.id}
-                                    </p>
+                                        {resolveTaskLabel(selectedTask)}
+                                    </h3>
                                 </div>
-                                <h3
-                                    class="mt-2 truncate text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
-                                >
-                                    {resolveTaskLabel(selectedTask)}
-                                </h3>
                                 <div
-                                    class="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400"
+                                    class="mt-1.5 flex flex-wrap items-center gap-2 text-xs"
                                 >
                                     <Badge variant="outline"
                                         >{selectedTask.contentType.name}</Badge
                                     >
+                                    <Badge variant="outline"
+                                        >#{selectedTask.contentItem.id}</Badge
+                                    >
+                                    <Badge
+                                        variant={resolveStatusBadgeVariant(
+                                            selectedTask.contentItem.status,
+                                        )}
+                                        class="uppercase"
+                                    >
+                                        {formatStatusLabel(
+                                            selectedTask.contentItem.status,
+                                        )}
+                                    </Badge>
                                     <Badge variant="outline">
                                         {formatStatusLabel(
                                             selectedTask.transition.fromState,
@@ -915,7 +924,11 @@
                                         )}
                                     </Badge>
                                     <Badge variant="muted"
-                                        >Submitted {formatRelativeDate(
+                                        >v{selectedTask.contentItem
+                                            .version}</Badge
+                                    >
+                                    <Badge variant="muted"
+                                        >{formatRelativeDate(
                                             selectedTask.task.createdAt,
                                         )}</Badge
                                     >
@@ -932,25 +945,6 @@
                                     variant="outline"
                                 >
                                     Reject
-                                </Button>
-                                <Button
-                                    onclick={() => reviseTask(selectedTask!)}
-                                    disabled={revisingItem ===
-                                            selectedTask.task.id ||
-                                        processingItem ===
-                                            selectedTask.task.id ||
-                                        !revisionPrompt.trim()}
-                                    variant="outline"
-                                >
-                                    {#if revisingItem === selectedTask.task.id}
-                                        <LoadingSpinner size="sm" />
-                                    {:else}
-                                        <Icon
-                                            src={ArrowPath}
-                                            class="w-4 h-4"
-                                        />
-                                    {/if}
-                                    Revise With Agent
                                 </Button>
                                 <Button
                                     onclick={() =>
@@ -972,113 +966,263 @@
                                 </Button>
                             </div>
                         </div>
+
+                        <!-- Row 2: Compact revision prompt inline -->
+                        <div class="mt-3 flex items-start gap-2">
+                            <div class="flex-1 min-w-0">
+                                <Textarea
+                                    id="revision-prompt"
+                                    bind:value={revisionPrompt}
+                                    placeholder="Describe what the agent should change…"
+                                    rows={1}
+                                    class="w-full text-sm resize-y"
+                                    disabled={revisingItem ===
+                                        selectedTask.task.id}
+                                />
+                            </div>
+                            <Button
+                                onclick={() => reviseTask(selectedTask!)}
+                                disabled={revisingItem ===
+                                        selectedTask.task.id ||
+                                    processingItem ===
+                                        selectedTask.task.id ||
+                                    !revisionPrompt.trim()}
+                                variant="outline"
+                                class="shrink-0"
+                            >
+                                {#if revisingItem === selectedTask.task.id}
+                                    <LoadingSpinner size="sm" />
+                                {:else}
+                                    <Icon
+                                        src={ArrowPath}
+                                        class="w-4 h-4"
+                                    />
+                                {/if}
+                                Revise
+                            </Button>
+                        </div>
+
+                        <!-- Row 3: Optional decision reason (collapsible) -->
+                        <details class="mt-2">
+                            <summary
+                                class="cursor-pointer text-[0.7rem] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 select-none"
+                            >
+                                Add decision reason (optional)
+                            </summary>
+                            <div class="mt-1.5">
+                                <Textarea
+                                    id="decision-reason"
+                                    bind:value={decisionReason}
+                                    placeholder="Reasoning for approval or rejection…"
+                                    rows={2}
+                                    class="w-full text-sm"
+                                />
+                            </div>
+                        </details>
                     </div>
 
+                    <!-- Scrollable body: two-column layout -->
                     <div
-                        class="flex-1 overflow-y-auto bg-slate-50/50 p-5 dark:bg-slate-950/40"
+                        class="flex-1 overflow-y-auto bg-slate-50/50 p-4 dark:bg-slate-950/40"
                     >
-                        <div class="space-y-4">
-                            <div
-                                class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_18rem]"
-                            >
-                                <Surface tone="subtle" class="rounded-2xl p-5">
-                                    <p
-                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                        <div
+                            class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]"
+                        >
+                            <!-- LEFT COLUMN: Diff view (primary content) -->
+                            <div class="space-y-4 min-w-0">
+                                <!-- Latest revision prompt banner -->
+                                {#if latestRevisionPromptComment && !revisionContextLoading}
+                                    <div
+                                        class="rounded-xl border border-indigo-200 bg-indigo-50/80 px-4 py-3 dark:border-indigo-800 dark:bg-indigo-950/30"
                                     >
-                                        Submission Overview
-                                    </p>
+                                        <p
+                                            class="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-indigo-500 dark:text-indigo-400"
+                                        >
+                                            Last Revision Prompt
+                                        </p>
+                                        <p
+                                            class="mt-1 text-sm leading-relaxed text-indigo-800 dark:text-indigo-200"
+                                        >
+                                            {extractRevisionPrompt(
+                                                latestRevisionPromptComment.comment,
+                                            )}
+                                        </p>
+                                        <p
+                                            class="mt-1 text-[0.65rem] text-indigo-400 dark:text-indigo-500"
+                                        >
+                                            {formatAbsoluteDate(
+                                                latestRevisionPromptComment.createdAt,
+                                            )}
+                                        </p>
+                                    </div>
+                                {/if}
+
+                                <!-- Diff section -->
+                                <Surface class="overflow-hidden rounded-xl p-0">
+                                    <div
+                                        class="border-b border-slate-200 px-4 py-2.5 dark:border-slate-700 flex items-center justify-between gap-3"
+                                    >
+                                        <h4
+                                            class="text-sm font-semibold text-gray-900 dark:text-white"
+                                        >
+                                            Changes
+                                        </h4>
+                                        {#if previousVersionSnapshot && selectedTask}
+                                            <Badge variant="outline"
+                                                >v{previousVersionSnapshot.version}
+                                                → v{selectedTask.contentItem
+                                                    .version}</Badge
+                                            >
+                                        {/if}
+                                    </div>
+
+                                    <div class="p-4">
+                                        {#if revisionContextLoading}
+                                            <div
+                                                class="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                            >
+                                                <LoadingSpinner size="sm" />
+                                                Loading revision history…
+                                            </div>
+                                        {:else if revisionContextError}
+                                            <div
+                                                class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+                                            >
+                                                {revisionContextError}
+                                            </div>
+                                        {:else if !previousVersionSnapshot}
+                                            <div
+                                                class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                            >
+                                                First version — no prior revision to compare against.
+                                            </div>
+                                        {:else if revisionDiffEntries.length === 0}
+                                            <div
+                                                class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                            >
+                                                No field-level changes detected. The model may have returned semantically equivalent content.
+                                            </div>
+                                        {:else}
+                                            <!-- Compact diff table -->
+                                            <div
+                                                class="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+                                            >
+                                                {#each revisionDiffEntries as entry}
+                                                    <div class="text-sm">
+                                                        <div
+                                                            class="flex items-center justify-between gap-2 bg-slate-50/80 px-3 py-1.5 dark:bg-slate-900/40"
+                                                        >
+                                                            <span
+                                                                class="font-mono text-xs text-slate-600 dark:text-slate-300 font-medium"
+                                                            >
+                                                                {entry.key}
+                                                            </span>
+                                                            <Badge
+                                                                variant={resolveDiffBadgeVariant(
+                                                                    entry.change,
+                                                                )}
+                                                                class="uppercase text-[0.6rem]"
+                                                            >
+                                                                {entry.change}
+                                                            </Badge>
+                                                        </div>
+                                                        <div
+                                                            class="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700"
+                                                        >
+                                                            <div
+                                                                class="px-3 py-2 whitespace-pre-wrap break-words text-xs text-slate-500 dark:text-slate-400 bg-red-50/40 dark:bg-red-950/10"
+                                                            >
+                                                                {entry.before}
+                                                            </div>
+                                                            <div
+                                                                class="px-3 py-2 whitespace-pre-wrap break-words text-xs text-emerald-800 dark:text-emerald-200 bg-emerald-50/40 dark:bg-emerald-950/10"
+                                                            >
+                                                                {entry.after}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                        {/if}
+                                    </div>
+                                </Surface>
+
+                                <!-- Submission summary -->
+                                <Surface
+                                    tone="subtle"
+                                    class="rounded-xl p-4"
+                                >
                                     <p
-                                        class="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300"
+                                        class="text-sm leading-relaxed text-slate-600 dark:text-slate-300"
                                     >
                                         {resolveTaskSummary(selectedTask)}
                                     </p>
+                                </Surface>
 
-                                    <dl
-                                        class="mt-5 grid gap-4 text-sm sm:grid-cols-2"
+                                <!-- Collapsible raw payload -->
+                                <details>
+                                    <summary
+                                        class="cursor-pointer text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white select-none py-2"
                                     >
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
-                                            >
-                                                Current Status
-                                            </dt>
-                                            <dd class="mt-1">
-                                                <Badge
-                                                    variant={resolveStatusBadgeVariant(
-                                                        selectedTask.contentItem
-                                                            .status,
-                                                    )}
-                                                    class="uppercase"
-                                                >
-                                                    {formatStatusLabel(
-                                                        selectedTask.contentItem
-                                                            .status,
-                                                    )}
-                                                </Badge>
-                                            </dd>
-                                        </div>
-                                        <div class="sm:col-span-2">
-                                            <label
-                                                for="revision-prompt"
-                                                class="block text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 mb-1"
-                                            >
-                                                Agent Revision Prompt
-                                            </label>
-                                            <Textarea
-                                                id="revision-prompt"
-                                                bind:value={revisionPrompt}
-                                                placeholder="Tell the agent what to adjust before approval, for example: tighten the executive summary, clarify timeline risks, and make pricing assumptions explicit."
-                                                rows={3}
-                                                class="w-full text-sm"
-                                                disabled={revisingItem ===
-                                                    selectedTask.task.id}
+                                        Raw Payload JSON
+                                    </summary>
+                                    <Surface
+                                        class="overflow-hidden rounded-xl p-0 mt-2"
+                                    >
+                                        <JsonCodeBlock
+                                            value={selectedTask.contentItem.data}
+                                            label="Payload JSON"
+                                            copyable={true}
+                                        />
+                                    </Surface>
+                                </details>
+
+                                <!-- Collapsible version JSON comparison -->
+                                {#if previousVersionSnapshot}
+                                    <details>
+                                        <summary
+                                            class="cursor-pointer text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white select-none py-2"
+                                        >
+                                            Full Version Comparison (JSON)
+                                        </summary>
+                                        <div
+                                            class="grid gap-3 xl:grid-cols-2 mt-2"
+                                        >
+                                            <JsonCodeBlock
+                                                value={previousVersionSnapshot.data}
+                                                label={`v${previousVersionSnapshot.version}`}
+                                                copyable={true}
                                             />
-                                            <p
-                                                class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400"
-                                            >
-                                                This re-runs the agent against
-                                                the same draft item, keeps the
-                                                review task pending, and versions
-                                                the content instead of creating a
-                                                second item.
-                                            </p>
-                                        </div>
-                                        <div class="sm:col-span-2">
-                                            <label
-                                                for="decision-reason"
-                                                class="block text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 mb-1"
-                                            >
-                                                Decision Reason (Optional)
-                                            </label>
-                                            <Textarea
-                                                id="decision-reason"
-                                                bind:value={decisionReason}
-                                                placeholder="Provide reasoning for approval or rejection..."
-                                                rows={2}
-                                                class="w-full text-sm"
+                                            <JsonCodeBlock
+                                                value={selectedTask.contentItem.data}
+                                                label={`v${selectedTask.contentItem.version}`}
+                                                copyable={true}
                                             />
                                         </div>
+                                    </details>
+                                {/if}
+                            </div>
+
+                            <!-- RIGHT COLUMN: Compact metadata sidebar -->
+                            <div class="space-y-3 hidden xl:block">
+                                <Surface
+                                    tone="subtle"
+                                    class="rounded-xl p-3.5"
+                                >
+                                    <p
+                                        class="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400 mb-3"
+                                    >
+                                        Details
+                                    </p>
+                                    <dl class="space-y-2.5 text-xs">
                                         <div>
                                             <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
-                                            >
-                                                Content Version
-                                            </dt>
-                                            <dd
-                                                class="mt-1 text-slate-900 dark:text-white"
-                                            >
-                                                v{selectedTask.contentItem
-                                                    .version}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                             >
                                                 Slug
                                             </dt>
                                             <dd
-                                                class="mt-1 text-slate-700 dark:text-slate-300"
+                                                class="mt-0.5 text-slate-700 dark:text-slate-300 font-mono break-all"
                                             >
                                                 {resolveTaskSlug(
                                                     selectedTask,
@@ -1087,65 +1231,37 @@
                                         </div>
                                         <div>
                                             <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                             >
                                                 Attribution
                                             </dt>
                                             <dd
-                                                class="mt-1 text-slate-700 dark:text-slate-300"
+                                                class="mt-0.5 text-slate-700 dark:text-slate-300"
                                             >
                                                 {resolveTaskAttribution(
                                                     selectedTask,
                                                 ) || "—"}
                                             </dd>
                                         </div>
-                                    </dl>
-                                </Surface>
-
-                                <Surface tone="subtle" class="rounded-2xl p-5">
-                                    <p
-                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                                    >
-                                        Workflow Context
-                                    </p>
-                                    <dl class="mt-4 space-y-3 text-sm">
                                         <div>
                                             <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                             >
                                                 Workflow
                                             </dt>
                                             <dd
-                                                class="mt-1 text-slate-700 dark:text-slate-300"
+                                                class="mt-0.5 text-slate-700 dark:text-slate-300"
                                             >
                                                 {selectedTask.workflow.name}
                                             </dd>
                                         </div>
                                         <div>
                                             <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                             >
-                                                Transition
+                                                Reviewer
                                             </dt>
-                                            <dd
-                                                class="mt-1 text-slate-700 dark:text-slate-300"
-                                            >
-                                                {formatStatusLabel(
-                                                    selectedTask.transition
-                                                        .fromState,
-                                                )} → {formatStatusLabel(
-                                                    selectedTask.transition
-                                                        .toState,
-                                                )}
-                                            </dd>
-                                        </div>
-                                        <div>
-                                            <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
-                                            >
-                                                Assigned Reviewer
-                                            </dt>
-                                            <dd class="mt-1">
+                                            <dd class="mt-0.5">
                                                 <ActorIdentity
                                                     actorId={selectedTask.task
                                                         .assigneeActorId ??
@@ -1153,20 +1269,22 @@
                                                             .assignee}
                                                     actorType={selectedTask.task
                                                         .assigneeActorType}
-                                                    actorSource={selectedTask.task
+                                                    actorSource={selectedTask
+                                                        .task
                                                         .assigneeActorSource}
                                                     fallback="Unassigned"
+                                                    compact={true}
                                                 />
                                             </dd>
                                         </div>
                                         <div>
                                             <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                             >
-                                                Queue Position
+                                                Queue
                                             </dt>
                                             <dd
-                                                class="mt-1 text-slate-700 dark:text-slate-300"
+                                                class="mt-0.5 text-slate-700 dark:text-slate-300"
                                             >
                                                 {selectedTaskQueueIndex >= 0
                                                     ? selectedTaskQueueIndex + 1
@@ -1175,29 +1293,29 @@
                                         </div>
                                         <div>
                                             <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                             >
-                                                Required Roles
+                                                Roles
                                             </dt>
                                             <dd
-                                                class="mt-1 text-slate-700 dark:text-slate-300"
+                                                class="mt-0.5 text-slate-700 dark:text-slate-300"
                                             >
                                                 {selectedTask.transition
                                                     .requiredRoles.length > 0
                                                     ? selectedTask.transition.requiredRoles.join(
                                                           ", ",
                                                       )
-                                                    : "No explicit role gate"}
+                                                    : "None"}
                                             </dd>
                                         </div>
                                         <div>
                                             <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                             >
                                                 Submitted
                                             </dt>
                                             <dd
-                                                class="mt-1 text-slate-700 dark:text-slate-300"
+                                                class="mt-0.5 text-slate-700 dark:text-slate-300"
                                             >
                                                 {formatAbsoluteDate(
                                                     selectedTask.task.createdAt,
@@ -1206,12 +1324,12 @@
                                         </div>
                                         <div>
                                             <dt
-                                                class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                             >
-                                                Last Update
+                                                Updated
                                             </dt>
                                             <dd
-                                                class="mt-1 text-slate-700 dark:text-slate-300"
+                                                class="mt-0.5 text-slate-700 dark:text-slate-300"
                                             >
                                                 {formatAbsoluteDate(
                                                     selectedTask.task.updatedAt,
@@ -1221,9 +1339,9 @@
                                     </dl>
 
                                     <div
-                                        class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                        class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs leading-5 text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
                                     >
-                                        Approve to move this item from
+                                        Approve to move from
                                         <span
                                             class="font-medium text-slate-900 dark:text-white"
                                         >
@@ -1232,298 +1350,67 @@
                                                     .fromState,
                                             )}
                                         </span>
-                                        to
+                                        →
                                         <span
                                             class="font-medium text-slate-900 dark:text-white"
                                         >
                                             {formatStatusLabel(
                                                 selectedTask.transition.toState,
                                             )}
-                                        </span>.
+                                        </span>
                                     </div>
                                 </Surface>
-                            </div>
 
-                            <Surface class="overflow-hidden rounded-2xl p-0">
-                                <div
-                                    class="border-b border-slate-200 px-5 py-3 dark:border-slate-700"
-                                >
-                                    <div
-                                        class="flex items-start justify-between gap-3 flex-wrap"
+                                <!-- Revision stats (if available) -->
+                                {#if previousVersionSnapshot && !revisionContextLoading}
+                                    <Surface
+                                        tone="subtle"
+                                        class="rounded-xl p-3.5"
                                     >
-                                        <div>
-                                            <h4
-                                                class="text-sm font-semibold text-gray-900 dark:text-white"
-                                            >
-                                                Latest Agent Changes
-                                            </h4>
-                                            <p
-                                                class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                                            >
-                                                Review exactly what changed in
-                                                the latest revision before you
-                                                approve the draft.
-                                            </p>
-                                        </div>
-                                        {#if previousVersionSnapshot && selectedTask}
-                                            <Badge variant="outline"
-                                                >v{previousVersionSnapshot.version}
-                                                → v{selectedTask.contentItem
-                                                    .version}</Badge
-                                            >
-                                        {/if}
-                                    </div>
-                                </div>
-
-                                <div class="space-y-4 p-5">
-                                    {#if revisionContextLoading}
-                                        <div
-                                            class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                        <p
+                                            class="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400 mb-3"
                                         >
-                                            <LoadingSpinner size="sm" />
-                                            Loading revision history…
-                                        </div>
-                                    {:else if revisionContextError}
-                                        <div
-                                            class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
-                                        >
-                                            {revisionContextError}
-                                        </div>
-                                    {:else if !previousVersionSnapshot && !latestRevisionPromptComment}
-                                        <div
-                                            class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
-                                        >
-                                            No prior agent revision has been
-                                            recorded for this item yet.
-                                        </div>
-                                    {:else}
-                                        {#if latestRevisionPromptComment}
-                                            <div
-                                                class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
-                                            >
-                                                <div
-                                                    class="flex items-start justify-between gap-3 flex-wrap"
+                                            Revision
+                                        </p>
+                                        <dl class="space-y-2 text-xs">
+                                            <div>
+                                                <dt
+                                                    class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                                 >
-                                                    <div>
-                                                        <p
-                                                            class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                                                        >
-                                                            Last Revision Prompt
-                                                        </p>
-                                                        <p
-                                                            class="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200"
-                                                        >
-                                                            {extractRevisionPrompt(
-                                                                latestRevisionPromptComment.comment,
-                                                            )}
-                                                        </p>
-                                                    </div>
+                                                    Changes
+                                                </dt>
+                                                <dd
+                                                    class="mt-0.5 text-lg font-semibold text-slate-900 dark:text-white"
+                                                >
+                                                    {revisionDiffEntries.length}
                                                     <span
-                                                        class="text-[0.68rem] text-slate-500 dark:text-slate-400"
-                                                    >
-                                                        {formatAbsoluteDate(
-                                                            latestRevisionPromptComment.createdAt,
-                                                        )}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        {/if}
-
-                                        {#if previousVersionSnapshot}
-                                            <div
-                                                class="grid gap-3 lg:grid-cols-3"
-                                            >
-                                                <div
-                                                    class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
-                                                >
-                                                    <p
-                                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                                                    >
-                                                        Summary
-                                                    </p>
-                                                    <p
-                                                        class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white"
-                                                    >
-                                                        {revisionDiffEntries.length}
-                                                    </p>
-                                                    <p
-                                                        class="mt-1 text-sm text-slate-600 dark:text-slate-300"
-                                                    >
-                                                        field-level change{revisionDiffEntries
-                                                            .length === 1
+                                                        class="text-xs font-normal text-slate-500"
+                                                        >field{revisionDiffEntries.length ===
+                                                        1
                                                             ? ""
-                                                            : "s"} detected in
-                                                        the latest revision.
-                                                    </p>
-                                                </div>
-                                                <div
-                                                    class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
-                                                >
-                                                    <p
-                                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                                            : "s"}</span
                                                     >
-                                                        Previous Snapshot
-                                                    </p>
-                                                    <p
-                                                        class="mt-2 text-lg font-semibold text-slate-900 dark:text-white"
-                                                    >
-                                                        v{previousVersionSnapshot.version}
-                                                    </p>
-                                                    <p
-                                                        class="mt-1 text-sm text-slate-600 dark:text-slate-300"
-                                                    >
-                                                        {formatAbsoluteDate(
-                                                            previousVersionSnapshot.createdAt,
-                                                        )}
-                                                    </p>
-                                                </div>
-                                                <div
-                                                    class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
-                                                >
-                                                    <p
-                                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
-                                                    >
-                                                        Current Draft
-                                                    </p>
-                                                    <p
-                                                        class="mt-2 text-lg font-semibold text-slate-900 dark:text-white"
-                                                    >
-                                                        v{selectedTask.contentItem.version}
-                                                    </p>
-                                                    <p
-                                                        class="mt-1 text-sm text-slate-600 dark:text-slate-300"
-                                                    >
-                                                        {formatAbsoluteDate(
-                                                            selectedTask.contentItem.updatedAt,
-                                                        )}
-                                                    </p>
-                                                </div>
+                                                </dd>
                                             </div>
-
-                                            {#if revisionDiffEntries.length === 0}
-                                                <div
-                                                    class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                            <div>
+                                                <dt
+                                                    class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500"
                                                 >
-                                                    No field-level payload
-                                                    changes were detected
-                                                    between the last two
-                                                    versions. The model may have
-                                                    returned semantically
-                                                    equivalent content.
-                                                </div>
-                                            {:else}
-                                                <div
-                                                    class="grid gap-3 lg:grid-cols-2"
+                                                    Previous
+                                                </dt>
+                                                <dd
+                                                    class="mt-0.5 text-slate-700 dark:text-slate-300"
                                                 >
-                                                    {#each revisionDiffEntries as entry}
-                                                        <div
-                                                            class="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/40"
-                                                        >
-                                                            <div
-                                                                class="flex items-start justify-between gap-3"
-                                                            >
-                                                                <div>
-                                                                    <p
-                                                                        class="font-mono text-xs text-slate-500 dark:text-slate-400"
-                                                                    >
-                                                                        {entry.key}
-                                                                    </p>
-                                                                    <p
-                                                                        class="mt-1 text-sm font-medium text-slate-900 dark:text-white"
-                                                                    >
-                                                                        {entry.change
-                                                                            .charAt(
-                                                                                0,
-                                                                            )
-                                                                            .toUpperCase() +
-                                                                            entry.change.slice(
-                                                                                1,
-                                                                            )}
-                                                                    </p>
-                                                                </div>
-                                                                <Badge
-                                                                    variant={resolveDiffBadgeVariant(
-                                                                        entry.change,
-                                                                    )}
-                                                                    class="uppercase"
-                                                                >
-                                                                    {entry.change}
-                                                                </Badge>
-                                                            </div>
-                                                            <dl
-                                                                class="mt-4 grid gap-3 text-sm"
-                                                            >
-                                                                <div>
-                                                                    <dt
-                                                                        class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
-                                                                    >
-                                                                        Before
-                                                                    </dt>
-                                                                    <dd
-                                                                        class="mt-1 whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-slate-700 dark:bg-slate-900/70 dark:text-slate-200"
-                                                                    >
-                                                                        {entry.before}
-                                                                    </dd>
-                                                                </div>
-                                                                <div>
-                                                                    <dt
-                                                                        class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
-                                                                    >
-                                                                        After
-                                                                    </dt>
-                                                                    <dd
-                                                                        class="mt-1 whitespace-pre-wrap break-words rounded-xl bg-emerald-50 px-3 py-2 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
-                                                                    >
-                                                                        {entry.after}
-                                                                    </dd>
-                                                                </div>
-                                                            </dl>
-                                                        </div>
-                                                    {/each}
-                                                </div>
-                                            {/if}
-
-                                            <div
-                                                class="grid gap-4 xl:grid-cols-2"
-                                            >
-                                                <JsonCodeBlock
-                                                    value={previousVersionSnapshot.data}
-                                                    label={`Previous version JSON (v${previousVersionSnapshot.version})`}
-                                                    copyable={true}
-                                                />
-                                                <JsonCodeBlock
-                                                    value={selectedTask.contentItem.data}
-                                                    label={`Current version JSON (v${selectedTask.contentItem.version})`}
-                                                    copyable={true}
-                                                />
+                                                    v{previousVersionSnapshot.version}
+                                                    · {formatRelativeDate(
+                                                        previousVersionSnapshot.createdAt,
+                                                    )}
+                                                </dd>
                                             </div>
-                                        {/if}
-                                    {/if}
-                                </div>
-                            </Surface>
-
-                            <Surface class="overflow-hidden rounded-2xl p-0">
-                                <div
-                                    class="border-b border-slate-200 px-5 py-3 dark:border-slate-700"
-                                >
-                                    <h4
-                                        class="text-sm font-semibold text-gray-900 dark:text-white"
-                                    >
-                                        Payload
-                                    </h4>
-                                    <p
-                                        class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                                    >
-                                        Open the raw structured submission only
-                                        when you need the full detail.
-                                    </p>
-                                </div>
-                                <JsonCodeBlock
-                                    value={selectedTask.contentItem.data}
-                                    label="Payload JSON"
-                                    copyable={true}
-                                />
-                            </Surface>
+                                        </dl>
+                                    </Surface>
+                                {/if}
+                            </div>
                         </div>
                     </div>
                 {/if}
