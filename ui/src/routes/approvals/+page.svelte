@@ -59,6 +59,31 @@
         };
     };
 
+    type ContentItemVersionPayload = {
+        id: number;
+        version: number;
+        data: string;
+        status: string;
+        createdAt: string;
+    };
+
+    type ReviewCommentPayload = {
+        id: number;
+        authorId: string;
+        authorActorId: string | null;
+        authorActorType: string | null;
+        authorActorSource: string | null;
+        comment: string;
+        createdAt: string;
+    };
+
+    type DiffEntry = {
+        key: string;
+        before: string;
+        after: string;
+        change: "added" | "removed" | "changed";
+    };
+
     const PRIMARY_LABEL_FIELDS = ["title", "name", "headline", "slug"];
     const SUMMARY_FIELDS = [
         "summary",
@@ -68,6 +93,7 @@
         "body",
         "text",
     ];
+    const AI_REVISION_COMMENT_PREFIX = "AI revision requested: ";
 
     let pendingTasks = $state<ReviewTaskPayload[]>([]);
     let loading = $state(true);
@@ -78,6 +104,11 @@
     let revisingItem = $state<number | null>(null);
     let decisionReason = $state("");
     let revisionPrompt = $state("");
+    let selectedTaskVersions = $state<ContentItemVersionPayload[]>([]);
+    let selectedTaskComments = $state<ReviewCommentPayload[]>([]);
+    let revisionContextLoading = $state(false);
+    let revisionContextError = $state<string | null>(null);
+    let revisionContextRequestId = 0;
     let selectedTaskQueueIndex = $derived.by(() => {
         const selectedTaskId = selectedTask?.task.id;
         if (selectedTaskId === undefined) {
@@ -103,6 +134,21 @@
         await loadData();
     });
 
+    $effect(() => {
+        const contentItemId = selectedTask?.contentItem.id ?? null;
+        const contentVersion = selectedTask?.contentItem.version ?? null;
+
+        if (!contentItemId || !contentVersion) {
+            selectedTaskVersions = [];
+            selectedTaskComments = [];
+            revisionContextError = null;
+            revisionContextLoading = false;
+            return;
+        }
+
+        void loadSelectedTaskRevisionContext(contentItemId);
+    });
+
     function parseStructuredData(
         payload: unknown,
     ): Record<string, unknown> | null {
@@ -116,6 +162,151 @@
     function truncate(value: string, max = 160): string {
         return value.length > max ? `${value.slice(0, max - 1)}…` : value;
     }
+
+    function stringifyPreview(value: unknown, max = 80): string {
+        if (value === null) return "null";
+        if (value === undefined) return "—";
+        if (typeof value === "string") return truncate(value, max);
+        if (typeof value === "number" || typeof value === "boolean") {
+            return String(value);
+        }
+
+        try {
+            return truncate(JSON.stringify(value), max);
+        } catch {
+            return truncate(String(value), max);
+        }
+    }
+
+    function flattenValue(
+        value: unknown,
+        prefix = "",
+        output = new Map<string, string>(),
+    ): Map<string, string> {
+        if (Array.isArray(value)) {
+            output.set(prefix || "(root)", stringifyPreview(value, 120));
+            return output;
+        }
+
+        if (value && typeof value === "object") {
+            const entries = Object.entries(value as Record<string, unknown>);
+            if (entries.length === 0) {
+                output.set(prefix || "(root)", "{}");
+                return output;
+            }
+
+            for (const [key, child] of entries) {
+                const nextPrefix = prefix ? `${prefix}.${key}` : key;
+                flattenValue(child, nextPrefix, output);
+            }
+
+            return output;
+        }
+
+        output.set(prefix || "(root)", stringifyPreview(value, 120));
+        return output;
+    }
+
+    function buildDiffEntries(
+        previousPayload: unknown,
+        currentPayload: unknown,
+        previousStatus?: string,
+        currentStatus?: string,
+    ): DiffEntry[] {
+        const previous = flattenValue(deepParseJson(previousPayload));
+        const current = flattenValue(deepParseJson(currentPayload));
+        const keys = new Set([...previous.keys(), ...current.keys()]);
+        const entries: DiffEntry[] = [];
+
+        if (
+            previousStatus &&
+            currentStatus &&
+            previousStatus !== currentStatus
+        ) {
+            entries.push({
+                key: "status",
+                before: previousStatus,
+                after: currentStatus,
+                change: "changed",
+            });
+        }
+
+        for (const key of Array.from(keys).sort()) {
+            const before = previous.get(key);
+            const after = current.get(key);
+            if (before === after) {
+                continue;
+            }
+
+            entries.push({
+                key,
+                before: before ?? "—",
+                after: after ?? "—",
+                change:
+                    before === undefined
+                        ? "added"
+                        : after === undefined
+                          ? "removed"
+                          : "changed",
+            });
+        }
+
+        return entries;
+    }
+
+    function resolveDiffBadgeVariant(
+        change: DiffEntry["change"],
+    ): "success" | "danger" | "warning" {
+        if (change === "added") return "success";
+        if (change === "removed") return "danger";
+        return "warning";
+    }
+
+    function resolveLatestRevisionPrompt(
+        comments: ReviewCommentPayload[],
+    ): ReviewCommentPayload | null {
+        return (
+            comments.find((entry) =>
+                entry.comment.startsWith(AI_REVISION_COMMENT_PREFIX),
+            ) ?? null
+        );
+    }
+
+    function extractRevisionPrompt(comment: string): string {
+        return comment.startsWith(AI_REVISION_COMMENT_PREFIX)
+            ? comment.slice(AI_REVISION_COMMENT_PREFIX.length).trim()
+            : comment;
+    }
+
+    let previousVersionSnapshot = $derived.by(() => {
+        if (!selectedTask) {
+            return null;
+        }
+
+        return (
+            selectedTaskVersions.find(
+                (entry) =>
+                    entry.version === selectedTask!.contentItem.version - 1,
+            ) ??
+            selectedTaskVersions[0] ??
+            null
+        );
+    });
+
+    let revisionDiffEntries = $derived.by(() =>
+        selectedTask && previousVersionSnapshot
+            ? buildDiffEntries(
+                  previousVersionSnapshot.data,
+                  selectedTask.contentItem.data,
+                  previousVersionSnapshot.status,
+                  selectedTask.contentItem.status,
+              )
+            : [],
+    );
+
+    let latestRevisionPromptComment = $derived.by(() =>
+        resolveLatestRevisionPrompt(selectedTaskComments),
+    );
 
     function pickFirstString(
         record: Record<string, unknown> | null,
@@ -250,6 +441,41 @@
         }
     }
 
+    async function loadSelectedTaskRevisionContext(contentItemId: number) {
+        const requestId = ++revisionContextRequestId;
+        revisionContextLoading = true;
+        revisionContextError = null;
+
+        try {
+            const [versionsResponse, commentsResponse] = await Promise.all([
+                fetchApi(`/content-items/${contentItemId}/versions`),
+                fetchApi(`/content-items/${contentItemId}/comments`),
+            ]);
+
+            if (requestId !== revisionContextRequestId) {
+                return;
+            }
+
+            selectedTaskVersions = versionsResponse.data as ContentItemVersionPayload[];
+            selectedTaskComments = commentsResponse.data as ReviewCommentPayload[];
+        } catch (err: any) {
+            if (requestId !== revisionContextRequestId) {
+                return;
+            }
+
+            selectedTaskVersions = [];
+            selectedTaskComments = [];
+            revisionContextError =
+                err instanceof ApiError
+                    ? err.message
+                    : "Revision history could not be loaded.";
+        } finally {
+            if (requestId === revisionContextRequestId) {
+                revisionContextLoading = false;
+            }
+        }
+    }
+
     async function processTask(
         payload: ReviewTaskPayload,
         decision: "approved" | "rejected",
@@ -358,6 +584,7 @@
         selectedTask = payload;
         decisionReason = "";
         revisionPrompt = "";
+        revisionContextError = null;
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -1016,6 +1243,264 @@
                                     </div>
                                 </Surface>
                             </div>
+
+                            <Surface class="overflow-hidden rounded-2xl p-0">
+                                <div
+                                    class="border-b border-slate-200 px-5 py-3 dark:border-slate-700"
+                                >
+                                    <div
+                                        class="flex items-start justify-between gap-3 flex-wrap"
+                                    >
+                                        <div>
+                                            <h4
+                                                class="text-sm font-semibold text-gray-900 dark:text-white"
+                                            >
+                                                Latest Agent Changes
+                                            </h4>
+                                            <p
+                                                class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                                            >
+                                                Review exactly what changed in
+                                                the latest revision before you
+                                                approve the draft.
+                                            </p>
+                                        </div>
+                                        {#if previousVersionSnapshot && selectedTask}
+                                            <Badge variant="outline"
+                                                >v{previousVersionSnapshot.version}
+                                                → v{selectedTask.contentItem
+                                                    .version}</Badge
+                                            >
+                                        {/if}
+                                    </div>
+                                </div>
+
+                                <div class="space-y-4 p-5">
+                                    {#if revisionContextLoading}
+                                        <div
+                                            class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                        >
+                                            <LoadingSpinner size="sm" />
+                                            Loading revision history…
+                                        </div>
+                                    {:else if revisionContextError}
+                                        <div
+                                            class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+                                        >
+                                            {revisionContextError}
+                                        </div>
+                                    {:else if !previousVersionSnapshot && !latestRevisionPromptComment}
+                                        <div
+                                            class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                        >
+                                            No prior agent revision has been
+                                            recorded for this item yet.
+                                        </div>
+                                    {:else}
+                                        {#if latestRevisionPromptComment}
+                                            <div
+                                                class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
+                                            >
+                                                <div
+                                                    class="flex items-start justify-between gap-3 flex-wrap"
+                                                >
+                                                    <div>
+                                                        <p
+                                                            class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                                        >
+                                                            Last Revision Prompt
+                                                        </p>
+                                                        <p
+                                                            class="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200"
+                                                        >
+                                                            {extractRevisionPrompt(
+                                                                latestRevisionPromptComment.comment,
+                                                            )}
+                                                        </p>
+                                                    </div>
+                                                    <span
+                                                        class="text-[0.68rem] text-slate-500 dark:text-slate-400"
+                                                    >
+                                                        {formatAbsoluteDate(
+                                                            latestRevisionPromptComment.createdAt,
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        {/if}
+
+                                        {#if previousVersionSnapshot}
+                                            <div
+                                                class="grid gap-3 lg:grid-cols-3"
+                                            >
+                                                <div
+                                                    class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
+                                                >
+                                                    <p
+                                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                                    >
+                                                        Summary
+                                                    </p>
+                                                    <p
+                                                        class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white"
+                                                    >
+                                                        {revisionDiffEntries.length}
+                                                    </p>
+                                                    <p
+                                                        class="mt-1 text-sm text-slate-600 dark:text-slate-300"
+                                                    >
+                                                        field-level change{revisionDiffEntries
+                                                            .length === 1
+                                                            ? ""
+                                                            : "s"} detected in
+                                                        the latest revision.
+                                                    </p>
+                                                </div>
+                                                <div
+                                                    class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
+                                                >
+                                                    <p
+                                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                                    >
+                                                        Previous Snapshot
+                                                    </p>
+                                                    <p
+                                                        class="mt-2 text-lg font-semibold text-slate-900 dark:text-white"
+                                                    >
+                                                        v{previousVersionSnapshot.version}
+                                                    </p>
+                                                    <p
+                                                        class="mt-1 text-sm text-slate-600 dark:text-slate-300"
+                                                    >
+                                                        {formatAbsoluteDate(
+                                                            previousVersionSnapshot.createdAt,
+                                                        )}
+                                                    </p>
+                                                </div>
+                                                <div
+                                                    class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
+                                                >
+                                                    <p
+                                                        class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"
+                                                    >
+                                                        Current Draft
+                                                    </p>
+                                                    <p
+                                                        class="mt-2 text-lg font-semibold text-slate-900 dark:text-white"
+                                                    >
+                                                        v{selectedTask.contentItem.version}
+                                                    </p>
+                                                    <p
+                                                        class="mt-1 text-sm text-slate-600 dark:text-slate-300"
+                                                    >
+                                                        {formatAbsoluteDate(
+                                                            selectedTask.contentItem.updatedAt,
+                                                        )}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {#if revisionDiffEntries.length === 0}
+                                                <div
+                                                    class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                                                >
+                                                    No field-level payload
+                                                    changes were detected
+                                                    between the last two
+                                                    versions. The model may have
+                                                    returned semantically
+                                                    equivalent content.
+                                                </div>
+                                            {:else}
+                                                <div
+                                                    class="grid gap-3 lg:grid-cols-2"
+                                                >
+                                                    {#each revisionDiffEntries as entry}
+                                                        <div
+                                                            class="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/40"
+                                                        >
+                                                            <div
+                                                                class="flex items-start justify-between gap-3"
+                                                            >
+                                                                <div>
+                                                                    <p
+                                                                        class="font-mono text-xs text-slate-500 dark:text-slate-400"
+                                                                    >
+                                                                        {entry.key}
+                                                                    </p>
+                                                                    <p
+                                                                        class="mt-1 text-sm font-medium text-slate-900 dark:text-white"
+                                                                    >
+                                                                        {entry.change
+                                                                            .charAt(
+                                                                                0,
+                                                                            )
+                                                                            .toUpperCase() +
+                                                                            entry.change.slice(
+                                                                                1,
+                                                                            )}
+                                                                    </p>
+                                                                </div>
+                                                                <Badge
+                                                                    variant={resolveDiffBadgeVariant(
+                                                                        entry.change,
+                                                                    )}
+                                                                    class="uppercase"
+                                                                >
+                                                                    {entry.change}
+                                                                </Badge>
+                                                            </div>
+                                                            <dl
+                                                                class="mt-4 grid gap-3 text-sm"
+                                                            >
+                                                                <div>
+                                                                    <dt
+                                                                        class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                                    >
+                                                                        Before
+                                                                    </dt>
+                                                                    <dd
+                                                                        class="mt-1 whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-slate-700 dark:bg-slate-900/70 dark:text-slate-200"
+                                                                    >
+                                                                        {entry.before}
+                                                                    </dd>
+                                                                </div>
+                                                                <div>
+                                                                    <dt
+                                                                        class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"
+                                                                    >
+                                                                        After
+                                                                    </dt>
+                                                                    <dd
+                                                                        class="mt-1 whitespace-pre-wrap break-words rounded-xl bg-emerald-50 px-3 py-2 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
+                                                                    >
+                                                                        {entry.after}
+                                                                    </dd>
+                                                                </div>
+                                                            </dl>
+                                                        </div>
+                                                    {/each}
+                                                </div>
+                                            {/if}
+
+                                            <div
+                                                class="grid gap-4 xl:grid-cols-2"
+                                            >
+                                                <JsonCodeBlock
+                                                    value={previousVersionSnapshot.data}
+                                                    label={`Previous version JSON (v${previousVersionSnapshot.version})`}
+                                                    copyable={true}
+                                                />
+                                                <JsonCodeBlock
+                                                    value={selectedTask.contentItem.data}
+                                                    label={`Current version JSON (v${selectedTask.contentItem.version})`}
+                                                    copyable={true}
+                                                />
+                                            </div>
+                                        {/if}
+                                    {/if}
+                                </div>
+                            </Surface>
 
                             <Surface class="overflow-hidden rounded-2xl p-0">
                                 <div

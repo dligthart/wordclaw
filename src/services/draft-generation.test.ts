@@ -186,13 +186,15 @@ describe('draft generation service', () => {
             id: 'resp_revision',
             output_text: JSON.stringify({
                 title: 'Updated proposal title',
+                brief: 'Reframed brief with explicit delivery risks.',
                 summary: 'Updated summary',
             }),
         });
 
-        await generateDraftData(buildInput({
+        const result = await generateDraftData(buildInput({
             currentDraftData: {
                 title: 'Current proposal title',
+                brief: 'Need a proposal',
                 summary: 'Current summary',
             },
             revisionPrompt: 'Make the summary more specific about delivery risks.',
@@ -201,12 +203,31 @@ describe('draft generation service', () => {
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
             'Supervisor revision request: Make the summary more specific about delivery risks.',
         );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'Treat the supervisor revision request as a required change request, not a hint.',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'You may revise baseline-derived fields when needed to satisfy the supervisor request.',
+        );
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain(
             'Current draft to revise:',
         );
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain(
             '"Current proposal title"',
         );
+        expect(result).toEqual({
+            data: {
+                title: 'Updated proposal title',
+                brief: 'Reframed brief with explicit delivery risks.',
+                summary: 'Updated summary',
+            },
+            strategy: 'openai_structured_outputs_v1',
+            provider: {
+                type: 'openai',
+                model: 'gpt-4o',
+                responseId: 'resp_revision',
+            },
+        });
     });
 
     it('translates optional fields into OpenAI-compatible strict schema and prunes null placeholders', async () => {

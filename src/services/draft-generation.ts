@@ -451,6 +451,26 @@ function getCurrentDraftData(input: DraftGenerationInput): Record<string, unknow
     return isObject(input.currentDraftData) ? input.currentDraftData : null;
 }
 
+function isRevisionGeneration(input: DraftGenerationInput): boolean {
+    return Boolean(getRevisionPrompt(input) || getCurrentDraftData(input));
+}
+
+function mergeProviderGeneratedData(
+    input: DraftGenerationInput,
+    generatedData: Record<string, unknown>,
+    deterministicBaseline: Record<string, unknown>,
+): Record<string, unknown> {
+    return isRevisionGeneration(input)
+        ? {
+            ...deterministicBaseline,
+            ...generatedData,
+        }
+        : {
+            ...generatedData,
+            ...deterministicBaseline,
+        };
+}
+
 function buildOpenAiInstructions(input: DraftGenerationInput): string {
     const baseInstructions = [
         'You are WordClaw\'s governed draft generation worker.',
@@ -465,14 +485,18 @@ function buildOpenAiInstructions(input: DraftGenerationInput): string {
         'Ground the output in the intake payload and the deterministic baseline fields provided to you.',
         'Do not invent facts that are not supported by the intake payload.',
         'If a field is optional and the intake does not support it, omit it instead of fabricating content.',
-        'Preserve baseline values unless the schema requires adding other compatible fields around them.',
     ];
 
     const revisionPrompt = getRevisionPrompt(input);
     if (revisionPrompt) {
         baseInstructions.push('A human supervisor has asked you to revise an existing draft that is still pending review.');
         baseInstructions.push(`Supervisor revision request: ${revisionPrompt}`);
-        baseInstructions.push('Use the current draft as editable context, keep supported facts grounded in the intake payload, and revise only what is needed to satisfy the request.');
+        baseInstructions.push('Treat the supervisor revision request as a required change request, not a hint.');
+        baseInstructions.push('Use the current draft as editable context, keep supported facts grounded in the intake payload, and make the requested changes directly.');
+        baseInstructions.push('You may revise baseline-derived fields when needed to satisfy the supervisor request.');
+        baseInstructions.push('Keep unchanged fields stable where possible, but do not preserve wording that conflicts with the revision request.');
+    } else {
+        baseInstructions.push('Preserve baseline values unless the schema requires adding other compatible fields around them.');
     }
 
     const extraInstructions = getProviderInstructions(input);
@@ -779,10 +803,11 @@ async function generateDraftDataWithOpenAI(
     const normalizedGeneratedData = pruneNullOptionalFields(generatedData, sanitizedSchema);
 
     return {
-        data: {
-            ...(isObject(normalizedGeneratedData) ? normalizedGeneratedData : generatedData),
-            ...deterministicBaseline,
-        },
+        data: mergeProviderGeneratedData(
+            input,
+            (isObject(normalizedGeneratedData) ? normalizedGeneratedData : generatedData),
+            deterministicBaseline,
+        ),
         strategy: 'openai_structured_outputs_v1',
         provider: {
             type: 'openai',
@@ -858,10 +883,7 @@ async function generateDraftDataWithAnthropic(
     }
 
     return {
-        data: {
-            ...toolUse.input,
-            ...deterministicBaseline,
-        },
+        data: mergeProviderGeneratedData(input, toolUse.input, deterministicBaseline),
         strategy: 'anthropic_tool_schema_v1',
         provider: {
             type: 'anthropic',
@@ -938,10 +960,7 @@ async function generateDraftDataWithGemini(
     );
 
     return {
-        data: {
-            ...generatedData,
-            ...deterministicBaseline,
-        },
+        data: mergeProviderGeneratedData(input, generatedData, deterministicBaseline),
         strategy: 'gemini_structured_outputs_v1',
         provider: {
             type: 'gemini',

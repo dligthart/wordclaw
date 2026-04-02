@@ -20,7 +20,7 @@ vi.mock("$lib/ui-feedback.svelte", () => ({
     },
 }));
 
-function buildTask(version: number) {
+function buildTask(version: number, summary = "Initial generated summary.") {
     return {
         task: {
             id: 44,
@@ -50,7 +50,7 @@ function buildTask(version: number) {
             contentTypeId: 10,
             data: JSON.stringify({
                 title: "Implementation Proposal",
-                summary: "Initial generated summary.",
+                summary,
             }),
             status: "in_review",
             version,
@@ -85,11 +85,19 @@ describe("Approvals Page", () => {
 
     it("requests an agent revision and reloads the revised task", async () => {
         let queueLoads = 0;
+        let commentLoads = 0;
         vi.mocked(fetchApi).mockImplementation(async (endpoint, options = {}) => {
             if (endpoint === "/review-tasks" && (!options.method || options.method === "GET")) {
                 queueLoads += 1;
                 return {
-                    data: [buildTask(queueLoads === 1 ? 2 : 3)],
+                    data: [
+                        buildTask(
+                            queueLoads === 1 ? 2 : 3,
+                            queueLoads === 1
+                                ? "Initial generated summary."
+                                : "Updated generated summary with rollout assumptions.",
+                        ),
+                    ],
                 };
             }
 
@@ -108,6 +116,58 @@ describe("Approvals Page", () => {
                             responseId: "resp_123",
                         },
                     },
+                };
+            }
+
+            if (endpoint === "/content-items/501/versions") {
+                return {
+                    data:
+                        queueLoads === 1
+                            ? [
+                                  {
+                                      id: 77,
+                                      version: 1,
+                                      data: JSON.stringify({
+                                          title: "Implementation Proposal",
+                                          summary: "Seed summary.",
+                                      }),
+                                      status: "in_review",
+                                      createdAt: "2026-04-02T09:55:00.000Z",
+                                  },
+                              ]
+                            : [
+                                  {
+                                      id: 78,
+                                      version: 2,
+                                      data: JSON.stringify({
+                                          title: "Implementation Proposal",
+                                          summary: "Initial generated summary.",
+                                      }),
+                                      status: "in_review",
+                                      createdAt: "2026-04-02T10:00:00.000Z",
+                                  },
+                              ],
+                };
+            }
+
+            if (endpoint === "/content-items/501/comments") {
+                commentLoads += 1;
+                return {
+                    data:
+                        commentLoads === 1
+                            ? []
+                            : [
+                                  {
+                                      id: 901,
+                                      authorId: "supervisor:1",
+                                      authorActorId: "supervisor:1",
+                                      authorActorType: "supervisor",
+                                      authorActorSource: "db",
+                                      comment:
+                                          "AI revision requested: Tighten the summary and make the rollout assumptions explicit.",
+                                      createdAt: "2026-04-02T10:05:00.000Z",
+                                  },
+                              ],
                 };
             }
 
@@ -145,6 +205,25 @@ describe("Approvals Page", () => {
         await waitFor(() => {
             expect(screen.getAllByText("v3").length).toBeGreaterThan(0);
         });
+
+        await screen.findByText("Last Revision Prompt");
+        expect(
+            screen.getByText(
+                "Tighten the summary and make the rollout assumptions explicit.",
+            ),
+        ).toBeTruthy();
+        expect(
+            screen.getByText(/field-level change[s]? detected in the latest revision/i),
+        ).toBeTruthy();
+        expect(screen.getByText("summary")).toBeTruthy();
+        expect(
+            screen.getAllByText("Initial generated summary.").length,
+        ).toBeGreaterThan(0);
+        expect(
+            screen.getAllByText(
+                "Updated generated summary with rollout assumptions.",
+            ).length,
+        ).toBeGreaterThan(0);
 
         expect(feedbackStore.pushToast).toHaveBeenCalledWith(
             expect.objectContaining({
