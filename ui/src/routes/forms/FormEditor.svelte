@@ -60,6 +60,80 @@
     let publicContract = $state<PublicFormDefinition | null>(null);
     let publicContractError = $state<string | null>(null);
     let lastSubmission = $state<Record<string, unknown> | null>(null);
+    let selectedDomainId = $derived(currentDomainId());
+    let publicContractEndpoint = $derived.by(() => {
+        const slug = editor.slug.trim();
+        if (!slug || selectedDomainId === null) {
+            return null;
+        }
+
+        return `/api/public/forms/${slug}?domainId=${selectedDomainId}`;
+    });
+    let publicSubmissionEndpoint = $derived.by(() => {
+        const slug = editor.slug.trim();
+        if (!slug || selectedDomainId === null) {
+            return null;
+        }
+
+        return `/api/public/forms/${slug}/submissions?domainId=${selectedDomainId}`;
+    });
+    let publicContractChecks = $derived.by(() => [
+        {
+            label: "Selected domain",
+            ok: selectedDomainId !== null,
+            detail:
+                selectedDomainId !== null
+                    ? `Domain ${selectedDomainId}`
+                    : "Choose a supervisor domain first.",
+        },
+        {
+            label: "Saved slug",
+            ok: editor.slug.trim().length > 0,
+            detail: editor.slug.trim().length > 0
+                ? `/${editor.slug.trim()}`
+                : "Save or name the form before previewing the public GET contract.",
+        },
+        {
+            label: "Accept submissions",
+            ok: editor.active,
+            detail: editor.active
+                ? "Public POST submissions are allowed."
+                : "Disabled forms return not found for public clients.",
+        },
+        {
+            label: "Expose public contract",
+            ok: editor.publicRead,
+            detail: editor.publicRead
+                ? "Public GET contract is exposed."
+                : "Leave this off if you want POST-only intake without a discoverable public schema.",
+        },
+    ]);
+    let publicContractUnavailableMessage = $derived.by(() => {
+        if (editor.slug.trim().length === 0) {
+            return "Save or select a form first. This panel previews the public GET contract for a named form slug.";
+        }
+
+        if (selectedDomainId === null) {
+            return "Choose a domain first. Public form contracts are resolved per domain.";
+        }
+
+        if (!editor.active && !editor.publicRead) {
+            return "This form is currently hidden from public clients because both Accept submissions and Expose public contract are off.";
+        }
+
+        if (!editor.active) {
+            return "This form is inactive, so the public endpoints return not found until Accept submissions is enabled again.";
+        }
+
+        if (!editor.publicRead) {
+            return "This form can still accept POST sample submissions, but GET /api/public/forms/:slug stays hidden until Expose public contract is enabled.";
+        }
+
+        return (
+            publicContractError ??
+            "No public contract loaded yet. Save or select a form first."
+        );
+    });
     let selectedDraftWorkforceAgent = $derived.by(() => {
         const id = Number.parseInt(draftWorkforceAgentId, 10);
         if (!Number.isInteger(id) || id <= 0) {
@@ -688,14 +762,13 @@
                 <details class="rounded-2xl border border-slate-200/80 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-900/40" open={draftGenerationEnabled}>
                     <summary class="cursor-pointer px-5 py-3 text-sm font-semibold text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white select-none flex items-center justify-between gap-3">
                         <span>Draft Generation <span class="text-xs font-normal text-slate-400">Route submissions to AI agents</span></span>
-                        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-                        <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" onclick={(e) => e.stopPropagation()}>
+                        <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
                             <input
                                 type="checkbox"
                                 bind:checked={draftGenerationEnabled}
                             />
                             Enabled
-                        </label>
+                        </div>
                     </summary>
                     <div class="space-y-4 px-5 pb-5">
 
@@ -895,10 +968,10 @@
                     <div class="flex items-center justify-between gap-3">
                         <div>
                             <h2 class="text-base font-semibold text-slate-900 dark:text-white">
-                                Public contract
+                                Public GET contract
                             </h2>
                             <p class="text-sm text-slate-500 dark:text-slate-400">
-                                Sanitized view used by public clients and sample submissions.
+                                Preview of the sanitized form definition returned to external clients by the public read endpoint.
                             </p>
                         </div>
                         <Button
@@ -909,6 +982,46 @@
                             <Icon src={ArrowPath} class="h-4 w-4" />
                             Refresh
                         </Button>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-white/70 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/40">
+                        <div class="space-y-2">
+                            <p class="font-medium text-slate-900 dark:text-white">
+                                What this is
+                            </p>
+                            <p class="text-slate-600 dark:text-slate-300">
+                                This panel previews <span class="font-mono">{publicContractEndpoint ?? "/api/public/forms/:slug?domainId=:domainId"}</span>.
+                                It is the safe read contract a website or portal can use to render the form before submission.
+                            </p>
+                        </div>
+
+                        <div class="mt-4 grid gap-2">
+                            {#each publicContractChecks as check}
+                                <div class="flex items-start justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
+                                    <div class="min-w-0">
+                                        <p class="font-medium text-slate-900 dark:text-white">
+                                            {check.label}
+                                        </p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">
+                                            {check.detail}
+                                        </p>
+                                    </div>
+                                    <Badge variant={check.ok ? "success" : "warning"}>
+                                        {check.ok ? "Ready" : "Missing"}
+                                    </Badge>
+                                </div>
+                            {/each}
+                        </div>
+
+                        <div class="mt-4 rounded-xl border border-dashed border-slate-300 px-3 py-3 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                            <p>
+                                <span class="font-semibold text-slate-700 dark:text-slate-200">Important:</span>
+                                the <span class="font-mono">Submit sample</span> tool uses
+                                <span class="font-mono"> {publicSubmissionEndpoint ?? "/api/public/forms/:slug/submissions?domainId=:domainId"}</span>.
+                                That POST path only needs the form to be active. Public GET preview additionally requires
+                                <span class="font-mono">Expose public contract</span>.
+                            </p>
+                        </div>
                     </div>
 
                     {#if refreshingPublicContract}
@@ -923,8 +1036,7 @@
                         />
                     {:else}
                         <div class="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                            {publicContractError ??
-                                "No public contract loaded yet. Save or select a form first."}
+                            {publicContractUnavailableMessage}
                         </div>
                     {/if}
                 </Surface>

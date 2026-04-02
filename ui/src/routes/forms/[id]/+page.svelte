@@ -2,7 +2,7 @@
     import { page } from "$app/state";
     import FormEditor from "../FormEditor.svelte";
 
-    let formId = $derived(Number.parseInt(page.params.id, 10));
+    let formId = $derived(Number.parseInt(page.params.id ?? "", 10));
 </script>
 
 <svelte:head>
