@@ -785,7 +785,7 @@
             <LoadingSpinner size="lg" />
         </div>
     {:else}
-        <div class="grid gap-6 xl:grid-cols-[1fr_1.3fr]">
+        <div class="grid gap-6 2xl:grid-cols-[0.9fr_1.4fr]">
             <div class="space-y-6">
                 <Surface class="space-y-4">
                     <div class="flex flex-wrap items-center justify-between gap-3">

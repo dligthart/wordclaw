@@ -32,7 +32,8 @@
 
     let { children } = $props();
 
-    let mobileMenuOpen = $state(false);
+    let isSidebarOpen = $state(false);
+    let isSidebarCollapsed = $state(false);
     let currentDomain = $state("1");
     let showExperimentalNav = $state(false);
     let showUserMenu = $state(false);
@@ -104,6 +105,9 @@
         theme = initializeTheme();
 
         const storedDomain = localStorage.getItem("__wc_domain_id");
+        const storedSidebarCollapsed = localStorage.getItem(
+            "__wc_sidebar_collapsed",
+        );
         const storedExperimentalNav = localStorage.getItem(
             "__wc_show_experimental",
         );
@@ -114,6 +118,7 @@
             localStorage.setItem("__wc_domain_id", currentDomain);
         }
 
+        isSidebarCollapsed = storedSidebarCollapsed === "true";
         showExperimentalNav = storedExperimentalNav === "true";
 
         void (async () => {
@@ -198,8 +203,16 @@
     }
 
     function handleNavClick() {
-        mobileMenuOpen = false;
+        isSidebarOpen = false;
         showUserMenu = false;
+    }
+
+    function toggleSidebarCollapsed() {
+        isSidebarCollapsed = !isSidebarCollapsed;
+        localStorage.setItem(
+            "__wc_sidebar_collapsed",
+            isSidebarCollapsed ? "true" : "false",
+        );
     }
 
     async function handleLogout() {
@@ -208,8 +221,8 @@
         goto("/ui/login");
     }
 
-    function toggleMobileMenu() {
-        mobileMenuOpen = !mobileMenuOpen;
+    function toggleSidebar() {
+        isSidebarOpen = !isSidebarOpen;
     }
 
     function initialsFromEmail(email?: string | null) {
@@ -262,6 +275,15 @@
     );
     let activeNavItem = $derived(activeExperimentalItem ?? activeCoreItem);
     let currentViewLabel = $derived(activeNavItem?.name ?? "Dashboard");
+    let currentViewGroupLabel = $derived(
+        activeExperimentalItem ? "Experimental surface" : "Core control plane",
+    );
+    let sidebarDesktopWidthClass = $derived(
+        isSidebarCollapsed ? "md:w-[4.75rem]" : "md:w-[16rem]",
+    );
+    let mainDesktopOffsetClass = $derived(
+        isSidebarCollapsed ? "md:pl-[4.75rem]" : "md:pl-[16rem]",
+    );
 
     $effect(() => {
         if (
@@ -288,211 +310,374 @@
     </div>
 {:else if auth.user}
     <div class="min-h-screen bg-transparent text-slate-900 dark:text-slate-100">
-        <!-- Top header bar -->
-        <header
-            class="sticky top-0 z-40 border-b border-slate-200/80 bg-white/92 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/88"
+        {#if isSidebarOpen}
+            <button
+                type="button"
+                class="fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-sm md:hidden"
+                onclick={toggleSidebar}
+                aria-label="Close navigation overlay"
+            ></button>
+        {/if}
+
+        <aside
+            class={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200/80 bg-white/96 shadow-2xl transition-[width,transform] duration-200 ease-out dark:border-slate-800 dark:bg-slate-950/96 md:translate-x-0 ${sidebarDesktopWidthClass} ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
-            <!-- Row 1: Logo + actions -->
-            <div class="flex h-14 items-center gap-4 px-4 sm:px-6 lg:px-8">
-                <a href="/ui" class="flex shrink-0 items-center gap-2.5">
-                    <span
-                        class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold uppercase tracking-[0.15em] text-white shadow-sm"
+            <div
+                class="flex h-16 items-center border-b border-slate-200/80 px-3 dark:border-slate-800"
+            >
+                <div
+                    class={`flex items-center gap-3 ${isSidebarCollapsed ? "justify-center" : ""}`}
+                >
+                    <a
+                        href="/ui"
+                        class={`flex min-w-0 items-center gap-3 ${isSidebarCollapsed ? "justify-center" : ""}`}
                     >
-                        WC
-                    </span>
-                    <span class="hidden text-[0.95rem] font-semibold tracking-tight text-slate-900 dark:text-white sm:block">
-                        WordClaw
-                    </span>
-                </a>
-
-                <div class="h-5 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
-
-                <span class="text-sm font-medium text-slate-900 dark:text-white sm:hidden">
-                    {currentViewLabel}
-                </span>
-
-                <div class="ml-auto flex items-center gap-2">
-                    <DomainDropdown
-                        {currentDomain}
-                        onSelect={selectDomain}
-                        options={domainOptions}
-                    />
-
-                    <button
-                        type="button"
-                        class="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-                        onclick={handleThemeToggle}
-                        aria-label="Toggle theme"
-                        title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                    >
-                        {#if theme === "dark"}
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="4"></circle>
-                                <path d="M12 2v2"></path><path d="M12 20v2"></path>
-                                <path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path>
-                                <path d="M2 12h2"></path><path d="M20 12h2"></path>
-                                <path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>
-                            </svg>
-                        {:else}
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"></path>
-                            </svg>
-                        {/if}
-                    </button>
-
-                    <div bind:this={userMenuRef} class="relative">
-                        <button
-                            type="button"
-                            class="flex h-8 items-center gap-2 rounded-md px-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-                            onclick={(event) => { event.stopPropagation(); showUserMenu = !showUserMenu; }}
-                            aria-label="Open user menu"
-                            aria-expanded={showUserMenu}
+                        <span
+                            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold uppercase tracking-[0.18em] text-white shadow-sm"
                         >
-                            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[0.6rem] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                                {initialsFromEmail(auth.user?.email)}
-                            </span>
-                            <span class="hidden max-w-[10rem] truncate text-xs font-medium text-slate-700 dark:text-slate-300 sm:block">
-                                {auth.user?.email}
-                            </span>
-                        </button>
-
-                        {#if showUserMenu}
-                            <div class="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-800 dark:bg-slate-950">
-                                <div class="rounded-sm bg-slate-50/80 px-3 py-2.5 dark:bg-slate-900/60">
-                                    <div class="text-sm font-medium text-slate-900 dark:text-slate-100">{auth.user?.email}</div>
-                                    <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                        {selectedDomainLabel} · WordClaw Supervisor
-                                    </div>
+                            WC
+                        </span>
+                        {#if !isSidebarCollapsed}
+                            <div class="min-w-0">
+                                <div
+                                    class="truncate text-[1.05rem] font-semibold tracking-tight text-slate-900 dark:text-white"
+                                >
+                                    WordClaw
                                 </div>
+                                <div
+                                    class="mt-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400"
+                                >
+                                    Supervisor
+                                </div>
+                            </div>
+                        {/if}
+                    </a>
+                </div>
+            </div>
+
+            <div
+                class="wc-shell-scroll flex flex-1 flex-col overflow-y-auto px-3 py-3"
+            >
+                <div class="flex-1 space-y-3">
+                    {#each navGroups as group, groupIdx}
+                        <section class={groupIdx > 0 && !isSidebarCollapsed ? "border-t border-slate-200/60 pt-3 dark:border-slate-800/60" : ""}>
+                            {#if !isSidebarCollapsed}
+                                <p
+                                    class="px-2 pb-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500"
+                                >
+                                    {group.label}
+                                </p>
+                            {:else if groupIdx > 0}
+                                <div class="mx-auto mb-2 h-px w-6 bg-slate-200 dark:bg-slate-800"></div>
+                            {/if}
+                            <nav class="space-y-0.5">
+                                {#each group.items as item}
+                                    {@const isActive = item.match(currentPath)}
+                                    <a
+                                        href={item.href}
+                                        class={`group flex items-center rounded-xl text-sm font-medium transition-colors ${isSidebarCollapsed ? "mx-auto h-10 w-10 justify-center" : "gap-3 px-3 py-2"} ${navLinkClass(isActive)}`}
+                                        onclick={handleNavClick}
+                                        title={item.name}
+                                        aria-label={item.name}
+                                    >
+                                        <Icon
+                                            src={item.icon}
+                                            class={`shrink-0 ${isSidebarCollapsed ? "h-5 w-5" : "h-[1.05rem] w-[1.05rem]"} ${navIconClass(isActive)}`}
+                                        />
+                                        {#if !isSidebarCollapsed}
+                                            <span class="truncate">{item.name}</span>
+                                        {/if}
+                                    </a>
+                                {/each}
+                            </nav>
+                        </section>
+                    {/each}
+
+                    <div class="mt-auto">
+                        {#if shouldShowExperimentalNav}
+                            <section
+                                class={`${isSidebarCollapsed ? "border-t border-slate-200 pt-3 dark:border-slate-800" : "border-t border-amber-200/50 pt-3 dark:border-amber-900/30"}`}
+                            >
+                                {#if !isSidebarCollapsed}
+                                    <div class="flex items-center justify-between gap-2 px-2 pb-1.5">
+                                        <p class="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-amber-600 dark:text-amber-400">
+                                            Lab
+                                        </p>
+                                        {#if !activeExperimentalItem}
+                                            <button
+                                                type="button"
+                                                class="text-[0.62rem] font-medium text-slate-400 transition-colors hover:text-amber-700 dark:text-slate-500 dark:hover:text-amber-300"
+                                                onclick={() => setExperimentalVisibility(false)}
+                                            >
+                                                Hide
+                                            </button>
+                                        {/if}
+                                    </div>
+                                {/if}
+                                <nav class="space-y-0.5">
+                                    {#each experimentalNavItems as item}
+                                        {@const isActive = item.match(currentPath)}
+                                        <a
+                                            href={item.href}
+                                            class={`group flex items-center rounded-xl text-sm font-medium transition-colors ${isSidebarCollapsed ? "mx-auto h-10 w-10 justify-center" : "gap-3 px-3 py-2"} ${navLinkClass(isActive)}`}
+                                            onclick={handleNavClick}
+                                            title={item.name}
+                                            aria-label={item.name}
+                                        >
+                                            <Icon
+                                                src={item.icon}
+                                                class={`shrink-0 ${isSidebarCollapsed ? "h-5 w-5" : "h-[1.05rem] w-[1.05rem]"} ${navIconClass(isActive, true)}`}
+                                            />
+                                            {#if !isSidebarCollapsed}
+                                                <span class="truncate">{item.name}</span>
+                                            {/if}
+                                        </a>
+                                    {/each}
+                                </nav>
+                            </section>
+                        {:else if !isSidebarCollapsed}
+                            <button
+                                type="button"
+                                class="flex w-full items-center gap-2 border-t border-slate-200/60 px-2 pt-3 text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-slate-400 transition-colors hover:text-slate-600 dark:border-slate-800/60 dark:text-slate-500 dark:hover:text-slate-300"
+                                onclick={() => setExperimentalVisibility(true)}
+                            >
+                                <svg class="h-3 w-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M10 4v12"></path>
+                                    <path d="M4 10h12"></path>
+                                </svg>
+                                Show lab
+                            </button>
+                        {:else}
+                            <div class="border-t border-slate-200 pt-3 dark:border-slate-800">
                                 <button
                                     type="button"
-                                    class="mt-1 flex w-full items-center justify-between rounded-sm px-3 py-2 text-left text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                                    onclick={handleLogout}
+                                    class="mx-auto flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-500 dark:hover:bg-slate-900/70 dark:hover:text-white"
+                                    onclick={() => setExperimentalVisibility(true)}
+                                    title="Show lab pages"
+                                    aria-label="Show lab pages"
                                 >
-                                    Sign out
-                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                                        <path d="m16 17 5-5-5-5"></path>
-                                        <path d="M21 12H9"></path>
+                                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M10 4v12"></path>
+                                        <path d="M4 10h12"></path>
                                     </svg>
                                 </button>
                             </div>
                         {/if}
                     </div>
-
-                    <!-- Mobile hamburger -->
-                    <button
-                        type="button"
-                        class="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:hidden"
-                        onclick={toggleMobileMenu}
-                        aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-                    >
-                        <Icon src={mobileMenuOpen ? XMark : Bars3} class="h-5 w-5" />
-                    </button>
                 </div>
             </div>
+        </aside>
 
-            <!-- Row 2: Nav links (desktop) -->
-            <nav class="hidden items-center gap-0.5 overflow-x-auto px-4 pb-2 sm:px-6 md:flex lg:px-8">
-                {#each navGroups as group, groupIdx}
-                    {#if groupIdx > 0}
-                        <div class="mx-1.5 h-4 w-px shrink-0 bg-slate-200 dark:bg-slate-800"></div>
-                    {/if}
-                    {#each group.items as item}
-                        {@const isActive = item.match(currentPath)}
-                        <a
-                            href={item.href}
-                            class={`group flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.8rem] font-medium transition-colors ${isActive ? "bg-slate-900 text-white shadow-sm dark:bg-slate-100 dark:text-slate-950" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"}`}
-                            onclick={handleNavClick}
-                        >
-                            <Icon src={item.icon} class={`h-3.5 w-3.5 ${navIconClass(isActive)}`} />
-                            {item.name}
-                        </a>
-                    {/each}
-                {/each}
-
-                {#if shouldShowExperimentalNav}
-                    <div class="mx-1.5 h-4 w-px shrink-0 bg-amber-300/50 dark:bg-amber-800/50"></div>
-                    {#each experimentalNavItems as item}
-                        {@const isActive = item.match(currentPath)}
-                        <a
-                            href={item.href}
-                            class={`group flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[0.8rem] font-medium transition-colors ${isActive ? "bg-slate-900 text-white shadow-sm dark:bg-slate-100 dark:text-slate-950" : "text-amber-600/80 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-400/80 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"}`}
-                            onclick={handleNavClick}
-                        >
-                            <Icon src={item.icon} class={`h-3.5 w-3.5 ${navIconClass(isActive, true)}`} />
-                            {item.name}
-                        </a>
-                    {/each}
+        <div
+            class={`min-h-screen transition-[padding-left] duration-200 ease-out ${mainDesktopOffsetClass}`}
+        >
+            <header
+                class="sticky top-0 z-30 border-b border-slate-200/80 bg-white/88 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/72"
+            >
+                <div class="flex h-16 items-center gap-3 px-5 sm:px-7 lg:px-10">
                     <button
                         type="button"
-                        class="ml-0.5 shrink-0 rounded px-1.5 py-1 text-[0.65rem] font-medium text-slate-400 transition-colors hover:text-amber-700 dark:text-slate-500 dark:hover:text-amber-300"
-                        onclick={() => setExperimentalVisibility(false)}
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white md:hidden"
+                        onclick={toggleSidebar}
+                        aria-label={isSidebarOpen
+                            ? "Close navigation"
+                            : "Open navigation"}
                     >
-                        Hide
+                        <Icon
+                            src={isSidebarOpen ? XMark : Bars3}
+                            class="h-5 w-5"
+                        />
                     </button>
-                {:else}
+
                     <button
                         type="button"
-                        class="ml-1 flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[0.75rem] font-medium text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
-                        onclick={() => setExperimentalVisibility(true)}
+                        class="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white md:inline-flex"
+                        onclick={toggleSidebarCollapsed}
+                        aria-label={isSidebarCollapsed
+                            ? "Expand sidebar"
+                            : "Collapse sidebar"}
+                        title={isSidebarCollapsed
+                            ? "Expand sidebar"
+                            : "Collapse sidebar"}
                     >
-                        <svg class="h-3 w-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M10 4v12"></path><path d="M4 10h12"></path>
+                        <svg
+                            class="h-4 w-4"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            {#if isSidebarCollapsed}
+                                <path d="m7 5 5 5-5 5"></path>
+                            {:else}
+                                <path d="m13 5-5 5 5 5"></path>
+                            {/if}
                         </svg>
-                        Lab
                     </button>
-                {/if}
-            </nav>
 
-            <!-- Mobile nav dropdown -->
-            {#if mobileMenuOpen}
-                <nav class="border-t border-slate-200/60 bg-white px-4 py-3 dark:border-slate-800/60 dark:bg-slate-950 md:hidden">
-                    {#each navGroups as group, groupIdx}
-                        {#if groupIdx > 0}
-                            <div class="my-2 h-px bg-slate-200/60 dark:bg-slate-800/60"></div>
-                        {/if}
-                        <p class="px-2 pb-1 pt-2 text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-                            {group.label}
-                        </p>
-                        {#each group.items as item}
-                            {@const isActive = item.match(currentPath)}
-                            <a
-                                href={item.href}
-                                class={`flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-medium transition-colors ${isActive ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}
-                                onclick={handleNavClick}
-                            >
-                                <Icon src={item.icon} class={`h-4 w-4 ${navIconClass(isActive)}`} />
-                                {item.name}
-                            </a>
-                        {/each}
-                    {/each}
-                    {#if shouldShowExperimentalNav}
-                        <div class="my-2 h-px bg-amber-200/60 dark:bg-amber-900/40"></div>
-                        <p class="px-2 pb-1 pt-2 text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
-                            Lab
-                        </p>
-                        {#each experimentalNavItems as item}
-                            {@const isActive = item.match(currentPath)}
-                            <a
-                                href={item.href}
-                                class={`flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-medium transition-colors ${isActive ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950" : "text-amber-600/80 hover:bg-amber-50 dark:text-amber-400/80 dark:hover:bg-amber-950/30"}`}
-                                onclick={handleNavClick}
-                            >
-                                <Icon src={item.icon} class={`h-4 w-4 ${navIconClass(isActive, true)}`} />
-                                {item.name}
-                            </a>
-                        {/each}
-                    {/if}
-                </nav>
-            {/if}
-        </header>
+                    <div
+                        class="hidden h-4 w-px bg-slate-200 dark:bg-slate-800 md:block"
+                    ></div>
 
-        <main class="min-h-[calc(100vh-7rem)]">
-            <div class="wc-page-scroll mx-auto max-w-[80rem] px-4 py-6 sm:px-6 lg:px-8">
-                {@render children()}
-            </div>
-        </main>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex min-w-0 items-center gap-2 text-sm">
+                            <span
+                                class="hidden truncate text-slate-500 dark:text-slate-400 md:block"
+                            >
+                                {currentViewGroupLabel}
+                            </span>
+                            <span
+                                class="hidden text-slate-300 dark:text-slate-700 md:block"
+                            >
+                                /
+                            </span>
+                            <span
+                                class="truncate font-medium text-slate-900 dark:text-white"
+                            >
+                                {currentViewLabel}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="ml-auto flex items-center gap-2.5">
+                        <DomainDropdown
+                            {currentDomain}
+                            onSelect={selectDomain}
+                            options={domainOptions}
+                        />
+
+                        <button
+                            type="button"
+                            class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+                            onclick={handleThemeToggle}
+                            aria-label="Toggle theme"
+                            title={theme === "dark"
+                                ? "Switch to light mode"
+                                : "Switch to dark mode"}
+                        >
+                            {#if theme === "dark"}
+                                <svg
+                                    class="h-5 w-5"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <circle cx="12" cy="12" r="4"></circle>
+                                    <path d="M12 2v2"></path>
+                                    <path d="M12 20v2"></path>
+                                    <path d="m4.93 4.93 1.41 1.41"></path>
+                                    <path d="m17.66 17.66 1.41 1.41"></path>
+                                    <path d="M2 12h2"></path>
+                                    <path d="M20 12h2"></path>
+                                    <path d="m6.34 17.66-1.41 1.41"></path>
+                                    <path d="m19.07 4.93-1.41 1.41"></path>
+                                </svg>
+                            {:else}
+                                <svg
+                                    class="h-5 w-5"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"
+                                    ></path>
+                                </svg>
+                            {/if}
+                        </button>
+
+                        <div bind:this={userMenuRef} class="relative">
+                            <button
+                                type="button"
+                                class="flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 shadow-sm transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/70 dark:hover:bg-slate-900"
+                                onclick={(event) => {
+                                    event.stopPropagation();
+                                    showUserMenu = !showUserMenu;
+                                }}
+                                aria-label="Open user menu"
+                                aria-expanded={showUserMenu}
+                            >
+                                <div class="hidden min-w-0 text-right sm:block">
+                                    <div
+                                        class="truncate text-[0.82rem] font-medium leading-4 text-slate-800 dark:text-slate-100"
+                                    >
+                                        {auth.user?.email}
+                                    </div>
+                                    <div
+                                        class="truncate pt-0.5 text-[0.65rem] leading-3 text-slate-500 dark:text-slate-400"
+                                    >
+                                        {selectedDomainLabel}
+                                    </div>
+                                </div>
+                                <span
+                                    class="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                >
+                                    {initialsFromEmail(auth.user?.email)}
+                                </span>
+                            </button>
+
+                            {#if showUserMenu}
+                                <div
+                                    class="absolute right-0 top-full z-50 mt-2 w-72 rounded-md border border-slate-200 bg-white p-1 shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+                                >
+                                    <div
+                                        class="rounded-sm bg-slate-50/80 px-3 py-3 dark:bg-slate-900/60"
+                                    >
+                                        <div
+                                            class="text-sm font-medium text-slate-900 dark:text-slate-100"
+                                        >
+                                            {auth.user?.email}
+                                        </div>
+                                        <div
+                                            class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                        >
+                                            WordClaw Supervisor
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        class="mt-1 flex w-full items-center justify-between rounded-sm px-3 py-2.5 text-left text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                                        onclick={handleLogout}
+                                    >
+                                        Sign out
+                                        <svg
+                                            class="h-4 w-4"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="1.8"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <path
+                                                d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+                                            ></path>
+                                            <path d="m16 17 5-5-5-5"></path>
+                                            <path d="M21 12H9"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            {/if}
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <main class="min-h-[calc(100vh-4rem)]">
+                <div
+                    class="wc-page-scroll mx-auto max-w-[76rem] px-5 py-7 sm:px-7 lg:px-10"
+                >
+                    {@render children()}
+                </div>
+            </main>
+        </div>
     </div>
 
     <Toast />
