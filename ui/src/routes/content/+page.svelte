@@ -2264,7 +2264,8 @@
                         </div>
                     </Surface>
 
-                    <Surface id="compare-version-section" tone="subtle" class="p-4">
+                    <div id="compare-version-section">
+                    <Surface tone="subtle" class="p-4">
                         <div
                             class="flex items-start justify-between gap-3 flex-wrap"
                         >
@@ -2488,6 +2489,7 @@
                             </div>
                         {/if}
                     </Surface>
+                    </div>
 
                     {#if activeWorkflow}
                         <Surface tone="subtle" class="p-4">
@@ -2662,7 +2664,7 @@
         {@render SchemaLanding()}
     {:else}
         <div
-            class={`grid flex-1 gap-4 overflow-hidden min-[1400px]:grid-cols-[14rem_minmax(0,1fr)] ${selectedItem ? 'min-[1700px]:grid-cols-[14rem_minmax(0,1fr)_26rem]' : ''}`}
+            class="grid flex-1 gap-4 overflow-hidden min-[1400px]:grid-cols-[14rem_minmax(0,1fr)]"
         >
             <aside class="hidden min-h-0 min-[1400px]:block">
                 <div class="h-full">
@@ -3322,25 +3324,19 @@
                 </Surface>
             </section>
 
-            {#if selectedItem}
-                <aside class="hidden min-h-0 min-[1850px]:block">
-                    <Surface class="h-full overflow-hidden p-0">
-                        {@render InspectorContent()}
-                    </Surface>
-                </aside>
-            {/if}
+
         </div>
     {/if}
 
     {#if selectedType && selectedItem}
         <button
             type="button"
-            class="fixed inset-0 z-30 bg-slate-950/55 min-[1850px]:hidden"
+            class="fixed inset-0 z-30 bg-slate-950/55"
             aria-label="Close inspector"
             onclick={() => resetSelectedItemContext()}
         ></button>
         <section
-            class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900 min-[1850px]:hidden"
+            class="fixed inset-y-0 right-0 z-40 flex w-full max-w-[36rem] flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-900"
         >
             {@render InspectorContent()}
         </section>
