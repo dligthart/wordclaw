@@ -1,3 +1,15 @@
+## [1.50.3](https://github.com/dligthart/wordclaw/compare/v1.50.2...v1.50.3) (2026-04-02)
+
+
+### Bug Fixes
+
+* add prerender handleUnseenRoutes for dynamic form routes ([87c6bb1](https://github.com/dligthart/wordclaw/commit/87c6bb14ac193a6baa81babe4ce555011b269208))
+
+
+### Reverts
+
+* restore sidebar layout, keep dashboard improvements ([30a4db1](https://github.com/dligthart/wordclaw/commit/30a4db100c342c3503a41a7ba5ba82bf67e2b033))
+
 ## [1.50.2](https://github.com/dligthart/wordclaw/compare/v1.50.1...v1.50.2) (2026-04-02)
 
 

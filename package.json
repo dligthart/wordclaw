@@ -1,6 +1,6 @@
 {
   "name": "wordclaw",
-  "version": "1.50.2",
+  "version": "1.50.3",
   "description": "",
   "main": "dist/index.js",
   "bin": {
