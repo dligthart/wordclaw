@@ -7,6 +7,7 @@ This index now distinguishes between the active product direction and older non-
 
 - [RFC-0010: Supervisor UI Usability and Accessibility Hardening (partially implemented)](/rfc/proposed/0010-supervisor-ui-usability-and-accessibility-hardening)
 - [RFC-0033: Supervisor UI Design System and Consistency (partially implemented)](/rfc/implemented/0033-supervisor-ui-design-system-and-consistency)
+- [RFC-0034: Domain Administration in UI and Backend (proposed)](/rfc/proposed/0034-domain-administration-ui-and-backend)
 - [RFC-0015: Paid Content Consumption Contract (partially implemented)](/archive/rfc/0015-paid-content-consumption-contract)
 - [RFC-0017: Tenant Boundary and Contract Hardening (partially implemented)](/archive/rfc/0017-tenant-boundary-and-contract-hardening)
 - [RFC-0021: Core Product Focus and Feature Pruning (accepted)](/archive/rfc/0021-core-product-focus-and-feature-pruning)

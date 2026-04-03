@@ -35,23 +35,27 @@ These features are currently in active development or polishing phases for upcom
 - **Status**: Partially implemented / hardening.
 - **Description**: The responsive shell, feedback primitives, shared tables, and broad route coverage are already live. Current work is reducing duplicate route-local UI code, standardizing page headers/cards/dialogs/filters/inspectors, and growing UI test coverage for shared operator flows.
 
-### 2. Vector RAG Simplification
+### 2. Domain Administration in UI and Backend (RFC 0034)
+- **Status**: Proposed.
+- **Description**: Multi-domain isolation, domain creation, onboarding, and shell-level domain switching are already live. The next step is a dedicated domains workspace plus backend detail, summary, and update contracts so tenant administration, handoff, and lifecycle entry points stop being fragmented across the shell selector, API Keys page, and low-level routes.
+
+### 3. Vector RAG Simplification
 - **Status**: Rolling out.
 - **Description**: Making native `pgvector` semantic search easier to enable. We now auto-detect `OPENAI_API_KEY` on startup, automatically generating embeddings for published content without requiring complex external pipeline deployments.
 
-### 3. Additional Asset Providers (Optional follow-up)
+### 4. Additional Asset Providers (Optional follow-up)
 - **Status**: On demand.
 - **Description**: RFC 0023 is effectively shipped for the supported product path. Additional object-storage adapters beyond the current local and S3-compatible providers are now a demand-driven extension, not a core product gap.
 
-### 4. Extensibility and Plugins (RFC 0022)
+### 5. Extensibility and Plugins (RFC 0022)
 - **Status**: Proposed.
 - **Description**: Designing a Strapi-style plugin architecture to allow the community to extend the Express/Fastify API boundaries and MCP toolsets without continuously forking the core runtime.
 
-### 5. API Polish and Error Schemas
+### 6. API Polish and Error Schemas
 - **Status**: In progress.
 - **Description**: Standardizing error payloads across both GraphQL and REST, ensuring AI agents receive consistent, actionable `recommendedNextAction` directives when validations fail.
 
-### 6. Performance & Scalability (RFC 0024)
+### 7. Performance & Scalability (RFC 0024)
 - **Status**: Proposed.
 - **Description**: Establishing caching layers (Redis) for Agent capabilities/search, defining horizontal node scaling strategies, and targeting 100 concurrent agent runs at under 200ms latency.
 
