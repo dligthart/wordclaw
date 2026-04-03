@@ -118,6 +118,33 @@ wordclaw workflow decide \
 
 The content item `345` is now formally `published`!
 
+## 7. Accepting Client Feedback After Publication
+
+Once an item is published, a trusted downstream app can now feed client feedback back into WordClaw without abusing the generic submit route.
+
+Use:
+
+```bash
+curl -X POST http://localhost:4000/api/content-items/345/external-feedback \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision": "changes_requested",
+    "comment": "The proposal is close, but slow the rollout and clarify support boundaries.",
+    "prompt": "Revise the proposal to phase onboarding over two sprints and tighten the support assumptions.",
+    "refinementMode": "human_supervised",
+    "submitter": {
+      "actorId": "proposal-contact:123",
+      "actorType": "external_requester",
+      "actorSource": "proposal_portal",
+      "displayName": "Jane Smith",
+      "email": "jane@client.com"
+    }
+  }'
+```
+
+This creates a first-class external feedback event, attributes it to the requester, and opens a new review task when revision is needed. If the item is eligible for bounded AI revision, you can switch `refinementMode` to `agent_direct` so the client prompt reuses the existing agent revision path.
+
 ## Audit Trail
 
 Every step of this workflow was cryptographically logged. You can ask WordClaw for the provenance trail of this exact item to prove who authored it and who approved it:

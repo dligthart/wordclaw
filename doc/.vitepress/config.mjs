@@ -50,6 +50,7 @@ export default withMermaid(defineConfig({
                     { text: 'Architecture Diagram', link: '/reference/architecture' },
                     { text: 'Capability Parity', link: '/reference/capability-parity' },
                     { text: 'Data Model', link: '/reference/data-model' },
+                    { text: 'Design System', link: '/reference/design-system' },
                     { text: 'Drizzle Migrations', link: '/reference/drizzle-migrations' },
                     { text: 'MCP Servers', link: '/reference/mcp-servers' },
                     { text: 'Roadmap', link: '/reference/roadmap' },
@@ -78,6 +79,7 @@ export default withMermaid(defineConfig({
                         items: [
                             { text: '0010 Supervisor UI Usability and Accessibility Hardening (partial)', link: '/rfc/proposed/0010-supervisor-ui-usability-and-accessibility-hardening' },
                             { text: '0033 Supervisor UI Design System and Consistency (partial)', link: '/rfc/implemented/0033-supervisor-ui-design-system-and-consistency' },
+                            { text: '0034 Domain Administration in UI and Backend (proposed)', link: '/rfc/proposed/0034-domain-administration-ui-and-backend' },
                             { text: '0015 Paid Content Consumption Contract (partial)', link: '/archive/rfc/0015-paid-content-consumption-contract' },
                             { text: '0017 Tenant Boundary and Contract Hardening (partial)', link: '/archive/rfc/0017-tenant-boundary-and-contract-hardening' },
                             { text: '0021 Core Product Focus and Feature Pruning (accepted)', link: '/archive/rfc/0021-core-product-focus-and-feature-pruning' },

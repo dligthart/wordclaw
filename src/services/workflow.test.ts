@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
         select: vi.fn(),
         update: vi.fn(),
         insert: vi.fn(),
+        transaction: vi.fn(),
     },
     logAuditMock: vi.fn(),
     enqueueWebhookJobMock: vi.fn(),
@@ -76,6 +77,7 @@ describe('workflow service', () => {
         mocks.dbMock.select.mockReset();
         mocks.dbMock.update.mockReset();
         mocks.dbMock.insert.mockReset();
+        mocks.dbMock.transaction.mockReset();
         mocks.logAuditMock.mockReset();
         mocks.enqueueWebhookJobMock.mockReset();
         mocks.syncItemEmbeddingsMock.mockReset();
@@ -89,6 +91,14 @@ describe('workflow service', () => {
         mocks.syncItemEmbeddingsMock.mockResolvedValue(undefined);
         mocks.deleteItemEmbeddingsMock.mockResolvedValue(undefined);
         mocks.validateContentDataAgainstSchemaMock.mockResolvedValue(null);
+        mocks.dbMock.transaction.mockImplementation(async (callback: (tx: typeof mocks.dbMock) => unknown) => {
+            return await callback({
+                select: mocks.dbMock.select,
+                update: mocks.dbMock.update,
+                insert: mocks.dbMock.insert,
+                transaction: mocks.dbMock.transaction,
+            } as typeof mocks.dbMock);
+        });
     });
 
     it('keeps content in review while a pending approval task exists', async () => {
@@ -104,7 +114,16 @@ describe('workflow service', () => {
             domainId: 7,
             contentTypeId: 10,
             status: 'draft',
+            version: 1,
             data: JSON.stringify({ title: 'Draft proposal' }),
+            createdAt: new Date('2026-04-02T09:00:00.000Z'),
+            updatedAt: new Date('2026-04-02T09:00:00.000Z'),
+        };
+        const updatedContentItem = {
+            ...contentItem,
+            status: 'in_review',
+            version: 2,
+            updatedAt: new Date('2026-04-02T09:01:00.000Z'),
         };
         const createdTask = {
             id: 55,
@@ -140,15 +159,21 @@ describe('workflow service', () => {
             }))
             .mockImplementationOnce(() => ({
                 set: vi.fn().mockReturnValue({
-                    where: vi.fn().mockResolvedValue(undefined),
+                    where: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([updatedContentItem]),
+                    }),
                 }),
             }));
 
-        mocks.dbMock.insert.mockImplementationOnce(() => ({
-            values: () => ({
-                returning: vi.fn().mockResolvedValue([createdTask]),
-            }),
-        }));
+        mocks.dbMock.insert
+            .mockImplementationOnce(() => ({
+                values: () => ({
+                    returning: vi.fn().mockResolvedValue([createdTask]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                values: vi.fn().mockResolvedValue(undefined),
+            }));
 
         const result = await WorkflowService.submitForReview({
             domainId: 7,
@@ -165,7 +190,11 @@ describe('workflow service', () => {
             expect.anything(),
         );
         const secondUpdate = mocks.dbMock.update.mock.results[1]?.value;
-        expect(secondUpdate.set).toHaveBeenCalledWith({ status: 'in_review' });
+        expect(secondUpdate.set).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'in_review',
+            version: 2,
+            updatedAt: expect.any(Date),
+        }));
         expect(result).toEqual(createdTask);
     });
 
@@ -247,6 +276,23 @@ describe('workflow service', () => {
             }))
             .mockImplementationOnce(() => ({
                 from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 11,
+                        domainId: 7,
+                        contentTypeId: 10,
+                        status: 'in_review',
+                        version: 2,
+                        data: JSON.stringify({
+                            title: 'Generated Proposal',
+                            summary: 'Approved draft',
+                        }),
+                        createdAt: new Date('2026-04-02T09:00:00.000Z'),
+                        updatedAt: new Date('2026-04-02T09:03:00.000Z'),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
                     where: () => ({
                         orderBy: () => ({
                             limit: vi.fn().mockResolvedValue([draftGenerationJob]),
@@ -300,9 +346,26 @@ describe('workflow service', () => {
             }))
             .mockImplementationOnce(() => ({
                 set: () => ({
-                    where: vi.fn().mockResolvedValue(undefined),
+                    where: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([{
+                            id: 11,
+                            domainId: 7,
+                            contentTypeId: 10,
+                            status: 'approved',
+                            version: 3,
+                            data: JSON.stringify({
+                                title: 'Generated Proposal',
+                                summary: 'Approved draft',
+                            }),
+                            createdAt: new Date('2026-04-02T09:00:00.000Z'),
+                            updatedAt: new Date('2026-04-02T09:04:00.000Z'),
+                        }]),
+                    }),
                 }),
             }));
+        mocks.dbMock.insert.mockImplementationOnce(() => ({
+            values: vi.fn().mockResolvedValue(undefined),
+        }));
 
         const authPrincipal = {
             actorId: 'api_key:1',
@@ -623,5 +686,179 @@ describe('workflow service', () => {
                 responseId: 'resp_new',
             },
         });
+    });
+
+    it('rejects agent-direct external feedback without a prompt', async () => {
+        await expect(WorkflowService.submitExternalFeedback({
+            domainId: 7,
+            contentItemId: 18,
+            decision: 'changes_requested',
+            refinementMode: 'agent_direct',
+            submitter: {
+                actorId: 'proposal-contact:123',
+                actorSource: 'proposal_portal',
+            },
+        })).rejects.toMatchObject({
+            code: 'EXTERNAL_FEEDBACK_PROMPT_REQUIRED',
+            statusCode: 400,
+        });
+
+        expect(mocks.dbMock.select).not.toHaveBeenCalled();
+    });
+
+    it('records accepted external feedback without creating a review task', async () => {
+        const contentItem = {
+            id: 18,
+            domainId: 7,
+            contentTypeId: 10,
+            status: 'published',
+            version: 3,
+            data: JSON.stringify({ title: 'Proposal' }),
+        };
+        const feedbackEvent = {
+            id: 71,
+            domainId: 7,
+            contentItemId: 18,
+            publishedVersion: 3,
+            decision: 'accepted',
+            comment: 'Looks good to proceed.',
+            prompt: null,
+            refinementMode: 'human_supervised',
+            actorId: 'proposal-contact:123',
+            actorType: 'external_requester',
+            actorSource: 'proposal_portal',
+            actorDisplayName: 'Jane Smith',
+            actorEmail: 'jane@client.com',
+            reviewTaskId: null,
+            createdAt: new Date('2026-04-03T10:00:00.000Z'),
+        };
+        const reviewTaskSpy = vi.spyOn(WorkflowService, 'submitForReview');
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([contentItem]),
+            }),
+        }));
+
+        mocks.dbMock.insert
+            .mockImplementationOnce(() => ({
+                values: () => ({
+                    returning: vi.fn().mockResolvedValue([feedbackEvent]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                values: () => ({
+                    returning: vi.fn().mockResolvedValue([{
+                        id: 88,
+                        domainId: 7,
+                        contentItemId: 18,
+                        authorId: 'proposal-contact:123',
+                        authorActorId: 'proposal-contact:123',
+                        authorActorType: 'external_requester',
+                        authorActorSource: 'proposal_portal',
+                        comment: 'External feedback from Jane Smith (accepted)\n\nLooks good to proceed.',
+                        createdAt: new Date('2026-04-03T10:00:00.000Z'),
+                    }]),
+                }),
+            }));
+
+        try {
+            const result = await WorkflowService.submitExternalFeedback({
+                domainId: 7,
+                contentItemId: 18,
+                decision: 'accepted',
+                comment: 'Looks good to proceed.',
+                submitter: {
+                    actorId: 'proposal-contact:123',
+                    actorSource: 'proposal_portal',
+                    displayName: 'Jane Smith',
+                    email: 'jane@client.com',
+                },
+                authPrincipal: {
+                    actorId: 'api_key:9',
+                    actorType: 'api_key',
+                    actorSource: 'db',
+                    actorRef: 9,
+                    source: 'db',
+                    domainId: 7,
+                    scopes: new Set(['admin']),
+                },
+            });
+
+            expect(result).toEqual({
+                event: feedbackEvent,
+                reviewTask: null,
+                revision: null,
+            });
+            expect(reviewTaskSpy).not.toHaveBeenCalled();
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                7,
+                'create',
+                'external_feedback_event',
+                71,
+                expect.objectContaining({
+                    contentItemId: 18,
+                    publishedVersion: 3,
+                    decision: 'accepted',
+                    reviewTaskId: null,
+                }),
+                expect.any(Object),
+            );
+        } finally {
+            reviewTaskSpy.mockRestore();
+        }
+    });
+
+    it('lists external feedback events for a content item newest first', async () => {
+        const events = [
+            {
+                id: 72,
+                domainId: 7,
+                contentItemId: 18,
+                publishedVersion: 4,
+                decision: 'changes_requested',
+                comment: 'Clarify the timeline.',
+                prompt: 'Tighten the proposal timeline.',
+                refinementMode: 'agent_direct',
+                actorId: 'proposal-contact:124',
+                actorType: 'external_requester',
+                actorSource: 'proposal_portal',
+                actorDisplayName: 'Jane Smith',
+                actorEmail: 'jane@client.com',
+                reviewTaskId: 45,
+                createdAt: new Date('2026-04-03T10:05:00.000Z'),
+            },
+            {
+                id: 71,
+                domainId: 7,
+                contentItemId: 18,
+                publishedVersion: 3,
+                decision: 'accepted',
+                comment: 'Looks good to proceed.',
+                prompt: null,
+                refinementMode: 'human_supervised',
+                actorId: 'proposal-contact:123',
+                actorType: 'external_requester',
+                actorSource: 'proposal_portal',
+                actorDisplayName: 'Jane Smith',
+                actorEmail: 'jane@client.com',
+                reviewTaskId: null,
+                createdAt: new Date('2026-04-03T10:00:00.000Z'),
+            },
+        ];
+        const orderBy = vi.fn().mockResolvedValue(events);
+        const where = vi.fn().mockReturnValue({ orderBy });
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where,
+            }),
+        }));
+
+        const result = await WorkflowService.listExternalFeedbackEvents(7, 18);
+
+        expect(result).toEqual(events);
+        expect(where).toHaveBeenCalledTimes(1);
+        expect(orderBy).toHaveBeenCalledTimes(1);
     });
 });
