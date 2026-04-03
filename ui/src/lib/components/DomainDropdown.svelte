@@ -7,10 +7,7 @@
     let {
         currentDomain,
         onSelect,
-        options = [
-            { id: "1", label: "Domain 1" },
-            { id: "2", label: "Domain 2" },
-        ] as DomainOption[],
+        options = [] as DomainOption[],
     }: {
         currentDomain: string;
         onSelect: (domainId: string) => void | Promise<void>;
@@ -40,13 +37,17 @@
         <select
             value={currentDomain}
             onchange={handleChange}
-            disabled={pending}
+            disabled={pending || options.length === 0}
             aria-label="Select domain"
             class="h-9 w-full appearance-none rounded-md border border-slate-200 bg-white px-3 pr-9 text-sm font-medium text-slate-700 shadow-sm transition-colors focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-wait disabled:opacity-70 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-100 dark:focus:border-slate-500 dark:focus:ring-slate-800 [appearance:none] [-webkit-appearance:none] [-moz-appearance:none] [background-image:none]"
         >
-            {#each options as option (option.id)}
-                <option value={option.id}>{option.label}</option>
-            {/each}
+            {#if options.length === 0}
+                <option value={currentDomain} disabled>Loading domains...</option>
+            {:else}
+                {#each options as option (option.id)}
+                    <option value={option.id}>{option.label}</option>
+                {/each}
+            {/if}
         </select>
         <div class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500">
             <svg

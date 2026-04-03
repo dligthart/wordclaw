@@ -6,6 +6,7 @@
     import { onMount } from "svelte";
     import { auth, checkAuth, logout } from "$lib/auth.svelte";
     import { fetchApi } from "$lib/api";
+    import { reloadCurrentPage } from "$lib/browser-navigation";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import DomainDropdown from "$lib/components/DomainDropdown.svelte";
     import Toast from "$lib/components/Toast.svelte";
@@ -35,14 +36,12 @@
     let isSidebarOpen = $state(false);
     let isSidebarCollapsed = $state(false);
     let currentDomain = $state("1");
+    let initializedDomainsForUserId = $state<number | null>(null);
     let showExperimentalNav = $state(false);
     let showUserMenu = $state(false);
     let theme = $state<ThemeMode>("dark");
     let userMenuRef = $state<HTMLDivElement | null>(null);
-    let domainOptions = $state<{ id: string; label: string }[]>([
-        { id: "1", label: "Domain 1" },
-        { id: "2", label: "Domain 2" },
-    ]);
+    let domainOptions = $state<{ id: string; label: string }[]>([]);
 
     type NavItem = {
         name: string;
@@ -121,16 +120,7 @@
         isSidebarCollapsed = storedSidebarCollapsed === "true";
         showExperimentalNav = storedExperimentalNav === "true";
 
-        void (async () => {
-            await checkAuth();
-            if (auth.user) {
-                if (typeof auth.user.domainId === "number") {
-                    currentDomain = String(auth.user.domainId);
-                    localStorage.setItem("__wc_domain_id", currentDomain);
-                }
-                await loadDomains();
-            }
-        })();
+        void checkAuth();
 
         const handleDocumentClick = (event: MouseEvent) => {
             if (!showUserMenu || !userMenuRef) return;
@@ -187,7 +177,7 @@
         if (domainId === currentDomain) return;
         localStorage.setItem("__wc_domain_id", domainId);
         currentDomain = domainId;
-        window.location.assign("/ui");
+        reloadCurrentPage();
     }
 
     function setExperimentalVisibility(visible: boolean) {
@@ -268,7 +258,8 @@
     );
     let selectedDomainLabel = $derived(
         domainOptions.find((domain) => domain.id === currentDomain)?.label ??
-            "Select domain",
+            auth.user?.domain?.name ??
+            (currentDomain ? `Domain ${currentDomain}` : "Select domain"),
     );
     let activeCoreItem = $derived(
         coreNavItems.find((item) => item.match(currentPath)) ?? null,
@@ -284,6 +275,29 @@
     let mainDesktopOffsetClass = $derived(
         isSidebarCollapsed ? "md:pl-[4.75rem]" : "md:pl-[16rem]",
     );
+
+    $effect(() => {
+        if (typeof window === "undefined") return;
+
+        const user = auth.user;
+        if (!user) {
+            initializedDomainsForUserId = null;
+            return;
+        }
+
+        if (initializedDomainsForUserId === user.id) {
+            return;
+        }
+
+        initializedDomainsForUserId = user.id;
+
+        if (typeof user.domainId === "number") {
+            currentDomain = String(user.domainId);
+            localStorage.setItem("__wc_domain_id", currentDomain);
+        }
+
+        void loadDomains();
+    });
 
     $effect(() => {
         if (
