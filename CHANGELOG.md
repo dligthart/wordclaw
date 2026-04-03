@@ -1,3 +1,11 @@
+# [1.51.0](https://github.com/dligthart/wordclaw/compare/v1.50.5...v1.51.0) (2026-04-03)
+
+
+### Features
+
+* deepen proposal draft generation ([cb38a13](https://github.com/dligthart/wordclaw/commit/cb38a132a0fff9be468068051358d9fe3ebbada2))
+* extract shared content-label utility and add subtitle display ([b8d0a57](https://github.com/dligthart/wordclaw/commit/b8d0a57790e341c71111738be63c76a7ea8e3ee7))
+
 ## [1.50.5](https://github.com/dligthart/wordclaw/compare/v1.50.4...v1.50.5) (2026-04-03)
 
 
