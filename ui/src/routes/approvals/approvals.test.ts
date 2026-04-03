@@ -219,10 +219,10 @@ describe("Approvals Page", () => {
 
         await screen.findByText("Last Revision Prompt");
         expect(
-            screen.getByText(
+            screen.getAllByText(
                 "Tighten the summary and make the rollout assumptions explicit.",
-            ),
-        ).toBeTruthy();
+            ).length,
+        ).toBeGreaterThan(0);
         expect(
             screen.getAllByText("Changes").length,
         ).toBeGreaterThan(0);
@@ -330,18 +330,20 @@ describe("Approvals Page", () => {
 
         expect(screen.getAllByText("Client feedback").length).toBeGreaterThan(0);
         await screen.findByText("From Jane Smith");
-        expect(screen.getByText("Changes Requested")).toBeTruthy();
-        expect(screen.getByText("Agent Direct")).toBeTruthy();
+        expect(screen.getAllByText("Changes Requested").length).toBeGreaterThan(0);
+        expect(screen.getAllByText("Agent Direct").length).toBeGreaterThan(0);
         expect(
-            screen.getByText(
+            screen.getAllByText(
                 "The scope is close, but adjust rollout pacing.",
-            ),
-        ).toBeTruthy();
+            ).length,
+        ).toBeGreaterThan(0);
         expect(
-            screen.getByText(
+            screen.getAllByText(
                 "Revise the proposal to phase onboarding over two sprints.",
-            ),
-        ).toBeTruthy();
+            ).length,
+        ).toBeGreaterThan(0);
+        // The timeline should show a Review Activity section
+        expect(screen.getByText("Review Activity")).toBeTruthy();
         expect(fetchApi).toHaveBeenCalledWith(
             "/content-items/501/external-feedback",
         );

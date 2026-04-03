@@ -91,6 +91,21 @@
         createdAt: string;
     };
 
+    type TimelineEntry = {
+        kind: "comment" | "ai_revision" | "external_feedback";
+        id: string;
+        timestamp: string;
+        actorId: string | null;
+        actorType: string | null;
+        actorSource: string | null;
+        body: string;
+        decision?: string | null;
+        prompt?: string | null;
+        refinementMode?: string;
+        actorDisplayName?: string | null;
+        publishedVersion?: number;
+    };
+
     type ExternalFeedbackEventPayload = {
         id: number;
         domainId: number;
@@ -340,6 +355,59 @@
     let latestRevisionPromptComment = $derived.by(() =>
         resolveLatestRevisionPrompt(selectedTaskComments),
     );
+
+    function classifyCommentKind(
+        comment: ReviewCommentPayload,
+    ): "ai_revision" | "comment" {
+        return comment.comment.startsWith(AI_REVISION_COMMENT_PREFIX)
+            ? "ai_revision"
+            : "comment";
+    }
+
+    let timelineEntries = $derived.by((): TimelineEntry[] => {
+        const entries: TimelineEntry[] = [];
+
+        for (const c of selectedTaskComments) {
+            const kind = classifyCommentKind(c);
+            entries.push({
+                kind,
+                id: `comment-${c.id}`,
+                timestamp: c.createdAt,
+                actorId: c.authorActorId ?? c.authorId,
+                actorType: c.authorActorType,
+                actorSource: c.authorActorSource,
+                body:
+                    kind === "ai_revision"
+                        ? extractRevisionPrompt(c.comment)
+                        : c.comment,
+            });
+        }
+
+        for (const f of selectedTaskFeedbackEvents) {
+            entries.push({
+                kind: "external_feedback",
+                id: `feedback-${f.id}`,
+                timestamp: f.createdAt,
+                actorId: f.actorId,
+                actorType: f.actorType,
+                actorSource: f.actorSource,
+                body: f.comment ?? "",
+                decision: f.decision,
+                prompt: f.prompt,
+                refinementMode: f.refinementMode,
+                actorDisplayName: f.actorDisplayName,
+                publishedVersion: f.publishedVersion,
+            });
+        }
+
+        entries.sort(
+            (a, b) =>
+                new Date(b.timestamp).getTime() -
+                new Date(a.timestamp).getTime(),
+        );
+
+        return entries;
+    });
 
     let selectedTaskFeedbackEvent = $derived.by(() => {
         if (!selectedTask || selectedTask.task.source !== "external_feedback") {
@@ -1343,6 +1411,161 @@
                                         {resolveTaskSummary(selectedTask)}
                                     </p>
                                 </Surface>
+
+                                <!-- Review Activity Timeline -->
+                                {#if !revisionContextLoading && timelineEntries.length > 0}
+                                    <Surface class="overflow-hidden rounded-xl p-0">
+                                        <div
+                                            class="border-b border-slate-200 px-4 py-2.5 dark:border-slate-700 flex items-center justify-between gap-3"
+                                        >
+                                            <h4
+                                                class="text-sm font-semibold text-gray-900 dark:text-white"
+                                            >
+                                                Review Activity
+                                            </h4>
+                                            <Badge variant="muted"
+                                                >{timelineEntries.length} event{timelineEntries.length ===
+                                                1
+                                                    ? ""
+                                                    : "s"}</Badge
+                                            >
+                                        </div>
+
+                                        <div class="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {#each timelineEntries as entry (entry.id)}
+                                                <div class="px-4 py-3 flex gap-3">
+                                                    <!-- Timeline indicator -->
+                                                    <div class="flex flex-col items-center pt-1 shrink-0">
+                                                        <div
+                                                            class="w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-slate-900 {entry.kind ===
+                                                            'external_feedback'
+                                                                ? 'bg-amber-400'
+                                                                : entry.kind ===
+                                                                    'ai_revision'
+                                                                  ? 'bg-indigo-400'
+                                                                  : 'bg-slate-300 dark:bg-slate-600'}"
+                                                        ></div>
+                                                    </div>
+
+                                                    <!-- Entry content -->
+                                                    <div class="min-w-0 flex-1">
+                                                        <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                                                            {#if entry.kind === "external_feedback"}
+                                                                <Badge
+                                                                    variant="warning"
+                                                                    class="uppercase text-[0.6rem]"
+                                                                >
+                                                                    Client Feedback
+                                                                </Badge>
+                                                                {#if entry.decision}
+                                                                    <Badge
+                                                                        variant={resolveExternalFeedbackDecisionVariant(
+                                                                            entry.decision,
+                                                                        )}
+                                                                        class="uppercase text-[0.6rem]"
+                                                                    >
+                                                                        {formatFeedbackDecisionLabel(
+                                                                            entry.decision,
+                                                                        )}
+                                                                    </Badge>
+                                                                {/if}
+                                                                {#if entry.refinementMode}
+                                                                    <Badge
+                                                                        variant="outline"
+                                                                        class="uppercase text-[0.6rem]"
+                                                                    >
+                                                                        {formatRefinementModeLabel(
+                                                                            entry.refinementMode,
+                                                                        )}
+                                                                    </Badge>
+                                                                {/if}
+                                                            {:else if entry.kind === "ai_revision"}
+                                                                <Badge
+                                                                    variant="muted"
+                                                                    class="uppercase text-[0.6rem]"
+                                                                >
+                                                                    AI Revision
+                                                                </Badge>
+                                                            {:else}
+                                                                <Badge
+                                                                    variant="muted"
+                                                                    class="uppercase text-[0.6rem]"
+                                                                >
+                                                                    Comment
+                                                                </Badge>
+                                                            {/if}
+
+                                                            <span
+                                                                class="text-[0.65rem] text-slate-400 dark:text-slate-500"
+                                                                title={formatAbsoluteDate(
+                                                                    entry.timestamp,
+                                                                )}
+                                                            >
+                                                                {formatRelativeDate(
+                                                                    entry.timestamp,
+                                                                )}
+                                                            </span>
+                                                        </div>
+
+                                                        <!-- Actor attribution -->
+                                                        <div class="mb-1">
+                                                            {#if entry.kind === "external_feedback" && entry.actorDisplayName}
+                                                                <span
+                                                                    class="text-xs font-medium text-slate-700 dark:text-slate-300"
+                                                                >
+                                                                    {entry.actorDisplayName}
+                                                                </span>
+                                                            {:else}
+                                                                <ActorIdentity
+                                                                    actorId={entry.actorId}
+                                                                    actorType={entry.actorType}
+                                                                    actorSource={entry.actorSource}
+                                                                    fallback="System"
+                                                                    compact={true}
+                                                                />
+                                                            {/if}
+                                                        </div>
+
+                                                        <!-- Body text -->
+                                                        {#if entry.body}
+                                                            <p
+                                                                class="text-sm leading-relaxed text-slate-600 dark:text-slate-300 whitespace-pre-line"
+                                                            >
+                                                                {entry.body}
+                                                            </p>
+                                                        {/if}
+
+                                                        <!-- Agent prompt (for external feedback entries) -->
+                                                        {#if entry.kind === "external_feedback" && entry.prompt}
+                                                            <div
+                                                                class="mt-2 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20"
+                                                            >
+                                                                <p
+                                                                    class="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400"
+                                                                >
+                                                                    Agent Prompt
+                                                                </p>
+                                                                <p
+                                                                    class="mt-1 text-sm leading-relaxed text-slate-700 dark:text-slate-200"
+                                                                >
+                                                                    {entry.prompt}
+                                                                </p>
+                                                            </div>
+                                                        {/if}
+
+                                                        {#if entry.kind === "external_feedback" && entry.publishedVersion}
+                                                            <p
+                                                                class="mt-1 text-[0.65rem] text-slate-400 dark:text-slate-500"
+                                                            >
+                                                                Feedback on published v{entry.publishedVersion}
+                                                            </p>
+                                                        {/if}
+                                                    </div>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    </Surface>
+                                {/if}
 
                                 <!-- Collapsible raw payload -->
                                 <details>
