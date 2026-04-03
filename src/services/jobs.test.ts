@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
     return {
         dbMock,
         logAuditMock: vi.fn(),
+        submitForReviewMock: vi.fn(),
     };
 });
 
@@ -21,6 +22,12 @@ vi.mock('./audit.js', () => ({
     logAudit: mocks.logAuditMock,
 }));
 
+vi.mock('./workflow.js', () => ({
+    WorkflowService: {
+        submitForReview: mocks.submitForReviewMock,
+    },
+}));
+
 import { processPendingJobs } from './jobs.js';
 
 describe('jobs service', () => {
@@ -29,6 +36,7 @@ describe('jobs service', () => {
         mocks.dbMock.insert.mockReset();
         mocks.dbMock.update.mockReset();
         mocks.logAuditMock.mockReset();
+        mocks.submitForReviewMock.mockReset();
         vi.restoreAllMocks();
     });
 
@@ -460,6 +468,152 @@ describe('jobs service', () => {
         expect(updateCalls[1]).toEqual(expect.objectContaining({
             status: 'failed',
             lastError: 'Target content type 13 not found in domain 1.',
+        }));
+    });
+
+    it('records in-review generated status when draft generation submits into review', async () => {
+        const queuedJob = {
+            id: 10,
+            domainId: 1,
+            kind: 'draft_generation',
+            queue: 'drafts',
+            status: 'queued',
+            payload: {
+                formId: 5,
+                formSlug: 'proposal-request',
+                intakeContentItemId: 91,
+                intakeData: {
+                    title: 'Proposal for Beta',
+                    summary: 'Need approval',
+                },
+                targetContentTypeId: 13,
+                agentSoul: 'software-proposal-writer',
+                provider: {
+                    type: 'deterministic',
+                },
+                postGenerationWorkflowTransitionId: 77,
+            },
+            result: null,
+            runAt: new Date('2026-03-31T10:00:00.000Z'),
+            attempts: 0,
+            maxAttempts: 3,
+            lastError: null,
+            claimedAt: null,
+            startedAt: null,
+            completedAt: null,
+            createdAt: new Date('2026-03-31T09:59:00.000Z'),
+            updatedAt: new Date('2026-03-31T09:59:00.000Z'),
+        };
+        const claimedJob = {
+            ...queuedJob,
+            status: 'running',
+            attempts: 1,
+            claimedAt: new Date('2026-03-31T10:00:01.000Z'),
+            startedAt: new Date('2026-03-31T10:00:01.000Z'),
+        };
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: () => ({
+                        orderBy: () => ({
+                            limit: vi.fn().mockResolvedValue([queuedJob]),
+                        }),
+                    }),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 13,
+                        domainId: 1,
+                        name: 'Proposal Draft',
+                        slug: 'proposal-draft',
+                        schema: JSON.stringify({
+                            type: 'object',
+                            properties: {
+                                title: { type: 'string' },
+                                summary: { type: 'string' },
+                            },
+                            required: ['title', 'summary'],
+                        }),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 5,
+                        slug: 'proposal-request',
+                        name: 'Proposal Request',
+                        webhookUrl: null,
+                        webhookSecret: null,
+                    }]),
+                }),
+            }));
+
+        const updateCalls: Array<Record<string, unknown>> = [];
+        mocks.dbMock.update
+            .mockImplementationOnce(() => ({
+                set: (values: Record<string, unknown>) => {
+                    updateCalls.push(values);
+                    return {
+                        where: () => ({
+                            returning: vi.fn().mockResolvedValue([claimedJob]),
+                        }),
+                    };
+                },
+            }))
+            .mockImplementationOnce(() => ({
+                set: (values: Record<string, unknown>) => {
+                    updateCalls.push(values);
+                    return {
+                        where: vi.fn().mockResolvedValue(undefined),
+                    };
+                },
+            }));
+
+        mocks.dbMock.insert.mockImplementationOnce(() => ({
+            values: vi.fn().mockImplementation(() => ({
+                returning: vi.fn().mockResolvedValue([{
+                    id: 145,
+                    domainId: 1,
+                    contentTypeId: 13,
+                    data: JSON.stringify({
+                        title: 'Proposal for Beta',
+                        summary: 'Need approval',
+                    }),
+                    status: 'draft',
+                    version: 1,
+                    createdAt: new Date('2026-03-31T10:00:02.000Z'),
+                    updatedAt: new Date('2026-03-31T10:00:02.000Z'),
+                }]),
+            })),
+        }));
+
+        mocks.submitForReviewMock.mockResolvedValue({
+            id: 55,
+            contentItemId: 145,
+            workflowTransitionId: 77,
+            status: 'pending',
+        });
+
+        const processed = await processPendingJobs(10);
+
+        expect(processed).toBe(1);
+        expect(mocks.submitForReviewMock).toHaveBeenCalledWith({
+            domainId: 1,
+            contentItemId: 145,
+            workflowTransitionId: 77,
+        });
+        expect(updateCalls[1]).toEqual(expect.objectContaining({
+            status: 'succeeded',
+            result: expect.objectContaining({
+                generatedContentItemId: 145,
+                generatedStatus: 'in_review',
+                reviewTaskId: 55,
+            }),
+            lastError: null,
         }));
     });
 });

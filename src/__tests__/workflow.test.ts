@@ -98,6 +98,9 @@ describe('Workflow & Review System (Domain 1)', () => {
             authPrincipal: { scopes: new Set(['reviewer']), domainId }
         });
 
+        const [pendingReviewItem] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
+        expect(pendingReviewItem.status).toBe('in_review');
+
         const decisionResult = await WorkflowService.decideReviewTask(
             domainId,
             task2.id,

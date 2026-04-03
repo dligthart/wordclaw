@@ -41,7 +41,10 @@ async function api(path, options = {}) {
       payload?.message ||
       payload?.remediation ||
       `Request failed with ${response.status}`
-    throw new Error(message)
+    const error = new Error(message)
+    error.status = response.status
+    error.payload = payload
+    throw error
   }
 
   return payload
@@ -736,21 +739,41 @@ async function loadSessionAndDashboard() {
 }
 
 async function loadDashboard() {
-  const payload = await api('/demo-api/dashboard')
-  state.dashboard = payload
-  const availableProposalIds = new Set((payload.proposals || []).map((proposal) => proposal.id))
-  const requestedProposalId = readSelectedProposalIdFromLocation()
+  try {
+    const payload = await api('/demo-api/dashboard')
+    state.dashboard = payload
+    const availableProposalIds = new Set((payload.proposals || []).map((proposal) => proposal.id))
+    const requestedProposalId = readSelectedProposalIdFromLocation()
 
-  if (requestedProposalId && availableProposalIds.has(requestedProposalId)) {
-    state.selectedProposalId = requestedProposalId
-  } else if (state.selectedProposalId && availableProposalIds.has(state.selectedProposalId)) {
-    state.selectedProposalId = state.selectedProposalId
-  } else {
-    state.selectedProposalId = null
+    if (requestedProposalId && availableProposalIds.has(requestedProposalId)) {
+      state.selectedProposalId = requestedProposalId
+    } else if (state.selectedProposalId && availableProposalIds.has(state.selectedProposalId)) {
+      state.selectedProposalId = state.selectedProposalId
+    } else {
+      state.selectedProposalId = null
+    }
+
+    syncSelectedProposalLocation(state.selectedProposalId)
+    render()
+  } catch (error) {
+    if (error && typeof error === 'object' && error.status === 401) {
+      state.session = null
+      state.dashboard = null
+      state.selectedProposalId = null
+      state.requestDraft = null
+      state.requestFlash = null
+      state.flash = {
+        type: 'error',
+        title: 'Session expired',
+        body: 'Sign in again to view your proposal requests and published proposals.',
+      }
+      syncSelectedProposalLocation(null)
+      render()
+      return
+    }
+
+    throw error
   }
-
-  syncSelectedProposalLocation(state.selectedProposalId)
-  render()
 }
 
 async function init() {

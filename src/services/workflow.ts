@@ -636,10 +636,10 @@ export class WorkflowService {
             assigneeActorSource: assigneeIdentity?.actorSource ?? null,
         }).returning();
 
-        // 5. Update the content item native status to the transitional "fromState" (e.g. 'pending_review') 
-        // to indicate it is locked in workflow
+        // 5. Mark the live item as under review while the task is pending.
+        // The target state is only applied after an approval decision.
         await db.update(contentItems)
-            .set({ status: transition.toState })
+            .set({ status: 'in_review' })
             .where(and(eq(contentItems.id, contentItemId), eq(contentItems.domainId, domainId)));
 
         return newTask;

@@ -719,6 +719,7 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
     });
 
     let reviewTaskId: number | null = null;
+    let generatedStatus = created.status;
     if (payload.postGenerationWorkflowTransitionId) {
         const task = await WorkflowService.submitForReview({
             domainId,
@@ -726,11 +727,12 @@ async function runDraftGenerationJob(domainId: number, payload: DraftGenerationJ
             workflowTransitionId: payload.postGenerationWorkflowTransitionId,
         });
         reviewTaskId = task.id;
+        generatedStatus = 'in_review';
     }
 
     return {
         generatedContentItemId: created.id,
-        generatedStatus: created.status,
+        generatedStatus,
         reviewTaskId,
         intakeContentItemId: payload.intakeContentItemId,
         targetContentTypeId: payload.targetContentTypeId,

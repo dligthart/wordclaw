@@ -163,6 +163,22 @@
         return value.length > max ? `${value.slice(0, max - 1)}…` : value;
     }
 
+    function formatApprovalTargetLabel(transition: {
+        fromState: string;
+        toState: string;
+    }): string {
+        return `Approval target: ${formatStatusLabel(transition.toState)}`;
+    }
+
+    function formatApprovalTargetHint(transition: {
+        fromState: string;
+        toState: string;
+    }): string {
+        return `Entered review from ${formatStatusLabel(
+            transition.fromState,
+        )}. Approval applies ${formatStatusLabel(transition.toState)}.`;
+    }
+
     function stringifyPreview(value: unknown, max = 80): string {
         if (value === null) return "null";
         if (value === undefined) return "—";
@@ -776,17 +792,20 @@
                                         <div
                                             class="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
                                         >
-                                            <Badge
-                                                variant="outline"
-                                                class="uppercase"
-                                            >
-                                                {formatStatusLabel(
-                                                    payload.transition
-                                                        .fromState,
-                                                )} → {formatStatusLabel(
-                                                    payload.transition.toState,
+                                            <span
+                                                title={formatApprovalTargetHint(
+                                                    payload.transition,
                                                 )}
-                                            </Badge>
+                                            >
+                                                <Badge
+                                                    variant="outline"
+                                                    class="uppercase"
+                                                >
+                                                    {formatApprovalTargetLabel(
+                                                        payload.transition,
+                                                    )}
+                                                </Badge>
+                                            </span>
                                             <Badge
                                                 variant={resolveStatusBadgeVariant(
                                                     payload.contentItem.status,
@@ -917,10 +936,8 @@
                                         )}
                                     </Badge>
                                     <Badge variant="outline">
-                                        {formatStatusLabel(
-                                            selectedTask.transition.fromState,
-                                        )} → {formatStatusLabel(
-                                            selectedTask.transition.toState,
+                                        {formatApprovalTargetLabel(
+                                            selectedTask.transition,
                                         )}
                                     </Badge>
                                     <Badge variant="muted"
@@ -1341,7 +1358,23 @@
                                     <div
                                         class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs leading-5 text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
                                     >
-                                        Approve to move from
+                                        Current item status:
+                                        <span
+                                            class="font-medium text-slate-900 dark:text-white"
+                                        >
+                                            {formatStatusLabel(
+                                                selectedTask.contentItem.status,
+                                            )}
+                                        </span>
+                                        . Approval applies
+                                        <span
+                                            class="font-medium text-slate-900 dark:text-white"
+                                        >
+                                            {formatStatusLabel(
+                                                selectedTask.transition.toState,
+                                            )}
+                                        </span>
+                                        . The original workflow entry state was{" "}
                                         <span
                                             class="font-medium text-slate-900 dark:text-white"
                                         >
@@ -1350,14 +1383,7 @@
                                                     .fromState,
                                             )}
                                         </span>
-                                        →
-                                        <span
-                                            class="font-medium text-slate-900 dark:text-white"
-                                        >
-                                            {formatStatusLabel(
-                                                selectedTask.transition.toState,
-                                            )}
-                                        </span>
+                                        .
                                     </div>
                                 </Surface>
 

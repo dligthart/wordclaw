@@ -91,6 +91,84 @@ describe('workflow service', () => {
         mocks.validateContentDataAgainstSchemaMock.mockResolvedValue(null);
     });
 
+    it('keeps content in review while a pending approval task exists', async () => {
+        const transition = {
+            id: 90,
+            workflowId: 12,
+            fromState: 'draft',
+            toState: 'published',
+            requiredRoles: [],
+        };
+        const contentItem = {
+            id: 18,
+            domainId: 7,
+            contentTypeId: 10,
+            status: 'draft',
+            data: JSON.stringify({ title: 'Draft proposal' }),
+        };
+        const createdTask = {
+            id: 55,
+            domainId: 7,
+            contentItemId: 18,
+            workflowTransitionId: 90,
+            status: 'pending',
+            assignee: null,
+            assigneeActorId: null,
+            assigneeActorType: null,
+            assigneeActorSource: null,
+        };
+
+        mocks.dbMock.select
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    innerJoin: () => ({
+                        where: vi.fn().mockResolvedValue([{ transition }]),
+                    }),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
+                    where: vi.fn().mockResolvedValue([contentItem]),
+                }),
+            }));
+
+        mocks.dbMock.update
+            .mockImplementationOnce(() => ({
+                set: () => ({
+                    where: vi.fn().mockResolvedValue(undefined),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                set: vi.fn().mockReturnValue({
+                    where: vi.fn().mockResolvedValue(undefined),
+                }),
+            }));
+
+        mocks.dbMock.insert.mockImplementationOnce(() => ({
+            values: () => ({
+                returning: vi.fn().mockResolvedValue([createdTask]),
+            }),
+        }));
+
+        const result = await WorkflowService.submitForReview({
+            domainId: 7,
+            contentItemId: 18,
+            workflowTransitionId: 90,
+            authPrincipal: {
+                domainId: 7,
+                scopes: new Set(['admin']),
+            },
+        });
+
+        expect(mocks.dbMock.update).toHaveBeenNthCalledWith(
+            2,
+            expect.anything(),
+        );
+        const secondUpdate = mocks.dbMock.update.mock.results[1]?.value;
+        expect(secondUpdate.set).toHaveBeenCalledWith({ status: 'in_review' });
+        expect(result).toEqual(createdTask);
+    });
+
     it('enqueues a form webhook when an approved review task belongs to a generated draft', async () => {
         const pendingTask = {
             id: 44,
