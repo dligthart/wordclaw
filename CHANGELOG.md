@@ -1,3 +1,10 @@
+# [1.52.0](https://github.com/dligthart/wordclaw/compare/v1.51.0...v1.52.0) (2026-04-03)
+
+
+### Features
+
+* **ui:** add Review Activity timeline to approval queue inspector ([0eb5641](https://github.com/dligthart/wordclaw/commit/0eb564197c47294aa98c76cc8c5c12d51d45acfe))
+
 # [1.51.0](https://github.com/dligthart/wordclaw/compare/v1.50.5...v1.51.0) (2026-04-03)
 
 
