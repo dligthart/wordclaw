@@ -1,3 +1,10 @@
+## [1.52.1](https://github.com/dligthart/wordclaw/compare/v1.52.0...v1.52.1) (2026-04-03)
+
+
+### Bug Fixes
+
+* **ui:** stabilize domain selector ([6649bcf](https://github.com/dligthart/wordclaw/commit/6649bcf49d4d162730df3f83bdc35014ae2b38ed))
+
 # [1.52.0](https://github.com/dligthart/wordclaw/compare/v1.51.0...v1.52.0) (2026-04-03)
 
 
