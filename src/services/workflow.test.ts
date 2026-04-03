@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
         select: vi.fn(),
         update: vi.fn(),
         insert: vi.fn(),
+        transaction: vi.fn(),
     },
     logAuditMock: vi.fn(),
     enqueueWebhookJobMock: vi.fn(),
@@ -76,6 +77,7 @@ describe('workflow service', () => {
         mocks.dbMock.select.mockReset();
         mocks.dbMock.update.mockReset();
         mocks.dbMock.insert.mockReset();
+        mocks.dbMock.transaction.mockReset();
         mocks.logAuditMock.mockReset();
         mocks.enqueueWebhookJobMock.mockReset();
         mocks.syncItemEmbeddingsMock.mockReset();
@@ -89,6 +91,14 @@ describe('workflow service', () => {
         mocks.syncItemEmbeddingsMock.mockResolvedValue(undefined);
         mocks.deleteItemEmbeddingsMock.mockResolvedValue(undefined);
         mocks.validateContentDataAgainstSchemaMock.mockResolvedValue(null);
+        mocks.dbMock.transaction.mockImplementation(async (callback: (tx: typeof mocks.dbMock) => unknown) => {
+            return await callback({
+                select: mocks.dbMock.select,
+                update: mocks.dbMock.update,
+                insert: mocks.dbMock.insert,
+                transaction: mocks.dbMock.transaction,
+            } as typeof mocks.dbMock);
+        });
     });
 
     it('keeps content in review while a pending approval task exists', async () => {
@@ -104,7 +114,16 @@ describe('workflow service', () => {
             domainId: 7,
             contentTypeId: 10,
             status: 'draft',
+            version: 1,
             data: JSON.stringify({ title: 'Draft proposal' }),
+            createdAt: new Date('2026-04-02T09:00:00.000Z'),
+            updatedAt: new Date('2026-04-02T09:00:00.000Z'),
+        };
+        const updatedContentItem = {
+            ...contentItem,
+            status: 'in_review',
+            version: 2,
+            updatedAt: new Date('2026-04-02T09:01:00.000Z'),
         };
         const createdTask = {
             id: 55,
@@ -140,15 +159,21 @@ describe('workflow service', () => {
             }))
             .mockImplementationOnce(() => ({
                 set: vi.fn().mockReturnValue({
-                    where: vi.fn().mockResolvedValue(undefined),
+                    where: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([updatedContentItem]),
+                    }),
                 }),
             }));
 
-        mocks.dbMock.insert.mockImplementationOnce(() => ({
-            values: () => ({
-                returning: vi.fn().mockResolvedValue([createdTask]),
-            }),
-        }));
+        mocks.dbMock.insert
+            .mockImplementationOnce(() => ({
+                values: () => ({
+                    returning: vi.fn().mockResolvedValue([createdTask]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                values: vi.fn().mockResolvedValue(undefined),
+            }));
 
         const result = await WorkflowService.submitForReview({
             domainId: 7,
@@ -165,7 +190,11 @@ describe('workflow service', () => {
             expect.anything(),
         );
         const secondUpdate = mocks.dbMock.update.mock.results[1]?.value;
-        expect(secondUpdate.set).toHaveBeenCalledWith({ status: 'in_review' });
+        expect(secondUpdate.set).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'in_review',
+            version: 2,
+            updatedAt: expect.any(Date),
+        }));
         expect(result).toEqual(createdTask);
     });
 
@@ -247,6 +276,23 @@ describe('workflow service', () => {
             }))
             .mockImplementationOnce(() => ({
                 from: () => ({
+                    where: vi.fn().mockResolvedValue([{
+                        id: 11,
+                        domainId: 7,
+                        contentTypeId: 10,
+                        status: 'in_review',
+                        version: 2,
+                        data: JSON.stringify({
+                            title: 'Generated Proposal',
+                            summary: 'Approved draft',
+                        }),
+                        createdAt: new Date('2026-04-02T09:00:00.000Z'),
+                        updatedAt: new Date('2026-04-02T09:03:00.000Z'),
+                    }]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                from: () => ({
                     where: () => ({
                         orderBy: () => ({
                             limit: vi.fn().mockResolvedValue([draftGenerationJob]),
@@ -300,9 +346,26 @@ describe('workflow service', () => {
             }))
             .mockImplementationOnce(() => ({
                 set: () => ({
-                    where: vi.fn().mockResolvedValue(undefined),
+                    where: vi.fn().mockReturnValue({
+                        returning: vi.fn().mockResolvedValue([{
+                            id: 11,
+                            domainId: 7,
+                            contentTypeId: 10,
+                            status: 'approved',
+                            version: 3,
+                            data: JSON.stringify({
+                                title: 'Generated Proposal',
+                                summary: 'Approved draft',
+                            }),
+                            createdAt: new Date('2026-04-02T09:00:00.000Z'),
+                            updatedAt: new Date('2026-04-02T09:04:00.000Z'),
+                        }]),
+                    }),
                 }),
             }));
+        mocks.dbMock.insert.mockImplementationOnce(() => ({
+            values: vi.fn().mockResolvedValue(undefined),
+        }));
 
         const authPrincipal = {
             actorId: 'api_key:1',

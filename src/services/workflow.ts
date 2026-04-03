@@ -654,6 +654,63 @@ async function authorizePendingReviewTask(
     return task;
 }
 
+async function transitionContentItemStatus(
+    domainId: number,
+    contentItemId: number,
+    nextStatus: string,
+) {
+    return db.transaction(async (tx) => {
+        const [item] = await tx.select()
+            .from(contentItems)
+            .where(and(
+                eq(contentItems.id, contentItemId),
+                eq(contentItems.domainId, domainId),
+            ));
+
+        if (!item) {
+            throw new Error('CONTENT_ITEM_NOT_FOUND_OR_UNMATCHED_DOMAIN');
+        }
+
+        if (item.status === nextStatus) {
+            return {
+                previousItem: item,
+                updatedItem: item,
+                changed: false,
+            };
+        }
+
+        await tx.insert(contentItemVersions).values({
+            contentItemId: item.id,
+            version: item.version,
+            data: item.data,
+            status: item.status,
+            createdAt: item.updatedAt,
+        });
+
+        const [updatedItem] = await tx.update(contentItems)
+            .set({
+                status: nextStatus,
+                version: item.version + 1,
+                updatedAt: new Date(),
+            })
+            .where(and(
+                eq(contentItems.id, contentItemId),
+                eq(contentItems.domainId, domainId),
+            ))
+            .returning();
+
+        if (!updatedItem) {
+            throw new Error('CONTENT_ITEM_NOT_FOUND_OR_UNMATCHED_DOMAIN');
+        }
+
+        return {
+            previousItem: item,
+            updatedItem,
+            changed: true,
+        };
+    });
+}
+
 async function resolveExternalFeedbackPublishedVersion(
     domainId: number,
     contentItemId: number,
@@ -843,12 +900,6 @@ export class WorkflowService {
             throw new Error('WORKFLOW_TRANSITION_NOT_FOUND_OR_CROSS_TENANT');
         }
 
-        // Verify content item belongs to the domain
-        const [contentItemRow] = await db.select().from(contentItems).where(and(eq(contentItems.id, contentItemId), eq(contentItems.domainId, domainId)));
-        if (!contentItemRow) {
-            throw new Error('CONTENT_ITEM_NOT_FOUND_OR_UNMATCHED_DOMAIN');
-        }
-
         // 2. Enforce minimum roles against the transitioning user
         if (transition.requiredRoles && Array.isArray(transition.requiredRoles) && transition.requiredRoles.length > 0) {
             if (!authPrincipal) {
@@ -888,9 +939,7 @@ export class WorkflowService {
 
         // 5. Mark the live item as under review while the task is pending.
         // The target state is only applied after an approval decision.
-        await db.update(contentItems)
-            .set({ status: 'in_review' })
-            .where(and(eq(contentItems.id, contentItemId), eq(contentItems.domainId, domainId)));
+        await transitionContentItemStatus(domainId, contentItemId, 'in_review');
 
         return newTask;
     }
@@ -922,15 +971,17 @@ export class WorkflowService {
 
             // Advance the content item to the approved state
             if (transition) {
-                await db.update(contentItems)
-                    .set({ status: transition.toState })
-                    .where(and(eq(contentItems.id, task.contentItemId), eq(contentItems.domainId, domainId)));
+                const transitionResult = await transitionContentItemStatus(
+                    domainId,
+                    task.contentItemId,
+                    transition.toState,
+                );
 
                 // If the target state is published, dynamically generate vector embeddings
                 if (transition.toState === 'published') {
                     // Fire and forget to avoid stalling the HTTP response
                     EmbeddingService.syncItemEmbeddings(domainId, task.contentItemId).catch(console.error);
-                } else {
+                } else if (transitionResult.changed) {
                     EmbeddingService.deleteItemEmbeddings(domainId, task.contentItemId).catch(console.error);
                 }
 

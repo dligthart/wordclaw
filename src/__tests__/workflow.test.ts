@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { db } from '../db/index.js';
 import { workflows, workflowTransitions, contentTypes, contentItems, reviewTasks, reviewComments, domains, auditLogs } from '../db/schema.js';
 import { WorkflowService } from '../services/workflow.js';
+import { getContentItem, getContentItemVersions } from '../services/content-item.service.js';
 import { and, desc, eq } from 'drizzle-orm';
 
 describe('Workflow & Review System (Domain 1)', () => {
@@ -118,6 +119,19 @@ describe('Workflow & Review System (Domain 1)', () => {
 
         const [finalItem] = await db.select().from(contentItems).where(eq(contentItems.id, item.id));
         expect(finalItem.status).toBe('published'); // transition execution successful
+        expect(finalItem.version).toBe(3);
+
+        const versionHistory = await getContentItemVersions(item.id);
+        expect(versionHistory).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                version: 2,
+                status: 'in_review',
+            }),
+            expect.objectContaining({
+                version: 1,
+                status: 'draft',
+            }),
+        ]));
 
         const [auditEntry] = await db.select()
             .from(auditLogs)
@@ -139,6 +153,76 @@ describe('Workflow & Review System (Domain 1)', () => {
             reviewTaskId: task2.id,
             workflowTransitionId: transition2Id,
         }));
+    });
+
+    it('keeps the published snapshot readable while external feedback reopens a published item', async () => {
+        const originalData = {
+            title: 'Client Proposal',
+            summary: 'Approved proposal copy',
+        };
+        const [item] = await db.insert(contentItems).values({
+            domainId,
+            contentTypeId,
+            status: 'published',
+            data: JSON.stringify(originalData),
+        }).returning();
+
+        const result = await WorkflowService.submitExternalFeedback({
+            domainId,
+            contentItemId: item.id,
+            workflowTransitionId: transition2Id,
+            decision: 'changes_requested',
+            comment: 'Please tighten the rollout plan.',
+            refinementMode: 'human_supervised',
+            submitter: {
+                actorId: 'proposal-contact:123',
+                actorType: 'external_requester',
+                actorSource: 'proposal_portal',
+                displayName: 'Jane Smith',
+            },
+            authPrincipal: {
+                scopes: new Set(['admin']),
+                domainId,
+                actorId: 'api_key:editor',
+                actorType: 'api_key',
+                actorSource: 'test',
+            },
+        });
+
+        expect(result.reviewTask).toMatchObject({
+            source: 'external_feedback',
+            status: 'pending',
+        });
+
+        const workingCopyRead = await getContentItem(item.id, domainId);
+        expect(workingCopyRead).toMatchObject({
+            status: 'in_review',
+            publicationState: 'changed',
+            workingCopyVersion: item.version + 1,
+            publishedVersion: item.version,
+        });
+
+        const publishedRead = await getContentItem(item.id, domainId, {
+            draft: false,
+            unpublishedFallback: 'null',
+        });
+        expect(publishedRead).not.toBeNull();
+        expect(publishedRead).toMatchObject({
+            status: 'published',
+            publicationState: 'changed',
+            workingCopyVersion: item.version + 1,
+            publishedVersion: item.version,
+        });
+        expect(JSON.parse(publishedRead!.data)).toEqual(originalData);
+
+        const versionHistory = await getContentItemVersions(item.id);
+        expect(versionHistory).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                version: item.version,
+                status: 'published',
+                data: JSON.stringify(originalData),
+            }),
+        ]));
     });
 
     it('should allow canonical actor ids to satisfy review-task assignee checks', async () => {
