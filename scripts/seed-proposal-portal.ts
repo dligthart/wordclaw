@@ -219,7 +219,7 @@ async function ensureWorkforce(domainId: number, provider: ReturnType<typeof pro
         ? {
             type: 'openai' as const,
             model: provider.model ?? 'gpt-4.1-mini',
-            instructions: 'Turn a project brief into a crisp software delivery proposal with concrete scope, approach, and next steps.',
+            instructions: 'Turn a project brief into a tailored software delivery proposal. Make the proposal commercially credible and operationally specific. Break the work down into concrete phases, workstreams, deliverables, dependencies, review gates, assumptions, risks, and next steps. Vary the title, executive framing, delivery approach, and sequencing to fit the client context, constraints, budget, integrations, and timeline. Avoid generic boilerplate when the intake supports a more specific proposal.',
         }
         : {
             type: 'deterministic' as const,
@@ -231,7 +231,7 @@ async function ensureWorkforce(domainId: number, provider: ReturnType<typeof pro
             domainId,
             name: 'Proposal Writer',
             slug: DEMO_WORKFORCE_SLUG,
-            purpose: 'Draft project proposals from incoming client briefs.',
+            purpose: 'Draft detailed project proposals from incoming client briefs.',
             soul: 'software-development-proposal-writer',
             provider: providerConfig,
             active: true,
@@ -242,7 +242,7 @@ async function ensureWorkforce(domainId: number, provider: ReturnType<typeof pro
         domainId,
         name: 'Proposal Writer',
         slug: DEMO_WORKFORCE_SLUG,
-        purpose: 'Draft project proposals from incoming client briefs.',
+        purpose: 'Draft detailed project proposals from incoming client briefs.',
         soul: 'software-development-proposal-writer',
         provider: providerConfig,
         active: true,
@@ -257,6 +257,15 @@ async function ensureForm(input: {
     workforceAgentId: number;
     provider: ReturnType<typeof providerConfigFromEnv>;
 }) {
+    const defaultData = input.provider.type === 'openai'
+        ? {}
+        : {
+            title: 'Custom software delivery proposal',
+            recommendedApproach: 'Start with a short discovery sprint, convert the brief into a phased implementation plan, and validate scope before build execution.',
+            deliveryPlan: 'Phase 1: discovery and scope validation. Phase 2: solution design and build sequencing. Phase 3: delivery, review, and launch handoff.',
+            nextSteps: 'Review the proposal, confirm delivery stakeholders, and schedule the kickoff workshop.',
+        };
+
     const draftGeneration = {
         targetContentTypeId: input.targetContentTypeId,
         workforceAgentId: input.workforceAgentId,
@@ -272,12 +281,7 @@ async function ensureForm(input: {
             budgetRange: 'budgetRange',
             targetTimeline: 'timeline',
         },
-        defaultData: {
-            title: 'Custom software delivery proposal',
-            recommendedApproach: 'Start with a short discovery sprint, convert the brief into a phased implementation plan, and validate scope before build execution.',
-            deliveryPlan: 'Phase 1: discovery and scope validation. Phase 2: solution design and build sequencing. Phase 3: delivery, review, and launch handoff.',
-            nextSteps: 'Review the proposal, confirm delivery stakeholders, and schedule the kickoff workshop.',
-        },
+        defaultData,
         postGenerationWorkflowTransitionId: input.workflowTransitionId,
         provider: input.provider.type === 'openai'
             ? {

@@ -456,19 +456,37 @@ function isRevisionGeneration(input: DraftGenerationInput): boolean {
 }
 
 function mergeProviderGeneratedData(
-    input: DraftGenerationInput,
     generatedData: Record<string, unknown>,
     deterministicBaseline: Record<string, unknown>,
 ): Record<string, unknown> {
-    return isRevisionGeneration(input)
-        ? {
-            ...deterministicBaseline,
-            ...generatedData,
-        }
-        : {
-            ...generatedData,
-            ...deterministicBaseline,
-        };
+    return {
+        ...deterministicBaseline,
+        ...generatedData,
+    };
+}
+
+function buildContentSpecificInstructions(input: DraftGenerationInput): string[] {
+    const targetKeys = parseTopLevelSchemaProperties(input.targetContentType.schema);
+    const looksLikeProposal = (
+        targetKeys.has('recommendedApproach')
+        && targetKeys.has('deliveryPlan')
+        && targetKeys.has('nextSteps')
+    );
+
+    if (!looksLikeProposal) {
+        return [];
+    }
+
+    return [
+        'This target schema represents a proposal-style document.',
+        'Do not keep the proposal high level when the intake contains concrete scope, constraints, integrations, rollout needs, governance, or delivery sequencing.',
+        'Write detailed, client-specific proposal content rather than a generic template.',
+        'In recommendedApproach, explain the proposed solution shape, delivery strategy, major workstreams, integration or architecture considerations, and quality or governance controls.',
+        'In deliveryPlan, break the work into concrete phases or work packages with enough detail that a human reviewer can understand scope, sequencing, dependencies, and expected outcomes.',
+        'In assumptions, include operational, technical, security, compliance, stakeholder, and delivery assumptions that are reasonably implied by the intake.',
+        'In nextSteps, include concrete commercial and delivery actions such as workshops, discovery tasks, approvals, architecture validation, and kickoff preparation.',
+        'Prefer multi-sentence or enumerated detail in long-form fields when the intake supports it.',
+    ];
 }
 
 function buildOpenAiInstructions(input: DraftGenerationInput): string {
@@ -496,8 +514,12 @@ function buildOpenAiInstructions(input: DraftGenerationInput): string {
         baseInstructions.push('You may revise baseline-derived fields when needed to satisfy the supervisor request.');
         baseInstructions.push('Keep unchanged fields stable where possible, but do not preserve wording that conflicts with the revision request.');
     } else {
-        baseInstructions.push('Preserve baseline values unless the schema requires adding other compatible fields around them.');
+        baseInstructions.push('Treat deterministic baseline fields as fallback scaffolding, not the final answer.');
+        baseInstructions.push('When the intake supports a more specific or tailored value, replace generic baseline wording instead of copying it verbatim.');
+        baseInstructions.push('Use the baseline mainly to ensure required fields stay populated when the intake is sparse.');
     }
+
+    baseInstructions.push(...buildContentSpecificInstructions(input));
 
     const extraInstructions = getProviderInstructions(input);
 
@@ -804,7 +826,6 @@ async function generateDraftDataWithOpenAI(
 
     return {
         data: mergeProviderGeneratedData(
-            input,
             (isObject(normalizedGeneratedData) ? normalizedGeneratedData : generatedData),
             deterministicBaseline,
         ),
@@ -883,7 +904,7 @@ async function generateDraftDataWithAnthropic(
     }
 
     return {
-        data: mergeProviderGeneratedData(input, toolUse.input, deterministicBaseline),
+        data: mergeProviderGeneratedData(toolUse.input, deterministicBaseline),
         strategy: 'anthropic_tool_schema_v1',
         provider: {
             type: 'anthropic',
@@ -960,7 +981,7 @@ async function generateDraftDataWithGemini(
     );
 
     return {
-        data: mergeProviderGeneratedData(input, generatedData, deterministicBaseline),
+        data: mergeProviderGeneratedData(generatedData, deterministicBaseline),
         strategy: 'gemini_structured_outputs_v1',
         provider: {
             type: 'gemini',

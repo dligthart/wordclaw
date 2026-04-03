@@ -64,6 +64,25 @@ function buildTargetContentTypeWithOptionalField(): DraftGenerationTargetContent
     };
 }
 
+function buildProposalTargetContentType(): DraftGenerationTargetContentType {
+    return {
+        id: 15,
+        name: 'Generated Proposal',
+        slug: 'generated-proposal',
+        schema: JSON.stringify({
+            type: 'object',
+            properties: {
+                title: { type: 'string' },
+                recommendedApproach: { type: 'string' },
+                deliveryPlan: { type: 'string' },
+                assumptions: { type: 'string' },
+                nextSteps: { type: 'string' },
+            },
+            required: ['title', 'recommendedApproach', 'deliveryPlan', 'assumptions', 'nextSteps'],
+        }),
+    };
+}
+
 function buildInput(overrides: Partial<DraftGenerationInput> = {}): DraftGenerationInput {
     return {
         domainId: 1,
@@ -166,9 +185,15 @@ describe('draft generation service', () => {
         });
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain('software-proposal-writer');
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain('Write a concise proposal draft.');
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'Treat deterministic baseline fields as fallback scaffolding, not the final answer.',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'replace generic baseline wording instead of copying it verbatim.',
+        );
         expect(result).toEqual({
             data: {
-                title: 'Draft proposal',
+                title: 'Model generated title',
                 brief: 'Need a proposal',
                 summary: 'Generated summary',
             },
@@ -263,7 +288,7 @@ describe('draft generation service', () => {
         }));
         expect(result).toEqual({
             data: {
-                title: 'Draft proposal',
+                title: 'Model generated title',
                 brief: 'Need a proposal',
                 summary: 'Generated summary',
             },
@@ -306,6 +331,38 @@ describe('draft generation service', () => {
         }));
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain('brief.png');
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).not.toContain('spec.pdf');
+    });
+
+    it('adds richer proposal drafting guidance for proposal-style target schemas', async () => {
+        mocks.responsesCreateMock.mockResolvedValue({
+            id: 'resp_proposal',
+            output_text: JSON.stringify({
+                title: 'Tailored proposal title',
+                recommendedApproach: 'Detailed solution approach.',
+                deliveryPlan: 'Detailed phased plan.',
+                assumptions: 'Detailed assumptions.',
+                nextSteps: 'Detailed next steps.',
+            }),
+        });
+
+        await generateDraftData(buildInput({
+            targetContentType: buildProposalTargetContentType(),
+            fieldMap: {},
+            defaultData: {},
+        }));
+
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'This target schema represents a proposal-style document.',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'Do not keep the proposal high level when the intake contains concrete scope, constraints, integrations, rollout needs, governance, or delivery sequencing.',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'In deliveryPlan, break the work into concrete phases or work packages',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'Prefer multi-sentence or enumerated detail in long-form fields when the intake supports it.',
+        );
     });
 
     it('uses Anthropic tool-schema output when the provider is configured', async () => {
