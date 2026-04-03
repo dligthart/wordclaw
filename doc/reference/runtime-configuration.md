@@ -66,11 +66,15 @@ Notes:
 | --- | --- | --- |
 | `PREVIEW_TOKEN_SECRET` | unset | Signing secret for content/global preview tokens |
 | `PREVIEW_TOKEN_TTL_SECONDS` | `900` | Default preview-token lifetime |
+| `EXTERNAL_FEEDBACK_TOKEN_SECRET` | unset | Signing secret for scoped client external-feedback tokens |
+| `EXTERNAL_FEEDBACK_TOKEN_TTL_SECONDS` | `604800` | Default external-feedback token lifetime in seconds |
 
 Notes:
 
 - In production, `PREVIEW_TOKEN_SECRET` must be set. In development, WordClaw can generate an ephemeral secret, but that is not stable across restarts.
 - Preview tokens are scoped to one content item or one global and are intended for review/preview loops, not as a general-purpose auth bypass.
+- In production, `EXTERNAL_FEEDBACK_TOKEN_SECRET` must also be set if you want browser-safe client feedback links. In development, WordClaw can generate an ephemeral secret, but issued tokens will stop working after restart.
+- External-feedback tokens are scoped to one content item and one external requester, and they are intended for governed client review loops rather than general public writes.
 
 ## Asset Storage
 

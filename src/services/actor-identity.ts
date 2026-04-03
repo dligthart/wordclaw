@@ -1,5 +1,5 @@
-export type ActorType = 'supervisor' | 'api_key' | 'env_key' | 'mcp' | 'anonymous' | 'system' | 'preview_token';
-export type ActorSource = 'cookie' | 'db' | 'env' | 'local' | 'anonymous' | 'system' | 'test' | 'token';
+export type ActorType = 'supervisor' | 'api_key' | 'env_key' | 'mcp' | 'anonymous' | 'system' | 'preview_token' | 'external_requester';
+export type ActorSource = 'cookie' | 'db' | 'env' | 'local' | 'anonymous' | 'system' | 'test' | 'token' | (string & {});
 export type ActorProfileId = 'public-discovery' | 'api-key' | 'env-key' | 'supervisor-session' | 'mcp-local' | 'anonymous-local-dev';
 
 export type ActorIdentity = {

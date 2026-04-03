@@ -63,12 +63,13 @@ describe('drizzle migration helpers', () => {
 
         expect(tags).toContain('0034_ai_provider_configs');
         expect(tags).toContain('0035_workforce_agents');
+        expect(tags).toContain('0036_external_feedback_events');
     });
 
     it('loads repo migrations through the latest journaled tenant AI migrations', () => {
         const repoMigrations = readDrizzleMigrations(getDefaultMigrationsFolder());
 
-        expect(repoMigrations.at(-1)?.tag).toBe('0035_workforce_agents');
+        expect(repoMigrations.at(-1)?.tag).toBe('0036_external_feedback_events');
     });
 
     it('formats baseline guidance with the latest tag by default', () => {

@@ -22,7 +22,8 @@ export type EntityType =
     | 'webhook'
     | 'l402_operator_config'
     | 'agent_run'
-    | 'agent_run_definition';
+    | 'agent_run_definition'
+    | 'external_feedback_event';
 
 // --- Write ---
 

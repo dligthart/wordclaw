@@ -247,6 +247,8 @@ export const reviewTasks = pgTable('review_tasks', {
     contentItemId: integer('content_item_id').references(() => contentItems.id, { onDelete: 'cascade' }).notNull(),
     workflowTransitionId: integer('workflow_transition_id').references(() => workflowTransitions.id).notNull(),
     status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected', 'changes_requested'
+    source: text('source').notNull().default('author_submit'),
+    sourceEventId: integer('source_event_id'),
     assignee: text('assignee'), // API Key Hash or Supervisor ID
     assigneeActorId: text('assignee_actor_id'),
     assigneeActorType: text('assignee_actor_type'),
@@ -265,6 +267,29 @@ export const reviewComments = pgTable('review_comments', {
     authorActorSource: text('author_actor_source'),
     comment: text('comment').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const externalFeedbackEvents = pgTable('external_feedback_events', {
+    id: serial('id').primaryKey(),
+    domainId: integer('domain_id').references(() => domains.id, { onDelete: 'cascade' }).notNull(),
+    contentItemId: integer('content_item_id').references(() => contentItems.id, { onDelete: 'cascade' }).notNull(),
+    publishedVersion: integer('published_version').notNull(),
+    decision: text('decision'),
+    comment: text('comment'),
+    prompt: text('prompt'),
+    refinementMode: text('refinement_mode').notNull().default('human_supervised'),
+    actorId: text('actor_id').notNull(),
+    actorType: text('actor_type').notNull().default('external_requester'),
+    actorSource: text('actor_source').notNull(),
+    actorDisplayName: text('actor_display_name'),
+    actorEmail: text('actor_email'),
+    reviewTaskId: integer('review_task_id').references(() => reviewTasks.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => {
+    return {
+        externalFeedbackDomainContentIdx: index('external_feedback_domain_content_idx').on(table.domainId, table.contentItemId, table.createdAt),
+        externalFeedbackDomainReviewTaskIdx: index('external_feedback_domain_review_task_idx').on(table.domainId, table.reviewTaskId),
+    };
 });
 
 export const formDefinitions = pgTable('form_definitions', {

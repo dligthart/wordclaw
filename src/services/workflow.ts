@@ -5,9 +5,11 @@ import {
     reviewTasks,
     reviewComments,
     contentItems,
+    contentItemVersions,
     contentTypes,
     jobs,
     formDefinitions,
+    externalFeedbackEvents,
 } from '../db/schema.js';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { getAiProviderSecretConfig } from './ai-provider-config.js';
@@ -39,6 +41,8 @@ export interface WorkflowTransitionContext {
     contentItemId: number;
     workflowTransitionId: number;
     assignee?: string;
+    source?: 'author_submit' | 'external_feedback';
+    sourceEventId?: number | null;
     authPrincipal?: PrincipalLike & { scopes: Set<string>, domainId: number };
 }
 
@@ -111,10 +115,31 @@ export type ReviewTaskRevisionResult = {
     };
 };
 
+export type ExternalFeedbackDecision = 'accepted' | 'changes_requested';
+export type ExternalFeedbackRefinementMode = 'human_supervised' | 'agent_direct';
+
+export type ExternalFeedbackSubmissionInput = {
+    domainId: number;
+    contentItemId: number;
+    workflowTransitionId?: number;
+    decision?: unknown;
+    comment?: unknown;
+    prompt?: unknown;
+    refinementMode?: unknown;
+    submitter?: unknown;
+    authPrincipal?: AuthenticatedWorkflowPrincipal;
+};
+
+export type ExternalFeedbackSubmissionResult = {
+    event: typeof externalFeedbackEvents.$inferSelect;
+    reviewTask: typeof reviewTasks.$inferSelect | null;
+    revision: ReviewTaskRevisionResult | null;
+};
+
 const INLINE_IMAGE_ATTACHMENT_LIMIT = 4;
 const INLINE_IMAGE_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
 
-class WorkflowServiceError extends Error {
+export class WorkflowServiceError extends Error {
     code: string;
     remediation: string;
     statusCode: number;
@@ -140,6 +165,127 @@ function readPositiveInteger(value: unknown): number | null {
 
 function normalizeOptionalString(value: unknown): string | null {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeExternalFeedbackDecision(value: unknown): ExternalFeedbackDecision | null {
+    if (value === 'accepted' || value === 'changes_requested') {
+        return value;
+    }
+
+    if (value === undefined || value === null) {
+        return null;
+    }
+
+    throw new WorkflowServiceError(
+        'External feedback decision is invalid.',
+        'EXTERNAL_FEEDBACK_DECISION_INVALID',
+        "Use decision = 'accepted' or 'changes_requested', or omit it.",
+        400,
+    );
+}
+
+function normalizeExternalFeedbackRefinementMode(value: unknown): ExternalFeedbackRefinementMode {
+    if (value === undefined || value === null) {
+        return 'human_supervised';
+    }
+
+    if (value === 'human_supervised' || value === 'agent_direct') {
+        return value;
+    }
+
+    throw new WorkflowServiceError(
+        'External feedback refinement mode is invalid.',
+        'EXTERNAL_FEEDBACK_REFINEMENT_MODE_INVALID',
+        "Use refinementMode = 'human_supervised' or 'agent_direct'.",
+        400,
+    );
+}
+
+type ExternalFeedbackSubmitter = {
+    actorId: string;
+    actorType: 'external_requester';
+    actorSource: string;
+    displayName: string | null;
+    email: string | null;
+};
+
+function normalizeExternalFeedbackSubmitter(value: unknown): ExternalFeedbackSubmitter {
+    if (!isObject(value)) {
+        throw new WorkflowServiceError(
+            'External feedback submitter is required.',
+            'EXTERNAL_FEEDBACK_SUBMITTER_REQUIRED',
+            'Provide submitter.actorId and submitter.actorSource so the client feedback can be attributed correctly.',
+            400,
+        );
+    }
+
+    const actorId = normalizeOptionalString(value.actorId);
+    const actorSource = normalizeOptionalString(value.actorSource);
+    const actorType = normalizeOptionalString(value.actorType) ?? 'external_requester';
+    if (!actorId || !actorSource) {
+        throw new WorkflowServiceError(
+            'External feedback submitter is incomplete.',
+            'EXTERNAL_FEEDBACK_SUBMITTER_INVALID',
+            'Provide submitter.actorId and submitter.actorSource as non-empty strings.',
+            400,
+        );
+    }
+
+    if (actorType !== 'external_requester') {
+        throw new WorkflowServiceError(
+            'External feedback submitter type is invalid.',
+            'EXTERNAL_FEEDBACK_SUBMITTER_TYPE_INVALID',
+            "Use submitter.actorType = 'external_requester' or omit it.",
+            400,
+        );
+    }
+
+    return {
+        actorId,
+        actorType: 'external_requester',
+        actorSource,
+        displayName: normalizeOptionalString(value.displayName),
+        email: normalizeOptionalString(value.email),
+    };
+}
+
+function buildExternalFeedbackComment(input: {
+    submitter: ExternalFeedbackSubmitter;
+    decision: ExternalFeedbackDecision | null;
+    comment: string | null;
+    prompt: string | null;
+}): string {
+    const label = input.submitter.displayName ?? input.submitter.actorId;
+    const header = input.decision
+        ? `External feedback from ${label} (${input.decision})`
+        : `External feedback from ${label}`;
+    const parts = [header];
+
+    if (input.comment) {
+        parts.push(input.comment);
+    }
+
+    if (input.prompt) {
+        parts.push(`Prompt: ${input.prompt}`);
+    }
+
+    return parts.join('\n\n');
+}
+
+function requiresExternalFeedbackRevision(input: {
+    decision: ExternalFeedbackDecision | null;
+    prompt: string | null;
+    refinementMode: ExternalFeedbackRefinementMode;
+}): boolean {
+    if (input.refinementMode === 'agent_direct') {
+        return true;
+    }
+
+    if (input.prompt) {
+        return true;
+    }
+
+    return input.decision === 'changes_requested';
 }
 
 function parseObjectData(value: unknown): Record<string, unknown> | null {
@@ -508,6 +654,157 @@ async function authorizePendingReviewTask(
     return task;
 }
 
+async function transitionContentItemStatus(
+    domainId: number,
+    contentItemId: number,
+    nextStatus: string,
+) {
+    return db.transaction(async (tx) => {
+        const [item] = await tx.select()
+            .from(contentItems)
+            .where(and(
+                eq(contentItems.id, contentItemId),
+                eq(contentItems.domainId, domainId),
+            ));
+
+        if (!item) {
+            throw new Error('CONTENT_ITEM_NOT_FOUND_OR_UNMATCHED_DOMAIN');
+        }
+
+        if (item.status === nextStatus) {
+            return {
+                previousItem: item,
+                updatedItem: item,
+                changed: false,
+            };
+        }
+
+        await tx.insert(contentItemVersions).values({
+            contentItemId: item.id,
+            version: item.version,
+            data: item.data,
+            status: item.status,
+            createdAt: item.updatedAt,
+        });
+
+        const [updatedItem] = await tx.update(contentItems)
+            .set({
+                status: nextStatus,
+                version: item.version + 1,
+                updatedAt: new Date(),
+            })
+            .where(and(
+                eq(contentItems.id, contentItemId),
+                eq(contentItems.domainId, domainId),
+            ))
+            .returning();
+
+        if (!updatedItem) {
+            throw new Error('CONTENT_ITEM_NOT_FOUND_OR_UNMATCHED_DOMAIN');
+        }
+
+        return {
+            previousItem: item,
+            updatedItem,
+            changed: true,
+        };
+    });
+}
+
+async function resolveExternalFeedbackPublishedVersion(
+    domainId: number,
+    contentItemId: number,
+): Promise<{ item: typeof contentItems.$inferSelect; publishedVersion: number }> {
+    const [item] = await db.select()
+        .from(contentItems)
+        .where(and(
+            eq(contentItems.domainId, domainId),
+            eq(contentItems.id, contentItemId),
+        ));
+
+    if (!item) {
+        throw new WorkflowServiceError(
+            'Content item not found for external feedback.',
+            'EXTERNAL_FEEDBACK_CONTENT_ITEM_NOT_FOUND',
+            'Retry with a content item that exists in the current tenant.',
+            404,
+        );
+    }
+
+    if (item.status === 'published') {
+        return {
+            item,
+            publishedVersion: item.version,
+        };
+    }
+
+    const [publishedVersion] = await db.select({
+        version: contentItemVersions.version,
+    })
+        .from(contentItemVersions)
+        .where(and(
+            eq(contentItemVersions.contentItemId, contentItemId),
+            eq(contentItemVersions.status, 'published'),
+        ))
+        .orderBy(desc(contentItemVersions.version), desc(contentItemVersions.id))
+        .limit(1);
+
+    if (!publishedVersion) {
+        throw new WorkflowServiceError(
+            'External feedback requires a published snapshot.',
+            'EXTERNAL_FEEDBACK_REQUIRES_PUBLISHED_SNAPSHOT',
+            'Publish the content item once before accepting client feedback on it.',
+            409,
+        );
+    }
+
+    return {
+        item,
+        publishedVersion: publishedVersion.version,
+    };
+}
+
+async function resolveExternalFeedbackTransitionId(
+    domainId: number,
+    contentItem: typeof contentItems.$inferSelect,
+    workflowTransitionId?: number,
+): Promise<number> {
+    if (workflowTransitionId) {
+        return workflowTransitionId;
+    }
+
+    const workflow = await WorkflowService.getActiveWorkflowWithTransitions(domainId, contentItem.contentTypeId);
+    if (!workflow) {
+        throw new WorkflowServiceError(
+            'No active workflow is available for external feedback routing.',
+            'EXTERNAL_FEEDBACK_WORKFLOW_NOT_FOUND',
+            'Activate a workflow for this content type or provide a valid workflowTransitionId.',
+            404,
+        );
+    }
+
+    const publishTransitions = workflow.transitions.filter((transition) => transition.toState === 'published');
+    if (publishTransitions.length === 1) {
+        return publishTransitions[0].id;
+    }
+
+    if (publishTransitions.length === 0) {
+        throw new WorkflowServiceError(
+            'No publish transition is available for external feedback routing.',
+            'EXTERNAL_FEEDBACK_PUBLISH_TRANSITION_NOT_FOUND',
+            'Add a workflow transition that publishes the reviewed content, or provide workflowTransitionId explicitly.',
+            409,
+        );
+    }
+
+    throw new WorkflowServiceError(
+        'External feedback transition is ambiguous.',
+        'EXTERNAL_FEEDBACK_TRANSITION_AMBIGUOUS',
+        'Provide workflowTransitionId explicitly when multiple transitions can publish the content.',
+        409,
+    );
+}
+
 export class WorkflowService {
     static async createWorkflow(domainId: number, name: string, contentTypeId: number, active = true) {
         const [contentType] = await db.select({ id: contentTypes.id })
@@ -579,7 +876,15 @@ export class WorkflowService {
     }
 
     static async submitForReview(context: WorkflowTransitionContext) {
-        const { domainId, contentItemId, workflowTransitionId, assignee, authPrincipal } = context;
+        const {
+            domainId,
+            contentItemId,
+            workflowTransitionId,
+            assignee,
+            source = 'author_submit',
+            sourceEventId = null,
+            authPrincipal,
+        } = context;
 
         // 1. Fetch transition requirements and ensure it belongs to the domain
         const results = await db.select({ transition: workflowTransitions })
@@ -593,12 +898,6 @@ export class WorkflowService {
 
         if (!transition) {
             throw new Error('WORKFLOW_TRANSITION_NOT_FOUND_OR_CROSS_TENANT');
-        }
-
-        // Verify content item belongs to the domain
-        const [contentItemRow] = await db.select().from(contentItems).where(and(eq(contentItems.id, contentItemId), eq(contentItems.domainId, domainId)));
-        if (!contentItemRow) {
-            throw new Error('CONTENT_ITEM_NOT_FOUND_OR_UNMATCHED_DOMAIN');
         }
 
         // 2. Enforce minimum roles against the transitioning user
@@ -630,6 +929,8 @@ export class WorkflowService {
             contentItemId,
             workflowTransitionId,
             status: 'pending',
+            source,
+            sourceEventId,
             assignee,
             assigneeActorId: assigneeIdentity?.actorId ?? null,
             assigneeActorType: assigneeIdentity?.actorType ?? null,
@@ -638,9 +939,7 @@ export class WorkflowService {
 
         // 5. Mark the live item as under review while the task is pending.
         // The target state is only applied after an approval decision.
-        await db.update(contentItems)
-            .set({ status: 'in_review' })
-            .where(and(eq(contentItems.id, contentItemId), eq(contentItems.domainId, domainId)));
+        await transitionContentItemStatus(domainId, contentItemId, 'in_review');
 
         return newTask;
     }
@@ -672,15 +971,17 @@ export class WorkflowService {
 
             // Advance the content item to the approved state
             if (transition) {
-                await db.update(contentItems)
-                    .set({ status: transition.toState })
-                    .where(and(eq(contentItems.id, task.contentItemId), eq(contentItems.domainId, domainId)));
+                const transitionResult = await transitionContentItemStatus(
+                    domainId,
+                    task.contentItemId,
+                    transition.toState,
+                );
 
                 // If the target state is published, dynamically generate vector embeddings
                 if (transition.toState === 'published') {
                     // Fire and forget to avoid stalling the HTTP response
                     EmbeddingService.syncItemEmbeddings(domainId, task.contentItemId).catch(console.error);
-                } else {
+                } else if (transitionResult.changed) {
                     EmbeddingService.deleteItemEmbeddings(domainId, task.contentItemId).catch(console.error);
                 }
 
@@ -915,11 +1216,185 @@ export class WorkflowService {
         };
     }
 
+    static async submitExternalFeedback(input: ExternalFeedbackSubmissionInput): Promise<ExternalFeedbackSubmissionResult> {
+        const decision = normalizeExternalFeedbackDecision(input.decision);
+        const comment = normalizeOptionalString(input.comment);
+        const prompt = normalizeOptionalString(input.prompt);
+        const refinementMode = normalizeExternalFeedbackRefinementMode(input.refinementMode);
+        const submitter = normalizeExternalFeedbackSubmitter(input.submitter);
+
+        if (!decision && !comment && !prompt) {
+            throw new WorkflowServiceError(
+                'External feedback must include a decision, comment, or prompt.',
+                'EXTERNAL_FEEDBACK_EMPTY',
+                'Provide at least one of decision, comment, or prompt.',
+                400,
+            );
+        }
+
+        if (refinementMode === 'agent_direct' && !prompt) {
+            throw new WorkflowServiceError(
+                'Agent-direct external feedback requires a prompt.',
+                'EXTERNAL_FEEDBACK_PROMPT_REQUIRED',
+                'Provide a prompt describing what the agent should revise, or use refinementMode = human_supervised.',
+                400,
+            );
+        }
+
+        const { item, publishedVersion } = await resolveExternalFeedbackPublishedVersion(input.domainId, input.contentItemId);
+        const shouldRequestRevision = requiresExternalFeedbackRevision({
+            decision,
+            prompt,
+            refinementMode,
+        });
+
+        const [event] = await db.insert(externalFeedbackEvents).values({
+            domainId: input.domainId,
+            contentItemId: input.contentItemId,
+            publishedVersion,
+            decision,
+            comment,
+            prompt,
+            refinementMode,
+            actorId: submitter.actorId,
+            actorType: submitter.actorType,
+            actorSource: submitter.actorSource,
+            actorDisplayName: submitter.displayName,
+            actorEmail: submitter.email,
+            reviewTaskId: null,
+        }).returning();
+
+        await this.addComment(
+            input.domainId,
+            input.contentItemId,
+            {
+                actorId: submitter.actorId,
+                actorType: submitter.actorType,
+                actorSource: submitter.actorSource,
+            },
+            buildExternalFeedbackComment({
+                submitter,
+                decision,
+                comment,
+                prompt,
+            }),
+        );
+
+        if (!shouldRequestRevision) {
+            await logAudit(
+                input.domainId,
+                'create',
+                'external_feedback_event',
+                event.id,
+                {
+                    contentItemId: input.contentItemId,
+                    publishedVersion,
+                    decision,
+                    refinementMode,
+                    reviewTaskId: null,
+                },
+                input.authPrincipal ? toAuditActor(input.authPrincipal) : {
+                    actorId: submitter.actorId,
+                    actorType: submitter.actorType,
+                    actorSource: submitter.actorSource,
+                },
+            );
+
+            return {
+                event,
+                reviewTask: null,
+                revision: null,
+            };
+        }
+
+        const transitionId = await resolveExternalFeedbackTransitionId(
+            input.domainId,
+            item,
+            input.workflowTransitionId,
+        );
+        const reviewTask = await this.submitForReview({
+            domainId: input.domainId,
+            contentItemId: input.contentItemId,
+            workflowTransitionId: transitionId,
+            source: 'external_feedback',
+            sourceEventId: event.id,
+            authPrincipal: input.authPrincipal,
+        });
+
+        const [updatedEvent] = await db.update(externalFeedbackEvents)
+            .set({
+                reviewTaskId: reviewTask.id,
+            })
+            .where(and(
+                eq(externalFeedbackEvents.id, event.id),
+                eq(externalFeedbackEvents.domainId, input.domainId),
+            ))
+            .returning();
+
+        let revision: ReviewTaskRevisionResult | null = null;
+        if (refinementMode === 'agent_direct' && prompt) {
+            if (!input.authPrincipal) {
+                throw new WorkflowServiceError(
+                    'Agent-direct external feedback requires an authenticated operator principal.',
+                    'EXTERNAL_FEEDBACK_AUTH_REQUIRED',
+                    'Retry through a trusted backend with an authenticated principal, or use refinementMode = human_supervised.',
+                    403,
+                );
+            }
+
+            revision = await this.reviseReviewTask(
+                input.domainId,
+                reviewTask.id,
+                prompt,
+                input.authPrincipal,
+            );
+        }
+
+        await logAudit(
+            input.domainId,
+            'create',
+            'external_feedback_event',
+            event.id,
+            {
+                contentItemId: input.contentItemId,
+                publishedVersion,
+                decision,
+                refinementMode,
+                reviewTaskId: reviewTask.id,
+                revisionTriggered: revision !== null,
+            },
+            input.authPrincipal ? toAuditActor(input.authPrincipal) : {
+                actorId: submitter.actorId,
+                actorType: submitter.actorType,
+                actorSource: submitter.actorSource,
+            },
+        );
+
+        return {
+            event: updatedEvent ?? {
+                ...event,
+                reviewTaskId: reviewTask.id,
+            },
+            reviewTask,
+            revision,
+        };
+    }
+
     static async listComments(domainId: number, contentItemId: number) {
         return await db.select()
             .from(reviewComments)
             .where(and(eq(reviewComments.domainId, domainId), eq(reviewComments.contentItemId, contentItemId)))
             .orderBy(desc(reviewComments.createdAt), desc(reviewComments.id));
+    }
+
+    static async listExternalFeedbackEvents(domainId: number, contentItemId: number) {
+        return await db.select()
+            .from(externalFeedbackEvents)
+            .where(and(
+                eq(externalFeedbackEvents.domainId, domainId),
+                eq(externalFeedbackEvents.contentItemId, contentItemId),
+            ))
+            .orderBy(desc(externalFeedbackEvents.createdAt), desc(externalFeedbackEvents.id));
     }
 
     static async addComment(domainId: number, contentItemId: number, author: PrincipalLike | string, comment: string) {

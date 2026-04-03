@@ -7,7 +7,9 @@ erDiagram
   content_types ||--o{ content_items : "contentTypeId"
   content_items ||--o{ content_item_versions : "contentItemId"
   content_items ||--o{ content_item_embeddings : "contentItemId"
+  content_items ||--o{ external_feedback_events : "contentItemId"
   content_types ||--o{ form_definitions : "contentTypeId"
+  review_tasks ||--o{ external_feedback_events : "reviewTaskId"
   users ||--o{ api_keys : "createdBy"
   api_keys ||--o{ audit_logs : "userId"
   payments ||--|| entitlements : "paymentHash"
@@ -57,6 +59,26 @@ erDiagram
     text kind
     text queue
     text status
+  }
+
+  review_tasks {
+    int id PK
+    int domainId
+    int contentItemId FK
+    int workflowTransitionId FK
+    text status
+    text source
+    int sourceEventId
+  }
+
+  external_feedback_events {
+    int id PK
+    int domainId
+    int contentItemId FK
+    int publishedVersion
+    text decision
+    text refinementMode
+    int reviewTaskId FK
   }
 
   users {
@@ -209,6 +231,45 @@ Domain-scoped background work queue for scheduled and deferred runtime tasks.
 | `lastError`    | text      | Last error message when the handler fails                        |
 | `createdAt`    | timestamp |                                                                  |
 | `updatedAt`    | timestamp |                                                                  |
+
+### review_tasks
+
+Pending or settled workflow-review assignments for governed content.
+
+| Column                 | Type      | Notes                                                            |
+|------------------------|-----------|------------------------------------------------------------------|
+| `id`                   | serial PK |                                                                  |
+| `domainId`             | integer   | Tenant boundary                                                  |
+| `contentItemId`        | integer   | FK → `content_items.id`                                          |
+| `workflowTransitionId` | integer   | FK → `workflow_transitions.id`                                   |
+| `status`               | text      | `pending`, `approved`, `rejected`, or other workflow task states |
+| `source`               | text      | `author_submit` or `external_feedback`                           |
+| `sourceEventId`        | integer   | Optional link back to an external feedback event                 |
+| `assignee`             | text      | Optional assignment reference                                    |
+| `createdAt`            | timestamp |                                                                  |
+| `updatedAt`            | timestamp |                                                                  |
+
+### external_feedback_events
+
+First-class client or external-requester feedback against already-published governed content.
+
+| Column            | Type      | Notes                                                      |
+|-------------------|-----------|------------------------------------------------------------|
+| `id`              | serial PK |                                                            |
+| `domainId`        | integer   | Tenant boundary                                            |
+| `contentItemId`   | integer   | FK → `content_items.id`                                    |
+| `publishedVersion`| integer   | Published snapshot version visible to the requester        |
+| `decision`        | text      | Optional values such as `accepted` or `changes_requested`  |
+| `comment`         | text      | Optional human-readable client feedback                    |
+| `prompt`          | text      | Optional bounded agent-revision prompt                     |
+| `refinementMode`  | text      | `human_supervised` or `agent_direct`                       |
+| `actorId`         | text      | Stable external requester identifier                       |
+| `actorType`       | text      | Currently `external_requester`                             |
+| `actorSource`     | text      | Trusted integration or portal source                       |
+| `actorDisplayName`| text      | Optional human-facing display name                         |
+| `actorEmail`      | text      | Optional requester email                                   |
+| `reviewTaskId`    | integer   | Optional FK → `review_tasks.id`                            |
+| `createdAt`       | timestamp |                                                            |
 
 ### content_item_embeddings (RFC 0012)
 

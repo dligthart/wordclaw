@@ -47,6 +47,7 @@ import * as formsService from '../services/forms.js';
 import * as referenceUsageService from '../services/reference-usage.js';
 import { issuePublicWriteToken } from '../services/public-write.js';
 import { issuePreviewToken } from '../services/content-preview.js';
+import { issueExternalFeedbackToken } from '../services/external-feedback-token.js';
 import { EmbeddingService } from '../services/embedding.js';
 
 type ApiErrorBody = {
@@ -118,6 +119,8 @@ const originalAssetStorageProvider = process.env.ASSET_STORAGE_PROVIDER;
 const originalAssetSignedTtl = process.env.ASSET_SIGNED_TTL_SECONDS;
 const originalPublicWriteSecret = process.env.PUBLIC_WRITE_SECRET;
 const originalPublicWriteTtl = process.env.PUBLIC_WRITE_TTL_SECONDS;
+const originalExternalFeedbackTokenSecret = process.env.EXTERNAL_FEEDBACK_TOKEN_SECRET;
+const originalExternalFeedbackTokenTtl = process.env.EXTERNAL_FEEDBACK_TOKEN_TTL_SECONDS;
 const originalWordClawBuildVersion = process.env.WORDCLAW_BUILD_VERSION;
 const originalWordClawBuildCommitSha = process.env.WORDCLAW_BUILD_COMMIT_SHA;
 const originalWordClawBuildTime = process.env.WORDCLAW_BUILD_TIME;
@@ -181,6 +184,18 @@ function restoreAuthEnv() {
         delete process.env.PUBLIC_WRITE_TTL_SECONDS;
     } else {
         process.env.PUBLIC_WRITE_TTL_SECONDS = originalPublicWriteTtl;
+    }
+
+    if (originalExternalFeedbackTokenSecret === undefined) {
+        delete process.env.EXTERNAL_FEEDBACK_TOKEN_SECRET;
+    } else {
+        process.env.EXTERNAL_FEEDBACK_TOKEN_SECRET = originalExternalFeedbackTokenSecret;
+    }
+
+    if (originalExternalFeedbackTokenTtl === undefined) {
+        delete process.env.EXTERNAL_FEEDBACK_TOKEN_TTL_SECONDS;
+    } else {
+        process.env.EXTERNAL_FEEDBACK_TOKEN_TTL_SECONDS = originalExternalFeedbackTokenTtl;
     }
 
     if (originalWordClawBuildVersion === undefined) {
@@ -4424,6 +4439,379 @@ describe('API Route Contracts', () => {
             );
         } finally {
             reviseReviewTaskSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('records external feedback for a published content item', async () => {
+        const app = await buildServer();
+        const submitExternalFeedbackSpy = vi.spyOn(WorkflowService, 'submitExternalFeedback').mockResolvedValue({
+            event: {
+                id: 19,
+                domainId: 1,
+                contentItemId: 501,
+                publishedVersion: 2,
+                decision: 'changes_requested',
+                comment: 'The scope is close, but adjust rollout pacing.',
+                prompt: 'Revise the proposal to phase onboarding over two sprints.',
+                refinementMode: 'agent_direct',
+                actorId: 'proposal-contact:123',
+                actorType: 'external_requester',
+                actorSource: 'proposal_portal',
+                actorDisplayName: 'Jane Smith',
+                actorEmail: 'jane@client.com',
+                reviewTaskId: 44,
+                createdAt: new Date('2026-04-03T10:00:00.000Z'),
+            },
+            reviewTask: {
+                id: 44,
+                domainId: 1,
+                contentItemId: 501,
+                workflowTransitionId: 90,
+                status: 'pending',
+                source: 'external_feedback',
+                sourceEventId: 19,
+                assignee: null,
+                assigneeActorId: null,
+                assigneeActorType: null,
+                assigneeActorSource: null,
+                createdAt: new Date('2026-04-03T10:00:00.000Z'),
+                updatedAt: new Date('2026-04-03T10:00:00.000Z'),
+            },
+            revision: {
+                taskId: 44,
+                contentItemId: 501,
+                contentStatus: 'in_review',
+                contentVersion: 3,
+                revisedAt: new Date('2026-04-03T10:01:00.000Z'),
+                strategy: 'openai_structured_outputs_v1',
+                provider: {
+                    type: 'openai',
+                    model: 'gpt-4.1-mini',
+                    responseId: 'resp_456',
+                },
+            },
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-items/501/external-feedback',
+                payload: {
+                    decision: 'changes_requested',
+                    comment: 'The scope is close, but adjust rollout pacing.',
+                    prompt: 'Revise the proposal to phase onboarding over two sprints.',
+                    refinementMode: 'agent_direct',
+                    submitter: {
+                        actorId: 'proposal-contact:123',
+                        actorType: 'external_requester',
+                        actorSource: 'proposal_portal',
+                        displayName: 'Jane Smith',
+                        email: 'jane@client.com',
+                    },
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toMatchObject({
+                data: {
+                    event: {
+                        id: 19,
+                        contentItemId: 501,
+                        publishedVersion: 2,
+                        decision: 'changes_requested',
+                        refinementMode: 'agent_direct',
+                        actorId: 'proposal-contact:123',
+                        actorSource: 'proposal_portal',
+                        reviewTaskId: 44,
+                        createdAt: '2026-04-03T10:00:00.000Z',
+                    },
+                    reviewTask: {
+                        id: 44,
+                        source: 'external_feedback',
+                        sourceEventId: 19,
+                    },
+                    revision: {
+                        taskId: 44,
+                        contentItemId: 501,
+                        revisedAt: '2026-04-03T10:01:00.000Z',
+                    },
+                },
+                meta: expect.objectContaining({
+                    availableActions: ['POST /api/review-tasks/44/decide'],
+                }),
+            });
+            expect(submitExternalFeedbackSpy).toHaveBeenCalledWith({
+                domainId: 1,
+                contentItemId: 501,
+                workflowTransitionId: undefined,
+                decision: 'changes_requested',
+                comment: 'The scope is close, but adjust rollout pacing.',
+                prompt: 'Revise the proposal to phase onboarding over two sprints.',
+                refinementMode: 'agent_direct',
+                submitter: {
+                    actorId: 'proposal-contact:123',
+                    actorType: 'external_requester',
+                    actorSource: 'proposal_portal',
+                    displayName: 'Jane Smith',
+                    email: 'jane@client.com',
+                },
+                authPrincipal: expect.anything(),
+            });
+        } finally {
+            submitExternalFeedbackSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('issues scoped external feedback tokens for published content items', async () => {
+        process.env.EXTERNAL_FEEDBACK_TOKEN_SECRET = 'external-feedback-secret';
+        const app = await buildServer();
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([{
+                    id: 501,
+                    domainId: 1,
+                    contentTypeId: 9,
+                    data: '{"title":"Published proposal"}',
+                    status: 'published',
+                    version: 2,
+                    createdAt: new Date('2026-04-03T09:00:00.000Z'),
+                    updatedAt: new Date('2026-04-03T09:05:00.000Z'),
+                }]),
+            }),
+        }));
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/content-items/501/external-feedback-token',
+                payload: {
+                    ttlSeconds: 300,
+                    allowAgentDirect: true,
+                    workflowTransitionId: 90,
+                    submitter: {
+                        actorId: 'proposal-contact:123',
+                        actorType: 'external_requester',
+                        actorSource: 'proposal_portal',
+                        displayName: 'Jane Smith',
+                        email: 'jane@client.com',
+                    },
+                },
+            });
+
+            expect(response.statusCode).toBe(200);
+            const body = response.json() as {
+                data: {
+                    token: string;
+                    submissionPath: string;
+                    contentItemId: number;
+                    allowAgentDirect: boolean;
+                    workflowTransitionId: number | null;
+                    ttlSeconds: number;
+                    submitter: {
+                        actorId: string;
+                        actorType: string;
+                        actorSource: string;
+                        displayName: string | null;
+                        email: string | null;
+                    };
+                };
+            };
+
+            expect(body.data).toMatchObject({
+                submissionPath: '/api/public/content-items/501/external-feedback',
+                contentItemId: 501,
+                allowAgentDirect: true,
+                workflowTransitionId: 90,
+                ttlSeconds: 300,
+                submitter: {
+                    actorId: 'proposal-contact:123',
+                    actorType: 'external_requester',
+                    actorSource: 'proposal_portal',
+                    displayName: 'Jane Smith',
+                    email: 'jane@client.com',
+                },
+            });
+            expect(body.data.token).toEqual(expect.any(String));
+        } finally {
+            await app.close();
+        }
+    });
+
+    it('lists external feedback events for a content item', async () => {
+        const app = await buildServer();
+        const listExternalFeedbackEventsSpy = vi.spyOn(WorkflowService, 'listExternalFeedbackEvents').mockResolvedValue([
+            {
+                id: 19,
+                domainId: 1,
+                contentItemId: 501,
+                publishedVersion: 2,
+                decision: 'changes_requested',
+                comment: 'The scope is close, but adjust rollout pacing.',
+                prompt: 'Revise the proposal to phase onboarding over two sprints.',
+                refinementMode: 'agent_direct',
+                actorId: 'proposal-contact:123',
+                actorType: 'external_requester',
+                actorSource: 'proposal_portal',
+                actorDisplayName: 'Jane Smith',
+                actorEmail: 'jane@client.com',
+                reviewTaskId: 44,
+                createdAt: new Date('2026-04-03T10:00:00.000Z'),
+            },
+        ]);
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/api/content-items/501/external-feedback',
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toMatchObject({
+                data: [
+                    {
+                        id: 19,
+                        contentItemId: 501,
+                        publishedVersion: 2,
+                        decision: 'changes_requested',
+                        prompt: 'Revise the proposal to phase onboarding over two sprints.',
+                        refinementMode: 'agent_direct',
+                        actorId: 'proposal-contact:123',
+                        actorSource: 'proposal_portal',
+                        reviewTaskId: 44,
+                        createdAt: '2026-04-03T10:00:00.000Z',
+                    },
+                ],
+                meta: expect.objectContaining({
+                    availableActions: ['POST /api/content-items/501/external-feedback'],
+                }),
+            });
+            expect(listExternalFeedbackEventsSpy).toHaveBeenCalledWith(1, 501);
+        } finally {
+            listExternalFeedbackEventsSpy.mockRestore();
+            await app.close();
+        }
+    });
+
+    it('records external feedback through the scoped public token route', async () => {
+        process.env.AUTH_REQUIRED = 'true';
+        process.env.EXTERNAL_FEEDBACK_TOKEN_SECRET = 'external-feedback-secret';
+        const app = await buildServer();
+        const token = issueExternalFeedbackToken({
+            domainId: 1,
+            contentItemId: 501,
+            actorId: 'proposal-contact:123',
+            actorSource: 'proposal_portal',
+            actorDisplayName: 'Jane Smith',
+            actorEmail: 'jane@client.com',
+            allowAgentDirect: true,
+            workflowTransitionId: 90,
+        }).token;
+        const submitExternalFeedbackSpy = vi.spyOn(WorkflowService, 'submitExternalFeedback').mockResolvedValue({
+            event: {
+                id: 19,
+                domainId: 1,
+                contentItemId: 501,
+                publishedVersion: 2,
+                decision: 'changes_requested',
+                comment: 'The scope is close, but adjust rollout pacing.',
+                prompt: 'Revise the proposal to phase onboarding over two sprints.',
+                refinementMode: 'agent_direct',
+                actorId: 'proposal-contact:123',
+                actorType: 'external_requester',
+                actorSource: 'proposal_portal',
+                actorDisplayName: 'Jane Smith',
+                actorEmail: 'jane@client.com',
+                reviewTaskId: 44,
+                createdAt: new Date('2026-04-03T10:00:00.000Z'),
+            },
+            reviewTask: {
+                id: 44,
+                domainId: 1,
+                contentItemId: 501,
+                workflowTransitionId: 90,
+                status: 'pending',
+                source: 'external_feedback',
+                sourceEventId: 19,
+                assignee: null,
+                assigneeActorId: null,
+                assigneeActorType: null,
+                assigneeActorSource: null,
+                createdAt: new Date('2026-04-03T10:00:00.000Z'),
+                updatedAt: new Date('2026-04-03T10:00:00.000Z'),
+            },
+            revision: {
+                taskId: 44,
+                contentItemId: 501,
+                contentStatus: 'in_review',
+                contentVersion: 3,
+                revisedAt: new Date('2026-04-03T10:01:00.000Z'),
+                strategy: 'openai_structured_outputs_v1',
+                provider: {
+                    type: 'openai',
+                    model: 'gpt-4.1-mini',
+                    responseId: 'resp_456',
+                },
+            },
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'POST',
+                url: '/api/public/content-items/501/external-feedback',
+                headers: {
+                    'x-external-feedback-token': token,
+                },
+                payload: {
+                    decision: 'changes_requested',
+                    comment: 'The scope is close, but adjust rollout pacing.',
+                    prompt: 'Revise the proposal to phase onboarding over two sprints.',
+                    refinementMode: 'agent_direct',
+                },
+            });
+
+            expect(response.statusCode).toBe(201);
+            expect(response.json()).toMatchObject({
+                data: {
+                    event: {
+                        id: 19,
+                        contentItemId: 501,
+                        decision: 'changes_requested',
+                        refinementMode: 'agent_direct',
+                    },
+                    reviewTask: {
+                        id: 44,
+                        source: 'external_feedback',
+                    },
+                    revision: {
+                        taskId: 44,
+                        contentVersion: 3,
+                    },
+                },
+            });
+            expect(submitExternalFeedbackSpy).toHaveBeenCalledWith(expect.objectContaining({
+                domainId: 1,
+                contentItemId: 501,
+                workflowTransitionId: 90,
+                submitter: {
+                    actorId: 'proposal-contact:123',
+                    actorType: 'external_requester',
+                    actorSource: 'proposal_portal',
+                    displayName: 'Jane Smith',
+                    email: 'jane@client.com',
+                },
+                authPrincipal: expect.objectContaining({
+                    actorId: 'proposal-contact:123',
+                    actorType: 'external_requester',
+                    actorSource: 'proposal_portal',
+                    domainId: 1,
+                    source: 'token',
+                }),
+            }));
+        } finally {
+            submitExternalFeedbackSpy.mockRestore();
             await app.close();
         }
     });

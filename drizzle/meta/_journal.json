@@ -253,6 +253,13 @@
       "when": 1774993200000,
       "tag": "0035_workforce_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1775162400000,
+      "tag": "0036_external_feedback_events",
+      "breakpoints": true
     }
   ]
 }
