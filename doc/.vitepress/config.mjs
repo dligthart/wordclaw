@@ -77,6 +77,7 @@ export default withMermaid(defineConfig({
                         text: 'Current Direction',
                         items: [
                             { text: '0010 Supervisor UI Usability and Accessibility Hardening (partial)', link: '/rfc/proposed/0010-supervisor-ui-usability-and-accessibility-hardening' },
+                            { text: '0033 Supervisor UI Design System and Consistency (proposed)', link: '/rfc/proposed/0033-supervisor-ui-design-system-and-consistency' },
                             { text: '0015 Paid Content Consumption Contract (partial)', link: '/archive/rfc/0015-paid-content-consumption-contract' },
                             { text: '0017 Tenant Boundary and Contract Hardening (partial)', link: '/archive/rfc/0017-tenant-boundary-and-contract-hardening' },
                             { text: '0021 Core Product Focus and Feature Pruning (accepted)', link: '/archive/rfc/0021-core-product-focus-and-feature-pruning' },
