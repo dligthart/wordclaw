@@ -1,3 +1,10 @@
+## [1.50.5](https://github.com/dligthart/wordclaw/compare/v1.50.4...v1.50.5) (2026-04-03)
+
+
+### Bug Fixes
+
+* keep pending review items in review ([1b76daf](https://github.com/dligthart/wordclaw/commit/1b76dafd096aea1814025a2359015772368de5e3))
+
 ## [1.50.4](https://github.com/dligthart/wordclaw/compare/v1.50.3...v1.50.4) (2026-04-02)
 
 
