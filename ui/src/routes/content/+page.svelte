@@ -4,6 +4,16 @@
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { deepParseJson, formatJson } from "$lib/utils";
     import { openDeferredTab } from "$lib/deferred-tab";
+    import {
+        resolveContentLabel,
+        resolveContentSubtitle,
+        resolveContentSummary,
+        resolveContentSlug,
+        resolveContentAttribution,
+        parseStructuredData,
+        pickFirstString,
+        truncate,
+    } from "$lib/content-label";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
@@ -163,15 +173,7 @@
         { value: "gte", label: "At least" },
         { value: "lte", label: "At most" },
     ];
-    const PRIMARY_LABEL_FIELDS = ["title", "name", "headline", "slug"];
-    const SUMMARY_FIELDS = [
-        "summary",
-        "excerpt",
-        "description",
-        "content",
-        "body",
-        "text",
-    ];
+    // PRIMARY_LABEL_FIELDS and SUMMARY_FIELDS are now in $lib/content-label.ts
     const DEFAULT_ITEMS_META: ContentListMeta = {
         total: 0,
         offset: 0,
@@ -393,19 +395,9 @@
         };
     }
 
-    function parseStructuredData(
-        payload: unknown,
-    ): Record<string, unknown> | null {
-        const parsed = deepParseJson(payload);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-            return null;
-        }
-        return parsed as Record<string, unknown>;
-    }
+    // parseStructuredData is now imported from $lib/content-label
 
-    function truncate(value: string, max = 140): string {
-        return value.length > max ? `${value.slice(0, max - 1)}…` : value;
-    }
+    // truncate is now imported from $lib/content-label
 
     function stringifyPreview(value: unknown, max = 80): string {
         if (value === null) return "null";
@@ -416,58 +408,36 @@
         }
 
         try {
-            return truncate(JSON.stringify(value), max);
+            return truncate(JSON.stringify(value) ?? "", max);
         } catch {
             return truncate(String(value), max);
         }
     }
 
-    function pickFirstString(
-        record: Record<string, unknown> | null,
-        keys: string[],
-    ): string | null {
-        if (!record) return null;
-
-        for (const key of keys) {
-            const value = record[key];
-            if (typeof value === "string" && value.trim().length > 0) {
-                return value.trim();
-            }
-        }
-
-        return null;
-    }
+    // pickFirstString is now imported from $lib/content-label
 
     function resolveItemLabel(item: Pick<ContentItem, "id" | "data">): string {
-        const structured = parseStructuredData(item.data);
-        return (
-            pickFirstString(structured, PRIMARY_LABEL_FIELDS) ??
-            `Item #${item.id}`
-        );
+        return resolveContentLabel(item, selectedType ?? undefined);
+    }
+
+    function resolveItemSubtitle(item: Pick<ContentItem, "id" | "data">): string | null {
+        return resolveContentSubtitle(item, selectedType ?? undefined);
     }
 
     function resolveItemSummary(item: Pick<ContentItem, "data">): string {
-        const structured = parseStructuredData(item.data);
-        const preferred = pickFirstString(structured, SUMMARY_FIELDS);
-        if (preferred) {
-            return truncate(preferred, 160);
-        }
-
+        const summary = resolveContentSummary(item as { id: number; data: unknown });
+        if (summary) return summary;
         return truncate(formatJson(item.data), 160);
     }
 
     function resolveItemSlug(item: Pick<ContentItem, "data">): string | null {
-        return pickFirstString(parseStructuredData(item.data), ["slug"]);
+        return resolveContentSlug(item as { id: number; data: unknown });
     }
 
     function resolveItemAttribution(
         item: Pick<ContentItem, "data">,
     ): string | null {
-        return pickFirstString(parseStructuredData(item.data), [
-            "author",
-            "owner",
-            "editor",
-        ]);
+        return resolveContentAttribution(item as { id: number; data: unknown });
     }
 
     function formatDate(value: string): string {
@@ -3129,6 +3099,11 @@
                                                 >
                                                     {resolveItemLabel(item)}
                                                 </p>
+                                                {#if resolveItemSubtitle(item)}
+                                                    <p class="truncate text-[0.72rem] text-slate-600 dark:text-slate-300 mt-0.5">
+                                                        {resolveItemSubtitle(item)}
+                                                    </p>
+                                                {/if}
                                                 <div
                                                     class="mt-1 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400"
                                                 >
@@ -3210,6 +3185,11 @@
                                                 >
                                                     {resolveItemLabel(item)}
                                                 </p>
+                                                {#if resolveItemSubtitle(item)}
+                                                    <p class="truncate text-[0.72rem] text-slate-600 dark:text-slate-300 mt-0.5">
+                                                        {resolveItemSubtitle(item)}
+                                                    </p>
+                                                {/if}
                                                 <div
                                                     class="mt-1 flex flex-wrap items-center gap-2 text-[0.72rem] text-slate-500 dark:text-slate-400"
                                                 >

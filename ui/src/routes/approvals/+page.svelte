@@ -3,6 +3,18 @@
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { deepParseJson } from "$lib/utils";
+    import {
+        resolveContentLabel,
+        resolveContentSubtitle,
+        resolveContentSummary,
+        resolveContentSlug,
+        resolveContentAttribution,
+        resolveStructuredFieldCount,
+        resolveContentTaskSummary,
+        parseStructuredData,
+        pickFirstString,
+        truncate,
+    } from "$lib/content-label";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
@@ -84,15 +96,7 @@
         change: "added" | "removed" | "changed";
     };
 
-    const PRIMARY_LABEL_FIELDS = ["title", "name", "headline", "slug"];
-    const SUMMARY_FIELDS = [
-        "summary",
-        "excerpt",
-        "description",
-        "content",
-        "body",
-        "text",
-    ];
+    // Label / summary field lists are now in $lib/content-label.ts
     const AI_REVISION_COMMENT_PREFIX = "AI revision requested: ";
 
     let pendingTasks = $state<ReviewTaskPayload[]>([]);
@@ -149,19 +153,9 @@
         void loadSelectedTaskRevisionContext(contentItemId);
     });
 
-    function parseStructuredData(
-        payload: unknown,
-    ): Record<string, unknown> | null {
-        const parsed = deepParseJson(payload);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-            return null;
-        }
-        return parsed as Record<string, unknown>;
-    }
+    // parseStructuredData is now imported from $lib/content-label
 
-    function truncate(value: string, max = 160): string {
-        return value.length > max ? `${value.slice(0, max - 1)}…` : value;
-    }
+    // truncate is now imported from $lib/content-label
 
     function formatApprovalTargetLabel(transition: {
         fromState: string;
@@ -188,7 +182,7 @@
         }
 
         try {
-            return truncate(JSON.stringify(value), max);
+            return truncate(JSON.stringify(value) ?? "", max);
         } catch {
             return truncate(String(value), max);
         }
@@ -324,21 +318,7 @@
         resolveLatestRevisionPrompt(selectedTaskComments),
     );
 
-    function pickFirstString(
-        record: Record<string, unknown> | null,
-        keys: string[],
-    ): string | null {
-        if (!record) return null;
-
-        for (const key of keys) {
-            const value = record[key];
-            if (typeof value === "string" && value.trim().length > 0) {
-                return value.trim();
-            }
-        }
-
-        return null;
-    }
+    // pickFirstString is now imported from $lib/content-label
 
     function formatStatusLabel(status: string): string {
         return status
@@ -382,58 +362,27 @@
     }
 
     function resolveTaskLabel(payload: ReviewTaskPayload): string {
-        return (
-            pickFirstString(
-                parseStructuredData(payload.contentItem.data),
-                PRIMARY_LABEL_FIELDS,
-            ) ?? `${payload.contentType.name} #${payload.contentItem.id}`
-        );
+        return resolveContentLabel(payload.contentItem, payload.contentType);
+    }
+
+    function resolveTaskSubtitle(payload: ReviewTaskPayload): string | null {
+        return resolveContentSubtitle(payload.contentItem, payload.contentType);
     }
 
     function resolveTaskExcerpt(payload: ReviewTaskPayload): string | null {
-        const structured = parseStructuredData(payload.contentItem.data);
-        const preferred = pickFirstString(structured, SUMMARY_FIELDS);
-
-        if (preferred) {
-            return truncate(preferred, 180);
-        }
-
-        return null;
-    }
-
-    function resolveStructuredFieldCount(
-        payload: ReviewTaskPayload,
-    ): number | null {
-        const structured = parseStructuredData(payload.contentItem.data);
-        return structured ? Object.keys(structured).length : null;
+        return resolveContentSummary(payload.contentItem);
     }
 
     function resolveTaskSummary(payload: ReviewTaskPayload): string {
-        const excerpt = resolveTaskExcerpt(payload);
-        if (excerpt) {
-            return excerpt;
-        }
-
-        const fieldCount = resolveStructuredFieldCount(payload);
-        if (fieldCount && fieldCount > 0) {
-            return `${fieldCount} structured ${fieldCount === 1 ? "field" : "fields"} submitted. Open the payload only if you need the raw content.`;
-        }
-
-        return "Review the submitted payload before moving this item through the workflow.";
+        return resolveContentTaskSummary(payload.contentItem);
     }
 
     function resolveTaskSlug(payload: ReviewTaskPayload): string | null {
-        return pickFirstString(parseStructuredData(payload.contentItem.data), [
-            "slug",
-        ]);
+        return resolveContentSlug(payload.contentItem);
     }
 
     function resolveTaskAttribution(payload: ReviewTaskPayload): string | null {
-        return pickFirstString(parseStructuredData(payload.contentItem.data), [
-            "author",
-            "owner",
-            "editor",
-        ]);
+        return resolveContentAttribution(payload.contentItem);
     }
 
     async function loadData() {
@@ -760,6 +709,11 @@
                                                 >
                                                     {resolveTaskLabel(payload)}
                                                 </p>
+                                                {#if resolveTaskSubtitle(payload)}
+                                                    <p class="truncate text-[0.72rem] text-gray-600 dark:text-gray-300 mt-0.5">
+                                                        {resolveTaskSubtitle(payload)}
+                                                    </p>
+                                                {/if}
                                                 <div
                                                     class="mt-1 flex flex-wrap items-center gap-1.5 text-[0.68rem] text-gray-500 dark:text-gray-400"
                                                 >
@@ -916,6 +870,11 @@
                                         {resolveTaskLabel(selectedTask)}
                                     </h3>
                                 </div>
+                                {#if resolveTaskSubtitle(selectedTask)}
+                                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400 truncate">
+                                        {resolveTaskSubtitle(selectedTask)}
+                                    </p>
+                                {/if}
                                 <div
                                     class="mt-1.5 flex flex-wrap items-center gap-2 text-xs"
                                 >
