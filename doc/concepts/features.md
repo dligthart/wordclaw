@@ -50,6 +50,7 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not a full human-first CMS:
 
 - **Dashboard** — System health and activity telemetry.
+- **Agent Provisioning** — Configure tenant AI providers and workforce agents through a dedicated operator workspace instead of mixing those controls into API-key management.
 - **Audit Log Viewer** — Searchable history of mutations and raw payloads.
 - **Content Browser** — Oversight for globals and collections with publication-state visibility, localized reads, rollback access, and scoped preview actions.
 - **Schema Manager** — Visual schema administration for content models.
@@ -58,6 +59,8 @@ The built-in SvelteKit UI under `/ui` is positioned as an oversight surface, not
 - **Approval Queue** — Review and decide pending workflow items.
 - **API Keys and Tenant Bootstrap** — Provision, rotate, and revoke API credentials for agents and operator integrations, onboard a tenant by creating its domain plus first admin key in one step, and hand off platform- or tenant-scoped supervisor access for that tenant.
 - **Asset Library** — Upload assets, inspect delivery policy, preview image content, and manage delete/restore/purge lifecycle without dropping to the CLI.
+
+Current hardening work is focused on reducing duplicate route-local UI code, standardizing shared page patterns, and increasing UI test coverage for core operator flows.
 
 ## Tier 2: Optional Modules
 

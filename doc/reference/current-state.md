@@ -1,7 +1,7 @@
 # Current State
 
-Updated: 2026-03-31  
-Tracking: `v1.40.0` on `main` (latest changelog entry dated 2026-03-31)
+Updated: 2026-04-03<br>
+Tracking: `v1.51.0` on `main` (latest changelog entry dated 2026-04-03)
 
 WordClaw's supported product path is now a governed content runtime for AI agents and human supervisors. REST and MCP are the primary surfaces. GraphQL remains available as a compatibility layer, but it no longer defines the product.
 
@@ -36,10 +36,11 @@ WordClaw's supported product path is now a governed content runtime for AI agent
 ### Governance, UI, and Supervision
 
 - Workflow approvals, dry-run mutation paths, idempotency, audit logging, and request tracing are part of the core runtime contract.
-- The supervisor UI now covers schemas, content inspection, approvals, forms, jobs, assets, payments, audits, and API-key management.
+- The supervisor UI now covers schemas, content inspection, approvals, forms, jobs, assets, payments, audits, API-key management, and dedicated agent provisioning.
 - Supervisor access now supports both platform-scoped and tenant-scoped sessions, with tenant-scoped supervisors pinned to one domain.
 - Request-rate limiting is actor-aware, so API credentials and supervisor sessions no longer collide in one shared IP bucket.
 - Multi-domain isolation remains the tenant boundary for content, credentials, workflows, and delivery policy.
+- Shared shell, feedback, and table primitives are already live, and current UI work is focused on reducing duplicate route-local code, standardizing page patterns, and expanding UI test coverage.
 
 ### Paid Content and Agent Access
 
@@ -49,6 +50,12 @@ WordClaw's supported product path is now a governed content runtime for AI agent
 - Remote MCP subscriptions let long-lived agents react to runtime events instead of polling.
 
 ## Rolling Out / Actively Hardening
+
+### Supervisor UI Design System and Test Coverage
+
+- Shared shell, feedback, and data-view foundations are live on `main`.
+- Current work is focused on standardizing page headers, cards, dialogs, field wrappers, filters, inspector layouts, and route-level UI coverage rather than rewriting the UI stack.
+- See [RFC 0033](../rfc/implemented/0033-supervisor-ui-design-system-and-consistency.md) for the active design-system and consistency direction.
 
 ### Reactive MCP Sessions
 
@@ -66,18 +73,14 @@ WordClaw's supported product path is now a governed content runtime for AI agent
 - Older monetization and payout expansion work, including AP2-related experiments, remains historical or optional rather than core product scope.
 - Marketplace, recommender, and broader platformization ideas remain in RFC history or proposal mode.
 
-## Recent Additions In March 2026
+## Recent Additions In April 2026
 
-- `v1.40.0` on 2026-03-31: actor-aware rate limits and safer supervisor domain switching.
-- `v1.39.0` on 2026-03-31: production provisioning DX improvements and clearer deployment guards.
-- `v1.38.0` on 2026-03-31: tenant onboarding flow for domain plus first admin credential bootstrap.
-- `v1.37.0` on 2026-03-29: Codex WordClaw skill and Codex-facing integration path.
-- `v1.35.0` on 2026-03-17: asset derivative variants.
-- `v1.34.0` on 2026-03-16: direct-provider asset upload flows.
-- `v1.31.0` on 2026-03-16: TTL-based lifecycle archival.
-- `v1.30.0` on 2026-03-16: public write lanes.
-- `v1.29.0` on 2026-03-16: capability manifest exposes the content-runtime query contract.
-- `v1.12.0` through `v1.10.0` on 2026-03-12 to 2026-03-13: reactive MCP follow-up discovery, task guidance, and subscription recipes.
+- `v1.51.0` on 2026-04-03: deeper proposal draft generation and shared content-label extraction for stronger Supervisor UI presentation.
+- `v1.50.0` through `v1.50.5` on 2026-04-02 to 2026-04-03: proposal portal demo plus Supervisor UI fixes for static asset serving, dynamic form routes, review retention, and content diff navigation.
+- `v1.49.0` on 2026-04-02: agent-guided approval revisions.
+- `v1.48.0` on 2026-04-02: refined draft-generation discovery and review flow.
+- `v1.47.0` through `v1.47.2` on 2026-04-01: dedicated agent provisioning page and follow-up migration/schema fixes for tenant AI setup.
+- `v1.46.0` through `v1.45.0` on 2026-04-01: authenticated runtime build metadata plus multimodal draft-generation pipeline rollout.
 
 ## Best Pages For Exact Capability Checks
 
@@ -85,6 +88,7 @@ WordClaw's supported product path is now a governed content runtime for AI agent
 - [Capability Parity](./capability-parity.md) for exact REST, MCP, and GraphQL surface coverage.
 - [API Reference](./api-reference.md) for concrete HTTP examples and discovery flow.
 - [Roadmap](./roadmap.md) for what is shipped, rolling out, proposed, or explicitly non-core.
+- [RFC 0033](../rfc/implemented/0033-supervisor-ui-design-system-and-consistency.md) for the current Supervisor UI design-system and consistency hardening stream.
 - [Fly Deployment](../guides/fly-deployment.md) and [Docker Deployment](../guides/docker-deployment.md) for current production operator paths.
 - [MCP Integration](../guides/mcp-integration.md), [Codex Integration](../guides/codex-integration/README.md), and [OpenClaw Integration](../guides/openclaw-integration/README.md) for agent-attachment workflows.
 

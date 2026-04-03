@@ -3,7 +3,7 @@ layout: home
 hero:
   name: "WordClaw"
   text: "Governed Content Runtime"
-  tagline: "Current docs track v1.39.0 on main as of 2026-03-31"
+  tagline: "Current docs track v1.51.0 on main as of 2026-04-03"
   actions:
     - theme: brand
       text: Get Started
@@ -26,7 +26,7 @@ features:
   - title: Paid and Protected Access
     details: Offer and entitlement flows plus L402 support are built into the runtime for machine-to-machine paid content and asset access.
   - title: Supervisor Control Plane
-    details: The built-in SvelteKit UI covers audits, schemas, approvals, content inspection, forms, jobs, assets, payments, and API-key operations.
+    details: The built-in SvelteKit UI covers audits, schemas, approvals, content inspection, forms, jobs, assets, payments, agent provisioning, and API-key operations, with shared design-system hardening underway.
 ---
 
 ## System State
@@ -36,6 +36,7 @@ features:
 | Provisioning and deployment | Shipped | First-tenant onboarding, fail-fast production startup validation, Docker deployment, and the new Fly.io deployment path are part of the current operator story. |
 | Core governed runtime | Shipped | Structured content, globals, localization, preview tokens, forms, jobs, public write lanes, workflow review, auditability, and tenant isolation are live on `main`. |
 | Asset and delivery layer | Shipped | Local and S3-compatible storage, multipart and direct upload, derivative variants, signed delivery, and entitlement-gated asset access are live on `main`. |
+| Supervisor UI | Rolling out | Broad route coverage, shared shell, feedback primitives, and table foundations are live. Current work is reducing duplicate UI code, standardizing page patterns, and expanding UI test coverage. |
 | Reactive agent contract | Rolling out | Remote MCP sessions, topic subscriptions, filter-aware recipes, and task-guidance follow-up suggestions are live and currently being hardened around the most valuable topics and demos. |
 | Native vector RAG | Rolling out | `OPENAI_API_KEY` auto-enablement, embedding status reporting, and semantic search are available, with ongoing work focused on simpler operator experience. |
 | Experimental modules | Opt-in only | Agent-run/delegation surfaces and older monetization/platform experiments remain behind feature flags or in RFC history, not the default supported path. |

@@ -1,22 +1,26 @@
 # RFC 0033: Supervisor UI Design System and Consistency
 
-**Author:** Codex  
-**Status:** Proposed  
-**Date:** 2026-04-03
+**Author:** Codex<br>
+**Status:** Partially Implemented<br>
+**Date:** 2026-04-03<br>
+**Updated:** 2026-04-03
 
 ## 0. Current Status
 
-As of 2026-04-03, the Supervisor UI already has a partial foundation on `main`:
+As of 2026-04-03, RFC 0033 is partially implemented on `main`.
+
+Implemented so far:
 
 - a responsive shell in `ui/src/routes/+layout.svelte`
 - base UI primitives such as `Button`, `Input`, `Select`, `Textarea`, `Badge`, and `Surface`
 - reusable feedback components such as `Toast`, `ConfirmDialog`, and `ErrorBanner`
 - a shared `DataTable`
 - broad route coverage across content, assets, jobs, approvals, keys, payments, forms, and agents
+- route-level UI tests already exist for key supervisor flows such as login, invite handling, forms, approvals, agents, and keys
 
-That foundation is useful, but it is still too low-level to produce a consistent operator-facing design system by default.
+This foundation is useful, but it is still too low-level to produce a consistent operator-facing design system by default.
 
-Current gaps:
+Still pending:
 
 - page headers and action bars are still hand-built per route
 - cards, stat tiles, inspector sections, and metadata panels are repeated with slightly different spacing and hierarchy
@@ -28,11 +32,19 @@ Current gaps:
 
 This RFC is a follow-on to RFC 0010. RFC 0010 established the shell, feedback, and accessibility baseline. RFC 0033 standardizes the next layer: the reusable generic components and composition rules that make the UI feel like one product instead of a set of individually styled pages.
 
+It now represents an active hardening and consolidation stream on top of an already-live Supervisor UI, not a greenfield design-system effort.
+
 ## 1. Summary
 
 This RFC proposes a Supervisor UI design-system layer for WordClaw.
 
 The goal is not a visual rebrand and not a frontend rewrite. The goal is to make the current visual language composable and enforceable through reusable generic components, semantic design tokens, and a small set of page composition contracts.
+
+Primary objectives:
+
+- improve operator-facing consistency across all supervisor routes
+- reduce duplicate UI code by replacing route-local layout and interaction shells with shared generic components
+- increase UI test coverage so the new design-system contracts are verified rather than relying only on manual review
 
 The proposed system keeps the current Svelte + Tailwind stack and extends the existing primitive layer with standardized components for:
 
@@ -123,6 +135,8 @@ This RFC intentionally does not propose:
 - a dependency on a large third-party UI kit
 
 The design direction remains conservative: codify the current working visual language, reduce drift, and improve consistency through composition rather than reinvention.
+
+Duplicate-code reduction is an explicit objective of this RFC. New abstractions should replace repeated route-local implementations, not sit alongside them as an optional parallel layer.
 
 ## 5. Technical Design (Architecture)
 
@@ -335,9 +349,29 @@ Instead, the initial documentation and verification path should be:
 - component usage docs in the repo
 - route migrations that demonstrate intended composition
 - targeted component tests where behavior matters
+- route-level UI tests for critical migrated flows such as auth, dialogs, filters, and inspector interactions
 - visual/manual review against light and dark themes
 
 If the component surface grows enough to justify it later, a dedicated preview/catalog can be introduced as a follow-on step.
+
+UI test coverage is a required outcome of the rollout, not a nice-to-have. Shared components should gain tests when they define meaningful behavior, and high-value migrated routes should gain or retain tests that prove the design-system layer works in realistic operator flows.
+
+### 5.8 Additional UI Improvements Enabled by This RFC
+
+Beyond consistency and code reduction, this design-system layer should make a set of extra UI improvements much easier to ship safely.
+
+These improvements are secondary to the core standardization work, but they are desirable follow-on outcomes:
+
+- keyboard shortcuts and faster operator workflows for high-frequency pages
+- density options for data-heavy views such as content, assets, jobs, and audit logs
+- saved filters or saved views for repeated operational tasks
+- stronger mobile and narrow-screen adaptations for tables, filters, and inspectors
+- clearer empty states and first-run guidance for under-configured domains
+- more consistent inline help, hints, and explanatory copy in provisioning and schema-driven flows
+- standardized action bars for bulk actions, refresh actions, and contextual row actions
+- improved visual hierarchy for destructive actions, warnings, and system status
+
+These should be treated as benefits unlocked by the shared component layer, not as reasons to delay the initial design-system rollout.
 
 ## 6. Alternatives Considered
 
@@ -393,13 +427,16 @@ A consistent design system improves safety indirectly by reducing accidental act
 6. **Phase 6: Documentation and Guardrails**
    - document usage rules
    - add component-level tests for interactive patterns
+   - add route-level UI coverage for representative migrated pages and auth flows
    - add lightweight review guidance so new pages use shared patterns by default
 
 ## 9. Success Criteria
 
 - new supervisor routes are assembled from shared generic components rather than hand-built layout shells
+- duplicate route-local UI shells are removed from the initial target pages instead of being preserved beside new abstractions
 - no new route-local modal shell is introduced when `Dialog` or `Sheet` is applicable
 - public auth routes use shared design-system components rather than isolated markup
 - route-level loading, empty, and inline-error states converge on shared components
 - spacing, hierarchy, and dark-mode behavior become materially more consistent across keys, agents, assets, jobs, content, and public auth flows
 - the cost of adding a new operational route drops because page authors choose from existing patterns instead of inventing them
+- shared interactive components and representative migrated routes have UI test coverage for core behaviors

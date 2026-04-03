@@ -31,23 +31,27 @@ We promote one major flagship feature per minor version release to ensure stabil
 
 These features are currently in active development or polishing phases for upcoming minor releases.
 
-### 1. Vector RAG Simplification
+### 1. Supervisor UI Design System and Consistency (RFC 0033)
+- **Status**: Partially implemented / hardening.
+- **Description**: The responsive shell, feedback primitives, shared tables, and broad route coverage are already live. Current work is reducing duplicate route-local UI code, standardizing page headers/cards/dialogs/filters/inspectors, and growing UI test coverage for shared operator flows.
+
+### 2. Vector RAG Simplification
 - **Status**: Rolling out.
 - **Description**: Making native `pgvector` semantic search easier to enable. We now auto-detect `OPENAI_API_KEY` on startup, automatically generating embeddings for published content without requiring complex external pipeline deployments.
 
-### 2. Additional Asset Providers (Optional follow-up)
+### 3. Additional Asset Providers (Optional follow-up)
 - **Status**: On demand.
 - **Description**: RFC 0023 is effectively shipped for the supported product path. Additional object-storage adapters beyond the current local and S3-compatible providers are now a demand-driven extension, not a core product gap.
 
-### 3. Extensibility and Plugins (RFC 0022)
+### 4. Extensibility and Plugins (RFC 0022)
 - **Status**: Proposed.
 - **Description**: Designing a Strapi-style plugin architecture to allow the community to extend the Express/Fastify API boundaries and MCP toolsets without continuously forking the core runtime.
 
-### 4. API Polish and Error Schemas
+### 5. API Polish and Error Schemas
 - **Status**: In progress.
 - **Description**: Standardizing error payloads across both GraphQL and REST, ensuring AI agents receive consistent, actionable `recommendedNextAction` directives when validations fail.
 
-### 5. Performance & Scalability (RFC 0024)
+### 6. Performance & Scalability (RFC 0024)
 - **Status**: Proposed.
 - **Description**: Establishing caching layers (Redis) for Agent capabilities/search, defining horizontal node scaling strategies, and targeting 100 concurrent agent runs at under 200ms latency.
 
