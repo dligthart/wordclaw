@@ -27,6 +27,7 @@ WordClaw now describes its capabilities in product tiers so the supported runtim
 - **Policy Engine** — A centralized authorization layer that maps identities, operations, and resources into one strict evaluation geometry.
 - **Dry-Run Mode** — Supported write paths can be simulated before mutation (`?mode=dry_run` for REST and `dryRun: true` for GraphQL/MCP where implemented).
 - **Workflow and Approvals** — Human supervisors can review pending or drafted content and approve or reject critical transitions.
+- **External Feedback Loops** — Already-published content can accept first-class client feedback events with external actor attribution, optional supervisor-routed rereview, and optional bounded client-to-agent revision on eligible generated drafts.
 - **Audit Logging** — Mutations record action, entity, actor, and request trace data for inspection and forensics.
 - **Idempotency** — Replayed POST/PUT/DELETE requests can return cached responses instead of creating duplicate writes.
 - **Multi-Tenant Isolation** — Domains scope content, keys, and workflows to prevent cross-tenant overlap.

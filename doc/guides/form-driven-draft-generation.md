@@ -173,6 +173,54 @@ If the form configured `postGenerationWorkflowTransitionId`, the generated draft
 
 That approval step is also the handoff point for notifying the original requester through the existing form webhook lane.
 
+## Post-Publication Client Feedback Loop
+
+After the draft is approved and published, the same content item can now re-enter a governed feedback loop without falling back to ad hoc comments plus a generic workflow submit.
+
+Use:
+
+- `POST /api/content-items/:id/external-feedback`
+
+This route records:
+
+- an optional client decision such as `accepted` or `changes_requested`
+- an optional comment
+- an optional revision prompt
+- the external requester identity
+
+Two refinement modes are supported:
+
+- `human_supervised`: create or update a supervisor-facing review task and treat the client input as the revision brief
+- `agent_direct`: reuse the existing bounded AI revision path for eligible generated drafts so the client can continue refining with the agent directly
+
+Example:
+
+```bash
+curl -X POST "https://your-host.example.com/api/content-items/11/external-feedback" \
+  -H "x-api-key: YOUR_TENANT_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision": "changes_requested",
+    "comment": "The proposal is close, but we want a slower rollout and clearer support assumptions.",
+    "prompt": "Revise the proposal to phase onboarding over two sprints and tighten the support coverage notes.",
+    "refinementMode": "agent_direct",
+    "submitter": {
+      "actorId": "proposal-contact:123",
+      "actorType": "external_requester",
+      "actorSource": "proposal_portal",
+      "displayName": "Jane Smith",
+      "email": "jane@client.com"
+    }
+  }'
+```
+
+Important constraints:
+
+- `agent_direct` requires a non-empty `prompt`
+- `agent_direct` only works when the draft can reuse an existing agent-backed revision context
+- final publication still follows the existing workflow approval path
+- the last published snapshot remains the live read source while the revised working copy continues forward
+
 ## REST Setup Path
 
 The same flow is available over REST if you want to provision it programmatically.

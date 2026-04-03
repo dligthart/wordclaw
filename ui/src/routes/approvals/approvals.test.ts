@@ -20,19 +20,29 @@ vi.mock("$lib/ui-feedback.svelte", () => ({
     },
 }));
 
-function buildTask(version: number, summary = "Initial generated summary.") {
+function buildTask(
+    version: number,
+    summary = "Initial generated summary.",
+    overrides: Partial<{
+        task: Record<string, unknown>;
+        contentItem: Record<string, unknown>;
+    }> = {},
+) {
     return {
         task: {
             id: 44,
             contentItemId: 501,
             workflowTransitionId: 91,
             status: "pending",
+            source: "author_submit",
+            sourceEventId: null,
             assignee: null,
             assigneeActorId: null,
             assigneeActorType: null,
             assigneeActorSource: null,
             createdAt: "2026-04-02T10:00:00.000Z",
             updatedAt: "2026-04-02T10:00:00.000Z",
+            ...(overrides.task ?? {}),
         },
         transition: {
             id: 91,
@@ -56,6 +66,7 @@ function buildTask(version: number, summary = "Initial generated summary.") {
             version,
             createdAt: "2026-04-02T10:00:00.000Z",
             updatedAt: "2026-04-02T10:00:00.000Z",
+            ...(overrides.contentItem ?? {}),
         },
         contentType: {
             id: 10,
@@ -186,7 +197,7 @@ describe("Approvals Page", () => {
             },
         });
         await fireEvent.click(
-            screen.getByRole("button", { name: "Revise With Agent" }),
+            screen.getByRole("button", { name: "Revise" }),
         );
 
         await waitFor(() => {
@@ -213,8 +224,8 @@ describe("Approvals Page", () => {
             ),
         ).toBeTruthy();
         expect(
-            screen.getByText(/field-level change[s]? detected in the latest revision/i),
-        ).toBeTruthy();
+            screen.getAllByText("Changes").length,
+        ).toBeGreaterThan(0);
         expect(screen.getByText("summary")).toBeTruthy();
         expect(
             screen.getAllByText("Initial generated summary.").length,
@@ -230,6 +241,109 @@ describe("Approvals Page", () => {
                 severity: "success",
                 title: "Draft revised",
             }),
+        );
+    });
+
+    it("renders the linked client feedback context for external feedback tasks", async () => {
+        vi.mocked(fetchApi).mockImplementation(async (endpoint, options = {}) => {
+            if (endpoint === "/review-tasks" && (!options.method || options.method === "GET")) {
+                return {
+                    data: [
+                        buildTask(3, "Updated generated summary with rollout assumptions.", {
+                            task: {
+                                source: "external_feedback",
+                                sourceEventId: 19,
+                            },
+                        }),
+                    ],
+                };
+            }
+
+            if (endpoint === "/content-items/501/versions") {
+                return {
+                    data: [
+                        {
+                            id: 78,
+                            version: 2,
+                            data: JSON.stringify({
+                                title: "Implementation Proposal",
+                                summary: "Initial generated summary.",
+                            }),
+                            status: "in_review",
+                            createdAt: "2026-04-02T10:00:00.000Z",
+                        },
+                    ],
+                };
+            }
+
+            if (endpoint === "/content-items/501/comments") {
+                return {
+                    data: [
+                        {
+                            id: 901,
+                            authorId: "proposal-contact:123",
+                            authorActorId: "proposal-contact:123",
+                            authorActorType: "external_requester",
+                            authorActorSource: "proposal_portal",
+                            comment:
+                                "External feedback from Jane Smith (changes_requested)\n\nThe scope is close, but adjust rollout pacing.\n\nRequested agent prompt:\nRevise the proposal to phase onboarding over two sprints.",
+                            createdAt: "2026-04-03T10:00:00.000Z",
+                        },
+                    ],
+                };
+            }
+
+            if (endpoint === "/content-items/501/external-feedback") {
+                return {
+                    data: [
+                        {
+                            id: 19,
+                            domainId: 1,
+                            contentItemId: 501,
+                            publishedVersion: 2,
+                            decision: "changes_requested",
+                            comment:
+                                "The scope is close, but adjust rollout pacing.",
+                            prompt:
+                                "Revise the proposal to phase onboarding over two sprints.",
+                            refinementMode: "agent_direct",
+                            actorId: "proposal-contact:123",
+                            actorType: "external_requester",
+                            actorSource: "proposal_portal",
+                            actorDisplayName: "Jane Smith",
+                            actorEmail: "jane@client.com",
+                            reviewTaskId: 44,
+                            createdAt: "2026-04-03T10:00:00.000Z",
+                        },
+                    ],
+                };
+            }
+
+            throw new Error(`Unexpected request: ${endpoint} ${options.method ?? "GET"}`);
+        });
+
+        render(ApprovalsPage);
+
+        await screen.findByRole("heading", {
+            name: "Implementation Proposal",
+        });
+
+        expect(screen.getAllByText("Client feedback").length).toBeGreaterThan(0);
+        await screen.findByText("From Jane Smith");
+        expect(screen.getByText("Changes Requested")).toBeTruthy();
+        expect(screen.getByText("Agent Direct")).toBeTruthy();
+        expect(
+            screen.getByText(
+                "The scope is close, but adjust rollout pacing.",
+            ),
+        ).toBeTruthy();
+        expect(
+            screen.getByText(
+                "Revise the proposal to phase onboarding over two sprints.",
+            ),
+        ).toBeTruthy();
+        expect(fetchApi).toHaveBeenCalledWith(
+            "/content-items/501/external-feedback",
         );
     });
 });

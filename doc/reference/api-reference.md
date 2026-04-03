@@ -51,6 +51,11 @@ The current REST content contract includes a few authoring-state primitives that
 - Form definitions can expose `asset` and `asset-list` fields when the underlying content schema uses WordClaw asset references. For now, draft-generation jobs forward image assets only. OpenAI, Anthropic, and Gemini runs inline supported images natively, while non-image assets stay outside the draft-generation prompt path.
 - External draft-generation provisioning is tenant-scoped. Configure it with `GET /api/ai/providers`, `GET /api/ai/providers/:provider`, `PUT /api/ai/providers/:provider`, or `DELETE /api/ai/providers/:provider`, where `:provider` is currently `openai`, `anthropic`, or `gemini`. The REST read surface returns masked secrets only.
 - Workforce agents are also tenant-scoped. Use `GET /api/workforce/agents`, `POST /api/workforce/agents`, `GET /api/workforce/agents/:id`, `PUT /api/workforce/agents/:id`, and `DELETE /api/workforce/agents/:id` to manage reusable agents with a stable slug, a purpose, a SOUL, and provider/model defaults.
+- Published content can now re-enter a governed client loop through `POST /api/content-items/:id/external-feedback`, which records external decisions, comments, and optional prompts as first-class feedback events.
+- Operators can inspect the recorded feedback history for a published item through `GET /api/content-items/:id/external-feedback`, which returns the newest events first and preserves the task linkage via `reviewTaskId`.
+- Operators can issue scoped browser-safe feedback tokens through `POST /api/content-items/:id/external-feedback-token`, then let clients submit on `POST /api/public/content-items/:id/external-feedback` without exposing an internal API key.
+- External feedback supports `refinementMode = human_supervised` for supervisor-led follow-up and `refinementMode = agent_direct` for bounded client-to-agent refinement on eligible agent-backed drafts.
+- The external-feedback route reuses the current publication semantics: the published snapshot remains the live read source while the revised working copy continues through the normal approval path.
 - Deployment discovery now reports draft-generation provisioning separately from semantic-search embeddings, and it explicitly marks external AI providers as tenant-managed rather than process-global.
 - Background jobs are managed through `GET/POST /api/jobs`, `GET/DELETE /api/jobs/:id`, `GET /api/jobs/worker-status`, and `POST /api/content-items/:id/schedule-status`.
 - Preview reads stay scoped to one item or global, remain auditable, and currently reject paywalled targets.
@@ -646,7 +651,145 @@ curl -X POST http://localhost:4000/api/assets/direct-upload/complete \
   }'
 ```
 
-### 13. Inspecting Derivative Asset Variants
+### 13. Recording Client Feedback On Published Content
+
+Use the external-feedback route when a client is reacting to an already-published item, such as a proposal. This keeps the feedback auditable, attributes it to the external requester, and can optionally trigger a bounded AI revision pass instead of routing every iteration through a human first.
+
+**Request:**
+```bash
+curl -X POST http://localhost:4000/api/content-items/345/external-feedback \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision": "changes_requested",
+    "comment": "The scope is close, but slow the rollout and clarify support coverage.",
+    "prompt": "Revise the proposal to phase onboarding over two sprints and tighten the support assumptions.",
+    "refinementMode": "agent_direct",
+    "submitter": {
+      "actorId": "proposal-contact:123",
+      "actorType": "external_requester",
+      "actorSource": "proposal_portal",
+      "displayName": "Jane Smith",
+      "email": "jane@client.com"
+    }
+  }'
+```
+
+**Response excerpt:**
+```json
+{
+  "data": {
+    "event": {
+      "id": 19,
+      "contentItemId": 345,
+      "publishedVersion": 2,
+      "decision": "changes_requested",
+      "refinementMode": "agent_direct",
+      "actorId": "proposal-contact:123",
+      "actorSource": "proposal_portal",
+      "reviewTaskId": 44
+    },
+    "reviewTask": {
+      "id": 44,
+      "status": "pending",
+      "source": "external_feedback",
+      "sourceEventId": 19
+    },
+    "revision": {
+      "taskId": 44,
+      "contentItemId": 345,
+      "contentStatus": "in_review",
+      "contentVersion": 3
+    }
+  }
+}
+```
+
+Notes:
+
+- At least one of `decision`, `comment`, or `prompt` must be present.
+- `refinementMode = agent_direct` requires a prompt.
+- `agent_direct` only works when the item can reuse an existing agent-backed revision path.
+- The published snapshot stays live while the revised working copy continues through the normal approval flow.
+
+**Read feedback history:**
+```bash
+curl http://localhost:4000/api/content-items/345/external-feedback \
+  -H "x-api-key: writer"
+```
+
+**Response excerpt:**
+```json
+{
+  "data": [
+    {
+      "id": 19,
+      "contentItemId": 345,
+      "publishedVersion": 2,
+      "decision": "changes_requested",
+      "comment": "The scope is close, but slow the rollout and clarify support coverage.",
+      "prompt": "Revise the proposal to phase onboarding over two sprints and tighten the support assumptions.",
+      "refinementMode": "agent_direct",
+      "actorId": "proposal-contact:123",
+      "actorDisplayName": "Jane Smith",
+      "reviewTaskId": 44,
+      "createdAt": "2026-04-03T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Issue a client feedback token:**
+```bash
+curl -X POST http://localhost:4000/api/content-items/345/external-feedback-token \
+  -H "x-api-key: writer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "allowAgentDirect": true,
+    "ttlSeconds": 300,
+    "submitter": {
+      "actorId": "proposal-contact:123",
+      "actorType": "external_requester",
+      "actorSource": "proposal_portal",
+      "displayName": "Jane Smith",
+      "email": "jane@client.com"
+    }
+  }'
+```
+
+**Response excerpt:**
+```json
+{
+  "data": {
+    "token": "<external-feedback-token>",
+    "submissionPath": "/api/public/content-items/345/external-feedback",
+    "contentItemId": 345,
+    "allowAgentDirect": true,
+    "ttlSeconds": 300
+  }
+}
+```
+
+**Submit feedback with the scoped token:**
+```bash
+curl -X POST http://localhost:4000/api/public/content-items/345/external-feedback \
+  -H "x-external-feedback-token: <external-feedback-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision": "changes_requested",
+    "comment": "Slow the rollout and tighten support coverage.",
+    "prompt": "Revise the proposal to phase onboarding over two sprints.",
+    "refinementMode": "agent_direct"
+  }'
+```
+
+Notes:
+
+- The scoped token fixes the client actor identity; the browser caller does not send `submitter`.
+- `allowAgentDirect = false` on the issued token forces the client back onto `human_supervised`.
+- The same published-baseline behavior still applies: `draft=false` reads keep serving the last approved version until the replacement is approved.
+
+### 14. Inspecting Derivative Asset Variants
 
 List the managed variants attached to a source asset, such as a web-optimized image or thumbnail derivative.
 
@@ -678,7 +821,7 @@ curl http://localhost:4000/api/assets/44/derivatives \
 }
 ```
 
-### 14. Inspecting Asset Storage Readiness
+### 15. Inspecting Asset Storage Readiness
 
 Check which asset storage provider is configured, which provider is actually active, and whether the runtime fell back to local storage because remote configuration is incomplete.
 
@@ -701,7 +844,7 @@ curl http://localhost:4000/api/deployment-status
 }
 ```
 
-### 15. Paying an L402 Invoice
+### 16. Paying an L402 Invoice
 
 Confirming a purchase locally with a simulated payment backend.
 

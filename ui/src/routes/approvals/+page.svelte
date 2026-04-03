@@ -37,6 +37,8 @@
             contentItemId: number;
             workflowTransitionId: number;
             status: string;
+            source: string;
+            sourceEventId: number | null;
             assignee: string | null;
             assigneeActorId: string | null;
             assigneeActorType: string | null;
@@ -89,6 +91,24 @@
         createdAt: string;
     };
 
+    type ExternalFeedbackEventPayload = {
+        id: number;
+        domainId: number;
+        contentItemId: number;
+        publishedVersion: number;
+        decision: string | null;
+        comment: string | null;
+        prompt: string | null;
+        refinementMode: string;
+        actorId: string;
+        actorType: string;
+        actorSource: string;
+        actorDisplayName: string | null;
+        actorEmail: string | null;
+        reviewTaskId: number | null;
+        createdAt: string;
+    };
+
     type DiffEntry = {
         key: string;
         before: string;
@@ -110,8 +130,10 @@
     let revisionPrompt = $state("");
     let selectedTaskVersions = $state<ContentItemVersionPayload[]>([]);
     let selectedTaskComments = $state<ReviewCommentPayload[]>([]);
+    let selectedTaskFeedbackEvents = $state<ExternalFeedbackEventPayload[]>([]);
     let revisionContextLoading = $state(false);
     let revisionContextError = $state<string | null>(null);
+    let externalFeedbackContextError = $state<string | null>(null);
     let revisionContextRequestId = 0;
     let selectedTaskQueueIndex = $derived.by(() => {
         const selectedTaskId = selectedTask?.task.id;
@@ -139,18 +161,19 @@
     });
 
     $effect(() => {
-        const contentItemId = selectedTask?.contentItem.id ?? null;
-        const contentVersion = selectedTask?.contentItem.version ?? null;
+        const payload = selectedTask;
 
-        if (!contentItemId || !contentVersion) {
+        if (!payload) {
             selectedTaskVersions = [];
             selectedTaskComments = [];
+            selectedTaskFeedbackEvents = [];
             revisionContextError = null;
+            externalFeedbackContextError = null;
             revisionContextLoading = false;
             return;
         }
 
-        void loadSelectedTaskRevisionContext(contentItemId);
+        void loadSelectedTaskRevisionContext(payload);
     });
 
     // parseStructuredData is now imported from $lib/content-label
@@ -318,6 +341,22 @@
         resolveLatestRevisionPrompt(selectedTaskComments),
     );
 
+    let selectedTaskFeedbackEvent = $derived.by(() => {
+        if (!selectedTask || selectedTask.task.source !== "external_feedback") {
+            return null;
+        }
+
+        const sourceEventId = selectedTask.task.sourceEventId;
+
+        return (
+            selectedTaskFeedbackEvents.find(
+                (event) => sourceEventId !== null && event.id === sourceEventId,
+            ) ??
+            selectedTaskFeedbackEvents[0] ??
+            null
+        );
+    });
+
     // pickFirstString is now imported from $lib/content-label
 
     function formatStatusLabel(status: string): string {
@@ -359,6 +398,36 @@
         }
 
         return new Date(value).toLocaleString();
+    }
+
+    function resolveExternalFeedbackDecisionVariant(
+        decision: string | null,
+    ): "muted" | "success" | "warning" {
+        if (decision === "accepted") return "success";
+        if (decision === "changes_requested") return "warning";
+        return "muted";
+    }
+
+    function formatFeedbackDecisionLabel(decision: string | null): string {
+        return decision ? formatStatusLabel(decision) : "No Decision";
+    }
+
+    function formatRefinementModeLabel(mode: string): string {
+        return formatStatusLabel(mode);
+    }
+
+    function resolveExternalFeedbackSubmitterLabel(
+        event: ExternalFeedbackEventPayload,
+    ): string {
+        if (event.actorDisplayName?.trim()) {
+            return event.actorDisplayName.trim();
+        }
+
+        if (event.actorEmail?.trim()) {
+            return event.actorEmail.trim();
+        }
+
+        return event.actorId;
     }
 
     function resolveTaskLabel(payload: ReviewTaskPayload): string {
@@ -406,15 +475,30 @@
         }
     }
 
-    async function loadSelectedTaskRevisionContext(contentItemId: number) {
+    async function loadSelectedTaskRevisionContext(payload: ReviewTaskPayload) {
         const requestId = ++revisionContextRequestId;
         revisionContextLoading = true;
         revisionContextError = null;
+        externalFeedbackContextError = null;
+        selectedTaskFeedbackEvents = [];
+
+        const versionsPromise = fetchApi(
+            `/content-items/${payload.contentItem.id}/versions`,
+        );
+        const commentsPromise = fetchApi(
+            `/content-items/${payload.contentItem.id}/comments`,
+        );
+        const feedbackEventsPromise =
+            payload.task.source === "external_feedback"
+                ? fetchApi(
+                      `/content-items/${payload.contentItem.id}/external-feedback`,
+                  )
+                : null;
 
         try {
             const [versionsResponse, commentsResponse] = await Promise.all([
-                fetchApi(`/content-items/${contentItemId}/versions`),
-                fetchApi(`/content-items/${contentItemId}/comments`),
+                versionsPromise,
+                commentsPromise,
             ]);
 
             if (requestId !== revisionContextRequestId) {
@@ -423,6 +507,28 @@
 
             selectedTaskVersions = versionsResponse.data as ContentItemVersionPayload[];
             selectedTaskComments = commentsResponse.data as ReviewCommentPayload[];
+
+            if (feedbackEventsPromise) {
+                try {
+                    const feedbackEventsResponse = await feedbackEventsPromise;
+                    if (requestId !== revisionContextRequestId) {
+                        return;
+                    }
+
+                    selectedTaskFeedbackEvents =
+                        feedbackEventsResponse.data as ExternalFeedbackEventPayload[];
+                } catch (err: any) {
+                    if (requestId !== revisionContextRequestId) {
+                        return;
+                    }
+
+                    selectedTaskFeedbackEvents = [];
+                    externalFeedbackContextError =
+                        err instanceof ApiError
+                            ? err.message
+                            : "Client feedback could not be loaded.";
+                }
+            }
         } catch (err: any) {
             if (requestId !== revisionContextRequestId) {
                 return;
@@ -430,6 +536,7 @@
 
             selectedTaskVersions = [];
             selectedTaskComments = [];
+            selectedTaskFeedbackEvents = [];
             revisionContextError =
                 err instanceof ApiError
                     ? err.message
@@ -550,6 +657,7 @@
         decisionReason = "";
         revisionPrompt = "";
         revisionContextError = null;
+        externalFeedbackContextError = null;
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -770,6 +878,14 @@
                                                     payload.contentItem.status,
                                                 )}
                                             </Badge>
+                                            {#if payload.task.source === "external_feedback"}
+                                                <Badge
+                                                    variant="warning"
+                                                    class="uppercase"
+                                                >
+                                                    Client feedback
+                                                </Badge>
+                                            {/if}
                                         </div>
 
                                         {#if resolveTaskExcerpt(payload)}
@@ -903,6 +1019,15 @@
                                         >v{selectedTask.contentItem
                                             .version}</Badge
                                     >
+                                    {#if selectedTask.task.source ===
+                                        "external_feedback"}
+                                        <Badge
+                                            variant="warning"
+                                            class="uppercase"
+                                        >
+                                            Client feedback
+                                        </Badge>
+                                    {/if}
                                     <Badge variant="muted"
                                         >{formatRelativeDate(
                                             selectedTask.task.createdAt,
@@ -948,6 +1073,7 @@
                             <div class="flex-1 min-w-0">
                                 <Textarea
                                     id="revision-prompt"
+                                    aria-label="Agent Revision Prompt"
                                     bind:value={revisionPrompt}
                                     placeholder="Describe what the agent should change…"
                                     rows={1}
@@ -988,6 +1114,7 @@
                             <div class="mt-1.5">
                                 <Textarea
                                     id="decision-reason"
+                                    aria-label="Decision Reason"
                                     bind:value={decisionReason}
                                     placeholder="Reasoning for approval or rejection…"
                                     rows={2}
@@ -1006,6 +1133,88 @@
                         >
                             <!-- LEFT COLUMN: Diff view (primary content) -->
                             <div class="space-y-4 min-w-0">
+                                {#if selectedTask.task.source === "external_feedback"}
+                                    {#if selectedTaskFeedbackEvent && !revisionContextLoading}
+                                        <div
+                                            class="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/30"
+                                        >
+                                            <div
+                                                class="flex flex-wrap items-center gap-2"
+                                            >
+                                                <p
+                                                    class="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400"
+                                                >
+                                                    Client Feedback
+                                                </p>
+                                                <Badge
+                                                    variant={resolveExternalFeedbackDecisionVariant(
+                                                        selectedTaskFeedbackEvent.decision,
+                                                    )}
+                                                    class="uppercase"
+                                                >
+                                                    {formatFeedbackDecisionLabel(
+                                                        selectedTaskFeedbackEvent.decision,
+                                                    )}
+                                                </Badge>
+                                                <Badge
+                                                    variant="outline"
+                                                    class="uppercase"
+                                                >
+                                                    {formatRefinementModeLabel(
+                                                        selectedTaskFeedbackEvent.refinementMode,
+                                                    )}
+                                                </Badge>
+                                                <Badge variant="muted">
+                                                    Published v{selectedTaskFeedbackEvent.publishedVersion}
+                                                </Badge>
+                                            </div>
+                                            <p
+                                                class="mt-1 text-sm text-amber-900 dark:text-amber-100"
+                                            >
+                                                From {resolveExternalFeedbackSubmitterLabel(
+                                                    selectedTaskFeedbackEvent,
+                                                )}
+                                            </p>
+                                            {#if selectedTaskFeedbackEvent.comment}
+                                                <p
+                                                    class="mt-2 text-sm leading-relaxed text-amber-900 dark:text-amber-100"
+                                                >
+                                                    {selectedTaskFeedbackEvent.comment}
+                                                </p>
+                                            {/if}
+                                            {#if selectedTaskFeedbackEvent.prompt}
+                                                <div
+                                                    class="mt-3 rounded-lg border border-amber-200/80 bg-white/70 px-3 py-2 dark:border-amber-900/60 dark:bg-slate-950/30"
+                                                >
+                                                    <p
+                                                        class="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400"
+                                                    >
+                                                        Agent Prompt
+                                                    </p>
+                                                    <p
+                                                        class="mt-1 text-sm leading-relaxed text-slate-700 dark:text-slate-200"
+                                                    >
+                                                        {selectedTaskFeedbackEvent.prompt}
+                                                    </p>
+                                                </div>
+                                            {/if}
+                                            <p
+                                                class="mt-2 text-[0.65rem] text-amber-700/80 dark:text-amber-300/80"
+                                            >
+                                                {formatAbsoluteDate(
+                                                    selectedTaskFeedbackEvent.createdAt,
+                                                )}
+                                            </p>
+                                        </div>
+                                    {:else if externalFeedbackContextError}
+                                        <div
+                                            class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+                                        >
+                                            {externalFeedbackContextError}
+                                        </div>
+                                    {/if}
+                                {/if}
+
                                 <!-- Latest revision prompt banner -->
                                 {#if latestRevisionPromptComment && !revisionContextLoading}
                                     <div

@@ -55,7 +55,7 @@ import { PolicyEngine } from '../services/policy.js';
 import { buildOperationContext, resolveRestOperation, resolveRestResource } from '../services/policy-adapters.js';
 import { createL402Challenge, enforceL402Payment, l402Middleware } from '../middleware/l402.js';
 import { globalL402Options } from '../services/l402-config.js';
-import { WorkflowService } from '../services/workflow.js';
+import { WorkflowService, WorkflowServiceError } from '../services/workflow.js';
 import { EmbeddingService, EmbeddingServiceError } from '../services/embedding.js';
 import { LicensingService, type OfferReadScope } from '../services/licensing.js';
 import { transitionPaymentStatus } from '../services/payment-ledger.js';
@@ -108,6 +108,10 @@ import { getRuntimeBuildInfo } from '../services/runtime-build.js';
 import { getWorkspaceContextSnapshot, resolveWorkspaceTarget } from '../services/workspace-context.js';
 import { issuePublicWriteToken, verifyPublicWriteToken } from '../services/public-write.js';
 import { issuePreviewToken, verifyPreviewToken } from '../services/content-preview.js';
+import {
+    issueExternalFeedbackToken,
+    verifyExternalFeedbackToken,
+} from '../services/external-feedback-token.js';
 import { ensureContentItemLifecycleState } from '../services/content-lifecycle.js';
 import {
     countContentItemsForContentType,
@@ -984,6 +988,42 @@ function parsePublicWriteToken(headers: FastifyRequest['headers']): string | nul
     }
 
     return null;
+}
+
+function parseExternalFeedbackToken(headers: FastifyRequest['headers']): string | null {
+    const directHeader = headers['x-external-feedback-token'];
+    if (typeof directHeader === 'string' && directHeader.trim().length > 0) {
+        return directHeader.trim();
+    }
+
+    const authorization = headers.authorization;
+    if (typeof authorization !== 'string') {
+        return null;
+    }
+
+    const [scheme, token] = authorization.split(' ');
+    if (scheme?.toLowerCase() === 'bearer' && token?.trim().length) {
+        return token.trim();
+    }
+
+    return null;
+}
+
+function buildExternalFeedbackTokenPrincipal(token: {
+    domainId: number;
+    actorId: string;
+    actorType: 'external_requester';
+    actorSource: string;
+}): ActorPrincipal {
+    return {
+        actorRef: token.actorId,
+        actorId: token.actorId,
+        actorType: token.actorType,
+        actorSource: token.actorSource,
+        domainId: token.domainId,
+        scopes: new Set(['admin']),
+        source: 'token',
+    };
 }
 
 function buildPublicWriteActor(contentTypeId: number, subject: string): AuditActor {
@@ -2164,6 +2204,10 @@ export default async function apiRoutes(server: FastifyInstance) {
         }
 
         if (/^\/api\/public\/content-types\/\d+\/items$/.test(path) || /^\/api\/public\/content-items\/\d+$/.test(path)) {
+            return undefined;
+        }
+
+        if (/^\/api\/public\/content-items\/\d+\/external-feedback$/.test(path)) {
             return undefined;
         }
 
@@ -11295,6 +11339,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     contentItemId: Type.Number(),
                     workflowTransitionId: Type.Number(),
                     status: Type.String(),
+                    source: Type.String(),
+                    sourceEventId: Type.Union([Type.Number(), Type.Null()]),
                     assignee: Type.Union([Type.String(), Type.Null()]),
                     assigneeActorId: Type.Union([Type.String(), Type.Null()]),
                     assigneeActorType: Type.Union([Type.String(), Type.Null()]),
@@ -11325,6 +11371,280 @@ export default async function apiRoutes(server: FastifyInstance) {
             },
             meta: buildMeta('Item submitted for review', [`POST /api/review-tasks/${task.id}/decide`], 'high', 1)
         });
+    });
+
+    server.post('/content-items/:id/external-feedback', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                workflowTransitionId: Type.Optional(Type.Number()),
+                decision: Type.Optional(Type.Union([
+                    Type.Literal('accepted'),
+                    Type.Literal('changes_requested'),
+                ])),
+                comment: Type.Optional(Type.String()),
+                prompt: Type.Optional(Type.String()),
+                refinementMode: Type.Optional(Type.Union([
+                    Type.Literal('human_supervised'),
+                    Type.Literal('agent_direct'),
+                ])),
+                submitter: Type.Object({
+                    actorId: Type.String({ minLength: 1 }),
+                    actorType: Type.Optional(Type.Literal('external_requester')),
+                    actorSource: Type.String({ minLength: 1 }),
+                    displayName: Type.Optional(Type.String()),
+                    email: Type.Optional(Type.String()),
+                })
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    event: Type.Object({
+                        id: Type.Number(),
+                        domainId: Type.Number(),
+                        contentItemId: Type.Number(),
+                        publishedVersion: Type.Number(),
+                        decision: Type.Union([Type.String(), Type.Null()]),
+                        comment: Type.Union([Type.String(), Type.Null()]),
+                        prompt: Type.Union([Type.String(), Type.Null()]),
+                        refinementMode: Type.String(),
+                        actorId: Type.String(),
+                        actorType: Type.String(),
+                        actorSource: Type.String(),
+                        actorDisplayName: Type.Union([Type.String(), Type.Null()]),
+                        actorEmail: Type.Union([Type.String(), Type.Null()]),
+                        reviewTaskId: Type.Union([Type.Number(), Type.Null()]),
+                        createdAt: Type.String(),
+                    }),
+                    reviewTask: Type.Union([
+                        Type.Object({
+                            id: Type.Number(),
+                            contentItemId: Type.Number(),
+                            workflowTransitionId: Type.Number(),
+                            status: Type.String(),
+                            source: Type.String(),
+                            sourceEventId: Type.Union([Type.Number(), Type.Null()]),
+                            assignee: Type.Union([Type.String(), Type.Null()]),
+                            assigneeActorId: Type.Union([Type.String(), Type.Null()]),
+                            assigneeActorType: Type.Union([Type.String(), Type.Null()]),
+                            assigneeActorSource: Type.Union([Type.String(), Type.Null()]),
+                            createdAt: Type.String(),
+                            updatedAt: Type.String(),
+                        }),
+                        Type.Null(),
+                    ]),
+                    revision: Type.Union([
+                        Type.Object({
+                            taskId: Type.Number(),
+                            contentItemId: Type.Number(),
+                            contentStatus: Type.String(),
+                            contentVersion: Type.Number(),
+                            revisedAt: Type.String(),
+                            strategy: Type.String(),
+                            provider: Type.Object({
+                                type: Type.String(),
+                                model: Type.Union([Type.String(), Type.Null()]),
+                                responseId: Type.Union([Type.String(), Type.Null()]),
+                            }),
+                        }),
+                        Type.Null(),
+                    ]),
+                })),
+                400: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as { id: number };
+        const payload = request.body as {
+            workflowTransitionId?: number;
+            decision?: 'accepted' | 'changes_requested';
+            comment?: string;
+            prompt?: string;
+            refinementMode?: 'human_supervised' | 'agent_direct';
+            submitter: {
+                actorId: string;
+                actorType?: 'external_requester';
+                actorSource: string;
+                displayName?: string;
+                email?: string;
+            };
+        };
+        const authPrincipal = (request as any).authPrincipal;
+
+        try {
+            const result = await WorkflowService.submitExternalFeedback({
+                domainId: getDomainId(request),
+                contentItemId: id,
+                workflowTransitionId: payload.workflowTransitionId,
+                decision: payload.decision,
+                comment: payload.comment,
+                prompt: payload.prompt,
+                refinementMode: payload.refinementMode,
+                submitter: payload.submitter,
+                authPrincipal,
+            });
+
+            return reply.status(201).send({
+                data: {
+                    event: {
+                        ...result.event,
+                        createdAt: result.event.createdAt.toISOString(),
+                    },
+                    reviewTask: result.reviewTask
+                        ? {
+                            ...result.reviewTask,
+                            createdAt: result.reviewTask.createdAt.toISOString(),
+                            updatedAt: result.reviewTask.updatedAt.toISOString(),
+                        }
+                        : null,
+                    revision: result.revision
+                        ? {
+                            ...result.revision,
+                            revisedAt: result.revision.revisedAt.toISOString(),
+                        }
+                        : null,
+                },
+                meta: buildMeta(
+                    'External feedback recorded',
+                    result.reviewTask ? [`POST /api/review-tasks/${result.reviewTask.id}/decide`] : [],
+                    'medium',
+                    1,
+                )
+            });
+        } catch (error) {
+            if (error instanceof WorkflowServiceError) {
+                const statusCode: 400 | 403 | 404 | 409 = error.statusCode === 403
+                    ? 403
+                    : error.statusCode === 404
+                        ? 404
+                        : error.statusCode === 409
+                            ? 409
+                            : 400;
+                return reply.status(statusCode).send(toErrorPayload(error.message, error.code, error.remediation));
+            }
+
+            throw error;
+        }
+    });
+
+    server.post('/content-items/:id/external-feedback-token', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                ttlSeconds: Type.Optional(Type.Number({ minimum: 60, maximum: 2592000 })),
+                allowAgentDirect: Type.Optional(Type.Boolean()),
+                workflowTransitionId: Type.Optional(Type.Number()),
+                submitter: Type.Object({
+                    actorId: Type.String({ minLength: 1 }),
+                    actorType: Type.Optional(Type.Literal('external_requester')),
+                    actorSource: Type.String({ minLength: 1 }),
+                    displayName: Type.Optional(Type.String()),
+                    email: Type.Optional(Type.String()),
+                })
+            }),
+            response: {
+                200: createAIResponse(Type.Object({
+                    token: Type.String(),
+                    submissionPath: Type.String(),
+                    contentItemId: Type.Number(),
+                    allowAgentDirect: Type.Boolean(),
+                    workflowTransitionId: Type.Union([Type.Number(), Type.Null()]),
+                    ttlSeconds: Type.Number(),
+                    expiresAt: Type.String(),
+                    submitter: Type.Object({
+                        actorId: Type.String(),
+                        actorType: Type.String(),
+                        actorSource: Type.String(),
+                        displayName: Type.Union([Type.String(), Type.Null()]),
+                        email: Type.Union([Type.String(), Type.Null()]),
+                    }),
+                })),
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const payload = request.body as {
+            ttlSeconds?: number;
+            allowAgentDirect?: boolean;
+            workflowTransitionId?: number;
+            submitter: {
+                actorId: string;
+                actorType?: 'external_requester';
+                actorSource: string;
+                displayName?: string;
+                email?: string;
+            };
+        };
+        const domainId = getDomainId(request);
+        const [item] = await db.select().from(contentItems).where(and(
+            eq(contentItems.id, id),
+            eq(contentItems.domainId, domainId)
+        ));
+
+        if (!item) {
+            return reply.status(404).send(notFoundContentItem(id));
+        }
+
+        const latestPublishedVersions = await getLatestPublishedVersionsForItems(
+            item.status === 'published' ? [] : [item.id]
+        );
+        const publishedVersion = item.status === 'published'
+            ? item.version
+            : latestPublishedVersions.get(item.id)?.version ?? null;
+
+        if (publishedVersion === null) {
+            return reply.status(409).send(toErrorPayload(
+                'External feedback token unavailable for unpublished content',
+                'EXTERNAL_FEEDBACK_TOKEN_PUBLISHED_BASELINE_REQUIRED',
+                'Publish the content item once before issuing a client feedback token.'
+            ));
+        }
+
+        const issued = issueExternalFeedbackToken({
+            domainId,
+            contentItemId: id,
+            actorId: payload.submitter.actorId,
+            actorType: payload.submitter.actorType,
+            actorSource: payload.submitter.actorSource,
+            actorDisplayName: payload.submitter.displayName,
+            actorEmail: payload.submitter.email,
+            allowAgentDirect: payload.allowAgentDirect,
+            workflowTransitionId: payload.workflowTransitionId,
+            ttlSeconds: payload.ttlSeconds,
+        });
+
+        return {
+            data: {
+                token: issued.token,
+                submissionPath: `/api/public/content-items/${id}/external-feedback`,
+                contentItemId: id,
+                allowAgentDirect: issued.allowAgentDirect,
+                workflowTransitionId: issued.workflowTransitionId ?? null,
+                ttlSeconds: issued.ttlSeconds,
+                expiresAt: issued.expiresAt.toISOString(),
+                submitter: {
+                    actorId: issued.actorId,
+                    actorType: issued.actorType,
+                    actorSource: issued.actorSource,
+                    displayName: issued.actorDisplayName ?? null,
+                    email: issued.actorEmail ?? null,
+                },
+            },
+            meta: buildMeta(
+                'Use the token on the public external feedback route before it expires',
+                [`POST /api/public/content-items/${id}/external-feedback`],
+                'medium',
+                0,
+            )
+        };
     });
 
     server.get('/review-tasks', {
@@ -11361,6 +11681,8 @@ export default async function apiRoutes(server: FastifyInstance) {
                     contentItemId: Type.Number(),
                     workflowTransitionId: Type.Number(),
                     status: Type.String(),
+                    source: Type.String(),
+                    sourceEventId: Type.Union([Type.Number(), Type.Null()]),
                     assignee: Type.Union([Type.String(), Type.Null()]),
                     assigneeActorId: Type.Union([Type.String(), Type.Null()]),
                     assigneeActorType: Type.Union([Type.String(), Type.Null()]),
@@ -11463,6 +11785,52 @@ export default async function apiRoutes(server: FastifyInstance) {
         };
     });
 
+    server.get('/content-items/:id/external-feedback', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            response: {
+                200: createAIResponse(Type.Array(Type.Object({
+                    id: Type.Number(),
+                    domainId: Type.Number(),
+                    contentItemId: Type.Number(),
+                    publishedVersion: Type.Number(),
+                    decision: Type.Union([Type.String(), Type.Null()]),
+                    comment: Type.Union([Type.String(), Type.Null()]),
+                    prompt: Type.Union([Type.String(), Type.Null()]),
+                    refinementMode: Type.String(),
+                    actorId: Type.String(),
+                    actorType: Type.String(),
+                    actorSource: Type.String(),
+                    actorDisplayName: Type.Union([Type.String(), Type.Null()]),
+                    actorEmail: Type.Union([Type.String(), Type.Null()]),
+                    reviewTaskId: Type.Union([Type.Number(), Type.Null()]),
+                    createdAt: Type.String()
+                })))
+            }
+        }
+    }, async (request) => {
+        const { id } = request.params as { id: number };
+        const events = await WorkflowService.listExternalFeedbackEvents(
+            getDomainId(request),
+            id,
+        );
+
+        return {
+            data: events.map((event) => ({
+                ...event,
+                createdAt: toIsoString(event.createdAt) ?? new Date(0).toISOString(),
+            })),
+            meta: buildMeta(
+                'List external feedback events for content item',
+                [`POST /api/content-items/${id}/external-feedback`],
+                'medium',
+                1,
+            )
+        };
+    });
+
     server.post('/content-items/:id/comments', {
         schema: {
             params: Type.Object({
@@ -11492,6 +11860,189 @@ export default async function apiRoutes(server: FastifyInstance) {
             data: comment,
             meta: buildMeta('Comment posted successfully', [], 'low', 1)
         });
+    });
+
+    server.post('/public/content-items/:id/external-feedback', {
+        schema: {
+            params: Type.Object({
+                id: Type.Number()
+            }),
+            body: Type.Object({
+                decision: Type.Optional(Type.Union([
+                    Type.Literal('accepted'),
+                    Type.Literal('changes_requested'),
+                ])),
+                comment: Type.Optional(Type.String()),
+                prompt: Type.Optional(Type.String()),
+                refinementMode: Type.Optional(Type.Union([
+                    Type.Literal('human_supervised'),
+                    Type.Literal('agent_direct'),
+                ])),
+            }),
+            response: {
+                201: createAIResponse(Type.Object({
+                    event: Type.Object({
+                        id: Type.Number(),
+                        domainId: Type.Number(),
+                        contentItemId: Type.Number(),
+                        publishedVersion: Type.Number(),
+                        decision: Type.Union([Type.String(), Type.Null()]),
+                        comment: Type.Union([Type.String(), Type.Null()]),
+                        prompt: Type.Union([Type.String(), Type.Null()]),
+                        refinementMode: Type.String(),
+                        actorId: Type.String(),
+                        actorType: Type.String(),
+                        actorSource: Type.String(),
+                        actorDisplayName: Type.Union([Type.String(), Type.Null()]),
+                        actorEmail: Type.Union([Type.String(), Type.Null()]),
+                        reviewTaskId: Type.Union([Type.Number(), Type.Null()]),
+                        createdAt: Type.String(),
+                    }),
+                    reviewTask: Type.Union([
+                        Type.Object({
+                            id: Type.Number(),
+                            contentItemId: Type.Number(),
+                            workflowTransitionId: Type.Number(),
+                            status: Type.String(),
+                            source: Type.String(),
+                            sourceEventId: Type.Union([Type.Number(), Type.Null()]),
+                            assignee: Type.Union([Type.String(), Type.Null()]),
+                            assigneeActorId: Type.Union([Type.String(), Type.Null()]),
+                            assigneeActorType: Type.Union([Type.String(), Type.Null()]),
+                            assigneeActorSource: Type.Union([Type.String(), Type.Null()]),
+                            createdAt: Type.String(),
+                            updatedAt: Type.String(),
+                        }),
+                        Type.Null(),
+                    ]),
+                    revision: Type.Union([
+                        Type.Object({
+                            taskId: Type.Number(),
+                            contentItemId: Type.Number(),
+                            contentStatus: Type.String(),
+                            contentVersion: Type.Number(),
+                            revisedAt: Type.String(),
+                            strategy: Type.String(),
+                            provider: Type.Object({
+                                type: Type.String(),
+                                model: Type.Union([Type.String(), Type.Null()]),
+                                responseId: Type.Union([Type.String(), Type.Null()]),
+                            }),
+                        }),
+                        Type.Null(),
+                    ]),
+                })),
+                400: AIErrorResponse,
+                401: AIErrorResponse,
+                403: AIErrorResponse,
+                404: AIErrorResponse,
+                409: AIErrorResponse,
+            }
+        }
+    }, async (request, reply) => {
+        const { id } = request.params as IdParams;
+        const payload = request.body as {
+            decision?: 'accepted' | 'changes_requested';
+            comment?: string;
+            prompt?: string;
+            refinementMode?: 'human_supervised' | 'agent_direct';
+        };
+        const token = parseExternalFeedbackToken(request.headers);
+        if (!token) {
+            return reply.status(401).send(toErrorPayload(
+                'Missing external feedback token',
+                'EXTERNAL_FEEDBACK_TOKEN_MISSING',
+                'Provide x-external-feedback-token or Authorization: Bearer <token>.'
+            ));
+        }
+
+        const verification = verifyExternalFeedbackToken(token);
+        if (!verification.ok) {
+            return reply.status(401).send(toErrorPayload(
+                verification.code === 'EXTERNAL_FEEDBACK_TOKEN_EXPIRED'
+                    ? 'External feedback token expired'
+                    : 'Invalid external feedback token',
+                verification.code,
+                verification.remediation,
+            ));
+        }
+
+        if (verification.contentItemId !== id) {
+            return reply.status(403).send(toErrorPayload(
+                'External feedback token scope mismatch',
+                'EXTERNAL_FEEDBACK_TOKEN_SCOPE_MISMATCH',
+                'Issue a token for this content item before submitting client feedback.'
+            ));
+        }
+
+        if (payload.refinementMode === 'agent_direct' && !verification.allowAgentDirect) {
+            return reply.status(403).send(toErrorPayload(
+                'Agent-direct refinement is not allowed for this token',
+                'EXTERNAL_FEEDBACK_TOKEN_AGENT_DIRECT_FORBIDDEN',
+                'Use refinementMode=human_supervised or issue a token that allows direct agent refinement.'
+            ));
+        }
+
+        try {
+            const result = await WorkflowService.submitExternalFeedback({
+                domainId: verification.domainId,
+                contentItemId: verification.contentItemId,
+                workflowTransitionId: verification.workflowTransitionId,
+                decision: payload.decision,
+                comment: payload.comment,
+                prompt: payload.prompt,
+                refinementMode: payload.refinementMode,
+                submitter: {
+                    actorId: verification.actorId,
+                    actorType: verification.actorType,
+                    actorSource: verification.actorSource,
+                    displayName: verification.actorDisplayName,
+                    email: verification.actorEmail,
+                },
+                authPrincipal: buildExternalFeedbackTokenPrincipal(verification),
+            });
+
+            return reply.status(201).send({
+                data: {
+                    event: {
+                        ...result.event,
+                        createdAt: result.event.createdAt.toISOString(),
+                    },
+                    reviewTask: result.reviewTask
+                        ? {
+                            ...result.reviewTask,
+                            createdAt: result.reviewTask.createdAt.toISOString(),
+                            updatedAt: result.reviewTask.updatedAt.toISOString(),
+                        }
+                        : null,
+                    revision: result.revision
+                        ? {
+                            ...result.revision,
+                            revisedAt: result.revision.revisedAt.toISOString(),
+                        }
+                        : null,
+                },
+                meta: buildMeta(
+                    'External feedback recorded through scoped client token',
+                    ['POST /api/public/content-items/:id/external-feedback'],
+                    'medium',
+                    0,
+                )
+            });
+        } catch (error) {
+            if (error instanceof WorkflowServiceError) {
+                const statusCode: 400 | 403 | 404 | 409 = error.statusCode === 403
+                    ? 403
+                    : error.statusCode === 404
+                        ? 404
+                        : error.statusCode === 409
+                            ? 409
+                            : 400;
+                return reply.status(statusCode).send(toErrorPayload(error.message, error.code, error.remediation));
+            }
+
+            throw error;
+        }
     });
 
     if (isExperimentalRevenueEnabled()) {

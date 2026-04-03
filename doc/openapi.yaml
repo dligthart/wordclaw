@@ -10338,6 +10338,137 @@ paths:
                 description: Specific instructions for the AI agent to fix this error
                 type: string
               context: {}
+  "/api/public/content-items/{id}/external-feedback":
+    post:
+      parameters:
+      - name: body
+        in: body
+        schema:
+          type: object
+          properties:
+            decision:
+              anyOf:
+              - type: string
+                enum:
+                - accepted
+              - type: string
+                enum:
+                - changes_requested
+            comment:
+              type: string
+            prompt:
+              type: string
+            refinementMode:
+              anyOf:
+              - type: string
+                enum:
+                - human_supervised
+              - type: string
+                enum:
+                - agent_direct
+      - type: number
+        required: true
+        in: path
+        name: id
+      responses:
+        '201':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - data
+            - meta
+            properties:
+              data:
+                type: object
+              meta:
+                additionalProperties: true
+                type: object
+        '400':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        '401':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        '403':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        '404':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        '409':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
   "/api/content-items/{id}/preview-token":
     post:
       parameters:
@@ -10452,6 +10583,141 @@ paths:
                 description: Specific instructions for the AI agent to fix this error
                 type: string
               context: {}
+        '404':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        '409':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+  "/api/content-items/{id}/external-feedback-token":
+    post:
+      parameters:
+      - name: body
+        in: body
+        schema:
+          type: object
+          required:
+          - submitter
+          properties:
+            ttlSeconds:
+              type: number
+            allowAgentDirect:
+              type: boolean
+            workflowTransitionId:
+              type: number
+            submitter:
+              type: object
+              required:
+              - actorId
+              - actorSource
+              properties:
+                actorId:
+                  type: string
+                actorType:
+                  type: string
+                  enum:
+                  - external_requester
+                actorSource:
+                  type: string
+                displayName:
+                  type: string
+                email:
+                  type: string
+      - type: number
+        required: true
+        in: path
+        name: id
+      responses:
+        '200':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - data
+            - meta
+            properties:
+              data:
+                type: object
+                required:
+                - token
+                - submissionPath
+                - contentItemId
+                - allowAgentDirect
+                - workflowTransitionId
+                - ttlSeconds
+                - expiresAt
+                - submitter
+                properties:
+                  token:
+                    type: string
+                  submissionPath:
+                    type: string
+                  contentItemId:
+                    type: number
+                  allowAgentDirect:
+                    type: boolean
+                  workflowTransitionId:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
+                  ttlSeconds:
+                    type: number
+                  expiresAt:
+                    type: string
+                  submitter:
+                    type: object
+                    required:
+                    - actorId
+                    - actorType
+                    - actorSource
+                    - displayName
+                    - email
+                    properties:
+                      actorId:
+                        type: string
+                      actorType:
+                        type: string
+                      actorSource:
+                        type: string
+                      displayName:
+                        anyOf:
+                        - type: string
+                        - type: 'null'
+                      email:
+                        anyOf:
+                        - type: string
+                        - type: 'null'
+              meta:
+                additionalProperties: true
+                type: object
         '404':
           description: Default Response
           schema:
@@ -17288,6 +17554,8 @@ paths:
                 - contentItemId
                 - workflowTransitionId
                 - status
+                - source
+                - sourceEventId
                 - assignee
                 - assigneeActorId
                 - assigneeActorType
@@ -17303,6 +17571,12 @@ paths:
                     type: number
                   status:
                     type: string
+                  source:
+                    type: string
+                  sourceEventId:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
                   assignee:
                     anyOf:
                     - type: string
@@ -17361,6 +17635,448 @@ paths:
                   dryRun:
                     description: Indicates if the operation was simulated
                     type: boolean
+  "/api/content-items/{id}/external-feedback":
+    get:
+      parameters:
+      - type: number
+        required: true
+        in: path
+        name: id
+      responses:
+        '200':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - data
+            - meta
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - id
+                  - domainId
+                  - contentItemId
+                  - publishedVersion
+                  - decision
+                  - comment
+                  - prompt
+                  - refinementMode
+                  - actorId
+                  - actorType
+                  - actorSource
+                  - actorDisplayName
+                  - actorEmail
+                  - reviewTaskId
+                  - createdAt
+                  properties:
+                    id:
+                      type: number
+                    domainId:
+                      type: number
+                    contentItemId:
+                      type: number
+                    publishedVersion:
+                      type: number
+                    decision:
+                      anyOf:
+                      - type: string
+                      - type: 'null'
+                    comment:
+                      anyOf:
+                      - type: string
+                      - type: 'null'
+                    prompt:
+                      anyOf:
+                      - type: string
+                      - type: 'null'
+                    refinementMode:
+                      type: string
+                    actorId:
+                      type: string
+                    actorType:
+                      type: string
+                    actorSource:
+                      type: string
+                    actorDisplayName:
+                      anyOf:
+                      - type: string
+                      - type: 'null'
+                    actorEmail:
+                      anyOf:
+                      - type: string
+                      - type: 'null'
+                    reviewTaskId:
+                      anyOf:
+                      - type: number
+                      - type: 'null'
+                    createdAt:
+                      type: string
+              meta:
+                type: object
+                required:
+                - recommendedNextAction
+                - availableActions
+                - actionPriority
+                - cost
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                    - type: string
+                      enum:
+                      - low
+                    - type: string
+                      enum:
+                      - medium
+                    - type: string
+                      enum:
+                      - high
+                    - type: string
+                      enum:
+                      - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+    post:
+      parameters:
+      - name: body
+        in: body
+        schema:
+          type: object
+          required:
+          - submitter
+          properties:
+            workflowTransitionId:
+              type: number
+            decision:
+              anyOf:
+              - type: string
+                enum:
+                - accepted
+              - type: string
+                enum:
+                - changes_requested
+            comment:
+              type: string
+            prompt:
+              type: string
+            refinementMode:
+              anyOf:
+              - type: string
+                enum:
+                - human_supervised
+              - type: string
+                enum:
+                - agent_direct
+            submitter:
+              type: object
+              required:
+              - actorId
+              - actorSource
+              properties:
+                actorId:
+                  type: string
+                actorType:
+                  type: string
+                  enum:
+                  - external_requester
+                actorSource:
+                  type: string
+                displayName:
+                  type: string
+                email:
+                  type: string
+      - type: number
+        required: true
+        in: path
+        name: id
+      responses:
+        '201':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - data
+            - meta
+            properties:
+              data:
+                type: object
+                required:
+                - event
+                - reviewTask
+                - revision
+                properties:
+                  event:
+                    type: object
+                    required:
+                    - id
+                    - domainId
+                    - contentItemId
+                    - publishedVersion
+                    - decision
+                    - comment
+                    - prompt
+                    - refinementMode
+                    - actorId
+                    - actorType
+                    - actorSource
+                    - actorDisplayName
+                    - actorEmail
+                    - reviewTaskId
+                    - createdAt
+                    properties:
+                      id:
+                        type: number
+                      domainId:
+                        type: number
+                      contentItemId:
+                        type: number
+                      publishedVersion:
+                        type: number
+                      decision:
+                        anyOf:
+                        - type: string
+                        - type: 'null'
+                      comment:
+                        anyOf:
+                        - type: string
+                        - type: 'null'
+                      prompt:
+                        anyOf:
+                        - type: string
+                        - type: 'null'
+                      refinementMode:
+                        type: string
+                      actorId:
+                        type: string
+                      actorType:
+                        type: string
+                      actorSource:
+                        type: string
+                      actorDisplayName:
+                        anyOf:
+                        - type: string
+                        - type: 'null'
+                      actorEmail:
+                        anyOf:
+                        - type: string
+                        - type: 'null'
+                      reviewTaskId:
+                        anyOf:
+                        - type: number
+                        - type: 'null'
+                      createdAt:
+                        type: string
+                  reviewTask:
+                    anyOf:
+                    - type: object
+                      required:
+                      - id
+                      - contentItemId
+                      - workflowTransitionId
+                      - status
+                      - source
+                      - sourceEventId
+                      - assignee
+                      - assigneeActorId
+                      - assigneeActorType
+                      - assigneeActorSource
+                      - createdAt
+                      - updatedAt
+                      properties:
+                        id:
+                          type: number
+                        contentItemId:
+                          type: number
+                        workflowTransitionId:
+                          type: number
+                        status:
+                          type: string
+                        source:
+                          type: string
+                        sourceEventId:
+                          anyOf:
+                          - type: number
+                          - type: 'null'
+                        assignee:
+                          anyOf:
+                          - type: string
+                          - type: 'null'
+                        assigneeActorId:
+                          anyOf:
+                          - type: string
+                          - type: 'null'
+                        assigneeActorType:
+                          anyOf:
+                          - type: string
+                          - type: 'null'
+                        assigneeActorSource:
+                          anyOf:
+                          - type: string
+                          - type: 'null'
+                        createdAt:
+                          type: string
+                        updatedAt:
+                          type: string
+                    - type: 'null'
+                  revision:
+                    anyOf:
+                    - type: object
+                      required:
+                      - taskId
+                      - contentItemId
+                      - contentStatus
+                      - contentVersion
+                      - revisedAt
+                      - strategy
+                      - provider
+                      properties:
+                        taskId:
+                          type: number
+                        contentItemId:
+                          type: number
+                        contentStatus:
+                          type: string
+                        contentVersion:
+                          type: number
+                        revisedAt:
+                          type: string
+                        strategy:
+                          type: string
+                        provider:
+                          type: object
+                          required:
+                          - type
+                          - model
+                          - responseId
+                          properties:
+                            type:
+                              type: string
+                            model:
+                              anyOf:
+                              - type: string
+                              - type: 'null'
+                            responseId:
+                              anyOf:
+                              - type: string
+                              - type: 'null'
+                    - type: 'null'
+              meta:
+                additionalProperties: true
+                type: object
+                required:
+                - availableActions
+                - actionPriority
+                properties:
+                  recommendedNextAction:
+                    description: The most logical next step for the agent
+                    type: string
+                  availableActions:
+                    description: List of all possible actions from this state
+                    type: array
+                    items:
+                      type: string
+                  actionPriority:
+                    anyOf:
+                    - type: string
+                      enum:
+                      - low
+                    - type: string
+                      enum:
+                      - medium
+                    - type: string
+                      enum:
+                      - high
+                    - type: string
+                      enum:
+                      - critical
+                  cost:
+                    description: Estimated complexity/cost of the operation
+                    type: number
+                  documentationUrl:
+                    format: uri
+                    type: string
+                  dryRun:
+                    description: Indicates if the operation was simulated
+                    type: boolean
+        '400':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        '403':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        '404':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
+        '409':
+          description: Default Response
+          schema:
+            type: object
+            required:
+            - error
+            - code
+            - remediation
+            properties:
+              error:
+                type: string
+              code:
+                type: string
+              remediation:
+                description: Specific instructions for the AI agent to fix this error
+                type: string
+              context: {}
   "/api/review-tasks":
     get:
       responses:
@@ -17464,6 +18180,8 @@ paths:
                 - contentItemId
                 - workflowTransitionId
                 - status
+                - source
+                - sourceEventId
                 - assignee
                 - assigneeActorId
                 - assigneeActorType
@@ -17479,6 +18197,12 @@ paths:
                     type: number
                   status:
                     type: string
+                  source:
+                    type: string
+                  sourceEventId:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
                   assignee:
                     anyOf:
                     - type: string

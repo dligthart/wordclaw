@@ -624,4 +624,178 @@ describe('workflow service', () => {
             },
         });
     });
+
+    it('rejects agent-direct external feedback without a prompt', async () => {
+        await expect(WorkflowService.submitExternalFeedback({
+            domainId: 7,
+            contentItemId: 18,
+            decision: 'changes_requested',
+            refinementMode: 'agent_direct',
+            submitter: {
+                actorId: 'proposal-contact:123',
+                actorSource: 'proposal_portal',
+            },
+        })).rejects.toMatchObject({
+            code: 'EXTERNAL_FEEDBACK_PROMPT_REQUIRED',
+            statusCode: 400,
+        });
+
+        expect(mocks.dbMock.select).not.toHaveBeenCalled();
+    });
+
+    it('records accepted external feedback without creating a review task', async () => {
+        const contentItem = {
+            id: 18,
+            domainId: 7,
+            contentTypeId: 10,
+            status: 'published',
+            version: 3,
+            data: JSON.stringify({ title: 'Proposal' }),
+        };
+        const feedbackEvent = {
+            id: 71,
+            domainId: 7,
+            contentItemId: 18,
+            publishedVersion: 3,
+            decision: 'accepted',
+            comment: 'Looks good to proceed.',
+            prompt: null,
+            refinementMode: 'human_supervised',
+            actorId: 'proposal-contact:123',
+            actorType: 'external_requester',
+            actorSource: 'proposal_portal',
+            actorDisplayName: 'Jane Smith',
+            actorEmail: 'jane@client.com',
+            reviewTaskId: null,
+            createdAt: new Date('2026-04-03T10:00:00.000Z'),
+        };
+        const reviewTaskSpy = vi.spyOn(WorkflowService, 'submitForReview');
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where: vi.fn().mockResolvedValue([contentItem]),
+            }),
+        }));
+
+        mocks.dbMock.insert
+            .mockImplementationOnce(() => ({
+                values: () => ({
+                    returning: vi.fn().mockResolvedValue([feedbackEvent]),
+                }),
+            }))
+            .mockImplementationOnce(() => ({
+                values: () => ({
+                    returning: vi.fn().mockResolvedValue([{
+                        id: 88,
+                        domainId: 7,
+                        contentItemId: 18,
+                        authorId: 'proposal-contact:123',
+                        authorActorId: 'proposal-contact:123',
+                        authorActorType: 'external_requester',
+                        authorActorSource: 'proposal_portal',
+                        comment: 'External feedback from Jane Smith (accepted)\n\nLooks good to proceed.',
+                        createdAt: new Date('2026-04-03T10:00:00.000Z'),
+                    }]),
+                }),
+            }));
+
+        try {
+            const result = await WorkflowService.submitExternalFeedback({
+                domainId: 7,
+                contentItemId: 18,
+                decision: 'accepted',
+                comment: 'Looks good to proceed.',
+                submitter: {
+                    actorId: 'proposal-contact:123',
+                    actorSource: 'proposal_portal',
+                    displayName: 'Jane Smith',
+                    email: 'jane@client.com',
+                },
+                authPrincipal: {
+                    actorId: 'api_key:9',
+                    actorType: 'api_key',
+                    actorSource: 'db',
+                    actorRef: 9,
+                    source: 'db',
+                    domainId: 7,
+                    scopes: new Set(['admin']),
+                },
+            });
+
+            expect(result).toEqual({
+                event: feedbackEvent,
+                reviewTask: null,
+                revision: null,
+            });
+            expect(reviewTaskSpy).not.toHaveBeenCalled();
+            expect(mocks.logAuditMock).toHaveBeenCalledWith(
+                7,
+                'create',
+                'external_feedback_event',
+                71,
+                expect.objectContaining({
+                    contentItemId: 18,
+                    publishedVersion: 3,
+                    decision: 'accepted',
+                    reviewTaskId: null,
+                }),
+                expect.any(Object),
+            );
+        } finally {
+            reviewTaskSpy.mockRestore();
+        }
+    });
+
+    it('lists external feedback events for a content item newest first', async () => {
+        const events = [
+            {
+                id: 72,
+                domainId: 7,
+                contentItemId: 18,
+                publishedVersion: 4,
+                decision: 'changes_requested',
+                comment: 'Clarify the timeline.',
+                prompt: 'Tighten the proposal timeline.',
+                refinementMode: 'agent_direct',
+                actorId: 'proposal-contact:124',
+                actorType: 'external_requester',
+                actorSource: 'proposal_portal',
+                actorDisplayName: 'Jane Smith',
+                actorEmail: 'jane@client.com',
+                reviewTaskId: 45,
+                createdAt: new Date('2026-04-03T10:05:00.000Z'),
+            },
+            {
+                id: 71,
+                domainId: 7,
+                contentItemId: 18,
+                publishedVersion: 3,
+                decision: 'accepted',
+                comment: 'Looks good to proceed.',
+                prompt: null,
+                refinementMode: 'human_supervised',
+                actorId: 'proposal-contact:123',
+                actorType: 'external_requester',
+                actorSource: 'proposal_portal',
+                actorDisplayName: 'Jane Smith',
+                actorEmail: 'jane@client.com',
+                reviewTaskId: null,
+                createdAt: new Date('2026-04-03T10:00:00.000Z'),
+            },
+        ];
+        const orderBy = vi.fn().mockResolvedValue(events);
+        const where = vi.fn().mockReturnValue({ orderBy });
+
+        mocks.dbMock.select.mockImplementationOnce(() => ({
+            from: () => ({
+                where,
+            }),
+        }));
+
+        const result = await WorkflowService.listExternalFeedbackEvents(7, 18);
+
+        expect(result).toEqual(events);
+        expect(where).toHaveBeenCalledTimes(1);
+        expect(orderBy).toHaveBeenCalledTimes(1);
+    });
 });
