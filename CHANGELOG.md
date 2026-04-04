@@ -1,3 +1,10 @@
+## [1.52.2](https://github.com/dligthart/wordclaw/compare/v1.52.1...v1.52.2) (2026-04-04)
+
+
+### Bug Fixes
+
+* **ui:** clean up approval queue mobile layout ([b423ca7](https://github.com/dligthart/wordclaw/commit/b423ca7c18e8e622611ab3c4f476e7118cece58f))
+
 ## [1.52.1](https://github.com/dligthart/wordclaw/compare/v1.52.0...v1.52.1) (2026-04-03)
 
 
