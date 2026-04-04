@@ -199,7 +199,7 @@
         fromState: string;
         toState: string;
     }): string {
-        return `Approval target: ${formatStatusLabel(transition.toState)}`;
+        return `${formatStatusLabel(transition.fromState)} → ${formatStatusLabel(transition.toState)}`;
     }
 
     function formatApprovalTargetHint(transition: {
@@ -768,43 +768,34 @@
 </svelte:head>
 
 <div class="h-full flex flex-col">
-    <div class="mb-7 flex items-start justify-between gap-4 flex-wrap">
-        <div>
+    <div class="mb-4 sm:mb-7 flex items-center justify-between gap-3">
+        <div class="min-w-0 flex-1">
             <div class="flex items-center gap-3 flex-wrap">
                 <h2
-                    class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
+                    class="text-xl sm:text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
                 >
                     Approval Queue
                 </h2>
+                {#if !loading}
+                    <Badge variant="muted">{pendingTasks.length} pending</Badge>
+                {/if}
             </div>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 hidden sm:block">
                 Review agent-generated content before it goes live.
             </p>
             {#if !loading}
                 <div
-                    class="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400"
+                    class="mt-1.5 text-[0.7rem] text-slate-400 dark:text-slate-500 hidden md:block"
                 >
-                    <Badge variant="muted">{pendingTasks.length} pending</Badge>
-                    {#if oldestTask}
-                        <Badge variant="outline"
-                            >Oldest {formatRelativeDate(
-                                oldestTask.task.createdAt,
-                            )}</Badge
-                        >
-                    {/if}
-                </div>
-                <div
-                    class="mt-2 text-[0.7rem] text-slate-400 dark:text-slate-500 hidden md:block"
-                >
-                    <span class="font-mono">j/k</span> to navigate,
-                    <span class="font-mono">a</span>
-                    to approve, <span class="font-mono">r</span> to reject
+                    <span class="font-mono">j/k</span> navigate ·
+                    <span class="font-mono">a</span> approve ·
+                    <span class="font-mono">r</span> reject
                 </div>
             {/if}
         </div>
-        <Button variant="outline" onclick={loadData} title="Refresh queue">
+        <Button variant="outline" onclick={loadData} title="Refresh queue" class="shrink-0">
             <Icon src={ArrowPath} class="w-4 h-4 flex-shrink-0" />
-            Refresh
+            <span class="hidden sm:inline">Refresh</span>
         </Button>
     </div>
 
@@ -871,7 +862,7 @@
                                 <li>
                                     <button
                                         onclick={() => viewTask(payload)}
-                                        class="w-full border-l-2 px-4 py-4 text-left transition-colors {selectedTask
+                                        class="w-full border-l-2 px-4 py-3 text-left transition-colors {selectedTask
                                             ?.task.id === payload.task.id
                                             ? 'border-slate-400 bg-slate-50/80 dark:border-slate-500 dark:bg-slate-800/80'
                                             : 'border-transparent hover:bg-slate-50/80 dark:hover:bg-slate-800/50'}"
@@ -885,65 +876,46 @@
                                                 >
                                                     {resolveTaskLabel(payload)}
                                                 </p>
-                                                {#if resolveTaskSubtitle(payload)}
-                                                    <p class="truncate text-[0.72rem] text-gray-600 dark:text-gray-300 mt-0.5">
-                                                        {resolveTaskSubtitle(payload)}
-                                                    </p>
-                                                {/if}
                                                 <div
-                                                    class="mt-1 flex flex-wrap items-center gap-1.5 text-[0.68rem] text-gray-500 dark:text-gray-400"
+                                                    class="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.68rem] text-gray-500 dark:text-gray-400"
                                                 >
                                                     <span
                                                         >{payload.contentType
                                                             .name}</span
                                                     >
-                                                    <span>•</span>
+                                                    <span>·</span>
                                                     <span class="font-mono"
                                                         >#{payload.contentItem
                                                             .id}</span
                                                     >
-                                                    {#if resolveTaskSlug(payload)}
-                                                        <span>•</span>
-                                                        <span class="font-mono"
-                                                            >{resolveTaskSlug(
-                                                                payload,
-                                                            )}</span
-                                                        >
-                                                    {/if}
+                                                    <span>·</span>
+                                                    <span class="font-mono"
+                                                        >v{payload.contentItem
+                                                            .version}</span
+                                                    >
                                                 </div>
                                             </div>
                                             <span
-                                                class="text-[0.68rem] font-mono text-gray-400 dark:text-gray-500"
+                                                class="text-[0.68rem] text-gray-400 dark:text-gray-500 shrink-0"
+                                                title={new Date(
+                                                    payload.task.createdAt,
+                                                ).toLocaleString()}
                                             >
-                                                v{payload.contentItem.version}
+                                                {formatRelativeDate(
+                                                    payload.task.createdAt,
+                                                )}
                                             </span>
                                         </div>
 
                                         <div
-                                            class="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400"
+                                            class="mt-1.5 flex flex-wrap items-center gap-1.5"
                                         >
-                                            <span
-                                                title={formatApprovalTargetHint(
-                                                    payload.transition,
-                                                )}
-                                            >
-                                                <Badge
-                                                    variant="outline"
-                                                    class="uppercase"
-                                                >
-                                                    {formatApprovalTargetLabel(
-                                                        payload.transition,
-                                                    )}
-                                                </Badge>
-                                            </span>
                                             <Badge
-                                                variant={resolveStatusBadgeVariant(
-                                                    payload.contentItem.status,
-                                                )}
-                                                class="uppercase"
+                                                variant="outline"
+                                                class="whitespace-nowrap"
                                             >
-                                                {formatStatusLabel(
-                                                    payload.contentItem.status,
+                                                {formatApprovalTargetLabel(
+                                                    payload.transition,
                                                 )}
                                             </Badge>
                                             {#if payload.task.source === "external_feedback"}
@@ -954,57 +926,16 @@
                                                     Client feedback
                                                 </Badge>
                                             {/if}
-                                        </div>
-
-                                        {#if resolveTaskExcerpt(payload)}
-                                            <p
-                                                class="mt-2 line-clamp-1 text-xs text-gray-500 dark:text-gray-400"
-                                            >
-                                                {resolveTaskExcerpt(payload)}
-                                            </p>
-                                        {/if}
-
-                                        <div
-                                            class="mt-3 flex items-center justify-between gap-2 text-[0.68rem] text-gray-500 dark:text-gray-400"
-                                        >
-                                            <div class="min-w-0">
-                                                {#if payload.task.assignee || payload.task.assigneeActorId}
-                                                    <ActorIdentity
-                                                        actorId={payload.task.assigneeActorId ??
-                                                            payload.task.assignee}
-                                                        actorType={payload.task.assigneeActorType}
-                                                        actorSource={payload.task.assigneeActorSource}
-                                                        fallback="Unassigned"
-                                                        compact={true}
-                                                    />
-                                                {:else}
-                                                    <span
-                                                        title={new Date(
-                                                            payload.task.createdAt,
-                                                        ).toLocaleString()}
-                                                    >
-                                                        Submitted {formatRelativeDate(
-                                                            payload.task.createdAt,
-                                                        )}
-                                                    </span>
-                                                {/if}
-                                            </div>
-                                            <div
-                                                class="flex flex-col items-end gap-1 text-right"
-                                            >
-                                                <span
-                                                    title={new Date(
-                                                        payload.task.createdAt,
-                                                    ).toLocaleString()}
-                                                >
-                                                    Submitted {formatRelativeDate(
-                                                        payload.task.createdAt,
-                                                    )}
-                                                </span>
-                                                <span class="font-mono"
-                                                    >Task {payload.task.id}</span
-                                                >
-                                            </div>
+                                            {#if payload.task.assignee || payload.task.assigneeActorId}
+                                                <ActorIdentity
+                                                    actorId={payload.task.assigneeActorId ??
+                                                        payload.task.assignee}
+                                                    actorType={payload.task.assigneeActorType}
+                                                    actorSource={payload.task.assigneeActorSource}
+                                                    fallback="Unassigned"
+                                                    compact={true}
+                                                />
+                                            {/if}
                                         </div>
                                     </button>
                                 </li>
@@ -1064,22 +995,12 @@
                         <div
                             class="mt-1.5 flex items-center gap-1.5 text-xs overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none"
                         >
-                            <Badge variant="outline"
+                            <Badge variant="outline" class="whitespace-nowrap"
                                 >{selectedTask.contentType.name}</Badge
                             >
-                            <Badge variant="outline"
+                            <Badge variant="outline" class="whitespace-nowrap"
                                 >#{selectedTask.contentItem.id}</Badge
                             >
-                            <Badge
-                                variant={resolveStatusBadgeVariant(
-                                    selectedTask.contentItem.status,
-                                )}
-                                class="uppercase whitespace-nowrap"
-                            >
-                                {formatStatusLabel(
-                                    selectedTask.contentItem.status,
-                                )}
-                            </Badge>
                             <Badge variant="outline" class="whitespace-nowrap">
                                 {formatApprovalTargetLabel(
                                     selectedTask.transition,
@@ -1139,55 +1060,53 @@
                             </Button>
                         </div>
 
-                        <!-- Row 4: Compact revision prompt inline -->
-                        <div class="mt-2.5 flex items-start gap-2">
-                            <div class="flex-1 min-w-0">
-                                <Textarea
-                                    id="revision-prompt"
-                                    aria-label="Agent Revision Prompt"
-                                    bind:value={revisionPrompt}
-                                    placeholder="Describe what the agent should change…"
-                                    rows={1}
-                                    class="w-full text-sm resize-y"
-                                    disabled={revisingItem ===
-                                        selectedTask.task.id}
-                                />
-                            </div>
-                            <Button
-                                onclick={() => reviseTask(selectedTask!)}
-                                disabled={revisingItem ===
-                                        selectedTask.task.id ||
-                                    processingItem ===
-                                        selectedTask.task.id ||
-                                    !revisionPrompt.trim()}
-                                variant="outline"
-                                class="shrink-0"
-                            >
-                                {#if revisingItem === selectedTask.task.id}
-                                    <LoadingSpinner size="sm" />
-                                {:else}
-                                    <Icon
-                                        src={ArrowPath}
-                                        class="w-4 h-4"
-                                    />
-                                {/if}
-                                Revise
-                            </Button>
-                        </div>
-
-                        <!-- Row 5: Optional decision reason (collapsible) -->
+                        <!-- Row 4: Collapsible revision + decision reason -->
                         <details class="mt-2">
                             <summary
                                 class="cursor-pointer text-[0.7rem] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 select-none"
                             >
-                                Add decision reason (optional)
+                                Request revision or add decision reason
                             </summary>
-                            <div class="mt-1.5">
+                            <div class="mt-2 space-y-2">
+                                <div class="flex items-start gap-2">
+                                    <div class="flex-1 min-w-0">
+                                        <Textarea
+                                            id="revision-prompt"
+                                            aria-label="Agent Revision Prompt"
+                                            bind:value={revisionPrompt}
+                                            placeholder="Describe what the agent should change…"
+                                            rows={1}
+                                            class="w-full text-sm resize-y"
+                                            disabled={revisingItem ===
+                                                selectedTask.task.id}
+                                        />
+                                    </div>
+                                    <Button
+                                        onclick={() => reviseTask(selectedTask!)}
+                                        disabled={revisingItem ===
+                                                selectedTask.task.id ||
+                                            processingItem ===
+                                                selectedTask.task.id ||
+                                            !revisionPrompt.trim()}
+                                        variant="outline"
+                                        class="shrink-0"
+                                    >
+                                        {#if revisingItem === selectedTask.task.id}
+                                            <LoadingSpinner size="sm" />
+                                        {:else}
+                                            <Icon
+                                                src={ArrowPath}
+                                                class="w-4 h-4"
+                                            />
+                                        {/if}
+                                        Revise
+                                    </Button>
+                                </div>
                                 <Textarea
                                     id="decision-reason"
                                     aria-label="Decision Reason"
                                     bind:value={decisionReason}
-                                    placeholder="Reasoning for approval or rejection…"
+                                    placeholder="Decision reason (optional)…"
                                     rows={2}
                                     class="w-full text-sm"
                                 />
