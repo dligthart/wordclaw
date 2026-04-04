@@ -794,7 +794,7 @@
                     {/if}
                 </div>
                 <div
-                    class="mt-2 text-[0.7rem] text-slate-400 dark:text-slate-500"
+                    class="mt-2 text-[0.7rem] text-slate-400 dark:text-slate-500 hidden md:block"
                 >
                     <span class="font-mono">j/k</span> to navigate,
                     <span class="font-mono">a</span>
@@ -1030,114 +1030,117 @@
                 {:else}
                     <!-- Sticky action bar: always visible at top -->
                     <div
-                        class="sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm px-5 py-4 dark:border-slate-700 dark:bg-slate-900/95"
+                        class="sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm px-3 py-3 sm:px-5 sm:py-4 dark:border-slate-700 dark:bg-slate-900/95"
                     >
-                        <!-- Row 1: Title + action buttons -->
+                        <!-- Row 1: Back button + title -->
                         <div
-                            class="flex items-start justify-between gap-3 flex-wrap"
+                            class="flex items-center gap-2 min-w-0"
                         >
+                            <button
+                                class="md:hidden shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                                aria-label="Close review"
+                                onclick={() => (selectedTask = null)}
+                            >
+                                <Icon
+                                    src={ChevronLeft}
+                                    class="w-5 h-5"
+                                />
+                            </button>
                             <div class="min-w-0 flex-1">
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    <button
-                                        class="md:hidden mr-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                                        aria-label="Close review"
-                                        onclick={() => (selectedTask = null)}
-                                    >
-                                        <Icon
-                                            src={ChevronLeft}
-                                            class="w-5 h-5"
-                                        />
-                                    </button>
-                                    <h3
-                                        class="truncate text-lg font-semibold tracking-tight text-gray-900 dark:text-white"
-                                    >
-                                        {resolveTaskLabel(selectedTask)}
-                                    </h3>
-                                </div>
+                                <h3
+                                    class="truncate text-base sm:text-lg font-semibold tracking-tight text-gray-900 dark:text-white"
+                                >
+                                    {resolveTaskLabel(selectedTask)}
+                                </h3>
                                 {#if resolveTaskSubtitle(selectedTask)}
-                                    <p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400 truncate">
+                                    <p class="mt-0.5 text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">
                                         {resolveTaskSubtitle(selectedTask)}
                                     </p>
                                 {/if}
-                                <div
-                                    class="mt-1.5 flex flex-wrap items-center gap-2 text-xs"
-                                >
-                                    <Badge variant="outline"
-                                        >{selectedTask.contentType.name}</Badge
-                                    >
-                                    <Badge variant="outline"
-                                        >#{selectedTask.contentItem.id}</Badge
-                                    >
-                                    <Badge
-                                        variant={resolveStatusBadgeVariant(
-                                            selectedTask.contentItem.status,
-                                        )}
-                                        class="uppercase"
-                                    >
-                                        {formatStatusLabel(
-                                            selectedTask.contentItem.status,
-                                        )}
-                                    </Badge>
-                                    <Badge variant="outline">
-                                        {formatApprovalTargetLabel(
-                                            selectedTask.transition,
-                                        )}
-                                    </Badge>
-                                    <Badge variant="muted"
-                                        >v{selectedTask.contentItem
-                                            .version}</Badge
-                                    >
-                                    {#if selectedTask.task.source ===
-                                        "external_feedback"}
-                                        <Badge
-                                            variant="warning"
-                                            class="uppercase"
-                                        >
-                                            Client feedback
-                                        </Badge>
-                                    {/if}
-                                    <Badge variant="muted"
-                                        >{formatRelativeDate(
-                                            selectedTask.task.createdAt,
-                                        )}</Badge
-                                    >
-                                </div>
-                            </div>
-
-                            <div class="flex gap-2 shrink-0">
-                                <Button
-                                    onclick={() =>
-                                        processTask(selectedTask!, "rejected")}
-                                    disabled={processingItem ===
-                                            selectedTask.task.id ||
-                                        revisingItem === selectedTask.task.id}
-                                    variant="outline"
-                                >
-                                    Reject
-                                </Button>
-                                <Button
-                                    onclick={() =>
-                                        processTask(selectedTask!, "approved")}
-                                    disabled={processingItem ===
-                                            selectedTask.task.id ||
-                                        revisingItem === selectedTask.task.id}
-                                    variant="success"
-                                >
-                                    {#if processingItem === selectedTask.task.id}
-                                        <LoadingSpinner
-                                            size="sm"
-                                            color="white"
-                                        />
-                                    {:else}
-                                        <Icon src={Check} class="w-4 h-4" />
-                                    {/if}
-                                    Approve
-                                </Button>
                             </div>
                         </div>
 
-                        <!-- Row 2: Compact revision prompt inline -->
-                        <div class="mt-3 flex items-start gap-2">
+                        <!-- Row 2: Scrollable badges -->
+                        <div
+                            class="mt-1.5 flex items-center gap-1.5 text-xs overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none"
+                        >
+                            <Badge variant="outline"
+                                >{selectedTask.contentType.name}</Badge
+                            >
+                            <Badge variant="outline"
+                                >#{selectedTask.contentItem.id}</Badge
+                            >
+                            <Badge
+                                variant={resolveStatusBadgeVariant(
+                                    selectedTask.contentItem.status,
+                                )}
+                                class="uppercase whitespace-nowrap"
+                            >
+                                {formatStatusLabel(
+                                    selectedTask.contentItem.status,
+                                )}
+                            </Badge>
+                            <Badge variant="outline" class="whitespace-nowrap">
+                                {formatApprovalTargetLabel(
+                                    selectedTask.transition,
+                                )}
+                            </Badge>
+                            <Badge variant="muted" class="whitespace-nowrap"
+                                >v{selectedTask.contentItem
+                                    .version}</Badge
+                            >
+                            {#if selectedTask.task.source ===
+                                "external_feedback"}
+                                <Badge
+                                    variant="warning"
+                                    class="uppercase whitespace-nowrap"
+                                >
+                                    Client feedback
+                                </Badge>
+                            {/if}
+                            <Badge variant="muted" class="whitespace-nowrap"
+                                >{formatRelativeDate(
+                                    selectedTask.task.createdAt,
+                                )}</Badge
+                            >
+                        </div>
+
+                        <!-- Row 3: Action buttons -->
+                        <div class="mt-2.5 flex gap-2">
+                            <Button
+                                onclick={() =>
+                                    processTask(selectedTask!, "rejected")}
+                                disabled={processingItem ===
+                                        selectedTask.task.id ||
+                                    revisingItem === selectedTask.task.id}
+                                variant="outline"
+                                class="flex-1 sm:flex-none"
+                            >
+                                Reject
+                            </Button>
+                            <Button
+                                onclick={() =>
+                                    processTask(selectedTask!, "approved")}
+                                disabled={processingItem ===
+                                        selectedTask.task.id ||
+                                    revisingItem === selectedTask.task.id}
+                                variant="success"
+                                class="flex-1 sm:flex-none"
+                            >
+                                {#if processingItem === selectedTask.task.id}
+                                    <LoadingSpinner
+                                        size="sm"
+                                        color="white"
+                                    />
+                                {:else}
+                                    <Icon src={Check} class="w-4 h-4" />
+                                {/if}
+                                Approve
+                            </Button>
+                        </div>
+
+                        <!-- Row 4: Compact revision prompt inline -->
+                        <div class="mt-2.5 flex items-start gap-2">
                             <div class="flex-1 min-w-0">
                                 <Textarea
                                     id="revision-prompt"
@@ -1172,7 +1175,7 @@
                             </Button>
                         </div>
 
-                        <!-- Row 3: Optional decision reason (collapsible) -->
+                        <!-- Row 5: Optional decision reason (collapsible) -->
                         <details class="mt-2">
                             <summary
                                 class="cursor-pointer text-[0.7rem] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 select-none"
@@ -1194,10 +1197,10 @@
 
                     <!-- Scrollable body: two-column layout -->
                     <div
-                        class="flex-1 overflow-y-auto bg-slate-50/50 p-4 dark:bg-slate-950/40"
+                        class="flex-1 overflow-y-auto bg-slate-50/50 p-3 sm:p-4 dark:bg-slate-950/40"
                     >
                         <div
-                            class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]"
+                            class="grid gap-3 sm:gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]"
                         >
                             <!-- LEFT COLUMN: Diff view (primary content) -->
                             <div class="space-y-4 min-w-0">
@@ -1366,7 +1369,7 @@
                                                             class="flex items-center justify-between gap-2 bg-slate-50/80 px-3 py-1.5 dark:bg-slate-900/40"
                                                         >
                                                             <span
-                                                                class="font-mono text-xs text-slate-600 dark:text-slate-300 font-medium"
+                                                                class="font-mono text-xs text-slate-600 dark:text-slate-300 font-medium truncate"
                                                             >
                                                                 {entry.key}
                                                             </span>
@@ -1374,22 +1377,24 @@
                                                                 variant={resolveDiffBadgeVariant(
                                                                     entry.change,
                                                                 )}
-                                                                class="uppercase text-[0.6rem]"
+                                                                class="uppercase text-[0.6rem] shrink-0"
                                                             >
                                                                 {entry.change}
                                                             </Badge>
                                                         </div>
                                                         <div
-                                                            class="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700"
+                                                            class="grid grid-cols-1 sm:grid-cols-2 sm:divide-x divide-slate-200 dark:divide-slate-700"
                                                         >
                                                             <div
-                                                                class="px-3 py-2 whitespace-pre-wrap break-words text-xs text-slate-500 dark:text-slate-400 bg-red-50/40 dark:bg-red-950/10"
+                                                                class="px-3 py-2 whitespace-pre-wrap break-words text-xs text-slate-500 dark:text-slate-400 bg-red-50/40 dark:bg-red-950/10 border-b sm:border-b-0 border-slate-200 dark:border-slate-700"
                                                             >
+                                                                <span class="sm:hidden font-semibold text-[0.6rem] uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-0.5">Before</span>
                                                                 {entry.before}
                                                             </div>
                                                             <div
                                                                 class="px-3 py-2 whitespace-pre-wrap break-words text-xs text-emerald-800 dark:text-emerald-200 bg-emerald-50/40 dark:bg-emerald-950/10"
                                                             >
+                                                                <span class="sm:hidden font-semibold text-[0.6rem] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block mb-0.5">After</span>
                                                                 {entry.after}
                                                             </div>
                                                         </div>
@@ -1611,7 +1616,52 @@
                                 {/if}
                             </div>
 
-                            <!-- RIGHT COLUMN: Compact metadata sidebar -->
+                            <!-- RIGHT COLUMN: Compact metadata sidebar (collapsible on mobile, visible on xl) -->
+                            <details class="xl:hidden">
+                                <summary
+                                    class="cursor-pointer text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white select-none py-2"
+                                >
+                                    Item Details
+                                </summary>
+                                <div class="mt-2 space-y-3">
+                                    <Surface
+                                        tone="subtle"
+                                        class="rounded-xl p-3.5"
+                                    >
+                                        <p
+                                            class="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400 mb-3"
+                                        >
+                                            Details
+                                        </p>
+                                        <dl class="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
+                                            <div>
+                                                <dt class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Slug</dt>
+                                                <dd class="mt-0.5 text-slate-700 dark:text-slate-300 font-mono break-all">{resolveTaskSlug(selectedTask) || "—"}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Attribution</dt>
+                                                <dd class="mt-0.5 text-slate-700 dark:text-slate-300">{resolveTaskAttribution(selectedTask) || "—"}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Workflow</dt>
+                                                <dd class="mt-0.5 text-slate-700 dark:text-slate-300">{selectedTask.workflow.name}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Queue</dt>
+                                                <dd class="mt-0.5 text-slate-700 dark:text-slate-300">{selectedTaskQueueIndex >= 0 ? selectedTaskQueueIndex + 1 : 1} of {pendingTasks.length}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Submitted</dt>
+                                                <dd class="mt-0.5 text-slate-700 dark:text-slate-300">{formatAbsoluteDate(selectedTask.task.createdAt)}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Roles</dt>
+                                                <dd class="mt-0.5 text-slate-700 dark:text-slate-300">{selectedTask.transition.requiredRoles.length > 0 ? selectedTask.transition.requiredRoles.join(", ") : "None"}</dd>
+                                            </div>
+                                        </dl>
+                                    </Surface>
+                                </div>
+                            </details>
                             <div class="space-y-3 hidden xl:block">
                                 <Surface
                                     tone="subtle"
