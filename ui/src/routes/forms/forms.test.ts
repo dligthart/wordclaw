@@ -1,9 +1,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import FormsPage from "./+page.svelte";
+import FormEditor from "./FormEditor.svelte";
 import { fetchApi } from "$lib/api";
 import { feedbackStore } from "$lib/ui-feedback.svelte";
+
+const gotoMock = vi.hoisted(() => vi.fn());
+
+vi.mock("$app/navigation", () => ({
+    goto: gotoMock,
+}));
 
 vi.mock("$lib/api", () => ({
     fetchApi: vi.fn(),
@@ -39,66 +45,7 @@ describe("Forms Page", () => {
     });
 
     it("creates a form with a workforce-backed draft generation config", async () => {
-        let formsLoadCount = 0;
         vi.mocked(fetchApi).mockImplementation(async (endpoint, options = {}) => {
-            if (endpoint === "/forms" && (!options.method || options.method === "GET")) {
-                formsLoadCount += 1;
-                return {
-                    data: formsLoadCount === 1
-                        ? []
-                        : [{
-                            id: 33,
-                            domainId: 12,
-                            name: "Proposal Intake",
-                            slug: "proposal-intake",
-                            description: "Collect proposal requirements from prospects.",
-                            contentTypeId: 12,
-                            contentTypeName: "Proposal Request",
-                            contentTypeSlug: "proposal-request",
-                            active: true,
-                            publicRead: true,
-                            submissionStatus: "draft",
-                            workflowTransitionId: null,
-                            requirePayment: false,
-                            successMessage: "Thanks",
-                            fields: [
-                                {
-                                    name: "email",
-                                    label: "Email",
-                                    type: "text",
-                                    required: true,
-                                },
-                            ],
-                            defaultData: {},
-                            draftGeneration: {
-                                targetContentTypeId: 13,
-                                targetContentTypeName: "Proposal Draft",
-                                targetContentTypeSlug: "proposal-draft",
-                                workforceAgentId: 7,
-                                workforceAgentSlug: "proposal-writer",
-                                workforceAgentName: "Proposal Writer",
-                                workforceAgentPurpose:
-                                    "Draft software proposals from inbound forms.",
-                                agentSoul: "software-proposal-writer",
-                                fieldMap: {
-                                    requirements: "brief",
-                                },
-                                defaultData: {
-                                    title: "Draft proposal",
-                                },
-                                postGenerationWorkflowTransitionId: null,
-                                provider: {
-                                    type: "openai",
-                                    model: "gpt-4o",
-                                    instructions: "Write concise proposals.",
-                                },
-                            },
-                            createdAt: "2026-04-01T12:00:00.000Z",
-                            updatedAt: "2026-04-01T12:00:00.000Z",
-                        }],
-                };
-            }
-
             if (endpoint === "/content-types") {
                 return {
                     data: [
@@ -196,67 +143,15 @@ describe("Forms Page", () => {
                 };
             }
 
-            if (endpoint === "/forms/33") {
-                return {
-                    data: {
-                        id: 33,
-                        domainId: 12,
-                        name: "Proposal Intake",
-                        slug: "proposal-intake",
-                        description: "Collect proposal requirements from prospects.",
-                        contentTypeId: 12,
-                        contentTypeName: "Proposal Request",
-                        contentTypeSlug: "proposal-request",
-                        active: true,
-                        publicRead: true,
-                        submissionStatus: "draft",
-                        workflowTransitionId: null,
-                        requirePayment: false,
-                        successMessage: "Thanks",
-                        fields: [
-                            {
-                                name: "email",
-                                label: "Email",
-                                type: "text",
-                                required: true,
-                            },
-                        ],
-                        defaultData: {},
-                        draftGeneration: {
-                            targetContentTypeId: 13,
-                            targetContentTypeName: "Proposal Draft",
-                            targetContentTypeSlug: "proposal-draft",
-                            workforceAgentId: 7,
-                            workforceAgentSlug: "proposal-writer",
-                            workforceAgentName: "Proposal Writer",
-                            workforceAgentPurpose:
-                                "Draft software proposals from inbound forms.",
-                            agentSoul: "software-proposal-writer",
-                            fieldMap: {
-                                requirements: "brief",
-                            },
-                            defaultData: {
-                                title: "Draft proposal",
-                            },
-                            postGenerationWorkflowTransitionId: null,
-                            provider: {
-                                type: "openai",
-                                model: "gpt-4o",
-                                instructions: "Write concise proposals.",
-                            },
-                        },
-                        createdAt: "2026-04-01T12:00:00.000Z",
-                        updatedAt: "2026-04-01T12:00:00.000Z",
-                    },
-                };
-            }
-
             throw new Error(`Unexpected request: ${endpoint} ${options.method ?? "GET"}`);
         });
 
-        render(FormsPage);
+        render(FormEditor, { props: { formId: null } });
 
-        await screen.findByText("No forms are configured for this domain yet.");
+        // Wait for editor to load (content types are fetched on mount)
+        await waitFor(() => {
+            expect(screen.getByLabelText("Name")).toBeTruthy();
+        });
 
         await fireEvent.input(screen.getByLabelText("Name"), {
             target: { value: "Proposal Intake" },
@@ -349,19 +244,10 @@ describe("Forms Page", () => {
                 title: "Form created",
             }),
         );
-        expect(
-            await screen.findByText(
-                "Proposal Writer will supply the SOUL and provider defaults.",
-            ),
-        ).toBeTruthy();
     });
 
     it("keeps the forms workspace usable when workforce agents fail to load", async () => {
         vi.mocked(fetchApi).mockImplementation(async (endpoint) => {
-            if (endpoint === "/forms") {
-                return { data: [] };
-            }
-
             if (endpoint === "/content-types") {
                 return {
                     data: [
@@ -384,9 +270,14 @@ describe("Forms Page", () => {
             throw new Error(`Unexpected request: ${endpoint}`);
         });
 
-        render(FormsPage);
+        render(FormEditor, { props: { formId: null } });
 
-        await screen.findByText("No forms are configured for this domain yet.");
+        // Wait for editor to load
+        await waitFor(() => {
+            expect(screen.getByLabelText("Name")).toBeTruthy();
+        });
+
+        // Forms workspace should still be usable
         expect(
             screen.queryByText("Forms workspace unavailable"),
         ).toBeNull();

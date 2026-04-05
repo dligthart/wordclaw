@@ -592,7 +592,7 @@
                 {:else}
                     <Icon src={ArrowPath} class="h-4 w-4" />
                 {/if}
-                {editor.id ? "Save" : "Create"}
+                {editor.id ? "Save form" : "Create form"}
             </Button>
             {#if form}
                 <Button
@@ -766,6 +766,7 @@
                             <input
                                 type="checkbox"
                                 bind:checked={draftGenerationEnabled}
+                                aria-label="Enable draft generation"
                             />
                             Enabled
                         </div>

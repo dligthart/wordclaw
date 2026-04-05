@@ -708,7 +708,7 @@
                         AI Providers
                     </h3>
                     <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-                        Tenant-scoped model credentials for draft-generation jobs.
+                        Tenant-scoped model credentials
                     </p>
                 </div>
                 <Badge variant="outline">{configuredProviderCount} of {configurableProviders.length} configured</Badge>
@@ -751,7 +751,7 @@
                                 </td>
                                 <td class="py-3 pr-4">
                                     <Badge variant={config ? "info" : "outline"}>
-                                        {config ? "Configured" : "—"}
+                                        {config ? "Configured" : "Not configured"}
                                     </Badge>
                                 </td>
                                 <td class="py-3 pr-4 text-slate-700 dark:text-slate-300">
@@ -766,7 +766,7 @@
                                 <td class="py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
                                         <Button variant="outline" size="sm" onclick={() => openProviderModal(provider.type)}>
-                                            {config ? "Update" : "Configure"}
+                                            {config ? "Update" : `Configure ${provider.label}`}
                                         </Button>
                                         {#if config}
                                             <Button variant="destructive" size="sm" onclick={() => deleteProvider(provider.type)}>
@@ -783,7 +783,7 @@
 
             {#if providerConfigsError}
                 <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                    Provider provisioning is unavailable. Details: {providerConfigsError}
+                    Provider provisioning is unavailable right now. Details: {providerConfigsError}
                 </div>
             {/if}
         </Surface>
@@ -828,7 +828,7 @@
                                         {/if}
                                     </div>
                                     <span class="hidden sm:inline font-mono text-xs text-slate-400 dark:text-slate-500">
-                                        {agent.slug}
+                                        {agent.slug} · #{agent.id}
                                     </span>
                                 </div>
                                 <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
@@ -875,7 +875,7 @@
 
             {#if workforceAgentsError}
                 <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                    Workforce agents are unavailable. Details: {workforceAgentsError}
+                    Workforce agents are unavailable right now. Details: {workforceAgentsError}
                 </div>
             {/if}
         </Surface>
