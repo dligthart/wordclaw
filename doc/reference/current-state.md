@@ -1,6 +1,6 @@
 # Current State
 
-Updated: 2026-04-03<br>
+Updated: 2026-04-05<br>
 Tracking: `v1.51.0` on `main` (latest changelog entry dated 2026-04-03)
 
 WordClaw's supported product path is now a governed content runtime for AI agents and human supervisors. REST and MCP are the primary surfaces. GraphQL remains available as a compatibility layer, but it no longer defines the product.
@@ -24,6 +24,7 @@ WordClaw's supported product path is now a governed content runtime for AI agent
 - Public write lanes allow bounded end-user or session writes without exposing broad supervisor credentials.
 - Reusable forms map public intake flows onto content types, workflow transitions, optional payment gates, and webhook follow-up.
 - Background jobs handle webhook delivery, scheduled content transitions, and other deferred domain-scoped work.
+- Provider-backed workforce-agent draft generation now performs a best-effort same-domain semantic lookup when embeddings are enabled, while remaining non-blocking when vector RAG is unavailable or returns no matches.
 
 ### Assets, Delivery, and Protected Access
 

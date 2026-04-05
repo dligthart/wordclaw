@@ -771,7 +771,7 @@ export function buildCapabilityManifest() {
                     'delete_workforce_agent',
                 ],
                 formField: 'workforceAgentId',
-                note: 'Tenants can provision reusable workforce agents with a bounded SOUL plus provider/model defaults, then reference them from forms.',
+                note: 'Tenants can provision reusable workforce agents with a bounded SOUL plus provider/model defaults, then reference them from forms. Provider-backed workforce-agent runs also perform a best-effort same-domain semantic lookup when vector RAG is enabled.',
             },
             reviewWorkflow: {
                 supported: true,
@@ -822,7 +822,7 @@ export function buildCapabilityManifest() {
                     note: 'Gemini-backed draft generation is supported, but each tenant must configure its own API key and choose a model through provider provisioning or workforce-agent defaults.',
                 },
             },
-            note: 'Deterministic draft generation is always available. External AI providers and workforce agents are tenant-managed, images are the only supported multimodal asset input, and approval-queue handoff requires postGenerationWorkflowTransitionId on the form.',
+            note: 'Deterministic draft generation is always available. External AI providers and workforce agents are tenant-managed, images are the only supported multimodal asset input, provider-backed workforce-agent runs perform a best-effort same-domain semantic lookup when vector RAG is enabled, and approval-queue handoff requires postGenerationWorkflowTransitionId on the form.',
         },
         toolEquivalence: [
             {
@@ -1021,7 +1021,7 @@ export function buildCapabilityManifest() {
                 workflowIntegration: true,
                 paymentIntegration: true,
                 backgroundFollowUps: true,
-                note: 'Forms are first-class bounded intake definitions that validate into content items, can drive tenant-scoped draft generation with text and image inputs, can hand generated drafts into review when postGenerationWorkflowTransitionId is configured, can challenge with L402 when enabled, and can trigger job-backed follow-up webhooks.',
+                note: 'Forms are first-class bounded intake definitions that validate into content items, can drive tenant-scoped draft generation with text and image inputs, let provider-backed workforce-agent runs augment prompts with best-effort same-domain semantic retrieval when embeddings are enabled, can hand generated drafts into review when postGenerationWorkflowTransitionId is configured, can challenge with L402 when enabled, and can trigger job-backed follow-up webhooks.',
             },
             fieldAwareQueries: {
                 supported: true,
