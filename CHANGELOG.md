@@ -1,3 +1,11 @@
+# [1.53.0](https://github.com/dligthart/wordclaw/compare/v1.52.2...v1.53.0) (2026-04-05)
+
+
+### Features
+
+* **approvals:** add content preview modal with inline field revision ([7780f9c](https://github.com/dligthart/wordclaw/commit/7780f9ce9966592e108223dd4e08a21454eb4ca2))
+* **approvals:** content preview modal with inline field revision ([#188](https://github.com/dligthart/wordclaw/issues/188)) ([169c7ac](https://github.com/dligthart/wordclaw/commit/169c7acade031584da40d4a9e042c74064831146))
+
 ## [1.52.2](https://github.com/dligthart/wordclaw/compare/v1.52.1...v1.52.2) (2026-04-04)
 
 
