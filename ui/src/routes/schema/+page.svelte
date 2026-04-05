@@ -1,5 +1,6 @@
 <script lang="ts">
     import { fetchApi, ApiError } from "$lib/api";
+    import { humanizeFieldName } from "$lib/format";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
@@ -332,12 +333,7 @@
         }
     }
 
-    function humanizeFieldName(value: string): string {
-        return value
-            .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-            .replace(/[_-]+/g, " ")
-            .replace(/\b\w/g, (char) => char.toUpperCase());
-    }
+
 
     function parseManifestDocument(value: string): ManifestDocument | null {
         try {

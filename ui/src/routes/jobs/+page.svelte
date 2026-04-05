@@ -1,9 +1,11 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { ApiError, fetchApi } from "$lib/api";
+    import { formatDateTime, formatRelativeDate } from "$lib/format";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import DataTable from "$lib/components/DataTable.svelte";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+    import PageHeader from "$lib/components/ui/PageHeader.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
@@ -151,32 +153,7 @@
         return parsed.toISOString();
     }
 
-    function formatDate(value: string | null) {
-        if (!value) return "Unknown";
-        const timestamp = new Date(value).getTime();
-        if (Number.isNaN(timestamp)) return "Unknown";
-        return new Date(value).toLocaleString();
-    }
 
-    function formatRelativeDate(value: string | null) {
-        if (!value) return "Unknown";
-        const timestamp = new Date(value).getTime();
-        if (Number.isNaN(timestamp)) return "Unknown";
-
-        const deltaMinutes = Math.round((timestamp - Date.now()) / 60_000);
-        if (deltaMinutes > 0 && deltaMinutes < 60) {
-            return `in ${deltaMinutes}m`;
-        }
-
-        const deltaHours = Math.floor((Date.now() - timestamp) / 3_600_000);
-        if (deltaHours < 1) return "Just now";
-        if (deltaHours < 24) return `${deltaHours}h ago`;
-
-        const deltaDays = Math.floor(deltaHours / 24);
-        if (deltaDays < 7) return `${deltaDays}d ago`;
-
-        return new Date(value).toLocaleDateString();
-    }
 
     function statusVariant(status: JobStatus) {
         if (status === "succeeded") return "success";
@@ -382,28 +359,18 @@
 </svelte:head>
 
 <div class="space-y-6">
-    <div class="flex flex-wrap items-start justify-between gap-4">
-        <div class="space-y-2">
-            <p class="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">
-                Background Jobs
-            </p>
-            <div class="space-y-1">
-                <h1 class="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
-                    Scheduled and deferred work
-                </h1>
-                <p class="max-w-3xl text-sm text-slate-600 dark:text-slate-300">
-                    Inspect worker health, queue webhook deliveries, and schedule
-                    content status transitions through the same core jobs runtime.
-                </p>
-            </div>
-        </div>
-        <div class="flex flex-wrap items-center gap-3">
+    <PageHeader
+        eyebrow="Background Jobs"
+        title="Scheduled and deferred work"
+        description="Inspect worker health, queue webhook deliveries, and schedule content status transitions through the same core jobs runtime."
+    >
+        {#snippet actions()}
             <Button variant="outline" onclick={() => void loadPage(selectedJobId)}>
                 <Icon src={ArrowPath} class="h-4 w-4" />
                 Refresh
             </Button>
-        </div>
-    </div>
+        {/snippet}
+    </PageHeader>
 
     {#if error}
         <ErrorBanner
@@ -482,7 +449,7 @@
                                     Last sweep
                                 </p>
                                 <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
-                                    {formatDate(workerStatus.lastSweepCompletedAt)}
+                                    {formatDateTime(workerStatus.lastSweepCompletedAt)}
                                 </p>
                             </div>
                         </div>
@@ -512,7 +479,7 @@
                                     <p class="font-semibold">Last error</p>
                                     <p>{workerStatus.lastError.message}</p>
                                     <p class="mt-1 text-xs opacity-80">
-                                        {formatDate(workerStatus.lastError.at)}
+                                        {formatDateTime(workerStatus.lastError.at)}
                                     </p>
                                 </div>
                             {/if}
@@ -615,7 +582,7 @@
                                 <div class="space-y-1 text-slate-600 dark:text-slate-300">
                                     <div>{formatRelativeDate(job.runAt)}</div>
                                     <div class="text-xs text-slate-500 dark:text-slate-400">
-                                        {formatDate(job.runAt)}
+                                        {formatDateTime(job.runAt)}
                                     </div>
                                 </div>
                             {/if}
@@ -661,7 +628,7 @@
                                     Run at
                                 </p>
                                 <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
-                                    {formatDate(selectedJob.runAt)}
+                                    {formatDateTime(selectedJob.runAt)}
                                 </p>
                             </div>
                             <div class="rounded-2xl border border-slate-200 px-4 py-4 dark:border-slate-700">
@@ -669,7 +636,7 @@
                                     Completed
                                 </p>
                                 <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
-                                    {formatDate(selectedJob.completedAt)}
+                                    {formatDateTime(selectedJob.completedAt)}
                                 </p>
                             </div>
                         </div>

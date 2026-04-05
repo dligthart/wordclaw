@@ -1,6 +1,11 @@
 import { formatJson } from "$lib/utils";
 import type { FormDefinition, FormEditorState } from "./formTypes";
 
+// Re-export shared formatting utilities for backward compatibility.
+// formHelpers.formatDate historically used toLocaleString (date + time),
+// which corresponds to formatDateTime in the shared module.
+export { formatDateTime as formatDate, formatRelativeDate } from "$lib/format";
+
 export const EMPTY_FIELDS_JSON = formatJson(
     [
         {
@@ -39,28 +44,6 @@ export function currentDomainId(): number | null {
     const raw = window.localStorage.getItem("__wc_domain_id");
     const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-export function formatDate(value: string | null): string {
-    if (!value) return "Unknown";
-    const timestamp = new Date(value).getTime();
-    if (Number.isNaN(timestamp)) return "Unknown";
-    return new Date(value).toLocaleString();
-}
-
-export function formatRelativeDate(value: string | null): string {
-    if (!value) return "Unknown";
-    const timestamp = new Date(value).getTime();
-    if (Number.isNaN(timestamp)) return "Unknown";
-
-    const deltaHours = Math.floor((Date.now() - timestamp) / 3_600_000);
-    if (deltaHours < 1) return "Just now";
-    if (deltaHours < 24) return `${deltaHours}h ago`;
-
-    const deltaDays = Math.floor(deltaHours / 24);
-    if (deltaDays < 7) return `${deltaDays}d ago`;
-
-    return new Date(value).toLocaleDateString();
 }
 
 export function formVisibilityBadges(form: FormDefinition): string[] {

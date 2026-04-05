@@ -1,5 +1,6 @@
 <script lang="ts">
     import { fetchApi, ApiError } from "$lib/api";
+    import { formatStatusLabel, resolveStatusBadgeVariant, formatRelativeDate, formatDateTime } from "$lib/format";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { deepParseJson } from "$lib/utils";
@@ -430,46 +431,6 @@
 
     // pickFirstString is now imported from $lib/content-label
 
-    function formatStatusLabel(status: string): string {
-        return status
-            .split("_")
-            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-            .join(" ");
-    }
-
-    function resolveStatusBadgeVariant(
-        status: string,
-    ): "muted" | "success" | "warning" | "danger" {
-        if (status === "published") return "success";
-        if (status === "in_review") return "warning";
-        if (status === "rejected" || status === "archived") return "danger";
-        return "muted";
-    }
-
-    function formatRelativeDate(value: string): string {
-        const timestamp = new Date(value).getTime();
-        if (Number.isNaN(timestamp)) {
-            return "unknown";
-        }
-
-        const deltaHours = Math.floor((Date.now() - timestamp) / 3_600_000);
-        if (deltaHours < 1) return "just now";
-        if (deltaHours < 24) return `${deltaHours}h ago`;
-
-        const deltaDays = Math.floor(deltaHours / 24);
-        if (deltaDays < 7) return `${deltaDays}d ago`;
-
-        return new Date(value).toLocaleDateString();
-    }
-
-    function formatAbsoluteDate(value: string): string {
-        const timestamp = new Date(value).getTime();
-        if (Number.isNaN(timestamp)) {
-            return "Unknown";
-        }
-
-        return new Date(value).toLocaleString();
-    }
 
     function resolveExternalFeedbackDecisionVariant(
         decision: string | null,
@@ -1238,7 +1199,7 @@
                                             <p
                                                 class="mt-2 text-[0.65rem] text-amber-700/80 dark:text-amber-300/80"
                                             >
-                                                {formatAbsoluteDate(
+                                                {formatDateTime(
                                                     selectedTaskFeedbackEvent.createdAt,
                                                 )}
                                             </p>
@@ -1272,7 +1233,7 @@
                                         <p
                                             class="mt-1 text-[0.65rem] text-indigo-400 dark:text-indigo-500"
                                         >
-                                            {formatAbsoluteDate(
+                                            {formatDateTime(
                                                 latestRevisionPromptComment.createdAt,
                                             )}
                                         </p>
@@ -1468,7 +1429,7 @@
 
                                                             <span
                                                                 class="text-[0.65rem] text-slate-400 dark:text-slate-500"
-                                                                title={formatAbsoluteDate(
+                                                                title={formatDateTime(
                                                                     entry.timestamp,
                                                                 )}
                                                             >
@@ -1618,7 +1579,7 @@
                                             </div>
                                             <div>
                                                 <dt class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Submitted</dt>
-                                                <dd class="mt-0.5 text-slate-700 dark:text-slate-300">{formatAbsoluteDate(selectedTask.task.createdAt)}</dd>
+                                                <dd class="mt-0.5 text-slate-700 dark:text-slate-300">{formatDateTime(selectedTask.task.createdAt)}</dd>
                                             </div>
                                             <div>
                                                 <dt class="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Roles</dt>
@@ -1741,7 +1702,7 @@
                                             <dd
                                                 class="mt-0.5 text-slate-700 dark:text-slate-300"
                                             >
-                                                {formatAbsoluteDate(
+                                                {formatDateTime(
                                                     selectedTask.task.createdAt,
                                                 )}
                                             </dd>
@@ -1755,7 +1716,7 @@
                                             <dd
                                                 class="mt-0.5 text-slate-700 dark:text-slate-300"
                                             >
-                                                {formatAbsoluteDate(
+                                                {formatDateTime(
                                                     selectedTask.task.updatedAt,
                                                 )}
                                             </dd>

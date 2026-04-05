@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
 
     import { fetchApi, ApiError } from "$lib/api";
+    import { formatDateTime } from "$lib/format";
     import { auth } from "$lib/auth.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
@@ -368,11 +369,6 @@
                 }
             },
         });
-    }
-
-    function formatDate(d: string | null) {
-        if (!d) return "Never";
-        return new Date(d).toLocaleString();
     }
 
     function describeWorkforceProvider(provider: WorkforceAgentProvider) {
@@ -761,7 +757,7 @@
                                     {config?.maskedApiKey ?? "—"}
                                 </td>
                                 <td class="py-3 pr-4 text-slate-500 dark:text-slate-400 text-xs">
-                                    {config ? formatDate(config.updatedAt) : "—"}
+                                    {config ? formatDateTime(config.updatedAt) : "—"}
                                 </td>
                                 <td class="py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
@@ -833,7 +829,7 @@
                                 </div>
                                 <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                                     <span class="hidden md:inline">{describeWorkforceProvider(agent.provider)}</span>
-                                    <span class="hidden lg:inline">· {formatDate(agent.updatedAt)}</span>
+                                    <span class="hidden lg:inline">· {formatDateTime(agent.updatedAt)}</span>
                                     <div class="flex items-center gap-1.5">
                                         <Button variant="outline" size="sm" onclick={() => openWorkforceModal(agent)}>
                                             Edit

@@ -1,9 +1,11 @@
 <script lang="ts">
     import { fetchApi, ApiError } from "$lib/api";
+    import { formatDateTime } from "$lib/format";
     import { auth } from "$lib/auth.svelte";
     import { onMount } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+    import PageHeader from "$lib/components/ui/PageHeader.svelte";
     import DataTable from "$lib/components/DataTable.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
     import Button from "$lib/components/ui/Button.svelte";
@@ -589,10 +591,7 @@
         });
     }
 
-    function formatDate(d: string | null) {
-        if (!d) return "Never";
-        return new Date(d).toLocaleString();
-    }
+
 
     function describeWorkforceProvider(provider: WorkforceAgentProvider) {
         if (provider.type === "openai") {
@@ -721,22 +720,18 @@
 {/if}
 
 <div class="h-full flex flex-col">
-    <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-            <h2 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
-                API Keys
-            </h2>
-            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {pageDescription}
-            </p>
-            <div class="mt-3 flex flex-wrap gap-2">
-                <Badge variant="outline">{activeKeyCount} active</Badge>
-                {#if revokedKeyCount > 0}
-                    <Badge variant="muted">{revokedKeyCount} revoked</Badge>
-                {/if}
-            </div>
-        </div>
-        <div class="flex flex-wrap gap-3">
+    <div class="mb-6">
+    <PageHeader
+        title="API Keys"
+        description={pageDescription}
+    >
+        {#snippet badges()}
+            <Badge variant="outline">{activeKeyCount} active</Badge>
+            {#if revokedKeyCount > 0}
+                <Badge variant="muted">{revokedKeyCount} revoked</Badge>
+            {/if}
+        {/snippet}
+        {#snippet actions()}
             {#if canOnboardTenants}
                 <Button
                     variant="outline"
@@ -752,7 +747,8 @@
                 <Icon src={Plus} class="w-5 h-5" />
                 Create Key
             </Button>
-        </div>
+        {/snippet}
+    </PageHeader>
     </div>
 
     <!-- Create Key Modal -->
@@ -1346,7 +1342,7 @@
                                     </div>
                                 {:else if column.key === "createdAt" || column.key === "lastUsedAt"}
                                     <span class="text-slate-500 dark:text-slate-400">
-                                        {row[column.key] ? formatDate(row[column.key]) : "Never"}
+                                        {row[column.key] ? formatDateTime(row[column.key]) : "Never"}
                                     </span>
                                 {:else if column.key === "_actions"}
                                     <div class="flex items-center justify-end gap-2">
@@ -1403,7 +1399,7 @@
                                         </div>
                                     {:else if column.key === "revokedAt" || column.key === "lastUsedAt"}
                                         <span class="text-slate-500 dark:text-slate-400">
-                                            {row[column.key] ? formatDate(row[column.key]) : "Never"}
+                                            {row[column.key] ? formatDateTime(row[column.key]) : "Never"}
                                         </span>
                                     {/if}
                                 {/snippet}

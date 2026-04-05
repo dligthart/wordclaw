@@ -1,15 +1,8 @@
 <script lang="ts">
     import { cn } from "$lib/cn";
+    import type { BadgeVariant } from "$lib/types";
 
-    type Variant =
-        | "default"
-        | "muted"
-        | "outline"
-        | "success"
-        | "warning"
-        | "danger"
-        | "paid"
-        | "info";
+    type Variant = BadgeVariant;
 
     let {
         variant = "default",

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { fetchApi } from "$lib/api";
+    import { formatDateTime, formatRelativeTime } from "$lib/format";
     import { onMount } from "svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
@@ -118,21 +119,7 @@
         }
     });
 
-    function formatDate(dateString: string) {
-        return new Date(dateString).toLocaleString();
-    }
 
-    function formatRelativeTime(dateString: string | null) {
-        if (!dateString) return "No sweep yet";
-        const diffMs = Date.now() - new Date(dateString).getTime();
-        const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
-        if (diffMinutes < 1) return "Just now";
-        if (diffMinutes < 60) return `${diffMinutes}m ago`;
-        const diffHours = Math.round(diffMinutes / 60);
-        if (diffHours < 24) return `${diffHours}h ago`;
-        const diffDays = Math.round(diffHours / 24);
-        return `${diffDays}d ago`;
-    }
 </script>
 
 <svelte:head>
@@ -333,7 +320,7 @@
                                 {#each data.recentEvents as event}
                                     <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                                         <td class="px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400">
-                                            {formatDate(event.createdAt)}
+                                            {formatDateTime(event.createdAt)}
                                         </td>
                                         <td class="px-4 py-2.5">
                                             <ActionBadge action={event.action} />

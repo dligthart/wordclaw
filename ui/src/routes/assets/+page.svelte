@@ -1,10 +1,12 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { fetchApi, ApiError } from "$lib/api";
+    import { ApiError, fetchApi } from "$lib/api";
+    import { formatDateTime, formatRelativeDate, formatStatusLabel } from "$lib/format";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import ActorIdentity from "$lib/components/ActorIdentity.svelte";
     import DataTable from "$lib/components/DataTable.svelte";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+    import PageHeader from "$lib/components/ui/PageHeader.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
@@ -196,28 +198,6 @@
         void loadAssets();
     });
 
-    function formatDate(value: string | null) {
-        if (!value) return "Unknown";
-        const timestamp = new Date(value).getTime();
-        if (Number.isNaN(timestamp)) return "Unknown";
-        return new Date(value).toLocaleString();
-    }
-
-    function formatRelativeDate(value: string | null) {
-        if (!value) return "Unknown";
-        const timestamp = new Date(value).getTime();
-        if (Number.isNaN(timestamp)) return "Unknown";
-
-        const deltaHours = Math.floor((Date.now() - timestamp) / 3_600_000);
-        if (deltaHours < 1) return "Just now";
-        if (deltaHours < 24) return `${deltaHours}h ago`;
-
-        const deltaDays = Math.floor(deltaHours / 24);
-        if (deltaDays < 7) return `${deltaDays}d ago`;
-
-        return new Date(value).toLocaleDateString();
-    }
-
     function formatBytes(bytes: number) {
         if (!Number.isFinite(bytes) || bytes < 0) return "Unknown";
         if (bytes < 1024) return `${bytes} B`;
@@ -237,9 +217,6 @@
         return value.charAt(0).toUpperCase() + value.slice(1);
     }
 
-    function formatStatusLabel(value: AssetStatus) {
-        return value.charAt(0).toUpperCase() + value.slice(1);
-    }
 
     function assetStatusVariant(
         status: AssetStatus,
@@ -966,22 +943,16 @@
 {/if}
 
 <div class="flex h-full flex-col gap-6">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-        <div>
-            <h2 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
-                Assets
-            </h2>
-            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Upload, inspect, and control the lifecycle of schema-aware media across this domain.
-            </p>
-            <div class="mt-3 flex flex-wrap gap-2">
-                {#each assetSummaryBadges as badge}
-                    <Badge variant="outline">{badge}</Badge>
-                {/each}
-            </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-3">
+    <PageHeader
+        title="Assets"
+        description="Upload, inspect, and control the lifecycle of schema-aware media across this domain."
+    >
+        {#snippet badges()}
+            {#each assetSummaryBadges as badge}
+                <Badge variant="outline">{badge}</Badge>
+            {/each}
+        {/snippet}
+        {#snippet actions()}
             <Button variant="outline" onclick={() => void loadAssets()}>
                 {#if refreshing}
                     <LoadingSpinner size="sm" />
@@ -994,8 +965,8 @@
                 <Icon src={Plus} class="h-4 w-4" />
                 Upload asset
             </Button>
-        </div>
-    </div>
+        {/snippet}
+    </PageHeader>
 
     {#if error}
         <ErrorBanner
@@ -1140,7 +1111,7 @@
                                 <div class="space-y-1 text-slate-600 dark:text-slate-300">
                                     <div>{formatRelativeDate(asset.updatedAt)}</div>
                                     <div class="text-xs text-slate-500 dark:text-slate-400">
-                                        {formatDate(asset.updatedAt)}
+                                        {formatDateTime(asset.updatedAt)}
                                     </div>
                                 </div>
                             {/if}
@@ -1223,7 +1194,7 @@
                                         : `Updated ${formatRelativeDate(selectedAsset.updatedAt)}`}
                                 </p>
                                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                                    Created {formatDate(selectedAsset.createdAt)}
+                                    Created {formatDateTime(selectedAsset.createdAt)}
                                 </p>
                             </div>
                         </div>
@@ -1570,7 +1541,7 @@
                                                 {accessGrant.signedUrl}
                                             </code>
                                             <div class="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                                                <span>Expires {formatDate(accessGrant.expiresAt)}</span>
+                                                <span>Expires {formatDateTime(accessGrant.expiresAt)}</span>
                                                 <span>·</span>
                                                 <span>{accessGrant.ttlSeconds}s TTL</span>
                                             </div>
@@ -1680,7 +1651,7 @@
                                         Created
                                     </p>
                                     <p class="mt-2 text-sm font-medium text-slate-900 dark:text-white">
-                                        {formatDate(selectedAsset.createdAt)}
+                                        {formatDateTime(selectedAsset.createdAt)}
                                     </p>
                                 </div>
                                 <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/30">

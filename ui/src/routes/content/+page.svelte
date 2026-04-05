@@ -1,5 +1,6 @@
 <script lang="ts">
     import { fetchApi, ApiError } from "$lib/api";
+    import { formatDate, formatDateTime, formatStatusLabel, resolveStatusBadgeVariant, formatRelativeDate, humanizeFieldName } from "$lib/format";
     import { onMount, tick } from "svelte";
     import { feedbackStore } from "$lib/ui-feedback.svelte";
     import { deepParseJson, formatJson } from "$lib/utils";
@@ -443,30 +444,6 @@
         return resolveContentAttribution(item as { id: number; data: unknown });
     }
 
-    function formatDate(value: string): string {
-        return new Date(value).toLocaleDateString();
-    }
-
-    function formatDateTime(value: string): string {
-        return new Date(value).toLocaleString();
-    }
-
-    function formatStatusLabel(status: string): string {
-        return status
-            .split("_")
-            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-            .join(" ");
-    }
-
-    function resolveStatusBadgeVariant(
-        status: string,
-    ): "muted" | "success" | "warning" | "danger" {
-        if (status === "published") return "success";
-        if (status === "in_review") return "warning";
-        if (status === "archived") return "danger";
-        return "muted";
-    }
-
     function formatPublicationStateLabel(
         state: ContentItem["publicationState"],
     ): string {
@@ -481,22 +458,6 @@
         if (state === "published") return "success";
         if (state === "changed") return "warning";
         return "muted";
-    }
-
-    function formatRelativeDate(value: string): string {
-        const timestamp = new Date(value).getTime();
-        if (Number.isNaN(timestamp)) {
-            return "unknown";
-        }
-
-        const deltaHours = Math.floor((Date.now() - timestamp) / 3_600_000);
-        if (deltaHours < 1) return "just now";
-        if (deltaHours < 24) return `${deltaHours}h ago`;
-
-        const deltaDays = Math.floor(deltaHours / 24);
-        if (deltaDays < 7) return `${deltaDays}d ago`;
-
-        return formatDate(value);
     }
 
     function resolveSchemaTypeLabel(
@@ -674,12 +635,7 @@
         }
     }
 
-    function humanizeFieldName(value: string): string {
-        return value
-            .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-            .replace(/[_-]+/g, " ")
-            .replace(/\b\w/g, (char) => char.toUpperCase());
-    }
+
 
     function resolveQueryableFields(type: ContentType): QueryableField[] {
         const schema = parseSchemaDocument(type);
