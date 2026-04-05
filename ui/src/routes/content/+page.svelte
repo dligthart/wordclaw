@@ -15,6 +15,7 @@
         truncate,
     } from "$lib/content-label";
     import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+    import ContentPreviewModal from "$lib/components/ContentPreviewModal.svelte";
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
     import DataTable from "$lib/components/DataTable.svelte";
@@ -24,7 +25,7 @@
     import Input from "$lib/components/ui/Input.svelte";
     import Select from "$lib/components/ui/Select.svelte";
     import Surface from "$lib/components/ui/Surface.svelte";
-    import { Icon, ArrowPath, ChevronLeft, XMark } from "svelte-hero-icons";
+    import { Icon, ArrowPath, ChevronLeft, XMark, Eye } from "svelte-hero-icons";
 
     type ContentTypeStats = {
         itemCount: number;
@@ -188,6 +189,7 @@
         { key: "version", label: "Version" },
         { key: "updatedAt", label: "Updated" },
         { key: "createdAt", label: "Created" },
+        { key: "_actions", label: "", width: "3rem" },
     ];
 
     let contentTypes = $state<ContentType[]>([]);
@@ -215,6 +217,7 @@
     let newComment = $state("");
     let submittingReview = $state(false);
     let openingPreview = $state(false);
+    let previewItem = $state<ContentItem | null>(null);
     let loading = $state(true);
     let loadingItems = $state(false);
     let loadingUsage = $state(false);
@@ -3081,9 +3084,10 @@
                         {:else}
                             <div class="space-y-3 lg:hidden">
                                 {#each items as item}
-                                    <button
-                                        type="button"
-                                        class={`w-full rounded-2xl border px-4 py-4 text-left transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/50 ${
+                                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                                    <div
+                                        class={`w-full rounded-2xl border px-4 py-4 text-left transition-colors cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/50 ${
                                             selectedItem?.id === item.id
                                                 ? "border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60"
                                                 : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900/20"
@@ -3120,13 +3124,26 @@
                                                     <span>v{item.version}</span>
                                                 </div>
                                             </div>
-                                            <Badge
-                                                variant={resolveStatusBadgeVariant(
-                                                    item.status,
-                                                )}
-                                            >
-                                                {formatStatusLabel(item.status)}
-                                            </Badge>
+                                            <div class="flex items-center gap-2">
+                                                <Badge
+                                                    variant={resolveStatusBadgeVariant(
+                                                        item.status,
+                                                    )}
+                                                >
+                                                    {formatStatusLabel(item.status)}
+                                                </Badge>
+                                                <button
+                                                    class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+                                                    title="Preview content"
+                                                    aria-label="Preview content for {resolveItemLabel(item)}"
+                                                    onclick={(e) => {
+                                                        e.stopPropagation();
+                                                        previewItem = item;
+                                                    }}
+                                                >
+                                                    <Icon src={Eye} class="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
                                         </div>
                                         <p
                                             class="mt-3 line-clamp-2 text-sm text-slate-600 dark:text-slate-300"
@@ -3161,7 +3178,7 @@
                                                 </div>
                                             </div>
                                         </div>
-                                    </button>
+                                    </div>
                                 {/each}
                             </div>
 
@@ -3260,6 +3277,19 @@
                                                     )}
                                                 </div>
                                             </div>
+                                        {:else if column.key === "_actions"}
+                                            <button
+                                                class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+                                                title="Preview content"
+                                                aria-label="Preview content for {resolveItemLabel(item)}"
+                                                onclick={(e) => {
+                                                    e.stopPropagation();
+                                                    previewItem = item;
+                                                }}
+                                            >
+                                                <Icon src={Eye} class="w-3.5 h-3.5" />
+                                                <span class="sr-only">View</span>
+                                            </button>
                                         {/if}
                                     {/snippet}
                                 </DataTable>
@@ -3712,4 +3742,12 @@
             </div>
         </div>
     {/if}
+
+    <ContentPreviewModal
+        open={previewItem !== null}
+        contentItem={previewItem}
+        contentType={selectedType ? { name: selectedType.name, slug: selectedType.slug } : null}
+        taskId={null}
+        onclose={() => (previewItem = null)}
+    />
 </div>
