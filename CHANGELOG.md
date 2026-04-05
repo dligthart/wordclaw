@@ -1,3 +1,10 @@
+# [1.54.0](https://github.com/dligthart/wordclaw/compare/v1.53.0...v1.54.0) (2026-04-05)
+
+
+### Features
+
+* **ui:** add View button to content browser with ContentPreviewModal ([bb2bc0c](https://github.com/dligthart/wordclaw/commit/bb2bc0cb074cc79c28b42fc8dfa0ce7a01c4a02b))
+
 # [1.53.0](https://github.com/dligthart/wordclaw/compare/v1.52.2...v1.53.0) (2026-04-05)
 
 
