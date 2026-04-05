@@ -19,7 +19,7 @@ WordClaw utilizes PostgreSQL and the `pgvector` extension to handle everything i
 
 ## 🚀 How to Utilize Native RAG
 
-You can utilize WordClaw's native RAG in two main ways: by autonomous agents, or by frontend applications.
+You can utilize WordClaw's native RAG in three main ways: by autonomous agents, by workforce-agent-backed draft generation, or by frontend applications.
 
 ### 1. By AI Agents (Via MCP or REST)
 
@@ -38,7 +38,27 @@ If `OPENAI_API_KEY` is missing, `GET /api/search/semantic` returns `503 SEMANTIC
 
 Published content reads also expose per-item sync metadata: `embeddingStatus`, `embeddingChunks`, `embeddingUpdatedAt`, `embeddingErrorCode`, and the derived `embeddingReadiness` block. Use those fields when you need to verify that the latest published snapshot has actually finished indexing.
 
-### 2. By Frontend Applications
+### 2. By Workforce-Agent-Backed Draft Generation
+
+Provider-backed draft-generation runs that resolve through a tenant workforce agent also use this lane automatically on a best-effort basis.
+
+When vector RAG is enabled, the runtime builds a same-domain semantic query from:
+
+- the workforce agent identity and purpose
+- the intake payload
+- the target content type
+- any revision prompt or current-draft context when the run is revising an existing draft
+
+The runtime then injects the top matching same-domain semantic chunks into the prompt as supporting context for the model.
+
+Important behavior:
+
+- this lookup is **best-effort**, not mandatory
+- it only augments provider-backed workforce-agent runs, not deterministic generation
+- if embeddings are disabled, stale, or return no useful matches, the draft job still proceeds without retrieved context
+- retrieved context is advisory and should not override explicit intake facts or supervisor revision requests
+
+### 3. By Frontend Applications
 
 You can use the exact same `/api/search/semantic` endpoint to power an incredibly smart headless search bar on your public-facing frontend (like React, Vue, or SvelteKit).
 

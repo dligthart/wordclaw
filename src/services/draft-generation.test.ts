@@ -13,11 +13,18 @@ const mocks = vi.hoisted(() => {
     return {
         responsesCreateMock,
         openAIMock,
+        searchSemanticKnowledgeMock: vi.fn(),
     };
 });
 
 vi.mock('openai', () => ({
     default: mocks.openAIMock,
+}));
+
+vi.mock('./embedding.js', () => ({
+    EmbeddingService: {
+        searchSemanticKnowledge: mocks.searchSemanticKnowledgeMock,
+    },
 }));
 
 import type { DraftGenerationInput, DraftGenerationTargetContentType } from './draft-generation.js';
@@ -145,6 +152,8 @@ describe('draft generation service', () => {
     beforeEach(() => {
         mocks.responsesCreateMock.mockReset();
         mocks.openAIMock.mockClear();
+        mocks.searchSemanticKnowledgeMock.mockReset();
+        mocks.searchSemanticKnowledgeMock.mockResolvedValue([]);
         vi.restoreAllMocks();
         process.env.OPENAI_DRAFT_GENERATION_MODEL = 'gpt-4o';
     });
@@ -331,6 +340,94 @@ describe('draft generation service', () => {
         }));
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain('brief.png');
         expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).not.toContain('spec.pdf');
+    });
+
+    it('injects same-domain semantic context for workforce-agent-backed generation', async () => {
+        mocks.searchSemanticKnowledgeMock.mockResolvedValue([{
+            id: 900,
+            contentItemId: 42,
+            chunkIndex: 0,
+            textChunk: 'Acme prefers phased rollouts with weekly steering updates and explicit acceptance criteria.',
+            similarity: 0.8241,
+            contentItemData: JSON.stringify({ title: 'Acme delivery playbook' }),
+            contentTypeSlug: 'delivery-playbook',
+        }]);
+        mocks.responsesCreateMock.mockResolvedValue({
+            id: 'resp_rag',
+            output_text: JSON.stringify({
+                title: 'Model generated title',
+                summary: 'Generated summary',
+            }),
+        });
+
+        await generateDraftData(buildInput({
+            workforceAgent: {
+                id: 2,
+                slug: 'proposal-writer',
+                name: 'Proposal Writer',
+                purpose: 'Draft software implementation proposals.',
+            },
+            intakeData: {
+                company: 'Acme',
+                requirements: 'Need a rollout proposal with clear governance.',
+            },
+        }));
+
+        expect(mocks.searchSemanticKnowledgeMock).toHaveBeenCalledWith(
+            1,
+            expect.stringContaining('Workforce agent: Proposal Writer (proposal-writer)'),
+            4,
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.instructions).toContain(
+            'Retrieved same-domain semantic context may be provided below.',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain(
+            'Retrieved same-domain semantic context:',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain(
+            'contentItemId=42, contentType=delivery-playbook, similarity=0.8241',
+        );
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).toContain(
+            'Acme prefers phased rollouts with weekly steering updates',
+        );
+    });
+
+    it('keeps generation running when semantic lookup is unavailable', async () => {
+        mocks.searchSemanticKnowledgeMock.mockRejectedValue(new Error('Semantic search is disabled.'));
+        mocks.responsesCreateMock.mockResolvedValue({
+            id: 'resp_no_rag',
+            output_text: JSON.stringify({
+                title: 'Model generated title',
+                summary: 'Generated summary',
+            }),
+        });
+
+        const result = await generateDraftData(buildInput({
+            workforceAgent: {
+                id: 2,
+                slug: 'proposal-writer',
+                name: 'Proposal Writer',
+                purpose: 'Draft software implementation proposals.',
+            },
+        }));
+
+        expect(mocks.responsesCreateMock).toHaveBeenCalledTimes(1);
+        expect(mocks.responsesCreateMock.mock.calls[0]?.[0]?.input?.[0]?.content?.[0]?.text).not.toContain(
+            'Retrieved same-domain semantic context:',
+        );
+        expect(result).toEqual({
+            data: {
+                title: 'Model generated title',
+                brief: 'Need a proposal',
+                summary: 'Generated summary',
+            },
+            strategy: 'openai_structured_outputs_v1',
+            provider: {
+                type: 'openai',
+                model: 'gpt-4o',
+                responseId: 'resp_no_rag',
+            },
+        });
     });
 
     it('adds richer proposal drafting guidance for proposal-style target schemas', async () => {

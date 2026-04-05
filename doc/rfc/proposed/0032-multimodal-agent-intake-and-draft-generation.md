@@ -3,12 +3,12 @@
 **Author:** Codex
 **Status:** Partially Implemented
 **Date:** 2026-03-31
-**Updated:** 2026-04-01
+**Updated:** 2026-04-05
 **Tracking Issue:** #183
 
 ## 0. Current Status
 
-As of 2026-04-01, RFC 0032 is partially implemented on `main`, but it is not finished as a broad intake-to-agent product lane.
+As of 2026-04-05, RFC 0032 is partially implemented on `main`, but it is not finished as a broad intake-to-agent product lane.
 
 Current runtime context:
 
@@ -18,6 +18,7 @@ Current runtime context:
 - tenant-scoped workforce agents now exist with stable ids/slugs, purpose, SOUL, and provider/model defaults
 - the supervisor UI now exposes provider/workforce provisioning in `/ui/agents` and draft-generation form wiring in `/ui/forms`
 - draft-generation completion and terminal failure callbacks now reuse the existing form webhook lane
+- provider-backed workforce-agent draft generation now performs a best-effort same-domain semantic lookup when vector RAG is enabled, while still proceeding without retrieved context when embeddings are unavailable or yield no matches
 - multimodal intake is intentionally image-only for now: referenced image assets can be forwarded natively into OpenAI, Anthropic, and Gemini requests, while non-image files are still out of scope
 - the implementation direction remains intentionally conservative: reuse the current runtime instead of introducing a large new subsystem
 
@@ -152,7 +153,7 @@ flowchart LR
 4. A configured agent profile for "software development proposal creation" is selected.
 5. The runtime queues a background job for draft generation.
 6. An agent worker picks up the job and runs the configured profile.
-7. The agent reads the intake, interprets multimodal context, and writes a structured proposal draft.
+7. The agent reads the intake, interprets multimodal context, can augment provider-backed workforce runs with best-effort same-domain semantic retrieval when available, and writes a structured proposal draft.
 8. The draft is validated and submitted into the configured workflow.
 9. Once complete, the requester is notified by email, webhook, or another configured channel.
 

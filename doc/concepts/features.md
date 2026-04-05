@@ -72,6 +72,7 @@ WordClaw natively supports Retrieval-Augmented Generation (RAG) by embedding con
 - **Auto-Enabled** — Simply provide an `OPENAI_API_KEY` in your `.env` to automatically enable vector capabilities.
 - **Automated Embeddings** — Published content can be chunked and embedded into `pgvector`.
 - **Semantic Search** — Agents can query the CMS using natural-language relevance without external vector infrastructure.
+- **Internal Draft Support** — Provider-backed workforce-agent draft generation can also use best-effort same-domain semantic retrieval as supporting context when vector RAG is enabled.
 
 ## Tier 3: Compatibility and Incubating
 

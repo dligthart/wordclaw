@@ -39,7 +39,7 @@ Notes:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | unset | Enables semantic search and published-content embedding sync |
+| `OPENAI_API_KEY` | unset | Enables semantic search, published-content embedding sync, and best-effort internal RAG lookups for provider-backed workforce-agent draft generation |
 | `OPENAI_DRAFT_GENERATION_MODEL` | `gpt-4o` | Runtime fallback OpenAI model for tenant-scoped draft-generation jobs when neither the tenant config nor the form overrides the model |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model name |
 | `OPENAI_EMBEDDING_MAX_PER_MINUTE` | `30` | Soft request-rate guardrail |
@@ -53,6 +53,7 @@ Notes:
 - Reusable forms now support two draft-generation modes: the deterministic mapping path, and an explicit provider-backed path. Forms can still carry a direct `agentSoul`, but the preferred shape is `draftGeneration.workforceAgentId` so a tenant-managed workforce agent supplies the SOUL and provider/model defaults.
 - Provider-backed draft generation is tenant-scoped. Each tenant provisions its own provider credentials through `PUT /api/ai/providers/:provider`, `GET /api/ai/providers`, or MCP `configure_ai_provider` / `list_ai_provider_configs`, where `:provider` is currently `openai`, `anthropic`, or `gemini`.
 - Tenant supervisors can provision reusable workforce agents through `POST /api/workforce/agents` or MCP `create_workforce_agent`. Each workforce agent carries a stable slug, a bounded purpose, a customizable SOUL, and provider/model defaults that future form submissions inherit.
+- Provider-backed draft generation that resolves through a workforce agent now performs a best-effort same-domain semantic lookup when `OPENAI_API_KEY` enables vector RAG. The retrieval is advisory and non-blocking: jobs continue normally if embeddings are disabled or no relevant chunks are found.
 - The supervisor Forms workspace at `/ui/forms` now exposes first-class draft-generation controls, so operators can bind a form to a target content type, a workforce agent or direct SOUL/provider override, field-map JSON, and post-generation workflow routing without hand-authoring the REST payload.
 - If a form or workforce agent opts into `openai`, `anthropic`, or `gemini` without a tenant-scoped provider config, the queued draft-generation job fails with a clear provisioning error instead of silently falling back.
 - `OPENAI_DRAFT_GENERATION_MODEL` is only the runtime fallback for OpenAI. Anthropic and Gemini require either a tenant default model or an explicit `provider.model` on the workforce agent or form config.
