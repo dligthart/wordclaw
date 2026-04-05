@@ -19,6 +19,7 @@
     import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
     import JsonCodeBlock from "$lib/components/JsonCodeBlock.svelte";
     import ActorIdentity from "$lib/components/ActorIdentity.svelte";
+    import ContentPreviewModal from "$lib/components/ContentPreviewModal.svelte";
     import Badge from "$lib/components/ui/Badge.svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import Surface from "$lib/components/ui/Surface.svelte";
@@ -29,6 +30,7 @@
         CheckCircle,
         ChevronLeft,
         Check,
+        Eye,
     } from "svelte-hero-icons";
 
     type ReviewTaskPayload = {
@@ -143,6 +145,7 @@
     let revisingItem = $state<number | null>(null);
     let decisionReason = $state("");
     let revisionPrompt = $state("");
+    let previewPayload = $state<ReviewTaskPayload | null>(null);
     let selectedTaskVersions = $state<ContentItemVersionPayload[]>([]);
     let selectedTaskComments = $state<ReviewCommentPayload[]>([]);
     let selectedTaskFeedbackEvents = $state<ExternalFeedbackEventPayload[]>([]);
@@ -728,6 +731,39 @@
         externalFeedbackContextError = null;
     }
 
+    function openPreview(payload: ReviewTaskPayload, event: MouseEvent) {
+        event.stopPropagation();
+        previewPayload = payload;
+    }
+
+    function closePreview() {
+        previewPayload = null;
+    }
+
+    async function handlePreviewRevised(result: {
+        contentItemId: number;
+        contentVersion: number;
+    }) {
+        // Reload the queue data to get the updated content
+        await loadData();
+
+        // Update the preview payload with the refreshed data
+        if (previewPayload) {
+            const refreshed = pendingTasks.find(
+                (p) => p.task.id === previewPayload!.task.id,
+            );
+            if (refreshed) {
+                previewPayload = refreshed;
+            }
+        }
+
+        feedbackStore.pushToast({
+            severity: "success",
+            title: "Field revised",
+            message: `Content updated to version ${result.contentVersion}.`,
+        });
+    }
+
     function handleKeydown(e: KeyboardEvent) {
         if (
             e.target instanceof HTMLInputElement ||
@@ -860,12 +896,14 @@
                         >
                             {#each pendingTasks as payload}
                                 <li>
-                                    <button
-                                        onclick={() => viewTask(payload)}
-                                        class="w-full border-l-2 px-4 py-3 text-left transition-colors {selectedTask
+                                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                                    <div
+                                        class="w-full border-l-2 px-4 py-3 text-left transition-colors cursor-pointer {selectedTask
                                             ?.task.id === payload.task.id
                                             ? 'border-slate-400 bg-slate-50/80 dark:border-slate-500 dark:bg-slate-800/80'
                                             : 'border-transparent hover:bg-slate-50/80 dark:hover:bg-slate-800/50'}"
+                                        onclick={() => viewTask(payload)}
                                     >
                                         <div
                                             class="flex items-start justify-between gap-2"
@@ -936,8 +974,17 @@
                                                     compact={true}
                                                 />
                                             {/if}
+                                            <button
+                                                class="ml-auto shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+                                                title="Preview content"
+                                                aria-label="Preview content for {resolveTaskLabel(payload)}"
+                                                onclick={(e) => openPreview(payload, e)}
+                                            >
+                                                <Icon src={Eye} class="w-3.5 h-3.5" />
+                                                <span class="hidden sm:inline">View</span>
+                                            </button>
                                         </div>
-                                    </button>
+                                    </div>
                                 </li>
                             {/each}
                         </ul>
@@ -1803,4 +1850,13 @@
             </Surface>
         </section>
     </div>
+
+    <ContentPreviewModal
+        open={previewPayload !== null}
+        contentItem={previewPayload?.contentItem ?? null}
+        contentType={previewPayload?.contentType ?? null}
+        taskId={previewPayload?.task.id ?? null}
+        onclose={closePreview}
+        onrevised={handlePreviewRevised}
+    />
 </div>
