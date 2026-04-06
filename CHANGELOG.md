@@ -1,3 +1,10 @@
+## [1.54.2](https://github.com/dligthart/wordclaw/compare/v1.54.1...v1.54.2) (2026-04-06)
+
+
+### Bug Fixes
+
+* make Revise buttons always visible on mobile in preview modal ([5d56f60](https://github.com/dligthart/wordclaw/commit/5d56f60f40eab48d3bf8bb3787a2070a4ad5fd8a))
+
 ## [1.54.1](https://github.com/dligthart/wordclaw/compare/v1.54.0...v1.54.1) (2026-04-06)
 
 
