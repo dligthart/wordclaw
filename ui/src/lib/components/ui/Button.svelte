@@ -45,12 +45,12 @@
 
     const sizeClass = $derived(
         size === "sm"
-            ? "h-8 px-3 text-xs"
+            ? "h-8 sm:h-8 min-h-[36px] sm:min-h-0 px-3 text-xs"
             : size === "lg"
               ? "h-11 px-5 text-sm"
               : size === "icon"
-                ? "h-10 w-10"
-                : "h-10 px-4 text-sm",
+                ? "h-10 w-10 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0"
+                : "h-10 sm:h-10 min-h-[44px] sm:min-h-0 px-4 text-sm",
     );
 </script>
 

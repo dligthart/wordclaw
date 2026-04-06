@@ -488,7 +488,7 @@
             <header
                 class="sticky top-0 z-30 border-b border-slate-200/80 bg-white/88 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/72"
             >
-                <div class="flex h-16 items-center gap-3 px-5 sm:px-7 lg:px-10">
+                <div class="flex h-16 items-center gap-2 sm:gap-3 px-3 sm:px-7 lg:px-10">
                     <button
                         type="button"
                         class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white md:hidden"
@@ -555,7 +555,7 @@
                         </div>
                     </div>
 
-                    <div class="ml-auto flex items-center gap-2.5">
+                    <div class="ml-auto flex items-center gap-1.5 sm:gap-2.5">
                         <DomainDropdown
                             {currentDomain}
                             onSelect={selectDomain}
@@ -686,7 +686,7 @@
 
             <main class="min-h-[calc(100vh-4rem)]">
                 <div
-                    class="wc-page-scroll mx-auto max-w-[96rem] px-5 py-6 sm:px-7 lg:px-10"
+                    class="wc-page-scroll mx-auto max-w-[96rem] px-3 py-4 sm:px-7 sm:py-6 lg:px-10"
                 >
                     {@render children()}
                 </div>

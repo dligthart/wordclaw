@@ -782,6 +782,14 @@
             </p>
             {#if !loading}
                 <div
+                    class="mt-1.5 flex items-center gap-2 sm:gap-3 flex-wrap text-[0.7rem] text-slate-400 dark:text-slate-500 sm:hidden md:hidden"
+                >
+                    <Badge variant="muted">{pendingTasks.length} pending</Badge>
+                    {#if oldestTask}
+                        <Badge variant="outline">Oldest {formatRelativeDate(oldestTask.task.createdAt)}</Badge>
+                    {/if}
+                </div>
+                <div
                     class="mt-1.5 text-[0.7rem] text-slate-400 dark:text-slate-500 hidden md:block"
                 >
                     <span class="font-mono">j/k</span> navigate ·
@@ -866,9 +874,7 @@
                                             : 'border-transparent hover:bg-slate-50/80 dark:hover:bg-slate-800/50'}"
                                         onclick={() => viewTask(payload)}
                                     >
-                                        <div
-                                            class="flex items-start justify-between gap-2"
-                                        >
+                                        <div class="flex flex-col sm:flex-row items-stretch sm:items-start justify-between gap-2">
                                             <div class="min-w-0">
                                                 <p
                                                     class="truncate text-sm font-semibold text-gray-900 dark:text-white"
@@ -935,14 +941,18 @@
                                                     compact={true}
                                                 />
                                             {/if}
+                                        </div>
+
+                                        <!-- View button: always its own row for reliable mobile visibility -->
+                                        <div class="mt-2 flex items-center">
                                             <button
-                                                class="ml-auto shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+                                                class="ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 min-h-[44px] sm:min-h-0 sm:px-2.5 sm:py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition-colors"
                                                 title="Preview content"
                                                 aria-label="Preview content for {resolveTaskLabel(payload)}"
                                                 onclick={(e) => openPreview(payload, e)}
                                             >
-                                                <Icon src={Eye} class="w-3.5 h-3.5" />
-                                                <span class="hidden sm:inline">View</span>
+                                                <Icon src={Eye} class="w-4 h-4" />
+                                                <span>View</span>
                                             </button>
                                         </div>
                                     </div>
@@ -976,8 +986,8 @@
                             class="flex items-center gap-2 min-w-0"
                         >
                             <button
-                                class="md:hidden shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                                aria-label="Close review"
+                                class="md:hidden shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-slate-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-slate-800 transition-colors"
+                                aria-label="Back to queue"
                                 onclick={() => (selectedTask = null)}
                             >
                                 <Icon
@@ -987,7 +997,7 @@
                             </button>
                             <div class="min-w-0 flex-1">
                                 <h3
-                                    class="truncate text-base sm:text-lg font-semibold tracking-tight text-gray-900 dark:text-white"
+                                    class="text-sm sm:text-lg font-semibold tracking-tight text-gray-900 dark:text-white line-clamp-2 sm:truncate"
                                 >
                                     {resolveTaskLabel(selectedTask)}
                                 </h3>
@@ -1034,8 +1044,8 @@
                             >
                         </div>
 
-                        <!-- Row 3: Action buttons -->
-                        <div class="mt-2.5 flex gap-2">
+                        <!-- Row 3: Action buttons - full width on mobile -->
+                        <div class="mt-2.5 flex flex-col sm:flex-row gap-2">
                             <Button
                                 onclick={() =>
                                     processTask(selectedTask!, "rejected")}
@@ -1043,7 +1053,7 @@
                                         selectedTask.task.id ||
                                     revisingItem === selectedTask.task.id}
                                 variant="outline"
-                                class="flex-1 sm:flex-none"
+                                class="w-full sm:w-auto"
                             >
                                 Reject
                             </Button>
@@ -1054,7 +1064,7 @@
                                         selectedTask.task.id ||
                                     revisingItem === selectedTask.task.id}
                                 variant="success"
-                                class="flex-1 sm:flex-none"
+                                class="w-full sm:w-auto"
                             >
                                 {#if processingItem === selectedTask.task.id}
                                     <LoadingSpinner
@@ -1069,21 +1079,23 @@
                         </div>
 
                         <!-- Row 4: Collapsible revision + decision reason -->
-                        <details class="mt-2">
+                        <details class="mt-2.5">
                             <summary
-                                class="cursor-pointer text-[0.7rem] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 select-none"
+                                class="cursor-pointer text-[0.7rem] font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 select-none flex items-center gap-1.5"
                             >
-                                Request revision or add decision reason
+                                <Icon src={ArrowPath} class="w-3.5 h-3.5" />
+                                Request revision or add reason
                             </summary>
                             <div class="mt-2 space-y-2">
-                                <div class="flex items-start gap-2">
+                                <!-- Revision prompt + button: stack vertically on mobile -->
+                                <div class="space-y-2 sm:space-y-0 sm:flex sm:items-start sm:gap-2">
                                     <div class="flex-1 min-w-0">
                                         <Textarea
                                             id="revision-prompt"
                                             aria-label="Agent Revision Prompt"
                                             bind:value={revisionPrompt}
                                             placeholder="Describe what the agent should change…"
-                                            rows={1}
+                                            rows={2}
                                             class="w-full text-sm resize-y"
                                             disabled={revisingItem ===
                                                 selectedTask.task.id}
@@ -1097,7 +1109,7 @@
                                                 selectedTask.task.id ||
                                             !revisionPrompt.trim()}
                                         variant="outline"
-                                        class="shrink-0"
+                                        class="w-full sm:w-auto shrink-0 min-h-[40px]"
                                     >
                                         {#if revisingItem === selectedTask.task.id}
                                             <LoadingSpinner size="sm" />

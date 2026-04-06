@@ -172,7 +172,7 @@
             <section class="grid gap-4 lg:grid-cols-[1fr_1fr]">
                 <!-- Health strip -->
                 <Surface class="p-0">
-                    <div class="flex divide-x divide-slate-200 dark:divide-slate-700">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-700">
                         {#each healthItems as item}
                             <div class="flex flex-1 items-center gap-3 px-4 py-3">
                                 <div
@@ -191,9 +191,9 @@
 
                 <!-- Activity stats strip -->
                 <Surface class="p-0">
-                    <div class="flex divide-x divide-slate-200 dark:divide-slate-700">
+                    <div class="grid grid-cols-3 sm:grid-cols-5 divide-y sm:divide-y-0 divide-slate-200 dark:divide-slate-700">
                         {#each activityStats as stat}
-                            <div class="flex flex-1 flex-col items-center justify-center px-2 py-3">
+                            <div class="flex flex-1 flex-col items-center justify-center px-2 py-3 [&:nth-child(n+4)]:border-t [&:nth-child(n+4)]:sm:border-t-0 sm:[&:not(:first-child)]:border-l sm:border-slate-200 sm:dark:border-slate-700">
                                 <p class="text-[0.6rem] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{stat.label}</p>
                                 <p class={`text-lg font-bold ${stat.color}`}>{stat.value}</p>
                             </div>
@@ -307,7 +307,8 @@
                         </a>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                        <!-- Desktop table -->
+                        <table class="hidden sm:table min-w-full divide-y divide-slate-200 dark:divide-slate-700">
                             <thead class="bg-slate-50/40 dark:bg-slate-900/30">
                                 <tr>
                                     <th class="px-4 py-2 text-left text-[0.65rem] font-semibold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Timestamp</th>
@@ -348,6 +349,36 @@
                                 {/each}
                             </tbody>
                         </table>
+                        <!-- Mobile card list -->
+                        <div class="sm:hidden divide-y divide-slate-200 dark:divide-slate-700">
+                            {#each data.recentEvents as event}
+                                <div class="px-4 py-3 space-y-1.5">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <ActionBadge action={event.action} />
+                                        <span class="text-[0.65rem] text-slate-400 dark:text-slate-500">
+                                            {formatDateTime(event.createdAt)}
+                                        </span>
+                                    </div>
+                                    <div class="text-sm font-medium text-slate-900 dark:text-slate-200">
+                                        {event.entityType}
+                                        <span class="font-normal text-slate-500 dark:text-slate-400">#{event.entityId}</span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                        <ActorIdentity
+                                            actorId={event.actorId}
+                                            actorType={event.actorType}
+                                            actorSource={event.actorSource}
+                                            legacyUserId={event.userId}
+                                            compact={true}
+                                        />
+                                    </div>
+                                </div>
+                            {:else}
+                                <div class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+                                    No recent events found.
+                                </div>
+                            {/each}
+                        </div>
                     </div>
                 </Surface>
             </section>
