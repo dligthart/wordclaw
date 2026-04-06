@@ -1,3 +1,10 @@
+## [1.54.1](https://github.com/dligthart/wordclaw/compare/v1.54.0...v1.54.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* mobile responsive UI improvements ([7534dea](https://github.com/dligthart/wordclaw/commit/7534deae69f8c5e9bae266de9d6b6ae08cf821dc))
+
 # [1.54.0](https://github.com/dligthart/wordclaw/compare/v1.53.0...v1.54.0) (2026-04-05)
 
 
