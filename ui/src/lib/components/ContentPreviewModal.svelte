@@ -371,7 +371,7 @@
                                     </dt>
                                     {#if taskId && editingFieldKey !== field.key}
                                         <button
-                                            class="opacity-0 group-hover/field:opacity-100 focus:opacity-100 shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6rem] font-medium text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:text-slate-500 dark:hover:text-blue-400 dark:hover:bg-blue-950/30 transition-all"
+                                            class="shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 sm:px-1.5 sm:py-0.5 text-[0.65rem] sm:text-[0.6rem] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 sm:opacity-0 sm:group-hover/field:opacity-100 focus:opacity-100 sm:bg-transparent sm:dark:bg-transparent sm:text-slate-400 sm:hover:text-blue-600 sm:hover:bg-blue-50 sm:dark:text-slate-500 sm:dark:hover:text-blue-400 sm:dark:hover:bg-blue-950/30 transition-all min-h-[36px] sm:min-h-0"
                                             title="Request AI revision for this field"
                                             aria-label="Revise {field.label}"
                                             onclick={() =>
